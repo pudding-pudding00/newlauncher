@@ -19,6 +19,7 @@ add_library(nl_core STATIC
     src/gfx/font.cpp
     src/gfx/text.cpp
     src/ui/input.cpp
+    src/ui/scene.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 nl_apply_flags(nl_core)

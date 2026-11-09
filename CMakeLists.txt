@@ -8,30 +8,76 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(cmake/NlFlags.cmake)
 
-# Plattformfreier Kern (Spec 4.1): nur Header/Quellen ohne libogc-Abhängigkeit.
-add_library(nl_core INTERFACE)
-target_include_directories(nl_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# Plattformfreier Kern (Spec 4.1): ohne libogc, auf dem Host getestet, auf der Wii mitgelinkt.
+add_library(nl_core STATIC
+    src/core/assert.cpp
+    src/core/theme.cpp
+    src/core/console.cpp
+    src/core/frame_stats.cpp
+    src/core/crash_report.cpp
+    src/gfx/draw_list.cpp
+    src/gfx/shapes.cpp
+    src/gfx/atlas.cpp
+    src/gfx/font.cpp
+    src/gfx/text.cpp
+    src/ui/input.cpp
+    src/ui/scene.cpp
+    src/ui/layout.cpp
+    src/ui/test_library.cpp
+    src/ui/main_scene.cpp
+    src/ui/home_menu.cpp
+    src/ui/debug_overlay.cpp
+    src/ui/pointer_cursor.cpp
+)
+target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+nl_apply_flags(nl_core)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
-    add_executable(newlauncher
+    # FreeType aus den devkitPro-portlibs (pacman -S ppc-freetype), statisch mit Abhängigkeiten.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(FREETYPE REQUIRED freetype2)
+
+    # Schriften (Spec 3.7), per tools/subset_fonts.py auf Latin-1 + „…" reduziert.
+    dkp_add_embedded_binary_library(nl_fonts
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/MPLUSRounded1c-Regular-latin1.ttf
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/MPLUSRounded1c-Medium-latin1.ttf
+    )
+
+    set(NL_WII_SOURCES
         src/app/main.cpp
         src/platform/log.cpp
         src/platform/video.cpp
-        src/gfx/gx_context.cpp
+        src/platform/wii_input.cpp
+        src/platform/crash.cpp
+        src/gfx/renderer.cpp
+        src/gfx/font_loader.cpp
     )
-    target_link_libraries(newlauncher PRIVATE nl_core wiiuse bte)
-    target_compile_definitions(newlauncher PRIVATE NL_VERSION="${PROJECT_VERSION}")
-    nl_apply_flags(newlauncher)
-    ogc_create_dol(newlauncher)
+
+    function(nl_wii_target name)
+        add_executable(${name} ${ARGN})
+        target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS})
+        target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
+        target_link_libraries(${name} PRIVATE nl_core nl_fonts ${FREETYPE_STATIC_LIBRARIES} wiiuse bte)
+        target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}")
+        nl_apply_flags(${name})
+        ogc_create_dol(${name})
+    endfunction()
+
+    nl_wii_target(newlauncher ${NL_WII_SOURCES})
+
+    # Selbsttest (Task 11): geskriptete Eingaben, Allokationszähler, absichtlicher Absturz am Ende.
+    nl_wii_target(nl_selftest ${NL_WII_SOURCES} src/app/selftest.cpp)
+    target_compile_definitions(nl_selftest PRIVATE NL_SELFTEST)
+    target_link_options(nl_selftest PRIVATE -Wl,--wrap=_malloc_r -Wl,--wrap=_memalign_r -Wl,--wrap=_realloc_r)
 else()
     enable_testing()
 
-    add_executable(nl_host_tests
-        tests/host/main.cpp
-        tests/host/core/result_test.cpp
-        tests/host/core/color_test.cpp
-    )
-    target_include_directories(nl_host_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
+    file(GLOB_RECURSE NL_HOST_TEST_SOURCES CONFIGURE_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/host/*_test.cpp)
+    add_executable(nl_host_tests tests/host/main.cpp ${NL_HOST_TEST_SOURCES})
+    target_include_directories(nl_host_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/host)
     target_compile_definitions(nl_host_tests PRIVATE DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS)
     target_link_libraries(nl_host_tests PRIVATE nl_core)
     nl_apply_flags(nl_host_tests)

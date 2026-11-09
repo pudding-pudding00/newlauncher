@@ -9,6 +9,7 @@ void Video::init() {
 
     for (auto& fb : xfb_) {
         fb = MEM_K0_TO_K1(SYS_AllocateFramebuffer(mode_));
+        VIDEO_ClearFrameBuffer(mode_, fb, COLOR_BLACK);  // kein Speichermüll im ersten Bild
     }
 
     VIDEO_Configure(mode_);

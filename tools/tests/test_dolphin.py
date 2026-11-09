@@ -167,6 +167,24 @@ class DolphinToolsTest(unittest.TestCase):
                     "--user-dir", str(self.user), "--timeout", "2"])
         self.assertEqual(boot.read_bytes(), b"launcher")
 
+    def test_smoke_with_fixtures_removes_old_index(self):
+        index = self.user / "SDSync/newlauncher/cache/index.bin"
+        index.parent.mkdir(parents=True)
+        index.write_bytes(b"alt")
+        self._fake_dolphin("raise SystemExit(0)\n")
+        self._run_smoke("2")
+        self.assertFalse(index.exists())
+        self.assertTrue((self.user / "SDSync/newlauncher/config.ini").is_file())
+
+    def test_smoke_without_fixtures_keeps_index(self):
+        index = self.user / "SDSync/newlauncher/cache/index.bin"
+        index.parent.mkdir(parents=True)
+        index.write_bytes(b"alt")
+        self._fake_dolphin("raise SystemExit(0)\n")
+        smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                    "--timeout", "2", "--no-fixtures"])
+        self.assertTrue(index.exists())
+
     def test_smoke_ignores_marker_from_previous_run(self):
         log_path(self.user).parent.mkdir(parents=True)
         log_path(self.user).write_text("OSREPORT: NL_READY\n")

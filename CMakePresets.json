@@ -1,0 +1,37 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "host",
+      "displayName": "Host-Tests (GCC + Ninja)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/host",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    },
+    {
+      "name": "wii",
+      "displayName": "Wii (devkitPPC)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/wii",
+      "toolchainFile": "$env{DEVKITPRO}/cmake/Wii.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "host", "configurePreset": "host" },
+    { "name": "wii", "configurePreset": "wii" }
+  ],
+  "testPresets": [
+    {
+      "name": "host",
+      "configurePreset": "host",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

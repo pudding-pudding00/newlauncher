@@ -1,0 +1,37 @@
+name: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  wii:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:20261102
+    steps:
+      - uses: actions/checkout@v4
+      - name: CMake bereitstellen (Presets v6 brauchen >= 3.25)
+        run: |
+          command -v cmake || (apt-get update && apt-get install -y --no-install-recommends cmake)
+          cmake --version
+          printf '%s\n' 'if(CMAKE_VERSION VERSION_LESS 3.25)' \
+            '  message(FATAL_ERROR "CMake ${CMAKE_VERSION} ist zu alt, Presets v6 brauchen >= 3.25")' \
+            'endif()' > /tmp/check_cmake.cmake
+          cmake -P /tmp/check_cmake.cmake
+      - name: DOL bauen
+        run: cmake --preset wii && cmake --build --preset wii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: newlauncher-dol
+          path: build/wii/newlauncher.dol
+
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ninja installieren
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Host-Tests
+        run: cmake --preset host && cmake --build --preset host && ctest --preset host
+      - name: Werkzeug-Tests
+        run: python3 -m unittest discover -s tools/tests -v

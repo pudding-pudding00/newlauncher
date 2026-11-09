@@ -7,12 +7,13 @@
 #include "core/easing.hpp"
 #include "core/library_store.hpp"
 #include "ui/jump_bar.hpp"
+#include "ui/keyboard.hpp"
 #include "ui/layout.hpp"
 #include "ui/scene.hpp"
 
 namespace nl::ui {
 
-class MainScene final : public Scene, public JumpTarget {
+class MainScene final : public Scene, public JumpTarget, public SearchTarget {
 public:
     explicit MainScene(const Library& lib);
 
@@ -32,6 +33,13 @@ public:
     void openSearch() override { pendingSearch_ = true; }  // öffnet die Tastatur im nächsten eigenen Update
     bool hasBucket(char bucket) const override;
     char currentBucket() const override;
+
+    // SearchTarget: nicht leere Anfrage → Such-Eintrag vorn in der Leiste mit Treffern aus allen Konsolen;
+    // leere Anfrage → Suchmodus aus, vorheriger Eintrag wieder aktiv.
+    void setQuery(std::string_view query) override;
+    bool searchActive() const { return searchActive_; }
+    const char* barLabelText(int index) const;
+    void setFocusForTest(int index) { grid_.setFocus(index); }
 
     // Für Tests und Selbsttest
     int barIndex() const { return barIndex_; }
@@ -56,9 +64,10 @@ private:
     const Game* focusedGame() const;
 
     Library lib_;
-    BarEntry bar_[kMaxBarEntries]{};
+    void rebuildBar();
+    BarEntry bar_[kMaxBarEntries + 1]{};  // + Such-Eintrag
     int barCount_ = 0, barIndex_ = 0;
-    gfx::Rect barRects_[kMaxBarEntries]{};
+    gfx::Rect barRects_[kMaxBarEntries + 1]{};
     std::vector<const Game*> scratch_;
     std::span<const Game* const> games_;
     GridModel grid_;
@@ -74,7 +83,12 @@ private:
     Scene* jumpBar_ = nullptr;
     Scene* keyboard_ = nullptr;
     bool pendingSearch_ = false;
-    u32 bucketMask_ = 0;  // Bit 0 = '#', Bit 1–26 = A–Z; je Liste vorberechnet
+    u32 bucketMask_ = 0;
+    bool searchActive_ = false;
+    BarEntry entryBeforeSearch_{};
+    std::vector<const Game*> searchResults_;
+    std::string searchQuery_;
+    char searchLabel_[64] = "";  // Bit 0 = '#', Bit 1–26 = A–Z; je Liste vorberechnet
 
     char clockBuf_[8] = "";
     int clockMinute_ = -1;

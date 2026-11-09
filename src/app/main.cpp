@@ -26,6 +26,7 @@
 #include "ui/debug_overlay.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/jump_bar.hpp"
+#include "ui/keyboard.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/pointer_cursor.hpp"
 #include "ui/scene.hpp"
@@ -258,6 +259,8 @@ int main(int, char**) {
     mainScene.setFavoriteKeys(&store);
     nl::ui::JumpBar jumpBar(mainScene);
     mainScene.setJumpBar(&jumpBar);
+    nl::ui::Keyboard keyboard(mainScene);
+    mainScene.setKeyboard(&keyboard);
     nl::ui::SceneStack scenes;
     scenes.push(&mainScene);
 

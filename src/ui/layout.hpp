@@ -15,7 +15,7 @@ struct Library {  // M1: Testdaten; ab M2 vom Scanner befüllt
     std::span<const Game* const> recent;
 };
 
-enum class BarKind : u8 { Favorites, Recent, ConsoleEntry };
+enum class BarKind : u8 { Favorites, Recent, ConsoleEntry, Search };
 struct BarEntry {
     BarKind kind;
     Console console;

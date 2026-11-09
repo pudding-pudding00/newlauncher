@@ -1,5 +1,6 @@
 #include "ui/main_scene.hpp"
 
+#include <algorithm>
 #include <cstdio>
 
 #include "core/text_fold.hpp"
@@ -47,7 +48,7 @@ void drawGearIcon(gfx::DrawList& dl, const gfx::AtlasShapes& s, float cx, float 
 }  // namespace
 
 MainScene::MainScene(const Library& lib) : lib_(lib), scratch_(lib.games.size()) {
-    barCount_ = buildBarEntries(lib_, bar_);
+    rebuildBar();
     int start = 0;
     for (int i = 0; i < barCount_; ++i) {
         if (!gamesFor(lib_, bar_[i], scratch_).empty()) {
@@ -68,7 +69,8 @@ void MainScene::setLibrary(const Library& lib) {
 
     lib_ = lib;
     scratch_.assign(lib_.games.size(), nullptr);
-    barCount_ = buildBarEntries(lib_, bar_);
+    if (searchActive_) setQuery(std::string(searchQuery_));  // Treffer neu aus lib_ (Kopie: setQuery überschreibt searchQuery_)
+    rebuildBar();
     int index = -1;
     for (int i = 0; i < barCount_ && index < 0; ++i) {
         const bool sameKind = bar_[i].kind == oldEntry.kind;
@@ -96,7 +98,8 @@ void MainScene::showToast(const char* text) {
 void MainScene::selectBar(int index, float width, float height) {
     if (index < 0 || index >= barCount_) return;
     barIndex_ = index;
-    games_ = gamesFor(lib_, bar_[index], scratch_);
+    games_ = bar_[index].kind == BarKind::Search ? std::span<const Game* const>(searchResults_)
+                                                  : gamesFor(lib_, bar_[index], scratch_);
     const GridMetrics m = gridMetrics(width);
     grid_.reset(static_cast<int>(games_.size()), m, height - m.topBarH - m.infoBarH);
     gridWidth_ = width;
@@ -108,6 +111,56 @@ void MainScene::selectBar(int index, float width, float height) {
         const char b = letterBucket(g->title);
         bucketMask_ |= 1u << (b == '#' ? 0 : b - 'A' + 1);
     }
+}
+
+void MainScene::rebuildBar() {
+    int offset = 0;
+    if (searchActive_) {
+        bar_[0] = BarEntry{BarKind::Search, Console::Nes, 0};
+        offset = 1;
+    }
+    barCount_ = offset + buildBarEntries(lib_, std::span<BarEntry>(bar_ + offset, kMaxBarEntries));
+}
+
+const char* MainScene::barLabelText(int index) const {
+    if (index < 0 || index >= barCount_) return "";
+    if (bar_[index].kind == BarKind::Search) return searchLabel_;
+    return barLabel(bar_[index]);
+}
+
+void MainScene::setQuery(std::string_view query) {
+    const std::string folded = foldForSearch(query);
+    if (folded.empty()) {
+        if (!searchActive_) return;
+        searchActive_ = false;
+        searchResults_.clear();
+        rebuildBar();
+        int index = 0;
+        for (int i = 0; i < barCount_; ++i) {
+            const bool same = bar_[i].kind == entryBeforeSearch_.kind &&
+                              (entryBeforeSearch_.kind != BarKind::ConsoleEntry || bar_[i].console == entryBeforeSearch_.console);
+            if (same) {
+                index = i;
+                break;
+            }
+        }
+        selectBar(index, gridWidth_, gridHeight_);
+        return;
+    }
+    if (!searchActive_) {
+        entryBeforeSearch_ = bar_[barIndex_];
+        searchActive_ = true;
+    }
+    searchQuery_.assign(query);
+    std::snprintf(searchLabel_, sizeof searchLabel_, "%s: %s", kStrSearch, searchQuery_.c_str());
+    searchResults_.clear();
+    for (const Game& g : lib_.games)
+        if (matchesQuery(foldForSearch(g.title), folded)) searchResults_.push_back(&g);
+    std::stable_sort(searchResults_.begin(), searchResults_.end(),
+                     [](const Game* a, const Game* b) { return compareTitles(a->title, b->title) < 0; });
+    rebuildBar();
+    selectBar(0, gridWidth_, gridHeight_);
+    infoGame_ = nullptr;
 }
 
 void MainScene::jumpToBucket(char bucket) {
@@ -160,7 +213,7 @@ void MainScene::layoutBar(const UiContext& ctx) {
     float widths[kMaxBarEntries];
     float sum = 0.0f;
     for (int i = 0; i < barCount_; ++i) {
-        widths[i] = gfx::measureText(pill, barLabel(bar_[i])) + 24.0f;
+        widths[i] = gfx::measureText(pill, barLabelText(i)) + 24.0f;
         sum += widths[i];
     }
     float gap = barCount_ > 1 ? (ctx.width - 2.0f * margin - sum) / static_cast<float>(barCount_ - 1) : 0.0f;
@@ -266,6 +319,7 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
 
     if (in.pressed(Action::Home) && home_ != nullptr) out.push = home_;
     if (in.pressed(Action::Search) && jumpBar_ != nullptr) out.push = jumpBar_;
+    if (in.pressed(Action::Back) && searchActive_) setQuery("");
     if (pendingSearch_) {
         pendingSearch_ = false;
         if (keyboard_ != nullptr) out.push = keyboard_;
@@ -348,7 +402,7 @@ void MainScene::drawTopBar(const UiContext& ctx, gfx::DrawList& dl) const {
             gfx::roundRect(dl, s, r, kPillH / 2, t.accentSoft);
             text = t.accentSoftText;
         }
-        gfx::drawText(dl, pill, r.x + 12, r.y + 16 + (pill.ascent - pill.descent) / 2, barLabel(bar_[i]), text);
+        gfx::drawText(dl, pill, r.x + 12, r.y + 16 + (pill.ascent - pill.descent) / 2, barLabelText(i), text);
     }
 }
 
@@ -405,8 +459,9 @@ void MainScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     }
     if (grid_.count() == 0) {
         const gfx::FontFace& f = ctx.fonts->face(FontSize::Title, FontWeight::Regular);
-        const float w = gfx::measureText(f, kStrNoGames);
-        gfx::drawText(dl, f, (ctx.width - w) / 2, viewTop + grid_.viewHeight() / 2, kStrNoGames, t.textMuted);
+        const char* empty = searchActive_ && bar_[barIndex_].kind == BarKind::Search ? kStrNoResults : kStrNoGames;
+        const float w = gfx::measureText(f, empty);
+        gfx::drawText(dl, f, (ctx.width - w) / 2, viewTop + grid_.viewHeight() / 2, empty, t.textMuted);
     }
 
     drawTopBar(ctx, dl);

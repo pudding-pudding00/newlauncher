@@ -21,6 +21,11 @@ inline constexpr const char* kStrUseSd = "SD verwenden";
 inline constexpr const char* kStrScanning = "Bibliothek wird durchsucht …";
 inline constexpr const char* kStrFiles = "Dateien";
 inline constexpr const char* kStrSearch = "Suche";
+inline constexpr const char* kStrSearchHint = "Titel eingeben …";
+inline constexpr const char* kStrNoResults = "Keine Treffer";
+inline constexpr const char* kStrKeySpace = "Leerzeichen";
+inline constexpr const char* kStrKeyDelete = "Löschen";
+inline constexpr const char* kStrKeyDone = "Fertig";
 inline constexpr const char* kStrFavAdded = "Zu Favoriten hinzugefügt";
 inline constexpr const char* kStrFavRemoved = "Aus Favoriten entfernt";
 

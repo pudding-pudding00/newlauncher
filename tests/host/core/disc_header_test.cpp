@@ -89,3 +89,16 @@ TEST_CASE("MemFileSystem: list, read mit Offset hinter dem Ende, writeAtomic, ma
     CHECK(all.value().size() == 2);
     CHECK_FALSE(fs.readAll("sd:/newlauncher/cache/index.bin", 1).isOk());  // größer als erlaubt
 }
+
+TEST_CASE("readAllWithFallback: Hauptdatei bevorzugt, sonst die .tmp aus einem abgebrochenen Schreibvorgang") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/newlauncher/favorites.ini.tmp", {'t'});
+    auto onlyTmp = readAllWithFallback(fs, "sd:/newlauncher/favorites.ini", 100);
+    REQUIRE(onlyTmp.isOk());
+    CHECK(onlyTmp.value() == std::vector<u8>{'t'});
+    fs.addFile("sd:/newlauncher/favorites.ini", {'m'});
+    auto both = readAllWithFallback(fs, "sd:/newlauncher/favorites.ini", 100);
+    REQUIRE(both.isOk());
+    CHECK(both.value() == std::vector<u8>{'m'});
+    CHECK_FALSE(readAllWithFallback(fs, "sd:/fehlt.ini", 100).isOk());
+}

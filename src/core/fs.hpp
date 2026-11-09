@@ -30,6 +30,15 @@ public:
     virtual Result<void> makeDirs(std::string_view dir) = 0;
 };
 
+// writeAtomic schreibt erst "<datei>.tmp" und benennt dann um. Bricht das zwischen Löschen und
+// Umbenennen ab (Stromausfall), liegt nur noch die .tmp-Datei vor: dann wird sie gelesen.
+inline Result<std::vector<u8>> readAllWithFallback(FileSystem& fs, std::string_view file, std::size_t maxBytes) {
+    auto main = fs.readAll(file, maxBytes);
+    if (main.isOk()) return main;
+    auto tmp = fs.readAll(std::string(file) + ".tmp", maxBytes);
+    return tmp.isOk() ? std::move(tmp) : std::move(main);
+}
+
 inline std::string joinPath(std::string_view dir, std::string_view name) {
     std::string p(dir);
     if (!p.empty() && p.back() != '/') p += '/';

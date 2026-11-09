@@ -62,7 +62,7 @@ void fillClock(nl::ui::UiContext& ctx) {
 }
 
 nl::IniDoc readIni(nl::FileSystem& fs, const char* path) {
-    auto data = fs.readAll(path, kMaxIniBytes);
+    auto data = nl::readAllWithFallback(fs, path, kMaxIniBytes);
     if (!data.isOk()) return nl::IniDoc{};
     const auto& bytes = data.value();
     return nl::IniDoc::parse(std::string_view(reinterpret_cast<const char*>(bytes.data()), bytes.size()));
@@ -78,7 +78,7 @@ nl::Config loadConfig(nl::FileSystem& fs, bool sdOk) {
         nl::log::line("NL_CONFIG default (keine SD)");
         return nl::Config{};
     }
-    auto data = fs.readAll(kConfigPath, kMaxIniBytes);
+    auto data = nl::readAllWithFallback(fs, kConfigPath, kMaxIniBytes);
     if (data.isOk()) {
         const auto& b = data.value();
         nl::log::line("NL_CONFIG ok");
@@ -201,7 +201,7 @@ int main(int, char**) {
 
     // 4. meta.bin, index.bin, Favoriten, Verlauf (Spec 6.1 Schritt 5)
     std::optional<nl::MetaDb> meta;
-    if (auto data = fs.readAll(cacheDir + "/meta.bin", kMaxMetaBytes); data.isOk()) {
+    if (auto data = nl::readAllWithFallback(fs, cacheDir + "/meta.bin", kMaxMetaBytes); data.isOk()) {
         auto parsed = nl::MetaDb::parse(std::move(data).value());
         if (parsed.isOk()) meta.emplace(std::move(parsed).value());
         else nl::log::line("NL_WARN meta.bin verworfen: %s", parsed.error().context.c_str());
@@ -222,7 +222,7 @@ int main(int, char**) {
 
     nl::platform::ScanWorker worker;
     bool haveIndex = false;
-    if (auto data = fs.readAll(indexPath, kMaxIndexBytes); data.isOk()) {
+    if (auto data = nl::readAllWithFallback(fs, indexPath, kMaxIndexBytes); data.isOk()) {
         auto index = nl::readIndex(data.value());
         if (index.isOk()) {
             store.setGames(std::move(index).value(), metaPtr);

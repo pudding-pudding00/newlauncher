@@ -26,7 +26,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: newlauncher-dol
-          path: build/wii/newlauncher.dol
+          path: |
+            build/wii/newlauncher.dol
+            build/wii/nl_selftest.dol
 
   host-tests:
     runs-on: ubuntu-latest

@@ -42,20 +42,32 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/MPLUSRounded1c-Medium-latin1.ttf
     )
 
-    add_executable(newlauncher
+    set(NL_WII_SOURCES
         src/app/main.cpp
         src/platform/log.cpp
         src/platform/video.cpp
         src/platform/wii_input.cpp
+        src/platform/crash.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp
     )
-    target_include_directories(newlauncher PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS})
-    target_link_directories(newlauncher PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
-    target_link_libraries(newlauncher PRIVATE nl_core nl_fonts ${FREETYPE_STATIC_LIBRARIES} wiiuse bte)
-    target_compile_definitions(newlauncher PRIVATE NL_VERSION="${PROJECT_VERSION}")
-    nl_apply_flags(newlauncher)
-    ogc_create_dol(newlauncher)
+
+    function(nl_wii_target name)
+        add_executable(${name} ${ARGN})
+        target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS})
+        target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
+        target_link_libraries(${name} PRIVATE nl_core nl_fonts ${FREETYPE_STATIC_LIBRARIES} wiiuse bte)
+        target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}")
+        nl_apply_flags(${name})
+        ogc_create_dol(${name})
+    endfunction()
+
+    nl_wii_target(newlauncher ${NL_WII_SOURCES})
+
+    # Selbsttest (Task 11): geskriptete Eingaben, Allokationszähler, absichtlicher Absturz am Ende.
+    nl_wii_target(nl_selftest ${NL_WII_SOURCES} src/app/selftest.cpp)
+    target_compile_definitions(nl_selftest PRIVATE NL_SELFTEST)
+    target_link_options(nl_selftest PRIVATE -Wl,--wrap=_malloc_r -Wl,--wrap=_memalign_r -Wl,--wrap=_realloc_r)
 else()
     enable_testing()
 

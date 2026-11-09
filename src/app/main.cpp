@@ -10,6 +10,7 @@
 #include "gfx/draw_list.hpp"
 #include "gfx/font_loader.hpp"
 #include "gfx/renderer.hpp"
+#include "platform/crash.hpp"
 #include "platform/log.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_input.hpp"
@@ -18,6 +19,10 @@
 #include "ui/main_scene.hpp"
 #include "ui/scene.hpp"
 #include "ui/test_library.hpp"
+
+#ifdef NL_SELFTEST
+#include "app/selftest.hpp"
+#endif
 
 namespace {
 
@@ -43,6 +48,7 @@ int main(int, char**) {
 
     nl::platform::Video video;
     video.init();
+    nl::platform::installCrashHandler();
     nl::gfx::Renderer renderer;
     if (auto r = renderer.init(video); !r.isOk()) {
         nl::log::line("NL_ERROR %s", r.error().context.c_str());
@@ -84,14 +90,21 @@ int main(int, char**) {
     nl::FrameStats stats;
     bool readyReported = false;
     bool running = true;
-    while (running) {
+    for (int frame = 0; running; ++frame) {
+        static_cast<void>(frame);  // nur im Selbsttest gelesen
         const u64 frameStart = gettime();
         fillClock(ctx);
         theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, kDarkFrom, kDarkTo), true);
         theme.update(kFrameMs);
         ctx.theme = &theme.current();
 
+#ifdef NL_SELFTEST
+        const nl::app::SelftestView view{mainScene, scenes, debug};
+        input.poll();  // Geräte weiter abfragen, Eingaben kommen aber aus dem Skript
+        const nl::ui::InputFrame in = mapper.update(nl::app::selftestInput(frame, view), kFrameMs);
+#else
         const nl::ui::InputFrame in = mapper.update(input.poll(), kFrameMs);
+#endif
         if (in.pressed(nl::ui::Action::DebugToggle)) debug.toggle();
         const nl::ui::AppCommand cmd = scenes.update(ctx, in, kFrameMs);
         switch (cmd) {
@@ -133,6 +146,9 @@ int main(int, char**) {
             nl::log::line("NL_READY");
             readyReported = true;
         }
+#ifdef NL_SELFTEST
+        nl::app::selftestAfterFrame(frame, view);
+#endif
     }
     input.shutdown();
     return 0;

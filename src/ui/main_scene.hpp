@@ -6,6 +6,7 @@
 
 #include "core/easing.hpp"
 #include "core/library_store.hpp"
+#include "ui/details_scene.hpp"
 #include "ui/jump_bar.hpp"
 #include "ui/keyboard.hpp"
 #include "ui/layout.hpp"
@@ -27,6 +28,11 @@ public:
     void setFavoriteKeys(const LibraryStore* store) { store_ = store; }  // für die Favoriten-Markierung
     void setJumpBar(Scene* jumpBar) { jumpBar_ = jumpBar; }
     void setKeyboard(Scene* keyboard) { keyboard_ = keyboard; }
+    // Confirm auf fokussierter Kachel öffnet die Detailansicht; store liefert Favorit und Verlauf (darf nullptr sein).
+    void setDetails(DetailsScene* details, const LibraryStore* store) {
+        details_ = details;
+        detailsStore_ = store;
+    }
 
     // JumpTarget
     void jumpToBucket(char bucket) override;
@@ -82,6 +88,8 @@ private:
     const LibraryStore* store_ = nullptr;
     Scene* jumpBar_ = nullptr;
     Scene* keyboard_ = nullptr;
+    DetailsScene* details_ = nullptr;
+    const LibraryStore* detailsStore_ = nullptr;
     bool pendingSearch_ = false;
     u32 bucketMask_ = 0;
     bool searchActive_ = false;

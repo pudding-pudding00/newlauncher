@@ -337,6 +337,11 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
             out.command = AppCommand::CycleTheme;
         } else if (hover_ == Hover::Bar && hoverBar_ >= 0) {
             selectBar(hoverBar_, ctx.width, ctx.height);
+        } else if (const Game* g = focusedGame(); g != nullptr && details_ != nullptr) {
+            const bool fav = detailsStore_ != nullptr && detailsStore_->isFavorite(g->key);
+            const u32 last = detailsStore_ != nullptr ? detailsStore_->lastPlayed(g->key) : 0;
+            details_->open(*g, fav, last);
+            out.push = details_;
         }
         // Spiele starten folgt mit M3.
     }

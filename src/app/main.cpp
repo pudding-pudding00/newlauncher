@@ -24,6 +24,7 @@
 #include "platform/video.hpp"
 #include "platform/wii_input.hpp"
 #include "ui/debug_overlay.hpp"
+#include "ui/details_scene.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/jump_bar.hpp"
 #include "ui/keyboard.hpp"
@@ -261,6 +262,8 @@ int main(int, char**) {
     mainScene.setJumpBar(&jumpBar);
     nl::ui::Keyboard keyboard(mainScene);
     mainScene.setKeyboard(&keyboard);
+    nl::ui::DetailsScene details;
+    mainScene.setDetails(&details, &store);
     nl::ui::SceneStack scenes;
     scenes.push(&mainScene);
 
@@ -305,6 +308,7 @@ int main(int, char**) {
                 else nl::log::line("NL_WARN favorites.ini nicht gespeichert");
                 mainScene.setLibrary(libraryView());
                 mainScene.showToast(nowFavorite ? nl::ui::kStrFavAdded : nl::ui::kStrFavRemoved);
+                if (details.game() != nullptr && key == details.game()->key) details.setFavorite(nowFavorite);
                 break;
             }
             case nl::ui::AppCommand::CycleTheme:

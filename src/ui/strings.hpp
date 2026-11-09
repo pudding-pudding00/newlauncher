@@ -26,6 +26,11 @@ inline constexpr const char* kStrNoResults = "Keine Treffer";
 inline constexpr const char* kStrKeySpace = "Leerzeichen";
 inline constexpr const char* kStrKeyDelete = "Löschen";
 inline constexpr const char* kStrKeyDone = "Fertig";
+inline constexpr const char* kStrLastPlayed = "zuletzt";
+inline constexpr const char* kStrStart = "Starten";
+inline constexpr const char* kStrFavorite = "Favorit";
+inline constexpr const char* kStrFavRemove = "Favorit entfernen";
+inline constexpr const char* kStrDetailsHelp = "A Starten · B Zurück · 1 Favorit";
 inline constexpr const char* kStrFavAdded = "Zu Favoriten hinzugefügt";
 inline constexpr const char* kStrFavRemoved = "Aus Favoriten entfernt";
 

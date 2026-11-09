@@ -23,13 +23,26 @@ target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 nl_apply_flags(nl_core)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
+    # FreeType aus den devkitPro-portlibs (pacman -S ppc-freetype), statisch mit Abhängigkeiten.
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(FREETYPE REQUIRED freetype2)
+
+    # Schriften (Spec 3.7), per tools/subset_fonts.py auf Latin-1 + „…" reduziert.
+    dkp_add_embedded_binary_library(nl_fonts
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/MPLUSRounded1c-Regular-latin1.ttf
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/MPLUSRounded1c-Medium-latin1.ttf
+    )
+
     add_executable(newlauncher
         src/app/main.cpp
         src/platform/log.cpp
         src/platform/video.cpp
-        src/gfx/gx_context.cpp
+        src/gfx/renderer.cpp
+        src/gfx/font_loader.cpp
     )
-    target_link_libraries(newlauncher PRIVATE nl_core wiiuse bte)
+    target_include_directories(newlauncher PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS})
+    target_link_directories(newlauncher PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
+    target_link_libraries(newlauncher PRIVATE nl_core nl_fonts ${FREETYPE_STATIC_LIBRARIES} wiiuse bte)
     target_compile_definitions(newlauncher PRIVATE NL_VERSION="${PROJECT_VERSION}")
     nl_apply_flags(newlauncher)
     ogc_create_dol(newlauncher)

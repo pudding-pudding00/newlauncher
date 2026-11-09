@@ -13,6 +13,9 @@ add_library(nl_core STATIC
     src/core/assert.cpp
     src/core/theme.cpp
     src/core/console.cpp
+    src/gfx/draw_list.cpp
+    src/gfx/shapes.cpp
+    src/gfx/atlas.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 nl_apply_flags(nl_core)

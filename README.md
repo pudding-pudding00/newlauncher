@@ -9,7 +9,7 @@ Hochperformanter Wii-Launcher im Wii-Stil für Homebrew/cIOS-Setups: Wii-Spiele 
 ## Voraussetzungen (Windows)
 
 - **devkitPro** mit Komponente „Wii Development“ (`C:\devkitPro`), danach in dessen MSYS2-Shell:
-  `pacman -S --needed wii-dev cmake`
+  `pacman -S --needed wii-dev cmake ppc-freetype`
 - **Host-Compiler:** `winget install --id BrechtSanders.WinLibs.POSIX.UCRT -e`
 - **Ninja:** `winget install --id Ninja-build.Ninja -e`
 - **CMake** ≥ 3.25 und **Python 3**

@@ -251,3 +251,69 @@ TEST_CASE_FIXTURE(Fixture, "200 Zeichen langer Titel mit ungültigem UTF-8: Quad
         CHECK(v.y <= r.y + r.h + 0.01f);
     }
 }
+
+namespace {
+const Game kLibA[] = {
+    Game{Console::Nes, "nes/a", "Alpha", 0, 0},  Game{Console::Nes, "nes/b", "Beta", 0, 0},
+    Game{Console::Nes, "nes/c", "Gamma", 0, 0},  Game{Console::N64, "n64/x", "Xeno", 0, 0},
+    Game{Console::Wii, "RMCP01", "Mario Kart Wii", 0, 0},
+};
+// Neue Liste: Spiel "nes/a" entfernt, "nes/d" neu, N64 verschwunden.
+const Game kLibB[] = {
+    Game{Console::Nes, "nes/b", "Beta", 0, 0},
+    Game{Console::Nes, "nes/c", "Gamma", 0, 0},
+    Game{Console::Nes, "nes/d", "Delta", 0, 0},
+    Game{Console::Wii, "RMCP01", "Mario Kart Wii", 0, 0},
+};
+Library libOf(std::span<const Game> games) { return Library{games, {}, {}}; }
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "setLibrary behält Leisten-Eintrag und fokussiertes Spiel per Schlüssel") {
+    MainScene s(libOf(kLibA));
+    // Leiste: Favoriten, Zuletzt, Wii, N64, NES → NES ist Index 4
+    for (int i = 0; i < 4; ++i) step(s, action(Action::NextConsole));
+    REQUIRE(s.barIndex() == 4);
+    step(s, action(Action::Right));
+    step(s, action(Action::Right));  // Fokus auf "Gamma" (Index 2)
+    REQUIRE(s.focusIndex() == 2);
+    s.setLibrary(libOf(kLibB));
+    step(s, InputFrame{});
+    CHECK(s.barIndex() == 3);  // N64 weg: NES rückt auf Index 3
+    CHECK(s.focusIndex() == 1);  // "Gamma" steht in der neuen NES-Liste an Position 1
+    CHECK(std::string(s.infoTitle()) == "Gamma");
+}
+
+TEST_CASE_FIXTURE(Fixture, "fokussiertes Spiel entfernt → Fokus 0") {
+    MainScene s(libOf(kLibA));
+    for (int i = 0; i < 4; ++i) step(s, action(Action::NextConsole));
+    REQUIRE(std::string(s.infoTitle()) == "Alpha");
+    s.setLibrary(libOf(kLibB));
+    step(s, InputFrame{});
+    CHECK(s.focusIndex() == 0);
+    CHECK(std::string(s.infoTitle()) == "Beta");
+}
+
+TEST_CASE_FIXTURE(Fixture, "Konsole verschwindet → Leiste fällt auf den Eintrag an gleicher Position bzw. den letzten") {
+    MainScene s(libOf(kLibA));
+    step(s, action(Action::NextConsole));  // Start bei Wii (erster Eintrag mit Spielen) → N64
+    REQUIRE(s.barIndex() == 3);
+    s.setLibrary(libOf(kLibB));
+    step(s, InputFrame{});
+    CHECK(s.barIndex() == 3);  // jetzt NES an derselben Position
+    CHECK(s.focusIndex() == 0);
+    for (int i = 0; i < 5; ++i) step(s, action(Action::NextConsole));
+    s.setLibrary(libOf(std::span<const Game>(kLibB, 1)));  // nur noch NES
+    step(s, InputFrame{});
+    CHECK(s.barIndex() == 2);  // letzter Eintrag
+}
+
+TEST_CASE_FIXTURE(Fixture, "setLibrary mit leerer Bibliothek → nur Favoriten/Zuletzt, kein Absturz") {
+    MainScene s(libOf(kLibA));
+    for (int i = 0; i < 4; ++i) step(s, action(Action::NextConsole));
+    s.setLibrary(Library{});
+    step(s, action(Action::Right));
+    s.draw(ctx, dl);
+    CHECK(s.barIndex() <= 1);
+    CHECK(s.focusIndex() == -1);
+    CHECK(dl.droppedQuads() == 0);
+}

@@ -62,6 +62,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/crash.cpp
         src/platform/storage.cpp
         src/platform/std_fs.cpp
+        src/platform/scan_worker.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp
     )

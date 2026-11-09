@@ -14,6 +14,7 @@ struct SelftestView {
     const ui::MainScene& main;
     const ui::SceneStack& scenes;
     const ui::DebugOverlay& debug;
+    bool scanRunning;  // Hintergrund-Scan aktiv (darf im Leerlauf-Fenster nicht laufen)
 };
 
 ui::RawInput selftestInput(int frame, const SelftestView& v);

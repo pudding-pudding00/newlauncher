@@ -1,6 +1,7 @@
 #pragma once
 // Hauptbildschirm (Spec 3.1, Layout A): Konsolenleiste oben, Cover-Raster, Infoleiste unten.
 
+#include <string>
 #include <vector>
 
 #include "core/easing.hpp"
@@ -16,6 +17,9 @@ public:
     void update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) override;
     void draw(const UiContext& ctx, gfx::DrawList& dl) override;
     void setHomeMenu(Scene* home) { home_ = home; }
+    // Neue Bibliothek (z. B. nach dem Hintergrund-Scan): Leisten-Eintrag und Fokus bleiben per
+    // Art/Konsole bzw. Spiel-Schlüssel erhalten, wenn möglich.
+    void setLibrary(const Library& lib);
 
     // Für Tests und Selbsttest
     int barIndex() const { return barIndex_; }

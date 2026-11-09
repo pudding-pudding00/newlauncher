@@ -57,6 +57,36 @@ MainScene::MainScene(const Library& lib) : lib_(lib), scratch_(lib.games.size())
     selectBar(start, 640.0f, 480.0f);
 }
 
+void MainScene::setLibrary(const Library& lib) {
+    // Bisherigen Leisten-Eintrag und das fokussierte Spiel merken (Schlüssel als Kopie: die alten
+    // Game-Zeiger werden mit der neuen Bibliothek ungültig).
+    const BarEntry oldEntry = bar_[barIndex_];
+    const int oldIndex = barIndex_;
+    const Game* focused = focusedGame();
+    const std::string focusKey = focused != nullptr ? focused->key : "";
+
+    lib_ = lib;
+    scratch_.assign(lib_.games.size(), nullptr);
+    barCount_ = buildBarEntries(lib_, bar_);
+    int index = -1;
+    for (int i = 0; i < barCount_ && index < 0; ++i) {
+        const bool sameKind = bar_[i].kind == oldEntry.kind;
+        if (sameKind && (oldEntry.kind != BarKind::ConsoleEntry || bar_[i].console == oldEntry.console)) index = i;
+    }
+    if (index < 0) index = oldIndex < barCount_ ? oldIndex : barCount_ - 1;
+    selectBar(index, gridWidth_, gridHeight_);
+    for (std::size_t i = 0; i < games_.size() && !focusKey.empty(); ++i) {
+        if (focusKey == games_[i]->key) {
+            grid_.setFocus(static_cast<int>(i));
+            scroll_.snap(grid_.targetScroll());
+            break;
+        }
+    }
+    infoGame_ = nullptr;  // Infozeile neu aufbauen: alte Zeiger sind ungültig
+    infoBuf_[0] = '\0';
+    hoverBar_ = -1;
+}
+
 void MainScene::selectBar(int index, float width, float height) {
     if (index < 0 || index >= barCount_) return;
     barIndex_ = index;

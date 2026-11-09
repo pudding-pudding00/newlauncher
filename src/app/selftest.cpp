@@ -46,11 +46,11 @@ ui::RawInput press(u32 bits) {
 
 ui::RawInput selftestInput(int frame, const SelftestView& v) {
     switch (frame) {
-        case 30: case 32: return press(B::Plus);      // Favoriten → Zuletzt → Wii
+        case 30: case 32: return press(B::Plus);      // Favoriten → Zuletzt → Wii (2 Spiele)
         case 34: return press(B::DRight);
         case 36: return press(B::DDown);
-        case 40: {                                     // Zeiger auf Kachel 2
-            const gfx::Rect r = v.main.grid().tileRect(2, 0);
+        case 40: {                                     // Zeiger auf Kachel 0
+            const gfx::Rect r = v.main.grid().tileRect(0, 0);
             ui::RawInput in;
             in.pointerValid = true;
             in.pointerX = r.x + r.w / 2;
@@ -70,12 +70,15 @@ void selftestAfterFrame(int frame, const SelftestView& v) {
             NL_ASSERT(v.main.barIndex() == 2);
             NL_ASSERT(v.main.focusIndex() == 0);
             break;
-        case 37: NL_ASSERT(v.main.focusIndex() == 7); break;
-        case 41: NL_ASSERT(v.main.focusIndex() == 2); break;
+        case 37: NL_ASSERT(v.main.focusIndex() == 1); break;  // Rechts → 1, Runter bleibt (nur eine Zeile)
+        case 41: NL_ASSERT(v.main.focusIndex() == 0); break;
         case 46: NL_ASSERT(v.scenes.depth() == 2); break;
         case 80: NL_ASSERT(v.scenes.depth() == 1); break;
         case 86: NL_ASSERT(v.debug.visible()); break;
-        case kIdleStart: g_allocs = 0; break;
+        case kIdleStart:
+            NL_ASSERT(!v.scanRunning);
+            g_allocs = 0;
+            break;
         case kIdleEnd: {
             const unsigned allocs = g_allocs;
             log::line("NL_ALLOC_IDLE %u", allocs);

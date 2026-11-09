@@ -14,6 +14,12 @@ inline constexpr const char* kStrHomeCloses = "HOME schließt";
 inline constexpr const char* kStrNoGames = "Keine Spiele";
 inline constexpr const char* kStrAppearance = "Darstellung";
 inline constexpr const char* kStrPlayer = "Spieler";
+inline constexpr const char* kStrWaitUsb = "Warte auf USB …";
+inline constexpr const char* kStrNoUsb = "Kein USB-Gerät gefunden";
+inline constexpr const char* kStrRetry = "Erneut versuchen";
+inline constexpr const char* kStrUseSd = "SD verwenden";
+inline constexpr const char* kStrScanning = "Bibliothek wird durchsucht …";
+inline constexpr const char* kStrFiles = "Dateien";
 
 inline constexpr const char* kStrWeekdays[7] = {"Montag",  "Dienstag", "Mittwoch", "Donnerstag",
                                                  "Freitag", "Samstag",  "Sonntag"};

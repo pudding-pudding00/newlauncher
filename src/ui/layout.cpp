@@ -32,22 +32,25 @@ int buildBarEntries(const Library& lib, std::span<BarEntry> out) {
     auto add = [&](BarEntry e) {
         if (n < static_cast<int>(out.size())) out[n++] = e;
     };
-    add(BarEntry{BarKind::Favorites, Console::Nes, 0, false});
-    add(BarEntry{BarKind::Recent, Console::Nes, 0, false});
-    int lastGen = -1;
-    for (int c = 0; c < kConsoleCount; ++c) {
-        const Console console = static_cast<Console>(c);
-        bool any = false;
-        for (const Game& g : lib.games) {
-            if (g.console == console) {
-                any = true;
-                break;
+    add(BarEntry{BarKind::Favorites, Console::Nes, 0});
+    add(BarEntry{BarKind::Recent, Console::Nes, 0});
+    // Die Konsolentabelle ist nach Generation aufsteigend sortiert, Heimkonsole vor Handheld.
+    // Generationen werden rückwärts durchlaufen, innerhalb einer Generation vorwärts.
+    const int lastGen = consoleInfo(static_cast<Console>(kConsoleCount - 1)).generation;
+    const int firstGen = consoleInfo(static_cast<Console>(0)).generation;
+    for (int gen = lastGen; gen >= firstGen; --gen) {
+        for (int c = 0; c < kConsoleCount; ++c) {
+            const Console console = static_cast<Console>(c);
+            if (consoleInfo(console).generation != gen) continue;
+            bool any = false;
+            for (const Game& g : lib.games) {
+                if (g.console == console) {
+                    any = true;
+                    break;
+                }
             }
+            if (any) add(BarEntry{BarKind::ConsoleEntry, console, static_cast<u8>(gen)});
         }
-        if (!any) continue;
-        const u8 gen = consoleInfo(console).generation;
-        add(BarEntry{BarKind::ConsoleEntry, console, gen, gen != lastGen});
-        lastGen = gen;
     }
     return n;
 }

@@ -31,22 +31,20 @@ TEST_CASE("Testbibliothek hat die geplanten Mengen") {
     CHECK(lib.recent.empty());
 }
 
-TEST_CASE("buildBarEntries: Favoriten, Zuletzt, dann Konsolen nach Generation") {
+TEST_CASE("buildBarEntries: Favoriten, Zuletzt, dann Konsolen von neu nach alt") {
     const Library lib = testLibrary();
     BarEntry e[kMaxBarEntries];
     const int n = buildBarEntries(lib, e);
     REQUIRE(n == 9);
     CHECK(e[0].kind == BarKind::Favorites);
     CHECK(e[1].kind == BarKind::Recent);
-    const Console order[] = {Console::Nes, Console::Snes, Console::Gb, Console::N64,
-                             Console::Gc, Console::Gba, Console::Wii};
-    const bool group[] = {true, true, false, true, true, false, true};
+    // Generation absteigend, innerhalb einer Generation Heimkonsole vor Handheld; GBC hat keine Spiele.
+    const Console order[] = {Console::Wii, Console::Gc, Console::Gba, Console::N64,
+                             Console::Snes, Console::Gb, Console::Nes};
     for (int i = 0; i < 7; ++i) {
         CHECK(e[2 + i].kind == BarKind::ConsoleEntry);
         CHECK(e[2 + i].console == order[i]);
-        CHECK(e[2 + i].groupStart == group[i]);
     }
-    CHECK_FALSE(e[0].groupStart);
 }
 
 TEST_CASE("buildBarEntries bei leerer Bibliothek: nur Favoriten und Zuletzt") {
@@ -57,12 +55,12 @@ TEST_CASE("buildBarEntries bei leerer Bibliothek: nur Favoriten und Zuletzt") {
 TEST_CASE("gamesFor liefert die Spiele einer Konsole bzw. Favoriten/Zuletzt") {
     const Library lib = testLibrary();
     std::vector<const Game*> scratch(lib.games.size());
-    BarEntry n64{BarKind::ConsoleEntry, Console::N64, 5, true};
+    BarEntry n64{BarKind::ConsoleEntry, Console::N64, 5};
     auto games = gamesFor(lib, n64, scratch);
     CHECK(games.size() == 20);
     for (const Game* g : games) CHECK(g->console == Console::N64);
-    CHECK(gamesFor(lib, BarEntry{BarKind::Favorites, Console::Nes, 0, false}, scratch).size() == 3);
-    CHECK(gamesFor(lib, BarEntry{BarKind::Recent, Console::Nes, 0, false}, scratch).empty());
+    CHECK(gamesFor(lib, BarEntry{BarKind::Favorites, Console::Nes, 0}, scratch).size() == 3);
+    CHECK(gamesFor(lib, BarEntry{BarKind::Recent, Console::Nes, 0}, scratch).empty());
 }
 
 namespace {

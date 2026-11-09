@@ -20,11 +20,11 @@ struct BarEntry {
     BarKind kind;
     Console console;
     u8 generation;
-    bool groupStart;  // Trenner + „Gen n" davor
 };
 inline constexpr int kMaxBarEntries = 2 + kConsoleCount;
 
-// Favoriten, Zuletzt, dann Konsolen mit mindestens einem Spiel (Konsolen ohne Spiele ausgeblendet).
+// Favoriten, Zuletzt, dann Konsolen mit mindestens einem Spiel von neu nach alt (Generation
+// absteigend, innerhalb einer Generation Heimkonsole vor Handheld). Konsolen ohne Spiele fehlen.
 int buildBarEntries(const Library& lib, std::span<BarEntry> out);
 // scratch muss mindestens lib.games.size() Plätze haben.
 std::span<const Game* const> gamesFor(const Library& lib, const BarEntry& e, std::span<const Game*> scratch);

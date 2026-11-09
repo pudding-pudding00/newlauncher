@@ -5,7 +5,6 @@ namespace nl::ui {
 
 inline constexpr const char* kStrFavorites = "Favoriten";
 inline constexpr const char* kStrRecent = "Zuletzt";
-inline constexpr const char* kStrGeneration = "Gen";
 inline constexpr const char* kStrHomeMenu = "HOME-Menü";
 inline constexpr const char* kStrHomebrewChannel = "Homebrew Channel";
 inline constexpr const char* kStrWiiMenu = "Wii-Menü";

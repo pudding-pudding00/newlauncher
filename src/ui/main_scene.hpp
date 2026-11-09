@@ -43,7 +43,6 @@ private:
     BarEntry bar_[kMaxBarEntries]{};
     int barCount_ = 0, barIndex_ = 0;
     gfx::Rect barRects_[kMaxBarEntries]{};
-    float genLabelX_[kMaxBarEntries]{};
     float barContentW_ = 0.0f;
     std::vector<const Game*> scratch_;
     std::span<const Game* const> games_;

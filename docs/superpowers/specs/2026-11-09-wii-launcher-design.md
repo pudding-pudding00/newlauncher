@@ -72,8 +72,7 @@ Er zeigt Spiele nach Konsolengeneration sortiert und startet sie je nach Konsole
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ ★Favoriten  ◷Zuletzt | Gen 3 NES | Gen 4 SNES GB | Gen 5 [N64] GBC │  ← Konsolen-Leiste
-│                       | Gen 6 GC GBA | Gen 7 Wii                    │
+│ ★Favoriten  ◷Zuletzt  Wii  GC  GBA  [N64]  GBC  SNES  GB  NES      │  ← Konsolen-Leiste
 ├──────────────────────────────────────────────────────────────────┤
 │  ┌───┐ ┌───┐ ┌───┐ ┌───┐ ┌───┐ ┌───┐                              │
 │  │   │ │▓▓▓│ │   │ │   │ │   │ │   │   Cover-Raster, 6 Spalten     │
@@ -86,7 +85,7 @@ Er zeigt Spiele nach Konsolengeneration sortiert und startet sie je nach Konsole
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-- **Konsolen-Leiste:** Einträge „Favoriten“ und „Zuletzt“, danach Konsolen gruppiert nach Generation mit Trennern. Konsolen ohne Spiele werden ausgeblendet.
+- **Konsolen-Leiste:** Einträge „Favoriten“ und „Zuletzt“, danach nur die Konsolennamen von neu nach alt (Generation absteigend, innerhalb einer Generation Heimkonsole vor Handheld), ohne Generationsbeschriftung. Konsolen ohne Spiele werden ausgeblendet.
 - **Cover-Raster:** 6 Spalten, vertikal scrollend, Fokus mit Akzentrahmen und leichter Vergrößerung (Animation).
 - **Info-Leiste (unten):** links runder HOME-Knopf, Mitte Titel und Infozeile des fokussierten Spiels (Konsole · Jahr · Spieler · ermittelte Startmethode), rechts Uhrzeit und runder Einstellungs-Knopf.
 - Ohne Fokus auf einem Spiel zeigt die Mitte der Leiste das Datum.

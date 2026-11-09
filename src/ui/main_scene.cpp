@@ -20,8 +20,6 @@ constexpr float kToastMs = 2000.0f;
 constexpr float kAnimMs = 200.0f;
 constexpr int kTitleLines = 3;
 
-const char* const kGenLabels[8] = {"", "", "", "Gen 3", "Gen 4", "Gen 5", "Gen 6", "Gen 7"};
-
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
 
 Rect grow(Rect r, float d) { return Rect{r.x - d, r.y - d, r.w + 2 * d, r.h + 2 * d}; }
@@ -100,15 +98,8 @@ Rect MainScene::barRect(int index) const {
 
 void MainScene::layoutBar(const UiContext& ctx) {
     const gfx::FontFace& pill = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
-    const gfx::FontFace& small = ctx.fonts->face(FontSize::Small, FontWeight::Regular);
     float x = kBarPadX;
     for (int i = 0; i < barCount_; ++i) {
-        genLabelX_[i] = -1.0f;
-        if (bar_[i].groupStart) {
-            x += 12.0f;  // Platz für den Trenner
-            genLabelX_[i] = x;
-            x += gfx::measureText(small, kGenLabels[bar_[i].generation < 8 ? bar_[i].generation : 0]) + 8.0f;
-        }
         const float w = gfx::measureText(pill, barLabel(bar_[i])) + 24.0f;
         barRects_[i] = Rect{x, kPillY, w, kPillH};
         x += w + 6.0f;
@@ -268,16 +259,9 @@ void MainScene::drawTopBar(const UiContext& ctx, gfx::DrawList& dl) const {
     gfx::fillRect(dl, s, Rect{0, barH - 1, ctx.width, 1}, t.barBorder);
 
     const gfx::FontFace& pill = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
-    const gfx::FontFace& small = ctx.fonts->face(FontSize::Small, FontWeight::Regular);
-    const float off = barScroll_.value();
     for (int i = 0; i < barCount_; ++i) {
         const Rect r = barRect(i);
         if (r.x > ctx.width || r.x + r.w < 0) continue;
-        if (genLabelX_[i] >= 0.0f) {
-            const float gx = genLabelX_[i] - off;
-            gfx::fillRect(dl, s, Rect{gx - 7, 16, 1, 24}, t.barBorder);
-            gfx::drawText(dl, small, gx, 32, kGenLabels[bar_[i].generation < 8 ? bar_[i].generation : 0], t.textMuted);
-        }
         Color text = t.text2;
         if (i == barIndex_) {
             gfx::roundRect(dl, s, r, kPillH / 2, t.accent);

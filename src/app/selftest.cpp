@@ -46,7 +46,7 @@ ui::RawInput press(u32 bits) {
 
 ui::RawInput selftestInput(int frame, const SelftestView& v) {
     switch (frame) {
-        case 30: case 32: return press(B::Plus);      // Favoriten → Zuletzt → NES
+        case 30: case 32: return press(B::Plus);      // Favoriten → Zuletzt → Wii
         case 34: return press(B::DRight);
         case 36: return press(B::DDown);
         case 40: {                                     // Zeiger auf Kachel 2

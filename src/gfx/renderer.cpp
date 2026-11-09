@@ -18,6 +18,7 @@ Result<void> Renderer::init(platform::Video& video) {
     video_ = &video;
     GXRModeObj* mode = video.mode();
     logicalWidth_ = video.widescreen() ? 854.0f : 640.0f;
+    pixelScaleX_ = static_cast<float>(mode->fbWidth) / logicalWidth_;
 
     fifo_ = std::aligned_alloc(32, kFifoSize);
     if (fifo_ == nullptr) return Result<void>::err(Error{ErrorCode::InvalidData, "kein Speicher für die GX-FIFO"});

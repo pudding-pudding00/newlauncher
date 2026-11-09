@@ -41,10 +41,13 @@ Error ftError(const char* what, FT_Error e) {
 }
 
 // Rendert alle Glyphen einer Größe; liefert false, wenn der Atlas voll ist.
-Result<void> renderFace(FT_Face face, int px, ShelfPacker& packer, u8* linear, FontFace& out) {
+Result<void> renderFace(FT_Face face, int px, float sx, ShelfPacker& packer, u8* linear, FontFace& out) {
     if (FT_Error e = FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(px))) {
         return Result<void>::err(ftError("Schriftgröße", e));
     }
+    FT_Matrix m{static_cast<FT_Fixed>(sx * 65536.0f), 0, 0, 0x10000};
+    FT_Set_Transform(face, &m, nullptr);
+    out.pixelScaleX = sx;
     out.ascent = static_cast<float>(face->size->metrics.ascender >> 6);
     out.descent = static_cast<float>(-(face->size->metrics.descender >> 6));
     out.lineHeight = static_cast<float>(face->size->metrics.height >> 6);
@@ -57,8 +60,9 @@ Result<void> renderFace(FT_Face face, int px, ShelfPacker& packer, u8* linear, F
         }
         const FT_GlyphSlot slot = face->glyph;
         const FT_Bitmap& bm = slot->bitmap;
-        g.advance = static_cast<float>(slot->advance.x >> 6);
-        g.bearingX = static_cast<float>(slot->bitmap_left);
+        // Vorschub in ganzen Bildpunkten: der Stift bleibt so auf dem Pixelraster.
+        g.advance = static_cast<float>((slot->advance.x + 32) >> 6) / sx;
+        g.bearingX = static_cast<float>(slot->bitmap_left) / sx;
         g.bearingY = static_cast<float>(slot->bitmap_top);
         if (bm.width == 0 || bm.rows == 0) continue;
 
@@ -69,14 +73,14 @@ Result<void> renderFace(FT_Face face, int px, ShelfPacker& packer, u8* linear, F
         for (unsigned row = 0; row < bm.rows; ++row) {
             std::memcpy(linear + (y + row) * kAtlasWidth + x, bm.buffer + row * bm.pitch, bm.width);
         }
-        g.w = static_cast<float>(bm.width);
+        g.w = static_cast<float>(bm.width) / sx;
         g.h = static_cast<float>(bm.rows);
         g.uv = uvOf(x, y, static_cast<u16>(bm.width), static_cast<u16>(bm.rows));
     }
     return Result<void>::ok();
 }
 
-Result<void> fillAtlas(UiAtlas& atlas, u8* linear) {
+Result<void> fillAtlas(UiAtlas& atlas, u8* linear, float sx) {
     ShelfPacker packer(kAtlasWidth, kAtlasHeight);
     u16 x = 0, y = 0;
 
@@ -104,7 +108,7 @@ Result<void> fillAtlas(UiAtlas& atlas, u8* linear) {
             break;
         }
         for (int s = 0; s < 3 && result.isOk(); ++s) {
-            result = renderFace(face, kFontSizePx[s], packer, linear, atlas.fonts.faces[s][w]);
+            result = renderFace(face, kFontSizePx[s], sx, packer, linear, atlas.fonts.faces[s][w]);
         }
         FT_Done_Face(face);
     }
@@ -116,7 +120,8 @@ Result<void> fillAtlas(UiAtlas& atlas, u8* linear) {
 
 UiAtlas::~UiAtlas() { std::free(pixelsI8); }
 
-Result<std::unique_ptr<UiAtlas>> buildUiAtlas() {
+Result<std::unique_ptr<UiAtlas>> buildUiAtlas(float pixelScaleX) {
+    const float sx = pixelScaleX > 0.0f ? pixelScaleX : 1.0f;
     using R = Result<std::unique_ptr<UiAtlas>>;
     constexpr std::size_t kBytes = static_cast<std::size_t>(kAtlasWidth) * kAtlasHeight;
 
@@ -128,7 +133,7 @@ Result<std::unique_ptr<UiAtlas>> buildUiAtlas() {
         return R::err(Error{ErrorCode::InvalidData, "kein Speicher für den UI-Atlas"});
     }
 
-    Result<void> filled = fillAtlas(*atlas, linear);
+    Result<void> filled = fillAtlas(*atlas, linear, sx);
     if (filled.isOk()) {
         linearToI8(linear, kAtlasWidth, kAtlasHeight, atlas->pixelsI8);
         DCFlushRange(atlas->pixelsI8, kBytes);

@@ -24,6 +24,8 @@ struct UiAtlas {
 };
 
 // Liegt auf dem Heap: FontSet ist ~46 KB groß und gehört nicht auf den Stack.
-Result<std::unique_ptr<UiAtlas>> buildUiAtlas();
+// pixelScaleX = echte Bildpunkte je logischem Pixel in x (4:3: 1, 16:9: 640/854). Glyphen werden
+// in Bildpunkten gerendert, damit dünne Striche nicht zwischen zwei Pixeln verblassen.
+Result<std::unique_ptr<UiAtlas>> buildUiAtlas(float pixelScaleX);
 
 }  // namespace nl::gfx

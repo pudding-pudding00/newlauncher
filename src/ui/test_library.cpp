@@ -1,0 +1,91 @@
+#include "ui/test_library.hpp"
+
+namespace nl::ui {
+
+namespace {
+using C = Console;
+
+// Nach Konsole, dann Titel sortiert. Nur Metadaten, keine Spieldateien.
+const Game kGames[] = {
+    {C::Nes, "nes-balloon", "Balloon Fight", 1985, 2},
+    {C::Nes, "nes-dk", "Donkey Kong", 1983, 2},
+    {C::Nes, "nes-excitebike", "Excitebike", 1985, 1},
+    {C::Nes, "nes-kirby", "Kirby's Adventure", 1993, 1},
+    {C::Nes, "nes-metroid", "Metroid", 1987, 1},
+    {C::Nes, "nes-punchout", "Punch-Out!!", 1987, 1},
+    {C::Nes, "nes-smb3", "Super Mario Bros. 3", 1990, 2},
+    {C::Nes, "nes-zelda", "The Legend of Zelda", 1987, 1},
+    {C::Snes, "snes-dkc", "Donkey Kong Country", 1994, 2},
+    {C::Snes, "snes-earthbound", "EarthBound", 1995, 1},
+    {C::Snes, "snes-fzero", "F-Zero", 1991, 1},
+    {C::Snes, "snes-kirby", "Kirby Super Star", 1997, 2},
+    {C::Snes, "snes-starfox", "Star Fox", 1993, 1},
+    {C::Snes, "snes-mk", "Super Mario Kart", 1992, 2},
+    {C::Snes, "snes-smw", "Super Mario World", 1992, 2},
+    {C::Snes, "snes-metroid", "Super Metroid", 1994, 1},
+    {C::Snes, "snes-alttp", "The Legend of Zelda: A Link to the Past", 1992, 1},
+    {C::Snes, "snes-yoshi", "Yoshi's Island", 1995, 1},
+    {C::Gb, "gb-kirby", "Kirby's Dream Land", 1992, 1},
+    {C::Gb, "gb-la", "Link's Awakening", 1993, 1},
+    {C::Gb, "gb-ml2", "Metroid II: Return of Samus", 1992, 1},
+    {C::Gb, "gb-sml", "Super Mario Land", 1990, 1},
+    {C::Gb, "gb-sml2", "Super Mario Land 2: 6 Golden Coins", 1992, 1},
+    {C::Gb, "gb-tetris", "Tetris", 1989, 2},
+    {C::N64, "n64-banjo", "Banjo-Kazooie", 1998, 1},
+    {C::N64, "n64-blast", "Blast Corps", 1997, 1},
+    {C::N64, "n64-dkr", "Diddy Kong Racing", 1997, 4},
+    {C::N64, "n64-dk64", "Donkey Kong 64", 1999, 4},
+    {C::N64, "n64-fzx", "F-Zero X", 1998, 4},
+    {C::N64, "n64-ge", "GoldenEye 007", 1997, 4},
+    {C::N64, "n64-kirby", "Kirby 64: The Crystal Shards", 2001, 4},
+    {C::N64, "n64-mk64", "Mario Kart 64", 1997, 4},
+    {C::N64, "n64-golf", "Mario Golf", 1999, 4},
+    {C::N64, "n64-tennis", "Mario Tennis", 2000, 4},
+    {C::N64, "n64-party", "Mario Party", 1999, 4},
+    {C::N64, "n64-pd", "Perfect Dark", 2000, 4},
+    {C::N64, "n64-snap", "Pokémon Snap", 1999, 1},
+    {C::N64, "n64-stadium", "Pokémon Stadium", 2000, 4},
+    {C::N64, "n64-sf64", "Star Fox 64", 1997, 4},
+    {C::N64, "n64-sm64", "Super Mario 64", 1996, 1},
+    {C::N64, "n64-ssb", "Super Smash Bros.", 1999, 4},
+    {C::N64, "n64-mm", "The Legend of Zelda: Majora's Mask", 2000, 1},
+    {C::N64, "n64-oot", "The Legend of Zelda: Ocarina of Time", 1998, 1},
+    {C::N64, "n64-wave", "Wave Race 64", 1996, 2},
+    {C::Gc, "gc-f-zero", "F-Zero GX", 2003, 4},
+    {C::Gc, "gc-luigi", "Luigi's Mansion", 2001, 1},
+    {C::Gc, "gc-mkdd", "Mario Kart: Double Dash!!", 2003, 4},
+    {C::Gc, "gc-metroid", "Metroid Prime", 2002, 1},
+    {C::Gc, "gc-pikmin", "Pikmin", 2001, 1},
+    {C::Gc, "gc-ssbm", "Super Smash Bros. Melee", 2001, 4},
+    {C::Gc, "gc-sms", "Super Mario Sunshine", 2002, 1},
+    {C::Gc, "gc-tww", "The Legend of Zelda: The Wind Waker", 2003, 1},
+    {C::Gc, "gc-ttyd", "Paper Mario: Die Legende vom Äonentor", 2004, 1},
+    {C::Gba, "gba-advance-wars", "Advance Wars", 2001, 4},
+    {C::Gba, "gba-fe", "Fire Emblem", 2003, 1},
+    {C::Gba, "gba-golden-sun", "Golden Sun", 2001, 1},
+    {C::Gba, "gba-mf", "Metroid Fusion", 2002, 1},
+    {C::Gba, "gba-mkss", "Mario Kart: Super Circuit", 2001, 4},
+    {C::Gba, "gba-minish", "The Legend of Zelda: The Minish Cap", 2004, 1},
+    {C::Gba, "gba-warioware", "WarioWare, Inc.", 2003, 1},
+    {C::Wii, "wii-dkcr", "Donkey Kong Country Returns", 2010, 2},
+    {C::Wii, "wii-excite", "Excite Truck", 2006, 2},
+    {C::Wii, "wii-kirby", "Kirby's Adventure Wii", 2011, 4},
+    {C::Wii, "wii-mkwii", "Mario Kart Wii", 2008, 4},
+    {C::Wii, "wii-mp3", "Metroid Prime 3: Corruption", 2007, 1},
+    {C::Wii, "wii-nsmbw", "New Super Mario Bros. Wii", 2009, 4},
+    {C::Wii, "wii-punchout", "Punch-Out!!", 2009, 2},
+    {C::Wii, "wii-sports", "Wii Sports", 2006, 4},
+    {C::Wii, "wii-sports-resort", "Wii Sports Resort", 2009, 4},
+    {C::Wii, "wii-smg", "Super Mario Galaxy", 2007, 1},
+    {C::Wii, "wii-smg2", "Super Mario Galaxy 2", 2010, 2},
+    {C::Wii, "wii-ssbb", "Super Smash Bros. Brawl", 2008, 4},
+    {C::Wii, "wii-tp", "The Legend of Zelda: Twilight Princess", 2006, 1},
+    {C::Wii, "wii-xeno", "Xenoblade Chronicles", 2011, 1},
+};
+
+const Game* const kFavorites[] = {&kGames[42], &kGames[69], &kGames[6]};
+}  // namespace
+
+Library testLibrary() { return Library{kGames, kFavorites, {}}; }
+
+}  // namespace nl::ui

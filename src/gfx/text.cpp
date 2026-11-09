@@ -5,9 +5,15 @@ namespace nl::gfx {
 namespace {
 constexpr u32 kEllipsis = 0x2026;
 
-void drawGlyph(DrawList& dl, const Glyph& g, float penX, float baselineY, Color c) {
+float roundf(float v) { return static_cast<float>(static_cast<int>(v < 0.0f ? v - 0.5f : v + 0.5f)); }
+
+// Rastet die linke Glyphkante auf einen ganzen Bildpunkt ein: Der Atlas ist 1:1 zu Bildpunkten
+// gerendert, so bleiben dünne Striche scharf statt zwischen zwei Pixeln zu verblassen.
+void drawGlyph(DrawList& dl, const FontFace& f, const Glyph& g, float penX, float baselineY, Color c) {
     if (g.w <= 0.0f || g.h <= 0.0f) return;
-    dl.quad(0, Rect{penX + g.bearingX, baselineY - g.bearingY, g.w, g.h}, g.uv, c);
+    float x = penX + g.bearingX;
+    if (f.pixelScaleX > 0.0f) x = roundf(x * f.pixelScaleX) / f.pixelScaleX;
+    dl.quad(0, Rect{x, roundf(baselineY - g.bearingY), g.w, g.h}, g.uv, c);
 }
 
 std::size_t trimEnd(std::string_view s, std::size_t start, std::size_t end) {
@@ -25,7 +31,7 @@ float measureText(const FontFace& f, std::string_view s) {
 void drawText(DrawList& dl, const FontFace& f, float x, float baselineY, std::string_view s, Color c) {
     for (std::size_t pos = 0; pos < s.size();) {
         const Glyph& g = f.glyph(decodeUtf8(s, pos));
-        drawGlyph(dl, g, x, baselineY, c);
+        drawGlyph(dl, f, g, x, baselineY, c);
         x += g.advance;
     }
 }
@@ -44,10 +50,10 @@ void drawTextEllipsis(DrawList& dl, const FontFace& f, float x, float baselineY,
     for (std::size_t pos = 0; pos < s.size();) {
         const Glyph& g = f.glyph(decodeUtf8(s, pos));
         if (pen - x + g.advance > budget) break;
-        drawGlyph(dl, g, pen, baselineY, c);
+        drawGlyph(dl, f, g, pen, baselineY, c);
         pen += g.advance;
     }
-    drawGlyph(dl, dots, pen, baselineY, c);
+    drawGlyph(dl, f, dots, pen, baselineY, c);
 }
 
 int wrapText(const FontFace& f, std::string_view s, float maxWidth, std::span<Line> out) {

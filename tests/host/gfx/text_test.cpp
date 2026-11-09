@@ -30,6 +30,17 @@ TEST_CASE("drawText erzeugt ein Quad pro sichtbarem Glyph, keins für Leerzeiche
     CHECK(dl.vertices()[8].x == doctest::Approx(36));
 }
 
+TEST_CASE("drawText rastet Glyphen auf ganze Bildpunkte ein, wenn pixelScaleX gesetzt ist") {
+    FontFace f = test::fakeFace(10);
+    f.pixelScaleX = 0.75f;  // 16:9: 854 logische auf 640 echte Pixel
+    DrawList dl(64, 4);
+    drawText(dl, f, 5.3f, 100, "AB", kC);
+    for (int q = 0; q < 2; ++q) {
+        const float px = dl.vertices()[q * 4].x * 0.75f;
+        CHECK(px == doctest::Approx(static_cast<float>(static_cast<int>(px + 0.5f))).epsilon(0.0001));
+    }
+}
+
 TEST_CASE("drawTextEllipsis lässt passenden Text unverändert") {
     const FontFace f = test::fakeFace(10);
     DrawList dl(64, 4);

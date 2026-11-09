@@ -26,6 +26,8 @@ struct Glyph {
 
 struct FontFace {
     float ascent, descent, lineHeight;
+    // Echte Bildpunkte je logischem Pixel in x (16:9: 640/854). 0 = Glyphen nicht einrasten.
+    float pixelScaleX = 0.0f;
     Glyph glyphs[kGlyphCount];
 
     const Glyph& glyph(u32 codepoint) const;

@@ -1,20 +1,38 @@
-// M1-Demo (Task 6): Atlas, Formen, Text und Eingabe-Aktionen.
+// Hauptschleife (M1): Eingabe → Szenenstapel → DrawList → GX.
 
 #include <gccore.h>
-#include <wiiuse/wpad.h>
 
 #include <cstdlib>
+#include <ctime>
 
 #include "core/theme.hpp"
 #include "gfx/draw_list.hpp"
 #include "gfx/font_loader.hpp"
 #include "gfx/renderer.hpp"
-#include "gfx/shapes.hpp"
-#include "gfx/text.hpp"
 #include "platform/log.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_input.hpp"
-#include "ui/input.hpp"
+#include "ui/main_scene.hpp"
+#include "ui/scene.hpp"
+#include "ui/test_library.hpp"
+
+namespace {
+
+constexpr float kFrameMs = 1000.0f / 60.0f;
+constexpr int kDarkFrom = 20 * 60, kDarkTo = 7 * 60;  // Standard bis zur Konfiguration in M2
+
+void fillClock(nl::ui::UiContext& ctx) {
+    const std::time_t now = std::time(nullptr);
+    const std::tm* t = std::localtime(&now);
+    if (t == nullptr) return;
+    ctx.minuteOfDay = t->tm_hour * 60 + t->tm_min;
+    ctx.day = t->tm_mday;
+    ctx.month = t->tm_mon + 1;
+    ctx.year = t->tm_year + 1900;
+    ctx.weekday = (t->tm_wday + 6) % 7;  // tm: 0 = Sonntag → 0 = Montag
+}
+
+}  // namespace
 
 int main(int, char**) {
     nl::log::init();
@@ -27,7 +45,7 @@ int main(int, char**) {
         nl::log::line("NL_ERROR %s", r.error().context.c_str());
         return EXIT_FAILURE;
     }
-    auto atlasResult = nl::gfx::buildUiAtlas();
+    auto atlasResult = nl::gfx::buildUiAtlas(renderer.pixelScaleX());
     if (!atlasResult.isOk()) {
         nl::log::line("NL_ERROR %s", atlasResult.error().context.c_str());
         return EXIT_FAILURE;
@@ -39,38 +57,42 @@ int main(int, char**) {
     nl::platform::WiiInput input;
     input.init(renderer.logicalWidth(), renderer.logicalHeight());
     nl::ui::InputMapper mapper;
-    static const char* const kActionNames[] = {"Up", "Down", "Left", "Right", "Confirm", "Back",
-        "PrevConsole", "NextConsole", "Favorite", "Search", "Home", "DebugToggle"};
-    const char* lastAction = "-";
 
-    using nl::gfx::FontSize;
-    using nl::gfx::FontWeight;
-    const nl::Theme& theme = nl::lightTheme();
-    const nl::gfx::FontSet& fonts = atlas->fonts;
+    nl::ui::UiContext ctx;
+    ctx.width = renderer.logicalWidth();
+    ctx.height = renderer.logicalHeight();
+    ctx.fonts = &atlas->fonts;
+    ctx.shapes = &atlas->shapes;
+    ctx.themeMode = nl::ThemeMode::Auto;
+    fillClock(ctx);
+
+    nl::ThemeState theme;
+    theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, kDarkFrom, kDarkTo), false);
+
+    const nl::ui::Library library = nl::ui::testLibrary();
+    nl::ui::MainScene mainScene(library);
+    nl::ui::SceneStack scenes;
+    scenes.push(&mainScene);
+
     nl::gfx::DrawList dl(4096, 16);
-
     bool readyReported = false;
-    while (true) {
-        const nl::ui::InputFrame in = mapper.update(input.poll(), 1000.0f / 60.0f);
-        for (int a = 0; a < static_cast<int>(nl::ui::Action::Count); ++a)
-            if (in.pressed(static_cast<nl::ui::Action>(a))) lastAction = kActionNames[a];
-        if (in.pressed(nl::ui::Action::Home)) break;
+    bool running = true;
+    while (running) {
+        fillClock(ctx);
+        theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, kDarkFrom, kDarkTo), true);
+        theme.update(kFrameMs);
+        ctx.theme = &theme.current();
+
+        const nl::ui::InputFrame in = mapper.update(input.poll(), kFrameMs);
+        const nl::ui::AppCommand cmd = scenes.update(ctx, in, kFrameMs);
+        if (cmd == nl::ui::AppCommand::CycleTheme) {
+            ctx.themeMode = nl::nextMode(ctx.themeMode);
+            nl::log::line("NL_CMD %s %s", nl::ui::appCommandName(cmd), nl::themeModeName(ctx.themeMode));
+        }
 
         dl.clear();
-        const float w = renderer.logicalWidth();
-        nl::gfx::roundRect(dl, atlas->shapes, nl::gfx::Rect{w / 2 - 150, 140, 300, 200}, 14, theme.tile);
-        nl::gfx::circle(dl, atlas->shapes, w / 2 + 110, 180, 20, theme.accent);
-        nl::gfx::drawText(dl, fonts.face(FontSize::Title, FontWeight::Medium), w / 2 - 130, 200,
-                          "Zäh & flüssig - ÄÖÜß …", theme.text);
-        nl::gfx::drawText(dl, fonts.face(FontSize::Body, FontWeight::Regular), w / 2 - 130, 240,
-                          "The Legend of Zelda: Ocarina of Time", theme.text);
-        nl::gfx::drawText(dl, fonts.face(FontSize::Small, FontWeight::Regular), w / 2 - 130, 270,
-                          "N64 · 1998 · 1 Spieler", theme.text2);
-        nl::gfx::drawText(dl, fonts.face(FontSize::Body, FontWeight::Medium), w / 2 - 130, 310, lastAction,
-                          theme.accentSoftText);
-        if (in.pointerValid) nl::gfx::circle(dl, atlas->shapes, in.pointerX, in.pointerY, 8, theme.accent);
-
-        renderer.beginFrame(theme.bg);
+        scenes.draw(ctx, dl);
+        renderer.beginFrame(ctx.theme->bg);
         renderer.submit(dl);
         renderer.endFrame();
 

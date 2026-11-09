@@ -15,6 +15,7 @@ public:
 
     float logicalWidth() const { return logicalWidth_; }
     float logicalHeight() const { return 480.0f; }
+    float pixelScaleX() const { return pixelScaleX_; }
 
     void beginFrame(Color clear);
     void submit(const DrawList& list);
@@ -27,6 +28,7 @@ private:
     platform::Video* video_ = nullptr;
     void* fifo_ = nullptr;
     float logicalWidth_ = 640.0f;
+    float pixelScaleX_ = 1.0f;
     int next_ = 1;
     bool efbCleared_ = false;
     u32 drawCalls_ = 0, drawCallsLast_ = 0, textureBytes_ = 0;

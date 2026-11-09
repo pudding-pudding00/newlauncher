@@ -100,6 +100,20 @@ TEST_CASE_FIXTURE(Fixture, "Zeiger außerhalb der Kacheln + Confirm: kein Komman
     CHECK_FALSE(r.pop);
 }
 
+TEST_CASE_FIXTURE(Fixture, "ruhender Zeiger neben den Kacheln direkt nach dem Öffnen blockiert Confirm") {
+    HomeMenu m;
+    m.onEnter();
+    const SceneRequests r = step(m, pointer(5, 470, false, kConfirm));
+    CHECK(r.command == AppCommand::None);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Richtungstaste übernimmt trotz ruhendem Zeiger neben den Kacheln") {
+    HomeMenu m;
+    m.onEnter();
+    step(m, pointer(5, 470, false, 1u << static_cast<u32>(Action::Right)));
+    CHECK(step(m, pointer(5, 470, false, kConfirm)).command == AppCommand::WiiMenu);
+}
+
 TEST_CASE_FIXTURE(Fixture, "Zeiger auf Kachel + Confirm löst diese Kachel aus") {
     HomeMenu m;
     m.onEnter();

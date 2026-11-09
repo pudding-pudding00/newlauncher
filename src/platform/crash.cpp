@@ -1,6 +1,7 @@
 #include "platform/crash.hpp"
 
-#include <cstdio>
+#include <cstring>
+#include <sys/iosupport.h>
 
 #include <gccore.h>
 #include <ogc/lwp_watchdog.h>
@@ -42,6 +43,14 @@ u32 readDsisr() {
 
 char g_report[2048];
 
+// Schreibt direkt über das Konsolen-Device statt über stdio: printf könnte beim ersten Aufruf einen
+// Puffer per malloc anlegen – auf einem kaputten Heap (häufigste Absturzursache) hinge der Handler.
+void writeConsole(const char* text) {
+    const devoptab_t* dev = devoptab_list[STD_OUT];
+    if (dev == nullptr || dev->write_r == nullptr) return;
+    dev->write_r(_REENT, nullptr, text, std::strlen(text));
+}
+
 [[noreturn]] void waitAndReturn() {
     const u64 start = gettime();
     while (true) {
@@ -78,8 +87,9 @@ void onException(unsigned exid, PPCContext* ctx) {
     if (fb != nullptr) {
         VIDEO_ClearFrameBuffer(mode, fb, COLOR_BLACK);
         CON_Init(fb, 24, 24, mode->fbWidth - 48, mode->xfbHeight - 48, mode->fbWidth * VI_DISPLAY_PIX_SZ);
-        std::printf("newlauncher ist abgestuerzt.\n\n%s\nRESET oder START: zurueck zum Homebrew Channel\n", g_report);
-        std::fflush(stdout);
+        writeConsole("newlauncher ist abgestuerzt.\n\n");
+        writeConsole(g_report);
+        writeConsole("\nRESET oder START: zurueck zum Homebrew Channel\n");
     }
     waitAndReturn();
 }

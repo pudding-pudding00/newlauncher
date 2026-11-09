@@ -153,6 +153,21 @@ TEST_CASE("Zeiger wird gültig → pointerMoved einmal true; Zittern unter 4 px 
     CHECK(m.update(r, kDt).pointerMoved);
 }
 
+TEST_CASE("IR-Aussetzer an gleicher Stelle gilt nicht als Bewegung") {
+    InputMapper m;
+    RawInput r;
+    r.pointerValid = true;
+    r.pointerX = 100;
+    r.pointerY = 100;
+    CHECK(m.update(r, kDt).pointerMoved);
+    RawInput lost;
+    m.update(lost, kDt);
+    r.pointerX = 101;
+    CHECK_FALSE(m.update(r, kDt).pointerMoved);
+    r.pointerX = 110;
+    CHECK(m.update(r, kDt).pointerMoved);
+}
+
 TEST_CASE("kein Zeiger: pointerValid false, pointerMoved false, Tasten funktionieren") {
     InputMapper m;
     InputFrame f = m.update(held(RawInput::A), kDt);

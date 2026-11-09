@@ -163,6 +163,32 @@ TEST_CASE_FIXTURE(Fixture, "Confirm auf dem Zahnrad liefert CycleTheme und zeigt
     CHECK(std::string(s.infoLineText()).find("Darstellung") == std::string::npos);
 }
 
+TEST_CASE_FIXTURE(Fixture, "ruhender Zeiger auf dem Zahnrad wirkt auch nach einem Frame ohne Eingaben") {
+    const Library lib = testLibrary();
+    MainScene s(lib);
+    const gfx::Rect g = s.gearRect(ctx);
+    step(s, pointer(g.x + g.w / 2, g.y + g.h / 2));
+    step(s, InputFrame{});  // z. B. HOME-Menü lag darüber
+    CHECK(step(s, pointerAction(g.x + g.w / 2, g.y + g.h / 2, Action::Confirm)).command == AppCommand::CycleTheme);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Konsolenleiste nutzt die ganze Breite mit gleichen Abständen") {
+    const Library lib = testLibrary();
+    for (float w : {640.0f, 854.0f}) {
+        ctx.width = w;
+        MainScene s(lib);
+        step(s, InputFrame{});
+        const GridMetrics m = gridMetrics(w);
+        CHECK(s.barRect(0).x == doctest::Approx(m.marginX));
+        const gfx::Rect last = s.barRect(8);
+        CHECK(last.x + last.w == doctest::Approx(w - m.marginX));
+        const float gap0 = s.barRect(1).x - (s.barRect(0).x + s.barRect(0).w);
+        const float gap5 = s.barRect(6).x - (s.barRect(5).x + s.barRect(5).w);
+        CHECK(gap0 == doctest::Approx(gap5));
+        CHECK(gap0 > 6.0f);
+    }
+}
+
 TEST_CASE_FIXTURE(Fixture, "Home fordert push des HOME-Menüs an") {
     const Library lib = testLibrary();
     MainScene s(lib);

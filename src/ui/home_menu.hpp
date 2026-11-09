@@ -22,7 +22,7 @@ private:
     int hitTest(const UiContext& ctx, float x, float y) const;
 
     int focus_ = 0;
-    bool pointerOffTiles_ = false;  // gültiger Zeiger steht neben den Kacheln → Bestätigen ignorieren
+    bool keysSincePointerMove_ = false;  // Richtungstaste nach der letzten Zeigerbewegung
 };
 
 }  // namespace nl::ui

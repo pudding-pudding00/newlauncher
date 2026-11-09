@@ -27,6 +27,7 @@ add_library(nl_core STATIC
     src/ui/main_scene.cpp
     src/ui/home_menu.cpp
     src/ui/debug_overlay.cpp
+    src/ui/pointer_cursor.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 nl_apply_flags(nl_core)

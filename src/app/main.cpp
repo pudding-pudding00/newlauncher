@@ -17,6 +17,7 @@
 #include "ui/debug_overlay.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/main_scene.hpp"
+#include "ui/pointer_cursor.hpp"
 #include "ui/scene.hpp"
 #include "ui/test_library.hpp"
 
@@ -27,7 +28,7 @@
 namespace {
 
 constexpr float kFrameMs = 1000.0f / 60.0f;
-constexpr int kDarkFrom = 20 * 60, kDarkTo = 7 * 60;  // Standard bis zur Konfiguration in M2
+constexpr int kDarkFrom = 19 * 60, kDarkTo = 7 * 60;  // Spec 3.4: Standard 19:00-07:00, einstellbar ab M6
 
 void fillClock(nl::ui::UiContext& ctx) {
     const std::time_t now = std::time(nullptr);
@@ -72,7 +73,7 @@ int main(int, char**) {
     ctx.height = renderer.logicalHeight();
     ctx.fonts = &atlas->fonts;
     ctx.shapes = &atlas->shapes;
-    ctx.themeMode = nl::ThemeMode::Auto;
+    ctx.themeMode = nl::ThemeMode::Light;  // Spec 3.4: Standard Hell
     fillClock(ctx);
 
     nl::ThemeState theme;
@@ -131,6 +132,7 @@ int main(int, char**) {
         scenes.draw(ctx, dl);
         debug.setStats(stats);
         debug.draw(ctx, dl);
+        nl::ui::drawPointerCursor(ctx, dl, in);  // zuletzt: ueber allen Szenen und Overlays
         renderer.beginFrame(ctx.theme->bg);
         renderer.submit(dl);
 

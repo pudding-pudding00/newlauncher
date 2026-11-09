@@ -79,14 +79,16 @@ InputFrame InputMapper::update(const RawInput& raw, float dtMs) {
     if (raw.pointerValid) {
         f.pointerX = raw.pointerX;
         f.pointerY = raw.pointerY;
+        // Die zuletzt gemeldete Position bleibt über IR-Aussetzer erhalten: kehrt der Zeiger an
+        // dieselbe Stelle zurück, ist das keine Bewegung und stiehlt keinen Tastenfokus.
         const float dx = raw.pointerX - lastPointerX_, dy = raw.pointerY - lastPointerY_;
-        if (!lastPointerValid_ || dx * dx + dy * dy >= kPointerMoveThresholdPx * kPointerMoveThresholdPx) {
+        if (!pointerReported_ || dx * dx + dy * dy >= kPointerMoveThresholdPx * kPointerMoveThresholdPx) {
             f.pointerMoved = true;
+            pointerReported_ = true;
             lastPointerX_ = raw.pointerX;
             lastPointerY_ = raw.pointerY;
         }
     }
-    lastPointerValid_ = raw.pointerValid;
     return f;
 }
 

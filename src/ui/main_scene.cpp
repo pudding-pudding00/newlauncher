@@ -13,7 +13,7 @@ using gfx::FontWeight;
 using gfx::Rect;
 
 constexpr float kBarPadX = 16.0f;
-constexpr float kPillH = 32.0f, kPillY = 12.0f;
+constexpr float kPillH = 32.0f, kPillY = 12.0f, kMinBarGap = 6.0f;
 constexpr float kButtonR = 22.0f;
 constexpr float kFocusScale = 0.08f;
 constexpr float kToastMs = 2000.0f;
@@ -97,20 +97,29 @@ Rect MainScene::barRect(int index) const {
 }
 
 void MainScene::layoutBar(const UiContext& ctx) {
+    // Einträge bündig mit den Rasterrändern und gleichmäßig über die Breite verteilt; reicht der
+    // Platz nicht, rücken sie auf den Mindestabstand zusammen und die Leiste scrollt.
     const gfx::FontFace& pill = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
-    float x = kBarPadX;
+    const float margin = gridMetrics(ctx.width).marginX;
+    float widths[kMaxBarEntries];
+    float sum = 0.0f;
     for (int i = 0; i < barCount_; ++i) {
-        const float w = gfx::measureText(pill, barLabel(bar_[i])) + 24.0f;
-        barRects_[i] = Rect{x, kPillY, w, kPillH};
-        x += w + 6.0f;
+        widths[i] = gfx::measureText(pill, barLabel(bar_[i])) + 24.0f;
+        sum += widths[i];
     }
-    barContentW_ = x;
+    float gap = barCount_ > 1 ? (ctx.width - 2.0f * margin - sum) / static_cast<float>(barCount_ - 1) : 0.0f;
+    if (gap < kMinBarGap) gap = kMinBarGap;
+    float x = margin;
+    for (int i = 0; i < barCount_; ++i) {
+        barRects_[i] = Rect{x, kPillY, widths[i], kPillH};
+        x += widths[i] + gap;
+    }
 
     // Aktiven Eintrag in den sichtbaren Bereich scrollen.
     const Rect a = barRects_[barIndex_];
     float target = barScroll_.target();
-    if (a.x + a.w > ctx.width - kBarPadX + target) target = a.x + a.w - (ctx.width - kBarPadX);
-    if (a.x - kBarPadX < target) target = a.x - kBarPadX;
+    if (a.x + a.w > ctx.width - margin + target) target = a.x + a.w - (ctx.width - margin);
+    if (a.x - margin < target) target = a.x - margin;
     if (target < 0.0f) target = 0.0f;
     if (target != barScroll_.target()) barScroll_.to(target, kAnimMs);
 }
@@ -143,7 +152,8 @@ void MainScene::handlePointer(const UiContext& ctx, const InputFrame& in) {
         pointerOnTile_ = false;
         return;
     }
-    if (!in.pointerMoved) return;
+    // Hover folgt jeden Frame der aktuellen Position (auch nach einem Overlay ohne Bewegung);
+    // der Rasterfokus ändert sich dagegen nur bei echter Bewegung.
     const float x = in.pointerX, y = in.pointerY;
     hover_ = Hover::None;
     hoverBar_ = -1;
@@ -159,7 +169,7 @@ void MainScene::handlePointer(const UiContext& ctx, const InputFrame& in) {
                 break;
             }
         }
-    } else if (y < grid_.viewTop() + grid_.viewHeight()) {
+    } else if (in.pointerMoved && y < grid_.viewTop() + grid_.viewHeight()) {
         // Leere Fläche löscht den Fokus nur, wenn der Zeiger vorher eine Kachel fokussiert hatte;
         // ein Zeiger, der irgendwo neben dem Raster auftaucht, nimmt den Fokus nicht weg.
         const int hit = grid_.hitTest(x, y, scroll_.value());
@@ -167,7 +177,7 @@ void MainScene::handlePointer(const UiContext& ctx, const InputFrame& in) {
         pointerOnTile_ = hit >= 0;
         return;
     }
-    pointerOnTile_ = false;
+    if (in.pointerMoved) pointerOnTile_ = false;
 }
 
 void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) {

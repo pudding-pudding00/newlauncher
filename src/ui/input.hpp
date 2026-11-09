@@ -48,7 +48,7 @@ private:
     float heldMs_ = 0.0f, nextRepeatMs_ = 0.0f;
     u32 prevHeld_ = 0;
     bool comboOneTwo_ = false, comboZStart_ = false;
-    bool lastPointerValid_ = false;
+    bool pointerReported_ = false;
     float lastPointerX_ = 0.0f, lastPointerY_ = 0.0f;
 };
 

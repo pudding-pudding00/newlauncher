@@ -23,7 +23,7 @@ bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y 
 
 void HomeMenu::onEnter() {
     focus_ = 0;
-    pointerOffTiles_ = false;
+    keysSincePointerMove_ = false;
 }
 
 Rect HomeMenu::tileRect(const UiContext& ctx, int index) const {
@@ -42,22 +42,23 @@ int HomeMenu::hitTest(const UiContext& ctx, float x, float y) const {
 }
 
 void HomeMenu::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
-    if (!in.pointerValid) {
-        pointerOffTiles_ = false;
-    } else if (in.pointerMoved) {
-        const int hit = hitTest(ctx, in.pointerX, in.pointerY);
+    const int hit = in.pointerValid ? hitTest(ctx, in.pointerX, in.pointerY) : -1;
+    if (in.pointerValid && in.pointerMoved) {
         if (hit >= 0) focus_ = hit;
-        pointerOffTiles_ = hit < 0;
+        keysSincePointerMove_ = false;
     }
     if (in.pressed(Action::Left) && focus_ > 0) --focus_;
     if (in.pressed(Action::Right) && focus_ + 1 < kTileCount) ++focus_;
-    if (in.pressed(Action::Left) || in.pressed(Action::Right)) pointerOffTiles_ = false;
+    if (in.pressed(Action::Left) || in.pressed(Action::Right)) keysSincePointerMove_ = true;
+    // Ein gültiger Zeiger neben den Kacheln blockiert Bestätigen, solange keine Richtungstaste
+    // den Fokus übernommen hat; die Lage wird jeden Frame aus der aktuellen Position bestimmt.
+    const bool pointerOffTiles = in.pointerValid && hit < 0 && !keysSincePointerMove_;
 
     if (in.pressed(Action::Home) || in.pressed(Action::Back)) {
         out.pop = true;
         return;
     }
-    if (in.pressed(Action::Confirm) && !pointerOffTiles_ && focus_ != kSettingsTile) {
+    if (in.pressed(Action::Confirm) && !pointerOffTiles && focus_ != kSettingsTile) {
         out.command = kCommands[focus_];
     }
 }

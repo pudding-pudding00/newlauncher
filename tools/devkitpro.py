@@ -1,17 +1,9 @@
 """Hilfen für den Wii-Build mit devkitPro (unter Windows über dessen MSYS2-Shell)."""
 
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 
 DEVKITPRO_BASH = r"C:\devkitPro\msys2\usr\bin\bash.exe"
 WII_BUILD = "cmake --preset wii && cmake --build --preset wii"
-
-
-def to_msys_path(path: str) -> str:
-    """Wandelt einen Windows-Pfad (C:\\a\\b) in einen MSYS-Pfad (/c/a/b) um."""
-    p = PureWindowsPath(path)
-    drive = p.drive.rstrip(":").lower()
-    rest = "/".join(p.parts[1:])
-    return f"/{drive}/{rest}" if rest else f"/{drive}"
 
 
 def wii_build_invocation(repo_root: Path, platform: str) -> tuple[list[str], dict[str, str]]:

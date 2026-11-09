@@ -1,4 +1,6 @@
 import configparser
+import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -11,6 +13,18 @@ from deploy_dolphin import deploy  # noqa: E402
 from dolphin import (dolphin_command, log_path, reset_log, wait_for_marker,  # noqa: E402
                      write_dev_config)
 from dolphin_smoke import main as smoke_main  # noqa: E402
+
+
+def process_alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        out = subprocess.check_output(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                                      stdin=subprocess.DEVNULL)
+        return str(pid).encode() in out
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
 
 
 def read_ini(path: Path) -> configparser.ConfigParser:
@@ -79,6 +93,46 @@ class DolphinToolsTest(unittest.TestCase):
     def test_smoke_reports_missing_dolphin(self):
         self.assertEqual(smoke_main(["--dolphin", str(self.tmp / "fehlt.exe"), "--dol", str(self.dol),
                                      "--user-dir", str(self.user)]), 2)
+
+    def test_smoke_reports_missing_dol(self):
+        self.assertEqual(smoke_main(["--dolphin", sys.executable, "--dol", str(self.tmp / "fehlt.dol"),
+                                     "--user-dir", str(self.user)]), 2)
+
+    # Fake-Dolphin: dolphin_command ergibt `python -u <user_dir> -b -e <dol>`; Python führt
+    # dann <user_dir>/__main__.py aus. So läuft der echte Smoke-Ablauf ohne Dolphin.
+    def _fake_dolphin(self, body: str) -> None:
+        self.user.mkdir(parents=True, exist_ok=True)
+        (self.user / "__main__.py").write_text(body, encoding="utf-8")
+
+    def _run_smoke(self, timeout: str) -> int:
+        return smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol),
+                           "--user-dir", str(self.user), "--timeout", timeout])
+
+    def test_smoke_ignores_marker_from_previous_run(self):
+        log_path(self.user).parent.mkdir(parents=True)
+        log_path(self.user).write_text("OSREPORT: NL_READY\n")
+        self._fake_dolphin("raise SystemExit(0)\n")
+        self.assertEqual(self._run_smoke("10"), 1)
+
+    def test_smoke_succeeds_when_marker_appears(self):
+        self._fake_dolphin(
+            "import pathlib, time\n"
+            "log = pathlib.Path(__file__).parent / 'Logs' / 'dolphin.log'\n"
+            "log.parent.mkdir(parents=True, exist_ok=True)\n"
+            "log.write_text('OSREPORT: NL_READY\\n')\n"
+            "time.sleep(60)\n")
+        self.assertEqual(self._run_smoke("10"), 0)
+
+    def test_smoke_times_out_and_terminates_hanging_dolphin(self):
+        self._fake_dolphin(
+            "import os, pathlib, time\n"
+            "(pathlib.Path(__file__).parent / 'pid').write_text(str(os.getpid()))\n"
+            "time.sleep(60)\n")
+        t = time.monotonic()
+        self.assertEqual(self._run_smoke("1"), 1)
+        self.assertLess(time.monotonic() - t, 10)
+        pid = int((self.user / "pid").read_text())
+        self.assertFalse(process_alive(pid))
 
 
 if __name__ == "__main__":

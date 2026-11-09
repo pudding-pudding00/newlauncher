@@ -10,8 +10,15 @@ jobs:
     container: devkitpro/devkitppc:20261102
     steps:
       - uses: actions/checkout@v4
-      - name: CMake installieren
-        run: apt-get update && apt-get install -y --no-install-recommends cmake
+      - name: CMake bereitstellen (Presets v6 brauchen >= 3.25)
+        run: |
+          command -v cmake || (apt-get update && apt-get install -y --no-install-recommends cmake)
+          cmake --version
+          cmake -P /dev/stdin <<'EOF'
+          if(CMAKE_VERSION VERSION_LESS 3.25)
+            message(FATAL_ERROR "CMake ${CMAKE_VERSION} ist zu alt, Presets v6 brauchen >= 3.25")
+          endif()
+          EOF
       - name: DOL bauen
         run: cmake --preset wii && cmake --build --preset wii
       - uses: actions/upload-artifact@v4

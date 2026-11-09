@@ -1,0 +1,20 @@
+build/
+__pycache__/
+.superpowers/
+
+# Spieldateien niemals einchecken (Ausnahme: Test-Fixtures)
+*.wbfs
+*.wbf[0-9]
+*.iso
+*.ciso
+*.wad
+*.z64
+*.n64
+*.v64
+*.nes
+*.sfc
+*.smc
+*.gb
+*.gbc
+*.gba
+!tests/fixtures/**

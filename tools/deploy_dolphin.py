@@ -10,11 +10,13 @@ DEFAULT_DOL = REPO_ROOT / "build/wii/newlauncher.dol"
 DIST_DIR = REPO_ROOT / "dist"
 
 
-def deploy(dol: Path, sd_dir: Path, dist_dir: Path) -> None:
+def deploy(dol: Path | None, sd_dir: Path, dist_dir: Path) -> None:
+    """Kopiert dist/ auf die SD und installiert `dol` als Launcher; dol=None lässt boot.dol unverändert."""
     shutil.copytree(dist_dir, sd_dir, dirs_exist_ok=True)
     target = sd_dir / "apps/newlauncher"
     target.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(dol, target / "boot.dol")
+    if dol is not None:
+        shutil.copy2(dol, target / "boot.dol")
 
 
 def main(user_dir: Path = DEFAULT_USER_DIR, dol: Path = DEFAULT_DOL, dist_dir: Path = DIST_DIR) -> int:

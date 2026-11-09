@@ -155,6 +155,18 @@ class DolphinToolsTest(unittest.TestCase):
         with mock.patch("dolphin_smoke.reset_log", side_effect=PermissionError("gesperrt")):
             self.assertEqual(self._run_smoke("1"), 2)
 
+    def test_smoke_with_other_dol_keeps_installed_launcher(self):
+        # Der Selbsttest darf den Launcher auf der virtuellen SD nicht ersetzen.
+        boot = self.user / "SDSync/apps/newlauncher/boot.dol"
+        boot.parent.mkdir(parents=True)
+        boot.write_bytes(b"launcher")
+        selftest = self.tmp / "nl_selftest.dol"
+        selftest.write_bytes(b"selftest")
+        self._fake_dolphin("raise SystemExit(0)\n")
+        smoke_main(["--dolphin", sys.executable, "--dol", str(selftest),
+                    "--user-dir", str(self.user), "--timeout", "2"])
+        self.assertEqual(boot.read_bytes(), b"launcher")
+
     def test_smoke_ignores_marker_from_previous_run(self):
         log_path(self.user).parent.mkdir(parents=True)
         log_path(self.user).write_text("OSREPORT: NL_READY\n")

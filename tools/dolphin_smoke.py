@@ -34,7 +34,10 @@ def main(argv: list[str] | None = None) -> int:
     user_dir = args.user_dir.resolve()
     try:
         write_dev_config(user_dir)
-        deploy(args.dol, sd_sync_dir(user_dir), DIST_DIR)
+        # Nur der Launcher selbst wird als boot.dol installiert. Andere DOLs (z. B. nl_selftest.dol)
+        # startet Dolphin direkt per -e; sie dürfen den Launcher auf der SD nicht ersetzen.
+        is_launcher = args.dol.name == DEFAULT_DOL.name
+        deploy(args.dol if is_launcher else None, sd_sync_dir(user_dir), DIST_DIR)
         reset_log(user_dir)
     except OSError as e:
         print(f"SMOKE FEHLER: Dev-Ordner nicht vorbereitet (läuft Dolphin noch?): {e}")

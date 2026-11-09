@@ -19,6 +19,9 @@ add_library(nl_core STATIC
     src/core/config.cpp
     src/core/utf8.cpp
     src/core/text_fold.cpp
+    src/core/bin_io.cpp
+    src/core/index_file.cpp
+    src/core/meta_db.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp

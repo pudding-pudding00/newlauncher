@@ -1,4 +1,5 @@
 #include "ui/jump_bar.hpp"
+#include "ui/keyboard.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/test_library.hpp"
 #include "support/fake_font.hpp"
@@ -15,7 +16,10 @@ struct SpyTarget final : JumpTarget {
     int searches = 0;
     char current = 'M';
     void jumpToBucket(char b) override { jumped = b; }
-    void openSearch() override { ++searches; }
+    Scene* openSearch() override {
+        ++searches;
+        return nullptr;
+    }
     bool hasBucket(char b) const override { return b == 'M' || b == 'S'; }
     char currentBucket() const override { return current; }
 };
@@ -146,4 +150,25 @@ TEST_CASE_FIXTURE(Fixture, "MainScene: Taste Suche öffnet die A–Z-Leiste") {
     JumpBar bar(s);
     s.setJumpBar(&bar);
     CHECK(step(s, action(Action::Search)).push == &bar);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Stapel: Suche-Taste → A–Z-Leiste → „Suche\" → nach dem Ausblenden ist die Tastatur oben") {
+    const Library lib = testLibrary();
+    MainScene s(lib);
+    JumpBar bar(s);
+    struct NullSearch final : SearchTarget { void setQuery(std::string_view) override {} } ns;
+    Keyboard kb(ns);
+    s.setJumpBar(&bar);
+    s.setKeyboard(&kb);
+    SceneStack st;
+    st.push(&s);
+    st.update(ctx, action(Action::Search), 16);
+    REQUIRE(st.top() == &bar);
+    st.update(ctx, InputFrame{}, 200);
+    for (int i = 0; i < 30; ++i) st.update(ctx, action(Action::Right), 16);
+    REQUIRE(bar.focus() == JumpBar::kSearchCell);
+    st.update(ctx, action(Action::Confirm), 16);
+    for (int i = 0; i < 20; ++i) st.update(ctx, InputFrame{}, 16);
+    CHECK(st.top() == &kb);
+    CHECK(st.depth() == 2);
 }

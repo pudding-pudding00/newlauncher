@@ -36,7 +36,7 @@ public:
 
     // JumpTarget
     void jumpToBucket(char bucket) override;
-    void openSearch() override { pendingSearch_ = true; }  // öffnet die Tastatur im nächsten eigenen Update
+    Scene* openSearch() override { return keyboard_; }
     bool hasBucket(char bucket) const override;
     char currentBucket() const override;
 
@@ -90,7 +90,6 @@ private:
     Scene* keyboard_ = nullptr;
     DetailsScene* details_ = nullptr;
     const LibraryStore* detailsStore_ = nullptr;
-    bool pendingSearch_ = false;
     u32 bucketMask_ = 0;
     bool searchActive_ = false;
     BarEntry entryBeforeSearch_{};

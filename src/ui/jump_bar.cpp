@@ -48,7 +48,7 @@ void JumpBar::update(const UiContext& ctx, const InputFrame& in, float, SceneReq
     }
     const bool pointerOff = in.pointerValid && hit < 0 && !keysSincePointerMove_;
     if (in.pressed(Action::Confirm) && !pointerOff) {
-        if (focus_ == kSearchCell) target_.openSearch();
+        if (focus_ == kSearchCell) out.push = target_.openSearch();
         else target_.jumpToBucket(bucketOf(focus_));
         out.pop = true;
     }

@@ -52,7 +52,7 @@ int detailsInfoLine(const Game& g, u32 lastPlayedUnix, char* out, std::size_t ca
     if (lastPlayedUnix != 0) {
         int y = 0, m = 0, d = 0;
         civilFromDays(static_cast<long>(lastPlayedUnix / 86400u), y, m, d);
-        char date[16];
+        char date[32];
         std::snprintf(date, sizeof date, "%02d.%02d.%04d", d, m, y);
         appendf(out, cap, len, " \xC2\xB7 %s", kStrLastPlayed);
         appendf(out, cap, len, " %s", date);

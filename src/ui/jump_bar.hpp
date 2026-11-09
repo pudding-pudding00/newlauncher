@@ -9,7 +9,7 @@ class JumpTarget {
 public:
     virtual ~JumpTarget() = default;
     virtual void jumpToBucket(char bucket) = 0;  // '#' oder 'A'–'Z'
-    virtual void openSearch() = 0;
+    virtual Scene* openSearch() = 0;  // Szene, die nach dem Schließen der Leiste geöffnet wird (Tastatur)
     virtual bool hasBucket(char bucket) const = 0;
     virtual char currentBucket() const = 0;  // Buchstabe des fokussierten Spiels, sonst '#'
 };

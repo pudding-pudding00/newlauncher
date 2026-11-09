@@ -320,10 +320,6 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
     if (in.pressed(Action::Home) && home_ != nullptr) out.push = home_;
     if (in.pressed(Action::Search) && jumpBar_ != nullptr) out.push = jumpBar_;
     if (in.pressed(Action::Back) && searchActive_) setQuery("");
-    if (pendingSearch_) {
-        pendingSearch_ = false;
-        if (keyboard_ != nullptr) out.push = keyboard_;
-    }
     if (in.pressed(Action::Favorite)) {
         if (const Game* g = focusedGame()) {
             out.command = AppCommand::ToggleFavorite;

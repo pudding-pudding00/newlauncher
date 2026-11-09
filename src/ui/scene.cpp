@@ -39,6 +39,10 @@ AppCommand SceneStack::update(const UiContext& ctx, const InputFrame& in, float 
     for (int i = 0; i < depth_; ++i) entries_[i].alpha.update(dtMs);
     if (depth_ > 0 && entries_[depth_ - 1].popping && entries_[depth_ - 1].alpha.done()) {
         entries_[--depth_] = Entry{};
+        if (pushAfterPop_ != nullptr) {
+            push(pushAfterPop_);
+            pushAfterPop_ = nullptr;
+        }
     }
     if (depth_ == 0) return AppCommand::None;
 
@@ -59,8 +63,10 @@ AppCommand SceneStack::update(const UiContext& ctx, const InputFrame& in, float 
         if (e.scene->isOverlay()) {
             e.popping = true;
             e.alpha.to(0.0f, kOverlayFadeMs);
+            pushAfterPop_ = topReq.push;
         } else {
             entries_[--depth_] = Entry{};
+            if (topReq.push != nullptr) push(topReq.push);
         }
     } else if (topReq.push != nullptr) {
         push(topReq.push);

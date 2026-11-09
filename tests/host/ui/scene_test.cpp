@@ -187,3 +187,21 @@ TEST_CASE_FIXTURE(Fixture, "update reicht die Anforderung der obersten Szene sam
     CHECK(st.update(ctx, InputFrame{}, 16, &out) == AppCommand::None);
     CHECK(out.game == nullptr);
 }
+
+TEST_CASE_FIXTURE(Fixture, "pop und push in einer Anforderung: erst ausblenden, dann die neue Szene") {
+    SceneStack st;
+    Recorder base, over(true), next(true);
+    st.push(&base);
+    st.push(&over);
+    st.update(ctx, InputFrame{}, 200);
+    over.next.pop = true;
+    over.next.push = &next;
+    st.update(ctx, InputFrame{}, 16);
+    CHECK(st.top() == &over);  // blendet noch aus
+    st.update(ctx, InputFrame{}, 100);
+    CHECK(next.enters == 0);
+    st.update(ctx, InputFrame{}, 100);
+    CHECK(st.top() == &next);
+    CHECK(next.enters == 1);
+    CHECK(st.depth() == 2);
+}

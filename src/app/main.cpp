@@ -275,7 +275,7 @@ int main(int, char**) {
         static_cast<void>(frameNo);  // nur im Selbsttest gelesen
         const u64 frameStart = gettime();
 #ifdef NL_SELFTEST
-        const nl::app::SelftestView view{mainScene, scenes, debug, worker.running()};
+        const nl::app::SelftestView view{mainScene, scenes, debug, worker.running(), store, ctx, keyboard};
         input.poll();  // Geräte weiter abfragen, Eingaben kommen aber aus dem Skript
         const nl::ui::InputFrame in = frame.begin(nl::app::selftestInput(frameNo, view));
 #else

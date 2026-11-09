@@ -65,6 +65,7 @@ private:
 
     Entry entries_[kMaxDepth];
     int depth_ = 0;
+    Scene* pushAfterPop_ = nullptr;  // pop + push in einer Anforderung: nach dem Ausblenden öffnen
 };
 
 }  // namespace nl::ui

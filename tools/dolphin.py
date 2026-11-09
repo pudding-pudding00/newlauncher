@@ -61,13 +61,30 @@ def reset_log(user_dir: Path) -> None:
     log_path(user_dir).unlink(missing_ok=True)
 
 
-def wait_for_marker(log: Path, marker: str, timeout_s: float, is_alive: Callable[[], bool],
-                    poll_s: float = 0.25) -> bool:
-    """True, sobald `marker` im Log steht; False bei Timeout oder beendetem Prozess."""
+def _read_log(log: Path) -> str:
+    """Logtext oder "" – ein fehlendes oder gerade gesperrtes Log zählt als leer."""
+    try:
+        return log.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def wait_for_markers(log: Path, markers: list[str], timeout_s: float,
+                     is_alive: Callable[[], bool], poll_s: float = 0.25) -> list[str]:
+    """Wartet, bis alle `markers` im Log stehen; liefert die fehlenden (leer = Erfolg).
+
+    Endet der Prozess, wird das Log noch einmal gelesen: Er kann den letzten Marker
+    zwischen zwei Abfragen geschrieben haben.
+    """
     deadline = time.monotonic() + timeout_s
     while True:
-        if log.is_file() and marker in log.read_text(encoding="utf-8", errors="replace"):
-            return True
-        if not is_alive() or time.monotonic() >= deadline:
-            return False
+        text = _read_log(log)
+        missing = [m for m in markers if m not in text]
+        if not missing:
+            return []
+        if not is_alive():
+            text = _read_log(log)
+            return [m for m in markers if m not in text]
+        if time.monotonic() >= deadline:
+            return missing
         time.sleep(poll_s)

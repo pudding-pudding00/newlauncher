@@ -1,4 +1,4 @@
-"""Smoke-Test: startet die DOL in Dolphin und wartet auf NL_READY im Log.
+"""Smoke-Test: startet die DOL in Dolphin und wartet auf Marker im Log (Standard: NL_READY).
 
 Exit-Codes: 0 = OK, 1 = Marker fehlt, 2 = Voraussetzung fehlt.
 """
@@ -10,9 +10,9 @@ from pathlib import Path
 
 from deploy_dolphin import DEFAULT_DOL, DIST_DIR, deploy
 from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_path, reset_log,
-                     sd_sync_dir, wait_for_marker, write_dev_config)
+                     sd_sync_dir, wait_for_markers, write_dev_config)
 
-MARKER = "NL_READY"
+DEFAULT_MARKERS = ["NL_READY"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -21,7 +21,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--user-dir", type=Path, default=DEFAULT_USER_DIR)
     parser.add_argument("--dol", type=Path, default=DEFAULT_DOL)
     parser.add_argument("--timeout", type=float, default=60.0)
+    parser.add_argument("--marker", action="append", dest="markers",
+                        help="Log-Marker, der erscheinen muss (mehrfach angebbar)")
     args = parser.parse_args(argv)
+    markers = args.markers or DEFAULT_MARKERS
 
     for name, path in (("Dolphin", args.dolphin), ("DOL", args.dol)):
         if not path.is_file():
@@ -29,14 +32,22 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     user_dir = args.user_dir.resolve()
-    write_dev_config(user_dir)
-    deploy(args.dol, sd_sync_dir(user_dir), DIST_DIR)
-    reset_log(user_dir)
-
-    proc = subprocess.Popen(dolphin_command(args.dolphin, user_dir, args.dol.resolve()))
     try:
-        found = wait_for_marker(log_path(user_dir), MARKER, args.timeout,
-                                is_alive=lambda: proc.poll() is None)
+        write_dev_config(user_dir)
+        deploy(args.dol, sd_sync_dir(user_dir), DIST_DIR)
+        reset_log(user_dir)
+    except OSError as e:
+        print(f"SMOKE FEHLER: Dev-Ordner nicht vorbereitet (läuft Dolphin noch?): {e}")
+        return 2
+
+    try:
+        proc = subprocess.Popen(dolphin_command(args.dolphin, user_dir, args.dol.resolve()))
+    except OSError as e:
+        print(f"SMOKE FEHLER: Dolphin startet nicht: {e}")
+        return 2
+    try:
+        missing = wait_for_markers(log_path(user_dir), markers, args.timeout,
+                                   is_alive=lambda: proc.poll() is None)
     finally:
         proc.terminate()
         try:
@@ -45,10 +56,10 @@ def main(argv: list[str] | None = None) -> int:
             proc.kill()
             proc.wait()
 
-    if found:
+    if not missing:
         print("SMOKE OK")
         return 0
-    print(f"SMOKE FEHLGESCHLAGEN: {MARKER} nicht innerhalb von {args.timeout:g} s")
+    print(f"SMOKE FEHLGESCHLAGEN: fehlende Marker nach {args.timeout:g} s: {', '.join(missing)}")
     return 1
 
 

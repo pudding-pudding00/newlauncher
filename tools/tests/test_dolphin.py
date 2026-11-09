@@ -6,11 +6,13 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from deploy_dolphin import deploy  # noqa: E402
-from dolphin import (dolphin_command, log_path, reset_log, wait_for_marker,  # noqa: E402
+from deploy_dolphin import main as deploy_main  # noqa: E402
+from dolphin import (dolphin_command, log_path, reset_log, wait_for_markers,  # noqa: E402
                      write_dev_config)
 from dolphin_smoke import main as smoke_main  # noqa: E402
 
@@ -66,20 +68,44 @@ class DolphinToolsTest(unittest.TestCase):
         reset_log(self.user)
         self.assertFalse(log_path(self.user).exists())
 
-    def test_wait_for_marker_finds_marker(self):
+    def test_wait_for_markers_finds_marker(self):
         self.log.write_text("OSREPORT: newlauncher 0.0.1\nOSREPORT: NL_READY\n")
-        self.assertTrue(wait_for_marker(self.log, "NL_READY", 2.0, lambda: True))
+        self.assertEqual(wait_for_markers(self.log, ["NL_READY"], 2.0, lambda: True), [])
 
-    def test_wait_for_marker_times_out(self):
+    def test_wait_for_markers_times_out(self):
         self.log.write_text("OSREPORT: newlauncher 0.0.1\n")
         t = time.monotonic()
-        self.assertFalse(wait_for_marker(self.log, "NL_READY", 0.5, lambda: True))
+        self.assertEqual(wait_for_markers(self.log, ["NL_READY"], 0.5, lambda: True), ["NL_READY"])
         self.assertLess(time.monotonic() - t, 2.0)
 
-    def test_wait_for_marker_stops_when_process_dies(self):
+    def test_wait_for_markers_stops_when_process_dies(self):
         t = time.monotonic()
-        self.assertFalse(wait_for_marker(self.log, "NL_READY", 30.0, lambda: False))
+        self.assertEqual(wait_for_markers(self.log, ["NL_READY"], 30.0, lambda: False), ["NL_READY"])
         self.assertLess(time.monotonic() - t, 1.0)
+
+    def test_wait_for_markers_returns_missing(self):
+        self.log.write_text("OSREPORT: NL_READY\n")
+        self.assertEqual(wait_for_markers(self.log, ["NL_READY", "NL_SELFTEST_OK"], 0.5, lambda: True),
+                         ["NL_SELFTEST_OK"])
+
+    def test_wait_for_markers_rereads_log_after_process_death(self):
+        # Der Prozess schreibt den Marker und stirbt zwischen zwei Abfragen.
+        def is_alive():
+            self.log.write_text("OSREPORT: NL_READY\n")
+            return False
+        self.assertEqual(wait_for_markers(self.log, ["NL_READY"], 5.0, is_alive), [])
+
+    def test_wait_for_markers_tolerates_locked_log(self):
+        self.log.write_text("OSREPORT: NL_READY\n")
+        with mock.patch.object(Path, "read_text", side_effect=PermissionError):
+            self.assertEqual(wait_for_markers(self.log, ["NL_READY"], 0.3, lambda: True), ["NL_READY"])
+
+    def test_deploy_main_writes_dev_config(self):
+        dist = self.tmp / "dist"
+        dist.mkdir()
+        self.assertEqual(deploy_main(user_dir=self.user, dol=self.dol, dist_dir=dist), 0)
+        self.assertTrue((self.user / "Config/Dolphin.ini").is_file())
+        self.assertTrue((self.user / "SDSync/apps/newlauncher/boot.dol").is_file())
 
     def test_deploy_places_boot_dol_and_meta(self):
         dist = self.tmp / "dist"
@@ -107,6 +133,27 @@ class DolphinToolsTest(unittest.TestCase):
     def _run_smoke(self, timeout: str) -> int:
         return smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol),
                            "--user-dir", str(self.user), "--timeout", timeout])
+
+    def test_smoke_accepts_multiple_markers(self):
+        self._fake_dolphin(
+            "import pathlib, time\n"
+            "log = pathlib.Path(__file__).parent / 'Logs' / 'dolphin.log'\n"
+            "log.parent.mkdir(parents=True, exist_ok=True)\n"
+            "log.write_text('OSREPORT: NL_READY\\n')\n"
+            "time.sleep(60)\n")
+        self.assertEqual(smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol),
+                                     "--user-dir", str(self.user), "--timeout", "2",
+                                     "--marker", "NL_READY", "--marker", "NL_SELFTEST_OK"]), 1)
+
+    def test_smoke_reports_unstartable_dolphin(self):
+        bad = self.tmp / "kaputt.exe"
+        bad.write_bytes(b"x")
+        self.assertEqual(smoke_main(["--dolphin", str(bad), "--dol", str(self.dol),
+                                     "--user-dir", str(self.user)]), 2)
+
+    def test_smoke_reports_locked_log(self):
+        with mock.patch("dolphin_smoke.reset_log", side_effect=PermissionError("gesperrt")):
+            self.assertEqual(self._run_smoke("1"), 2)
 
     def test_smoke_ignores_marker_from_previous_run(self):
         log_path(self.user).parent.mkdir(parents=True)

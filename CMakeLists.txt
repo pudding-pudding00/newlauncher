@@ -17,6 +17,8 @@ add_library(nl_core STATIC
     src/core/crash_report.cpp
     src/core/ini.cpp
     src/core/config.cpp
+    src/core/utf8.cpp
+    src/core/text_fold.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp

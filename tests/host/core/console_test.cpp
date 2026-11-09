@@ -19,3 +19,14 @@ TEST_CASE("Konsolentabelle laut Spec 5.3") {
     }
     CHECK(std::strcmp(consoleInfo(Console::N64).label, "N64") == 0);
 }
+
+TEST_CASE("Konsolentabelle: Ordner und Endungen laut Spec 5.3") {
+    CHECK(std::strcmp(consoleInfo(Console::Nes).folder, "roms/nes") == 0);
+    CHECK(std::strcmp(consoleInfo(Console::Gc).folder, "games") == 0);
+    CHECK(std::strcmp(consoleInfo(Console::Wii).folder, "wbfs") == 0);
+    CHECK(std::strcmp(consoleInfo(Console::Snes).extensions[0], ".sfc") == 0);
+    CHECK(std::strcmp(consoleInfo(Console::Snes).extensions[1], ".smc") == 0);
+    CHECK(consoleInfo(Console::Snes).extensions[2] == nullptr);
+    CHECK(std::strcmp(consoleInfo(Console::N64).extensions[2], ".v64") == 0);
+    CHECK(std::strcmp(consoleInfo(Console::Wii).extensions[1], ".iso") == 0);
+}

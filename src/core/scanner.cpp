@@ -47,7 +47,7 @@ public:
         if (!listSorted(info.folder, topMtime(info.folder), entries)) return;
         for (const DirEntry& e : entries) {
             if (e.isDir || !hasExtension(e.name, info)) continue;
-            tick();
+            if (!tick()) return;
             IndexGame g{c, 0, std::string(info.key) + "/" + e.name, "", joinPath(info.folder, e.name), e.size};
             g.title = metaTitle(g).value_or(cleanTitle(stemOf(e.name)));
             add(std::move(g));
@@ -59,6 +59,7 @@ public:
         std::vector<DirEntry> subdirs;
         if (!listSorted(info.folder, topMtime(info.folder), subdirs)) return;
         for (const DirEntry& d : subdirs) {
+            if (cancelled_) return;
             if (!d.isDir) continue;
             const std::string dir = joinPath(info.folder, d.name);
             std::vector<DirEntry> files;
@@ -70,7 +71,7 @@ public:
                 const std::string name = lower(f.name);
                 const bool isGame = c == Console::Gc ? name == "game.iso" : hasExtension(f.name, info);
                 if (!isGame) continue;
-                tick();
+                if (!tick()) return;
                 u8 flags = 0;
                 if (c == Console::Gc && names.count("disc2.iso")) flags |= kFlagSecondDisc;
                 if (c == Console::Wii && names.count(lower(stemOf(f.name)) + ".wbf1")) flags |= kFlagSplitFile;
@@ -170,10 +171,17 @@ private:
         result_.index.games.push_back(std::move(g));
     }
 
-    void tick() {
+    // false = abgebrochen; danach liest der Scan nichts mehr.
+    bool tick() {
         ++seen_;
-        if (progress_ != nullptr) progress_(user_, seen_);
+        if (progress_ != nullptr && !progress_(user_, seen_)) cancelled_ = true;
+        return !cancelled_;
     }
+
+public:
+    bool cancelled() const { return cancelled_; }
+
+private:
 
     FileSystem& fs_;
     std::string root_;
@@ -185,6 +193,7 @@ private:
     std::set<std::string> keys_;
     ScanResult result_;
     u32 seen_ = 0;
+    bool cancelled_ = false;
 };
 
 }  // namespace
@@ -195,11 +204,12 @@ Result<ScanResult> scanLibrary(FileSystem& fs, std::string_view libRoot, const I
         return Result<ScanResult>::err(Error{ErrorCode::NotMounted, std::string(libRoot) + " nicht lesbar"});
     }
     Scan scan(fs, libRoot, previous, meta, progress, user);
-    for (int i = 0; i < kConsoleCount; ++i) {
+    for (int i = 0; i < kConsoleCount && !scan.cancelled(); ++i) {
         const Console c = static_cast<Console>(i);
         if (c == Console::Gc || c == Console::Wii) scan.discs(c);
         else scan.roms(c);
     }
+    if (scan.cancelled()) return Result<ScanResult>::err(Error{ErrorCode::Cancelled, "Scan abgebrochen"});
     return Result<ScanResult>::ok(scan.finish(previous));
 }
 

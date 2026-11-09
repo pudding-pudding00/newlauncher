@@ -24,10 +24,12 @@ public:
     u32 filesSeen() const { return seen_; }
     bool running() const { return running_; }
     std::optional<Result<ScanResult>> take();  // fertiges Ergebnis genau einmal
+    // Bricht einen laufenden Scan ab und wartet auf das Thread-Ende; nötig vor dem Aushängen der Laufwerke.
+    void cancelAndJoin();
 
 private:
     static void* entry(void* self);
-    static void onProgress(void* self, u32 seen);
+    static bool onProgress(void* self, u32 seen);
 
     lwp_t thread_ = LWP_THREAD_NULL;
     mutex_t mutex_ = LWP_MUTEX_NULL;
@@ -38,6 +40,7 @@ private:
     const MetaDb* meta_ = nullptr;
     volatile u32 seen_ = 0;
     volatile bool running_ = false;
+    volatile bool cancel_ = false;
     std::optional<Result<ScanResult>> result_;
 };
 

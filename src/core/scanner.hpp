@@ -19,7 +19,8 @@ struct ScanResult {
     ScanStats stats;
 };
 
-using ScanProgress = void (*)(void* user, u32 filesSeen);
+// Liefert false, um den Scan abzubrechen (z. B. beim Beenden, bevor Laufwerke ausgehängt werden).
+using ScanProgress = bool (*)(void* user, u32 filesSeen);
 
 // libRoot: "sd:" oder "usb:". Pfade im Ergebnis sind relativ dazu (z. B. "roms/nes/A.nes").
 Result<ScanResult> scanLibrary(FileSystem& fs, std::string_view libRoot, const IndexData* previous,

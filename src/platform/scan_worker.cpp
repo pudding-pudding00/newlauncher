@@ -26,6 +26,7 @@ bool ScanWorker::start(FileSystem& fs, std::string libRoot, const IndexData* pre
     previous_ = hasPrevious_ ? *previous : IndexData{};
     meta_ = meta;
     seen_ = 0;
+    cancel_ = false;
     running_ = true;
     if (LWP_CreateThread(&thread_, &ScanWorker::entry, this, nullptr, kStackBytes, kPriority) != 0) {
         running_ = false;
@@ -35,7 +36,23 @@ bool ScanWorker::start(FileSystem& fs, std::string libRoot, const IndexData* pre
     return true;
 }
 
-void ScanWorker::onProgress(void* self, u32 seen) { static_cast<ScanWorker*>(self)->seen_ = seen; }
+bool ScanWorker::onProgress(void* self, u32 seen) {
+    auto* w = static_cast<ScanWorker*>(self);
+    w->seen_ = seen;
+    return !w->cancel_;
+}
+
+void ScanWorker::cancelAndJoin() {
+    cancel_ = true;
+    if (thread_ != LWP_THREAD_NULL) {
+        LWP_JoinThread(thread_, nullptr);
+        thread_ = LWP_THREAD_NULL;
+    }
+    running_ = false;
+    LWP_MutexLock(mutex_);
+    result_.reset();
+    LWP_MutexUnlock(mutex_);
+}
 
 void* ScanWorker::entry(void* arg) {
     auto* self = static_cast<ScanWorker*>(arg);

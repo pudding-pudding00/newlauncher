@@ -324,6 +324,7 @@ int main(int, char**) {
             case nl::ui::AppCommand::WiiMenu:
             case nl::ui::AppCommand::PowerOff:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
                 if (sdOk) nl::log::flushLogFile(fs, kLogPath);
                 input.shutdown();
                 nl::platform::unmountAll();
@@ -359,6 +360,7 @@ int main(int, char**) {
         nl::app::selftestAfterFrame(frameNo, view);
 #endif
     }
+    worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
     if (sdOk) nl::log::flushLogFile(fs, kLogPath);
     input.shutdown();
     nl::platform::unmountAll();

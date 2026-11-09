@@ -174,9 +174,26 @@ TEST_CASE("Fortschritts-Callback wird mit steigender Anzahl aufgerufen") {
         if (seen < s->last) s->rising = false;
         s->last = seen;
         ++s->calls;
+        return true;
     };
     REQUIRE(scanLibrary(fs, "sd:", nullptr, nullptr, cb, &spy).isOk());
     CHECK(spy.calls >= 5);
     CHECK(spy.rising);
     CHECK(spy.last >= 5);
+}
+
+TEST_CASE("Fortschritts-Callback mit false bricht den Scan ab") {
+    test::MemFileSystem fs;
+    for (int i = 0; i < 10; ++i) fs.addFile("sd:/roms/nes/" + std::to_string(i) + ".nes", {});
+    fs.addFile("sd:/wbfs/MKW [RMCP01]/RMCP01.wbfs", test::wbfsFile("RMCP01", "Mario Kart Wii"));
+    int calls = 0;
+    auto cb = [](void* user, u32) {
+        int& n = *static_cast<int*>(user);
+        return ++n < 3;
+    };
+    auto r = scanLibrary(fs, "sd:", nullptr, nullptr, cb, &calls);
+    CHECK_FALSE(r.isOk());
+    if (!r.isOk()) CHECK(r.error().code == ErrorCode::Cancelled);
+    CHECK(calls == 3);
+    CHECK(fs.reads == 0);  // abgebrochen, bevor ein Disc-Header gelesen wurde
 }

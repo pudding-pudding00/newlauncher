@@ -285,8 +285,9 @@ int main(int, char**) {
         if (auto result = worker.take()) {
             if (result->isOk()) {
                 const nl::ScanStats st = result->value().stats;
+                const std::string focusKey = mainScene.focusedKey();  // vor setGames: danach sind die Zeiger ungültig
                 store.setGames(std::move(*result).value().index, metaPtr);
-                mainScene.setLibrary(libraryView());
+                mainScene.setLibrary(libraryView(), focusKey);
                 nl::log::line("NL_SCAN_DONE games=%u added=%u removed=%u", static_cast<unsigned>(store.games().size()),
                               static_cast<unsigned>(st.added), static_cast<unsigned>(st.removed));
                 saveIndex(store.index());
@@ -302,11 +303,12 @@ int main(int, char**) {
             case nl::ui::AppCommand::ToggleFavorite: {
                 if (req.game == nullptr) break;
                 const std::string key = req.game->key;
+                const std::string focusKey = mainScene.focusedKey();  // vor toggleFavorite: Favoritenliste wird neu gebaut
                 const bool nowFavorite = store.toggleFavorite(key);
                 const std::string text = store.favoritesIni().serialize();
                 if (sdOk && writeText(fs, kFavoritesPath, text)) nl::log::line("NL_FAV_SAVED %s", key.c_str());
                 else nl::log::line("NL_WARN favorites.ini nicht gespeichert");
-                mainScene.setLibrary(libraryView());
+                mainScene.setLibrary(libraryView(), focusKey);
                 mainScene.showToast(nowFavorite ? nl::ui::kStrFavAdded : nl::ui::kStrFavRemoved);
                 if (details.game() != nullptr && key == details.game()->key) details.setFavorite(nowFavorite);
                 break;

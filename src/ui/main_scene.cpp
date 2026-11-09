@@ -59,13 +59,16 @@ MainScene::MainScene(const Library& lib) : lib_(lib), scratch_(lib.games.size())
     selectBar(start, 640.0f, 480.0f);
 }
 
-void MainScene::setLibrary(const Library& lib) {
-    // Bisherigen Leisten-Eintrag und das fokussierte Spiel merken (Schlüssel als Kopie: die alten
-    // Game-Zeiger werden mit der neuen Bibliothek ungültig).
+std::string MainScene::focusedKey() const {
+    const Game* g = focusedGame();
+    return g != nullptr ? std::string(g->key) : std::string();
+}
+
+void MainScene::setLibrary(const Library& lib, std::string_view focusKey) {
+    // Nur Werte merken, keine Zeiger der alten Bibliothek lesen (sie sind hier schon ungültig).
     const BarEntry oldEntry = bar_[barIndex_];
     const int oldIndex = barIndex_;
-    const Game* focused = focusedGame();
-    const std::string focusKey = focused != nullptr ? focused->key : "";
+    games_ = {};
 
     lib_ = lib;
     scratch_.assign(lib_.games.size(), nullptr);

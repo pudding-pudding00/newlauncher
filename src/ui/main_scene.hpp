@@ -22,8 +22,11 @@ public:
     void draw(const UiContext& ctx, gfx::DrawList& dl) override;
     void setHomeMenu(Scene* home) { home_ = home; }
     // Neue Bibliothek (z. B. nach dem Hintergrund-Scan): Leisten-Eintrag und Fokus bleiben per
-    // Art/Konsole bzw. Spiel-Schlüssel erhalten, wenn möglich.
-    void setLibrary(const Library& lib);
+    // Art/Konsole bzw. Spiel-Schlüssel erhalten, wenn möglich. focusKey muss VOR der Änderung am
+    // LibraryStore mit focusedKey() geholt werden: danach zeigen die alten Game-Zeiger ins Leere,
+    // und setLibrary liest sie deshalb nicht mehr.
+    void setLibrary(const Library& lib, std::string_view focusKey);
+    std::string focusedKey() const;
     void showToast(const char* text);                     // ersetzt die Infozeile für 2 s
     void setFavoriteKeys(const LibraryStore* store) { store_ = store; }  // für die Favoriten-Markierung
     void setJumpBar(Scene* jumpBar) { jumpBar_ = jumpBar; }

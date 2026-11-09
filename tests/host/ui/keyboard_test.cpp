@@ -192,7 +192,7 @@ TEST_CASE_FIXTURE(Fixture, "MainScene: Bibliothek wechselt w√§hrend der Suche ‚Ü
     s.setQuery("mario");
     step(s, InputFrame{});
     CHECK(s.grid().count() == 1);
-    s.setLibrary(Library{b, {}, {}});
+    s.setLibrary(Library{b, {}, {}}, s.focusedKey());
     step(s, InputFrame{});
     CHECK(s.barIndex() == 0);
     CHECK(s.grid().count() == 2);

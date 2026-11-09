@@ -277,7 +277,7 @@ TEST_CASE_FIXTURE(Fixture, "setLibrary behält Leisten-Eintrag und fokussiertes 
     step(s, action(Action::Right));
     step(s, action(Action::Right));  // Fokus auf "Gamma" (Index 2)
     REQUIRE(s.focusIndex() == 2);
-    s.setLibrary(libOf(kLibB));
+    s.setLibrary(libOf(kLibB), s.focusedKey());
     step(s, InputFrame{});
     CHECK(s.barIndex() == 3);  // N64 weg: NES rückt auf Index 3
     CHECK(s.focusIndex() == 1);  // "Gamma" steht in der neuen NES-Liste an Position 1
@@ -288,7 +288,7 @@ TEST_CASE_FIXTURE(Fixture, "fokussiertes Spiel entfernt → Fokus 0") {
     MainScene s(libOf(kLibA));
     for (int i = 0; i < 4; ++i) step(s, action(Action::NextConsole));
     REQUIRE(std::string(s.infoTitle()) == "Alpha");
-    s.setLibrary(libOf(kLibB));
+    s.setLibrary(libOf(kLibB), s.focusedKey());
     step(s, InputFrame{});
     CHECK(s.focusIndex() == 0);
     CHECK(std::string(s.infoTitle()) == "Beta");
@@ -298,12 +298,12 @@ TEST_CASE_FIXTURE(Fixture, "Konsole verschwindet → Leiste fällt auf den Eintr
     MainScene s(libOf(kLibA));
     step(s, action(Action::NextConsole));  // Start bei Wii (erster Eintrag mit Spielen) → N64
     REQUIRE(s.barIndex() == 3);
-    s.setLibrary(libOf(kLibB));
+    s.setLibrary(libOf(kLibB), s.focusedKey());
     step(s, InputFrame{});
     CHECK(s.barIndex() == 3);  // jetzt NES an derselben Position
     CHECK(s.focusIndex() == 0);
     for (int i = 0; i < 5; ++i) step(s, action(Action::NextConsole));
-    s.setLibrary(libOf(std::span<const Game>(kLibB, 1)));  // nur noch NES
+    s.setLibrary(libOf(std::span<const Game>(kLibB, 1)), s.focusedKey());  // nur noch NES
     step(s, InputFrame{});
     CHECK(s.barIndex() == 2);  // letzter Eintrag
 }
@@ -311,7 +311,7 @@ TEST_CASE_FIXTURE(Fixture, "Konsole verschwindet → Leiste fällt auf den Eintr
 TEST_CASE_FIXTURE(Fixture, "setLibrary mit leerer Bibliothek → nur Favoriten/Zuletzt, kein Absturz") {
     MainScene s(libOf(kLibA));
     for (int i = 0; i < 4; ++i) step(s, action(Action::NextConsole));
-    s.setLibrary(Library{});
+    s.setLibrary(Library{}, s.focusedKey());
     step(s, action(Action::Right));
     s.draw(ctx, dl);
     CHECK(s.barIndex() <= 1);
@@ -363,4 +363,47 @@ TEST_CASE_FIXTURE(Fixture, "Favoriten-Kachel trägt eine Markierung (ein Quad me
     dl.clear();
     s.drawTile(ctx, dl, 1, r, false);
     CHECK(fav == dl.quadCount() + 1);
+}
+
+namespace {
+IndexData nesIndex(std::initializer_list<const char*> titles) {
+    IndexData d;
+    for (const char* t : titles)
+        d.games.push_back(IndexGame{Console::Nes, 0, std::string("nes/") + t, t, std::string("roms/nes/") + t, 0});
+    return d;
+}
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "Bibliothekswechsel über LibraryStore: Fokus bleibt per Schlüssel trotz neuer Reihenfolge und Größe") {
+    LibraryStore store;
+    store.setGames(nesIndex({"Aardvark", "Alpha", "Beta", "Gamma"}), nullptr);
+    MainScene s(Library{store.games(), store.favorites(), store.recent()});
+    for (int i = 0; i < 2; ++i) step(s, action(Action::NextConsole));  // Favoriten, Zuletzt, NES
+    REQUIRE(s.barIndex() == 2);
+    for (int i = 0; i < 3; ++i) step(s, action(Action::Right));
+    REQUIRE(std::string(s.infoTitle()) == "Gamma");
+    const std::string key = s.focusedKey();  // vor jeder Änderung am Speicher holen
+    store.setGames(nesIndex({"Alpha", "Beta", "Gamma", "Zeta", "Omega", "Delta"}), nullptr);
+    s.setLibrary(Library{store.games(), store.favorites(), store.recent()}, key);
+    step(s, InputFrame{});
+    CHECK(std::string(s.infoTitle()) == "Gamma");
+}
+
+TEST_CASE_FIXTURE(Fixture, "Favorit im Favoriten-Eintrag entfernen: kein Zugriff auf die alte Liste") {
+    LibraryStore store;
+    store.setGames(nesIndex({"A", "B", "C"}), nullptr);
+    store.toggleFavorite("nes/A");
+    store.toggleFavorite("nes/B");
+    store.toggleFavorite("nes/C");
+    MainScene s(Library{store.games(), store.favorites(), store.recent()});
+    step(s, action(Action::Right));
+    step(s, action(Action::Right));
+    REQUIRE(std::string(s.infoTitle()) == "C");
+    const std::string key = s.focusedKey();
+    store.toggleFavorite("nes/A");
+    s.setLibrary(Library{store.games(), store.favorites(), store.recent()}, key);
+    step(s, InputFrame{});
+    CHECK(s.barIndex() == 0);
+    CHECK(std::string(s.infoTitle()) == "C");
+    CHECK(s.focusIndex() == 1);
 }

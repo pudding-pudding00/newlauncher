@@ -1,7 +1,8 @@
 #pragma once
 // Fehlerbehandlung ohne Exceptions (Spec 4.2): fehlbare Funktionen liefern Result<T, E>.
 
-#include <cassert>
+#include "core/assert.hpp"
+
 #include <cstdint>
 #include <string>
 #include <type_traits>
@@ -26,7 +27,7 @@ struct Error {
 };
 
 template <typename T, typename E = Error>
-class Result {
+class [[nodiscard]] Result {
 public:
     static Result ok(T value) { return Result(std::in_place_index<0>, std::move(value)); }
     static Result err(E error) { return Result(std::in_place_index<1>, std::move(error)); }
@@ -34,20 +35,20 @@ public:
     bool isOk() const { return data_.index() == 0; }
 
     T& value() & {
-        assert(isOk());
+        NL_ASSERT(isOk());
         return *std::get_if<0>(&data_);
     }
     const T& value() const& {
-        assert(isOk());
+        NL_ASSERT(isOk());
         return *std::get_if<0>(&data_);
     }
     T&& value() && {
-        assert(isOk());
+        NL_ASSERT(isOk());
         return std::move(*std::get_if<0>(&data_));
     }
 
     const E& error() const {
-        assert(!isOk());
+        NL_ASSERT(!isOk());
         return *std::get_if<1>(&data_);
     }
 
@@ -61,7 +62,7 @@ private:
 };
 
 template <typename E>
-class Result<void, E> {
+class [[nodiscard]] Result<void, E> {
 public:
     static Result ok() { return Result(); }
     static Result err(E error) {
@@ -74,7 +75,7 @@ public:
     bool isOk() const { return ok_; }
 
     const E& error() const {
-        assert(!ok_);
+        NL_ASSERT(!ok_);
         return error_;
     }
 

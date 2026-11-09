@@ -16,6 +16,8 @@ add_library(nl_core STATIC
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp
+    src/gfx/font.cpp
+    src/gfx/text.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 nl_apply_flags(nl_core)

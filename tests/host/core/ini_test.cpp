@@ -75,3 +75,20 @@ TEST_CASE("doppelte Abschnitte werden zusammengeführt") {
     CHECK(d.get("s", "a") == "1");
     CHECK(d.get("s", "b") == "2");
 }
+
+TEST_CASE("rawLines liefert jede Inhaltszeile unverändert, auch mit =") {
+    const IniDoc d = IniDoc::parse("[favorites]\n; Kommentar\nRMCP01\nnes/Mario; Luigi = Bros [!] Ä.nes\n");
+    const auto raw = d.rawLines("favorites");
+    REQUIRE(raw.size() == 2);
+    CHECK(raw[0] == "RMCP01");
+    CHECK(raw[1] == "nes/Mario; Luigi = Bros [!] Ä.nes");
+}
+
+TEST_CASE("entries liefert alle Paare in Dateireihenfolge, auch mit gleichem Schlüssel") {
+    const IniDoc d = IniDoc::parse("[history]\n100 = a\n200 = b = c\n100 = d\n");
+    const auto e = d.entries("history");
+    REQUIRE(e.size() == 3);
+    CHECK(e[1].first == "200");
+    CHECK(e[1].second == "b = c");
+    CHECK(e[2].second == "d");
+}

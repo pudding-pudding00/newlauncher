@@ -24,6 +24,7 @@ add_library(nl_core STATIC
     src/core/meta_db.cpp
     src/core/disc_header.cpp
     src/core/scanner.cpp
+    src/core/library_store.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp

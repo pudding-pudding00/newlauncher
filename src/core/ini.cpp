@@ -27,6 +27,7 @@ IniDoc IniDoc::parse(std::string_view text) {
             continue;
         }
         if (current == nullptr) continue;  // vor dem ersten gültigen Abschnitt
+        current->raw.emplace_back(line);
         if (eq == std::string_view::npos) {
             current->lines.emplace_back(line);
             continue;
@@ -47,7 +48,7 @@ const IniDoc::Section* IniDoc::find(std::string_view name) const {
 IniDoc::Section& IniDoc::findOrAdd(std::string_view name) {
     for (Section& s : sections_)
         if (s.name == name) return s;
-    sections_.push_back(Section{std::string(name), {}, {}});
+    sections_.push_back(Section{std::string(name), {}, {}, {}});
     return sections_.back();
 }
 
@@ -75,7 +76,22 @@ std::span<const std::string> IniDoc::lines(std::string_view section) const {
     return s != nullptr ? std::span<const std::string>(s->lines) : std::span<const std::string>{};
 }
 
-void IniDoc::addLine(std::string_view section, std::string_view line) { findOrAdd(section).lines.emplace_back(line); }
+void IniDoc::addLine(std::string_view section, std::string_view line) {
+    Section& s = findOrAdd(section);
+    s.lines.emplace_back(line);
+    s.raw.emplace_back(line);
+}
+
+std::span<const std::string> IniDoc::rawLines(std::string_view section) const {
+    const Section* s = find(section);
+    return s != nullptr ? std::span<const std::string>(s->raw) : std::span<const std::string>{};
+}
+
+std::span<const std::pair<std::string, std::string>> IniDoc::entries(std::string_view section) const {
+    const Section* s = find(section);
+    return s != nullptr ? std::span<const std::pair<std::string, std::string>>(s->entries)
+                        : std::span<const std::pair<std::string, std::string>>{};
+}
 
 std::string IniDoc::serialize() const {
     std::string out;

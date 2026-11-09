@@ -13,7 +13,16 @@ add_library(nl_core INTERFACE)
 target_include_directories(nl_core INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
-    # Wii-Ziel folgt in Task 2.
+    add_executable(newlauncher
+        src/app/main.cpp
+        src/platform/log.cpp
+        src/platform/video.cpp
+        src/gfx/gx_context.cpp
+    )
+    target_link_libraries(newlauncher PRIVATE nl_core wiiuse bte)
+    target_compile_definitions(newlauncher PRIVATE NL_VERSION="${PROJECT_VERSION}")
+    nl_apply_flags(newlauncher)
+    ogc_create_dol(newlauncher)
 else()
     enable_testing()
 

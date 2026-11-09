@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1">
+  <name>newlauncher</name>
+  <coder>pudding-pudding00</coder>
+  <version>0.0.1</version>
+  <short_description>Wii-Launcher</short_description>
+  <long_description>Launcher für Wii, GameCube, N64 und Retro-Konsolen.</long_description>
+  <ahb_access/>
+</app>

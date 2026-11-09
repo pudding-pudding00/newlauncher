@@ -18,6 +18,7 @@ add_library(nl_core STATIC
     src/gfx/atlas.cpp
     src/gfx/font.cpp
     src/gfx/text.cpp
+    src/ui/input.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 nl_apply_flags(nl_core)
@@ -37,6 +38,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/app/main.cpp
         src/platform/log.cpp
         src/platform/video.cpp
+        src/platform/wii_input.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp
     )

@@ -20,6 +20,7 @@ inline constexpr const char* kStrRetry = "Erneut versuchen";
 inline constexpr const char* kStrUseSd = "SD verwenden";
 inline constexpr const char* kStrScanning = "Bibliothek wird durchsucht …";
 inline constexpr const char* kStrFiles = "Dateien";
+inline constexpr const char* kStrSearch = "Suche";
 inline constexpr const char* kStrFavAdded = "Zu Favoriten hinzugefügt";
 inline constexpr const char* kStrFavRemoved = "Aus Favoriten entfernt";
 

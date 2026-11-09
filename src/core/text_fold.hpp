@@ -1,7 +1,10 @@
 #pragma once
 // Titelbereinigung (No-Intro-Tags), Suchfaltung und Anfangsbuchstaben (Spec 3.5, 6.2).
 
+#include <span>
 #include <string>
+
+#include "core/game.hpp"
 #include <string_view>
 
 namespace nl {
@@ -22,5 +25,9 @@ char letterBucket(std::string_view title);
 
 // Vergleich nach foldForSearch, bei Gleichstand bytewise; Artikel zählen mit (Spec 6.2).
 int compareTitles(std::string_view a, std::string_view b);
+
+// Erster Index mit genau diesem Buchstaben; sonst der mit dem kleinsten folgenden Buchstaben
+// ('#' < 'A' < … < 'Z'); sonst der letzte Index; leere Liste → -1. Funktioniert auch unsortiert.
+int firstIndexForBucket(std::span<const Game* const> games, char bucket);
 
 }  // namespace nl

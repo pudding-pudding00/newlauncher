@@ -99,6 +99,21 @@ char letterBucket(std::string_view title) {
     return '#';
 }
 
+int firstIndexForBucket(std::span<const Game* const> games, char bucket) {
+    if (games.empty()) return -1;
+    auto rank = [](char b) { return b == '#' ? 0 : b - 'A' + 1; };
+    int best = -1, bestRank = 1000;
+    for (std::size_t i = 0; i < games.size(); ++i) {
+        const int r = rank(letterBucket(games[i]->title));
+        if (r == rank(bucket)) return static_cast<int>(i);
+        if (r > rank(bucket) && r < bestRank) {
+            bestRank = r;
+            best = static_cast<int>(i);
+        }
+    }
+    return best >= 0 ? best : static_cast<int>(games.size()) - 1;
+}
+
 int compareTitles(std::string_view a, std::string_view b) {
     const int c = foldForSearch(a).compare(foldForSearch(b));
     if (c != 0) return c;

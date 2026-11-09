@@ -25,6 +25,7 @@
 #include "platform/wii_input.hpp"
 #include "ui/debug_overlay.hpp"
 #include "ui/home_menu.hpp"
+#include "ui/jump_bar.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/pointer_cursor.hpp"
 #include "ui/scene.hpp"
@@ -255,6 +256,8 @@ int main(int, char**) {
     nl::ui::HomeMenu homeMenu;
     mainScene.setHomeMenu(&homeMenu);
     mainScene.setFavoriteKeys(&store);
+    nl::ui::JumpBar jumpBar(mainScene);
+    mainScene.setJumpBar(&jumpBar);
     nl::ui::SceneStack scenes;
     scenes.push(&mainScene);
 

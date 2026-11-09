@@ -2,6 +2,7 @@
 
 #include <cstdio>
 
+#include "core/text_fold.hpp"
 #include "gfx/text.hpp"
 #include "ui/strings.hpp"
 
@@ -102,6 +103,26 @@ void MainScene::selectBar(int index, float width, float height) {
     gridHeight_ = height;
     scroll_.snap(0.0f);
     animFocus_ = -1;
+    bucketMask_ = 0;
+    for (const Game* g : games_) {
+        const char b = letterBucket(g->title);
+        bucketMask_ |= 1u << (b == '#' ? 0 : b - 'A' + 1);
+    }
+}
+
+void MainScene::jumpToBucket(char bucket) {
+    const int i = firstIndexForBucket(games_, bucket);
+    if (i >= 0) grid_.setFocus(i);
+}
+
+bool MainScene::hasBucket(char bucket) const {
+    const int bit = bucket == '#' ? 0 : bucket - 'A' + 1;
+    return bit >= 0 && bit < 27 && (bucketMask_ & (1u << bit)) != 0;
+}
+
+char MainScene::currentBucket() const {
+    const Game* g = focusedGame();
+    return g != nullptr ? letterBucket(g->title) : '#';
 }
 
 const Game* MainScene::focusedGame() const {
@@ -244,6 +265,11 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
     if (in.pressed(Action::Down)) grid_.move(0, 1);
 
     if (in.pressed(Action::Home) && home_ != nullptr) out.push = home_;
+    if (in.pressed(Action::Search) && jumpBar_ != nullptr) out.push = jumpBar_;
+    if (pendingSearch_) {
+        pendingSearch_ = false;
+        if (keyboard_ != nullptr) out.push = keyboard_;
+    }
     if (in.pressed(Action::Favorite)) {
         if (const Game* g = focusedGame()) {
             out.command = AppCommand::ToggleFavorite;

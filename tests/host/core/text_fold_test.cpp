@@ -1,3 +1,4 @@
+#include "core/game.hpp"
 #include "core/text_fold.hpp"
 #include <doctest/doctest.h>
 using namespace nl;
@@ -44,4 +45,19 @@ TEST_CASE("compareTitles: Groß/klein egal, Artikel zählen") {
     CHECK(compareTitles("Zelda", "zelda") != 0);  // Gleichstand wird bytewise entschieden
     CHECK(compareTitles("Mario", "Mario") == 0);
     CHECK(compareTitles("Ökoland", "Pac-Man") < 0);
+}
+
+TEST_CASE("firstIndexForBucket") {
+    const Game g1{Console::N64, "a", "1080 Snowboarding", 0, 0}, g2{Console::N64, "b", "Banjo", 0, 0},
+        g3{Console::N64, "c", "Donkey", 0, 0};
+    const Game* sorted[] = {&g1, &g2, &g3};
+    CHECK(firstIndexForBucket(sorted, '#') == 0);
+    CHECK(firstIndexForBucket(sorted, 'B') == 1);
+    CHECK(firstIndexForBucket(sorted, 'C') == 2);  // nächster folgender Buchstabe: D
+    CHECK(firstIndexForBucket(sorted, 'Z') == 2);  // nichts danach: letzter Index
+    CHECK(firstIndexForBucket(std::span<const Game* const>{}, 'A') == -1);
+    const Game z{Console::Nes, "z", "Zelda", 0, 0}, a{Console::Nes, "x", "Arms", 0, 0};
+    const Game* unsorted[] = {&z, &a};
+    CHECK(firstIndexForBucket(unsorted, 'A') == 1);
+    CHECK(firstIndexForBucket(unsorted, 'B') == 0);
 }

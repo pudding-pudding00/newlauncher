@@ -28,6 +28,9 @@ void StartupScene::showWaitingUsb(int secondsLeft) {
 }
 
 void StartupScene::showUsbFailed() {
+    // main ruft das im Zustand „Zeitüberschreitung" jeden Frame auf: nur beim Wechsel zurücksetzen,
+    // sonst wäre „SD verwenden" per Steuerkreuz nie erreichbar.
+    if (phase_ == Phase::UsbFailed) return;
     phase_ = Phase::UsbFailed;
     focus_ = 0;
     keysSincePointerMove_ = false;

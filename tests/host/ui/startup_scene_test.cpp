@@ -104,3 +104,12 @@ TEST_CASE_FIXTURE(Fixture, "draw in allen Zuständen und Breiten ohne verworfene
         }
     }
 }
+
+TEST_CASE_FIXTURE(Fixture, "showUsbFailed jeden Frame (wie in main) setzt den Fokus nicht zurück") {
+    StartupScene s;
+    s.showUsbFailed();
+    step(s, action(Action::Right));
+    s.showUsbFailed();  // main ruft das im Zustand TimedOut in jedem Frame auf
+    step(s, action(Action::Confirm));
+    CHECK(s.takeChoice() == StartupScene::Choice::UseSd);
+}

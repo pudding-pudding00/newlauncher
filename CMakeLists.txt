@@ -14,6 +14,7 @@ add_library(nl_core STATIC
     src/core/theme.cpp
     src/core/console.cpp
     src/core/frame_stats.cpp
+    src/core/crash_report.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp

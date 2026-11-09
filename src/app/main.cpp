@@ -1,6 +1,7 @@
 // Hauptschleife (M1): Eingabe → Szenenstapel → DrawList → GX.
 
 #include <gccore.h>
+#include <ogc/lwp_watchdog.h>
 
 #include <cstdlib>
 #include <ctime>
@@ -12,6 +13,7 @@
 #include "platform/log.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_input.hpp"
+#include "ui/debug_overlay.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/scene.hpp"
@@ -78,15 +80,19 @@ int main(int, char**) {
     scenes.push(&mainScene);
 
     nl::gfx::DrawList dl(4096, 16);
+    nl::ui::DebugOverlay debug;
+    nl::FrameStats stats;
     bool readyReported = false;
     bool running = true;
     while (running) {
+        const u64 frameStart = gettime();
         fillClock(ctx);
         theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, kDarkFrom, kDarkTo), true);
         theme.update(kFrameMs);
         ctx.theme = &theme.current();
 
         const nl::ui::InputFrame in = mapper.update(input.poll(), kFrameMs);
+        if (in.pressed(nl::ui::Action::DebugToggle)) debug.toggle();
         const nl::ui::AppCommand cmd = scenes.update(ctx, in, kFrameMs);
         switch (cmd) {
             case nl::ui::AppCommand::CycleTheme:
@@ -110,9 +116,18 @@ int main(int, char**) {
 
         dl.clear();
         scenes.draw(ctx, dl);
+        debug.setStats(stats);
+        debug.draw(ctx, dl);
         renderer.beginFrame(ctx.theme->bg);
         renderer.submit(dl);
+
+        // Statistik für den nächsten Frame; CPU-Zeit ohne die VSync-Wartezeit in endFrame.
+        stats.cpuMicros = static_cast<u32>(ticks_to_microsecs(diff_ticks(frameStart, gettime())));
+        stats.quads = dl.quadCount();
+        stats.droppedQuads = dl.droppedQuads();
+        stats.textureBytes = renderer.textureBytes();
         renderer.endFrame();
+        stats.drawCalls = renderer.drawCallsLastFrame();
 
         if (!readyReported) {
             nl::log::line("NL_READY");

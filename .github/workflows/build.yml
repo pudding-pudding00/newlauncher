@@ -14,11 +14,10 @@ jobs:
         run: |
           command -v cmake || (apt-get update && apt-get install -y --no-install-recommends cmake)
           cmake --version
-          cmake -P /dev/stdin <<'EOF'
-          if(CMAKE_VERSION VERSION_LESS 3.25)
-            message(FATAL_ERROR "CMake ${CMAKE_VERSION} ist zu alt, Presets v6 brauchen >= 3.25")
-          endif()
-          EOF
+          printf '%s\n' 'if(CMAKE_VERSION VERSION_LESS 3.25)' \
+            '  message(FATAL_ERROR "CMake ${CMAKE_VERSION} ist zu alt, Presets v6 brauchen >= 3.25")' \
+            'endif()' > /tmp/check_cmake.cmake
+          cmake -P /tmp/check_cmake.cmake
       - name: DOL bauen
         run: cmake --preset wii && cmake --build --preset wii
       - uses: actions/upload-artifact@v4

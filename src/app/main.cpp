@@ -12,6 +12,7 @@
 #include "platform/log.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_input.hpp"
+#include "ui/home_menu.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/scene.hpp"
 #include "ui/test_library.hpp"
@@ -71,6 +72,8 @@ int main(int, char**) {
 
     const nl::ui::Library library = nl::ui::testLibrary();
     nl::ui::MainScene mainScene(library);
+    nl::ui::HomeMenu homeMenu;
+    mainScene.setHomeMenu(&homeMenu);
     nl::ui::SceneStack scenes;
     scenes.push(&mainScene);
 
@@ -85,10 +88,25 @@ int main(int, char**) {
 
         const nl::ui::InputFrame in = mapper.update(input.poll(), kFrameMs);
         const nl::ui::AppCommand cmd = scenes.update(ctx, in, kFrameMs);
-        if (cmd == nl::ui::AppCommand::CycleTheme) {
-            ctx.themeMode = nl::nextMode(ctx.themeMode);
-            nl::log::line("NL_CMD %s %s", nl::ui::appCommandName(cmd), nl::themeModeName(ctx.themeMode));
+        switch (cmd) {
+            case nl::ui::AppCommand::CycleTheme:
+                ctx.themeMode = nl::nextMode(ctx.themeMode);
+                nl::log::line("NL_CMD %s %s", nl::ui::appCommandName(cmd), nl::themeModeName(ctx.themeMode));
+                break;
+            case nl::ui::AppCommand::ExitToHbc:  // Spec 6.8: aufräumen, exit(0)
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                running = false;
+                break;
+            case nl::ui::AppCommand::WiiMenu:
+            case nl::ui::AppCommand::PowerOff:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                input.shutdown();
+                SYS_ResetSystem(cmd == nl::ui::AppCommand::WiiMenu ? SYS_RETURNTOMENU : SYS_POWEROFF, 0, 0);
+                break;
+            case nl::ui::AppCommand::None:
+                break;
         }
+        if (!running) break;
 
         dl.clear();
         scenes.draw(ctx, dl);

@@ -1,3 +1,4 @@
+#include "core/library_store.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/test_library.hpp"
 #include "support/fake_font.hpp"
@@ -316,4 +317,50 @@ TEST_CASE_FIXTURE(Fixture, "setLibrary mit leerer Bibliothek → nur Favoriten/Z
     CHECK(s.barIndex() <= 1);
     CHECK(s.focusIndex() == -1);
     CHECK(dl.droppedQuads() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Favorit-Taste mit Fokus liefert ToggleFavorite mit dem Spiel; ohne Fokus nichts") {
+    const Library lib = testLibrary();
+    MainScene s(lib);
+    step(s, InputFrame{});
+    const SceneRequests r = step(s, action(Action::Favorite));
+    CHECK(r.command == AppCommand::ToggleFavorite);
+    REQUIRE(r.game != nullptr);
+    CHECK(std::string(r.game->title) == std::string(s.infoTitle()));
+    step(s, action(Action::NextConsole));  // Zuletzt: leer, kein Fokus
+    const SceneRequests none = step(s, action(Action::Favorite));
+    CHECK(none.command == AppCommand::None);
+    CHECK(none.game == nullptr);
+    CHECK(std::string(appCommandName(AppCommand::ToggleFavorite)) == "toggle_favorite");
+}
+
+TEST_CASE_FIXTURE(Fixture, "showToast ersetzt die Infozeile für 2 s") {
+    const Library lib = testLibrary();
+    MainScene s(lib);
+    step(s, InputFrame{});
+    s.showToast("Zu Favoriten hinzugefügt");
+    step(s, InputFrame{}, 100);
+    CHECK(std::string(s.infoLineText()) == "Zu Favoriten hinzugefügt");
+    step(s, InputFrame{}, 2000);
+    CHECK(std::string(s.infoLineText()) != "Zu Favoriten hinzugefügt");
+}
+
+TEST_CASE_FIXTURE(Fixture, "Favoriten-Kachel trägt eine Markierung (ein Quad mehr)") {
+    IndexData d;
+    d.games.push_back(IndexGame{Console::Nes, 0, "nes/a.nes", "Gleich", "roms/nes/a.nes", 0});
+    d.games.push_back(IndexGame{Console::Nes, 0, "nes/b.nes", "Gleich", "roms/nes/b.nes", 0});
+    LibraryStore store;
+    store.setGames(std::move(d), nullptr);
+    store.toggleFavorite("nes/a.nes");
+    MainScene s(Library{store.games(), store.favorites(), store.recent()});
+    s.setFavoriteKeys(&store);
+    for (int i = 0; i < 3; ++i) step(s, action(Action::NextConsole));  // NES-Liste
+    REQUIRE(s.grid().count() == 2);
+    const gfx::Rect r = s.grid().tileRect(0, 0);
+    dl.clear();
+    s.drawTile(ctx, dl, 0, r, false);
+    const u32 fav = dl.quadCount();
+    dl.clear();
+    s.drawTile(ctx, dl, 1, r, false);
+    CHECK(fav == dl.quadCount() + 1);
 }

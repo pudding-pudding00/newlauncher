@@ -87,6 +87,11 @@ void MainScene::setLibrary(const Library& lib) {
     hoverBar_ = -1;
 }
 
+void MainScene::showToast(const char* text) {
+    std::snprintf(toastBuf_, sizeof toastBuf_, "%s", text);
+    toastMs_ = kToastMs;
+}
+
 void MainScene::selectBar(int index, float width, float height) {
     if (index < 0 || index >= barCount_) return;
     barIndex_ = index;
@@ -239,6 +244,12 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
     if (in.pressed(Action::Down)) grid_.move(0, 1);
 
     if (in.pressed(Action::Home) && home_ != nullptr) out.push = home_;
+    if (in.pressed(Action::Favorite)) {
+        if (const Game* g = focusedGame()) {
+            out.command = AppCommand::ToggleFavorite;
+            out.game = g;
+        }
+    }
     if (in.pressed(Action::Confirm)) {
         if (hover_ == Hover::Home && home_ != nullptr) {
             out.push = home_;
@@ -275,6 +286,7 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
     const char* tag = consoleInfo(g.console).label;
     const float tagW = gfx::measureText(label, tag) + 12.0f;
     gfx::roundRect(dl, s, Rect{r.x + 8, r.y + 8, tagW, 18}, 9, t.accentSoft);
+    if (store_ != nullptr && store_->isFavorite(g.key)) gfx::circle(dl, s, r.x + r.w - 14, r.y + 17, 4, t.accent);
     gfx::drawText(dl, label, r.x + 14, r.y + 8 + 9 + (label.ascent - label.descent) / 2, tag, t.accentSoftText);
 
     const gfx::FontFace& body = ctx.fonts->face(FontSize::Small, FontWeight::Regular);

@@ -8,6 +8,7 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::WiiMenu: return "wii_menu";
         case AppCommand::PowerOff: return "power_off";
         case AppCommand::CycleTheme: return "cycle_theme";
+        case AppCommand::ToggleFavorite: return "toggle_favorite";
         case AppCommand::None: break;
     }
     return "none";
@@ -33,7 +34,8 @@ int SceneStack::lowestVisible() const {
     return i;
 }
 
-AppCommand SceneStack::update(const UiContext& ctx, const InputFrame& in, float dtMs) {
+AppCommand SceneStack::update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests* topRequests) {
+    if (topRequests != nullptr) *topRequests = SceneRequests{};
     for (int i = 0; i < depth_; ++i) entries_[i].alpha.update(dtMs);
     if (depth_ > 0 && entries_[depth_ - 1].popping && entries_[depth_ - 1].alpha.done()) {
         entries_[--depth_] = Entry{};
@@ -50,6 +52,7 @@ AppCommand SceneStack::update(const UiContext& ctx, const InputFrame& in, float 
         if (isTop) topReq = req;
     }
     if (topPopping) return AppCommand::None;
+    if (topRequests != nullptr) *topRequests = topReq;
 
     if (topReq.pop && depth_ > 1) {
         Entry& e = entries_[depth_ - 1];

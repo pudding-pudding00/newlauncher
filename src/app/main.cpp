@@ -29,6 +29,7 @@
 #include "ui/pointer_cursor.hpp"
 #include "ui/scene.hpp"
 #include "ui/startup_scene.hpp"
+#include "ui/strings.hpp"
 
 #ifdef NL_SELFTEST
 #include "app/selftest.hpp"
@@ -253,6 +254,7 @@ int main(int, char**) {
     nl::ui::MainScene mainScene(libraryView());
     nl::ui::HomeMenu homeMenu;
     mainScene.setHomeMenu(&homeMenu);
+    mainScene.setFavoriteKeys(&store);
     nl::ui::SceneStack scenes;
     scenes.push(&mainScene);
 
@@ -285,8 +287,20 @@ int main(int, char**) {
         }
 
         if (in.pressed(nl::ui::Action::DebugToggle)) debug.toggle();
-        const nl::ui::AppCommand cmd = scenes.update(ctx, in, kFrameMs);
+        nl::ui::SceneRequests req;
+        const nl::ui::AppCommand cmd = scenes.update(ctx, in, kFrameMs, &req);
         switch (cmd) {
+            case nl::ui::AppCommand::ToggleFavorite: {
+                if (req.game == nullptr) break;
+                const std::string key = req.game->key;
+                const bool nowFavorite = store.toggleFavorite(key);
+                const std::string text = store.favoritesIni().serialize();
+                if (sdOk && writeText(fs, kFavoritesPath, text)) nl::log::line("NL_FAV_SAVED %s", key.c_str());
+                else nl::log::line("NL_WARN favorites.ini nicht gespeichert");
+                mainScene.setLibrary(libraryView());
+                mainScene.showToast(nowFavorite ? nl::ui::kStrFavAdded : nl::ui::kStrFavRemoved);
+                break;
+            }
             case nl::ui::AppCommand::CycleTheme:
                 ctx.themeMode = nl::nextMode(ctx.themeMode);
                 nl::log::line("NL_CMD %s %s", nl::ui::appCommandName(cmd), nl::themeModeName(ctx.themeMode));

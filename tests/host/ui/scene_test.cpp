@@ -173,3 +173,17 @@ TEST_CASE_FIXTURE(Fixture, "leerer Stapel: update liefert None, draw zeichnet ni
     CHECK(dl.quadCount() == 0);
     CHECK(st.top() == nullptr);
 }
+
+TEST_CASE_FIXTURE(Fixture, "update reicht die Anforderung der obersten Szene samt Spiel heraus") {
+    SceneStack st;
+    Recorder a;
+    st.push(&a);
+    const Game g{Console::Nes, "nes/a", "A", 0, 0};
+    a.next.command = AppCommand::ToggleFavorite;
+    a.next.game = &g;
+    SceneRequests out;
+    CHECK(st.update(ctx, InputFrame{}, 16, &out) == AppCommand::ToggleFavorite);
+    CHECK(out.game == &g);
+    CHECK(st.update(ctx, InputFrame{}, 16, &out) == AppCommand::None);
+    CHECK(out.game == nullptr);
+}

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "core/easing.hpp"
+#include "core/library_store.hpp"
 #include "ui/layout.hpp"
 #include "ui/scene.hpp"
 
@@ -20,6 +21,8 @@ public:
     // Neue Bibliothek (z. B. nach dem Hintergrund-Scan): Leisten-Eintrag und Fokus bleiben per
     // Art/Konsole bzw. Spiel-Schlüssel erhalten, wenn möglich.
     void setLibrary(const Library& lib);
+    void showToast(const char* text);                     // ersetzt die Infozeile für 2 s
+    void setFavoriteKeys(const LibraryStore* store) { store_ = store; }  // für die Favoriten-Markierung
 
     // Für Tests und Selbsttest
     int barIndex() const { return barIndex_; }
@@ -58,6 +61,7 @@ private:
     int hoverBar_ = -1;
     bool pointerOnTile_ = false;
     Scene* home_ = nullptr;
+    const LibraryStore* store_ = nullptr;
 
     char clockBuf_[8] = "";
     int clockMinute_ = -1;

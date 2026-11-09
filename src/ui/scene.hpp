@@ -2,6 +2,7 @@
 // Szenen (Spec 4.1): ein Stapel aus Vollbild-Szenen und Overlays; Overlays blenden 200 ms ein/aus.
 
 #include "core/easing.hpp"
+#include "core/game.hpp"
 #include "core/theme.hpp"
 #include "gfx/draw_list.hpp"
 #include "gfx/font.hpp"
@@ -21,7 +22,7 @@ struct UiContext {
     int day = 1, month = 1, year = 2026, weekday = 0;  // weekday 0 = Montag
 };
 
-enum class AppCommand : u8 { None, ExitToHbc, WiiMenu, PowerOff, CycleTheme };
+enum class AppCommand : u8 { None, ExitToHbc, WiiMenu, PowerOff, CycleTheme, ToggleFavorite };
 const char* appCommandName(AppCommand c);
 
 class Scene;
@@ -29,6 +30,7 @@ struct SceneRequests {
     Scene* push = nullptr;
     bool pop = false;
     AppCommand command = AppCommand::None;
+    const Game* game = nullptr;  // Ziel von ToggleFavorite
 };
 
 class Scene {
@@ -46,7 +48,8 @@ inline constexpr float kOverlayFadeMs = 200.0f;
 class SceneStack {
 public:
     void push(Scene* s);
-    AppCommand update(const UiContext& ctx, const InputFrame& in, float dtMs);
+    // topRequests (optional) erhält die Anforderung der obersten Szene, z. B. das Spiel zu ToggleFavorite.
+    AppCommand update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests* topRequests = nullptr);
     void draw(const UiContext& ctx, gfx::DrawList& dl);
     Scene* top() const { return depth_ > 0 ? entries_[depth_ - 1].scene : nullptr; }
     int depth() const { return depth_; }

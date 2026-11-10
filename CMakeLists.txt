@@ -46,6 +46,8 @@ add_library(nl_core STATIC
     src/ui/jump_bar.cpp
     src/ui/keyboard.cpp
     src/ui/details_scene.cpp
+    src/ui/dialog_scene.cpp
+    src/ui/launch_text.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 nl_apply_flags(nl_core)

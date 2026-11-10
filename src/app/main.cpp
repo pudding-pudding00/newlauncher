@@ -4,8 +4,11 @@
 #include <ogc/lwp_watchdog.h>
 
 #include <cstdio>
+#include <algorithm>
 #include <cstdlib>
 #include <ctime>
+#include <malloc.h>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -23,6 +26,7 @@
 #include "core/meta_db.hpp"
 #include "core/n64.hpp"
 #include "core/n64_choice.hpp"
+#include "core/perf_stats.hpp"
 #include "core/theme.hpp"
 #include "core/vc_map.hpp"
 #include "gfx/draw_list.hpp"
@@ -167,9 +171,12 @@ struct Frame {
     }
 };
 
+u32 msSince(u64 start) { return static_cast<u32>(ticks_to_millisecs(diff_ticks(start, gettime()))); }
+
 }  // namespace
 
 int main(int, char**) {
+    const u64 bootTicks = gettime();  // Perf: Startzeiten relativ zum Einsprung
     // Spec 9: MEM2 ab kDolBufferAddr gehört dem Chainloader. Vor jeder Allokation reservieren.
     const bool launchAllowed = reinterpret_cast<u32>(SYS_GetArena2Hi()) > nl::kDolBufferAddr;
     if (launchAllowed) SYS_SetArena2Hi(reinterpret_cast<void*>(nl::kDolBufferAddr));
@@ -247,6 +254,22 @@ int main(int, char**) {
     theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, config.darkFromMin, config.darkToMin), false);
     ctx.theme = &theme.current();
 
+    // Perf (M7, [debug] perf): nur bei Bedarf angelegt; der Ring hält 2 × 4 KiB.
+    std::unique_ptr<nl::PerfStats> perf;
+    if (config.debugPerf) perf = std::make_unique<nl::PerfStats>(video.refreshHz());
+    u32 firstFrameMs = 0;
+    u32 usbWaitMs = 0;
+    auto markFirstFrame = [&]() {
+        if (perf && firstFrameMs == 0) firstFrameMs = std::max<u32>(1, msSince(bootTicks));
+    };
+    auto logPerfSummary = [&]() {
+        if (!perf) return;
+        char line[400];
+        perf->formatSummary(line, sizeof line, SYS_GetArena1Size(), SYS_GetArena2Size(),
+                            static_cast<u32>(mallinfo().fordblks));
+        nl::log::line("%s", line);
+    };
+
     nl::gfx::DrawList dl(4096, 256);  // Cover und Atlas wechseln sich pro Kachel ab
     Frame frame{renderer, input, mapper, ctx, theme, dl, config};
     nl::ui::StartupScene startup;
@@ -258,6 +281,7 @@ int main(int, char**) {
         startup.draw(ctx, dl);
         nl::ui::drawPointerCursor(ctx, dl, in);
         frame.present();
+        markFirstFrame();
     };
 
     // 3. Bibliotheksgerät (Spec 6.1 Schritt 4)
@@ -283,6 +307,7 @@ int main(int, char**) {
             }
             startupFrame();
         }
+        usbWaitMs = usb.waitedMs();
     }
     nl::log::line("NL_MOUNT %s", libRoot.c_str());
     const std::string cacheDir = libRoot + "/newlauncher/cache";
@@ -369,6 +394,7 @@ int main(int, char**) {
     nl::app::CoverService covers(fs, libRoot);
     nl::ui::MainScene mainScene(libraryView());
     mainScene.setCovers(&covers);
+    covers.setPerf(perf.get());
     nl::ui::HomeMenu homeMenu;
     mainScene.setHomeMenu(&homeMenu);
     nl::ui::SettingsScene settings;
@@ -431,6 +457,7 @@ int main(int, char**) {
             const u64 titleId = target.value().titleId;
             nl::log::line("NL_LAUNCH_VC %s", nl::formatTitleId(titleId).c_str());
             stopAudio();
+            logPerfSummary();
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
             input.shutdown();
             nl::platform::unmountAll();
@@ -448,6 +475,7 @@ int main(int, char**) {
             return;
         }
         stopAudio();
+        logPerfSummary();
         if (sdOk) nl::log::flushLogFile(fs, kLogPath);
         input.shutdown();
         nl::platform::unmountAll();
@@ -522,9 +550,20 @@ int main(int, char**) {
     bool readyReported = false;
     bool coversReported = false;
     bool running = true;
+    u64 prevFrameStart = 0;
     for (int frameNo = 0; running; ++frameNo) {
         static_cast<void>(frameNo);  // nur im Selbsttest gelesen
         const u64 frameStart = gettime();
+        if (perf && prevFrameStart != 0) {
+            const float intervalMs = static_cast<float>(ticks_to_microsecs(diff_ticks(prevFrameStart, frameStart))) / 1000.0f;
+            perf->frame(intervalMs, worker.running() || net.running() || covers.converting());
+            if (perf->windowFull()) {
+                char line[160];
+                perf->takeWindow(line, sizeof line);
+                nl::log::line("%s", line);
+            }
+        }
+        prevFrameStart = frameStart;
 #ifdef NL_SELFTEST
         const nl::app::SelftestView view{mainScene, scenes, debug, worker.running(), store, ctx, keyboard, &dialog,
                                                  &details, &vcMapScene, &settings, &config, &covers};
@@ -551,7 +590,10 @@ int main(int, char**) {
         }
 
         if (in.pressed(nl::ui::Action::DebugToggle)) debug.toggle();
-        covers.beginFrame(static_cast<u32>(frameNo) + 1, static_cast<float>(frameNo) * kFrameMs);
+        // Mit Perf echte Zeit, damit die Cover-Latenz langsame Frames enthält; sonst die feste Taktung,
+        // die den Selbsttest reproduzierbar hält.
+        covers.beginFrame(static_cast<u32>(frameNo) + 1,
+                          perf ? static_cast<float>(msSince(bootTicks)) : static_cast<float>(frameNo) * kFrameMs);
         nl::ui::SceneRequests req;
         const nl::ui::AppCommand cmd = scenes.update(ctx, in, kFrameMs, &req);
         if (req.sound != nl::UiSound::None) {
@@ -663,6 +705,7 @@ int main(int, char**) {
                 net.join();
                 covers.shutdown();
                 stopAudio();
+                logPerfSummary();
                 if (sdOk) nl::log::flushLogFile(fs, kLogPath);
                 input.shutdown();
                 nl::platform::unmountAll();
@@ -697,9 +740,16 @@ int main(int, char**) {
         stats.textureBytes = renderer.textureBytes() + covers.bytesUsed();
         renderer.endFrame();
         stats.drawCalls = renderer.drawCallsLastFrame();
+        markFirstFrame();
 
         if (!readyReported) {
             nl::log::line("NL_READY");
+            if (perf) {
+                perf->setBoot(firstFrameMs, msSince(bootTicks), usbWaitMs);
+                char line[160];
+                perf->formatBoot(line, sizeof line);
+                nl::log::line("%s", line);
+            }
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
             readyReported = true;
             if (config.music) startMusic();
@@ -730,6 +780,7 @@ int main(int, char**) {
     net.join();
     covers.shutdown();
     stopAudio();
+    logPerfSummary();
     if (sdOk) nl::log::flushLogFile(fs, kLogPath);
     input.shutdown();
     nl::platform::unmountAll();

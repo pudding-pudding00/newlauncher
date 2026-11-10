@@ -54,8 +54,13 @@ void CoverService::pump() {
 
 void CoverService::takeResult() {
     if (auto r = worker_.take()) {
+        lastConverted_ = r->converted;
         if (r->texels != nullptr) {
             if (r->converted) log::line("NL_COVER_CONVERTED %s", r->stem.c_str());
+            // Latenz nur für gelesene .tex: eine Umwandlung ist einmalig und hat ihr eigenes Budget.
+            if (perf_ != nullptr && !r->converted) {
+                if (const auto at = cache_.requestedAtMs(r->stem)) perf_->coverLoaded(cache_.nowMs() - *at);
+            }
             cache_.complete(r->stem, r->texels, r->bytes);
         } else {
             if (!r->error.empty()) log::line("NL_COVER_FAIL %s %s", r->stem.c_str(), r->error.c_str());

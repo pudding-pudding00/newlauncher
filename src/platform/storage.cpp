@@ -34,6 +34,7 @@ UsbMount::State UsbMount::poll(float dtMs) {
         }
     }
     elapsedMs_ += dtMs;
+    waitedMs_ += dtMs;
     if (elapsedMs_ >= timeoutMs_) state_ = State::TimedOut;
     return state_;
 }

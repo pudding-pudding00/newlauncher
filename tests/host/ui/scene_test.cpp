@@ -230,3 +230,48 @@ TEST_CASE_FIXTURE(Fixture, "push von außen, während ein Overlay ausblendet, wa
     CHECK(dialog.enters == 1);
     CHECK(st.depth() == 2);
 }
+
+TEST_CASE_FIXTURE(Fixture, "push ignoriert eine Szene, die schon auf dem Stapel liegt") {
+    SceneStack st;
+    Recorder a, d(true), other(true);
+    st.push(&a);
+    st.push(&d);
+    st.push(&d);
+    CHECK(st.depth() == 2);
+    CHECK(d.enters == 1);
+    CHECK(st.contains(&a));
+    CHECK(st.contains(&d));
+    CHECK_FALSE(st.contains(&other));
+    CHECK_FALSE(st.contains(nullptr));
+}
+
+TEST_CASE_FIXTURE(Fixture, "contains sieht auch die Szene, die nach dem Ausblenden folgt") {
+    SceneStack st;
+    Recorder a, d(true), next(true);
+    st.push(&a);
+    st.push(&d);
+    d.next.pop = true;
+    d.next.push = &next;
+    st.update(ctx, InputFrame{}, 16.0f);
+    CHECK(st.contains(&next));
+    st.push(&next);  // doppelt angefordert: bleibt eine Anforderung
+    for (int i = 0; i < 40; ++i) st.update(ctx, InputFrame{}, 16.0f);
+    CHECK(st.depth() == 2);
+    CHECK(st.top() == &next);
+    CHECK(next.enters == 1);
+}
+
+TEST_CASE_FIXTURE(Fixture, "eine ausblendende Szene lässt sich danach wieder öffnen") {
+    SceneStack st;
+    Recorder a, d(true);
+    st.push(&a);
+    st.push(&d);
+    d.next.pop = true;
+    st.update(ctx, InputFrame{}, 16.0f);
+    CHECK_FALSE(st.contains(&d));  // geht gerade
+    st.push(&d);
+    for (int i = 0; i < 40; ++i) st.update(ctx, InputFrame{}, 16.0f);
+    CHECK(st.depth() == 2);
+    CHECK(st.top() == &d);
+    CHECK(d.enters == 2);
+}

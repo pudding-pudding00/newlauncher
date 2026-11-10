@@ -19,8 +19,16 @@ const char* appCommandName(AppCommand c) {
     return "none";
 }
 
+bool SceneStack::contains(const Scene* s) const {
+    if (s == nullptr) return false;
+    if (pushAfterPop_ == s) return true;
+    for (int i = 0; i < depth_; ++i)
+        if (entries_[i].scene == s && !entries_[i].popping) return true;  // ausblendend zählt nicht
+    return false;
+}
+
 void SceneStack::push(Scene* s) {
-    if (s == nullptr) return;
+    if (s == nullptr || contains(s)) return;  // dieselbe Szene zweimal hieße doppelt B drücken
     if (depth_ > 0 && entries_[depth_ - 1].popping) {  // erst ausblenden lassen, dann öffnen
         pushAfterPop_ = s;
         return;
@@ -50,8 +58,9 @@ AppCommand SceneStack::update(const UiContext& ctx, const InputFrame& in, float 
     if (depth_ > 0 && entries_[depth_ - 1].popping && entries_[depth_ - 1].alpha.done()) {
         entries_[--depth_] = Entry{};
         if (pushAfterPop_ != nullptr) {
-            push(pushAfterPop_);
-            pushAfterPop_ = nullptr;
+            Scene* next = pushAfterPop_;
+            pushAfterPop_ = nullptr;  // vor push, sonst hält contains() sie für schon vorhanden
+            push(next);
         }
     }
     if (depth_ == 0) return AppCommand::None;

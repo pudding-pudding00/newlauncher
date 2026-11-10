@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "core/cover_paths.hpp"
+#include <string>
 
 namespace nl {
 namespace {
@@ -43,6 +44,83 @@ std::vector<CoverJob> coverDownloadJobs(std::span<const Game* const> games,
         jobs.push_back({std::string(g->key), std::move(stem)});
     }
     return jobs;
+}
+
+std::unordered_set<std::string> existingCoverFiles(FileSystem& fs, std::string_view libRoot) {
+    std::unordered_set<std::string> out;
+    const std::string root(libRoot);
+    for (const char* base : {"/newlauncher/covers_src/", "/newlauncher/cache/covers/"}) {
+        for (const char* console : {"wii", "gc"}) {
+            const std::string dir = root + base + console;
+            auto entries = fs.list(dir);
+            if (!entries.isOk()) continue;  // Ordner fehlt: noch kein Cover
+            for (const DirEntry& e : entries.value())
+                if (!e.isDir) out.insert(dir + "/" + e.name);
+        }
+    }
+    return out;
+}
+
+DownloadSummary runCoverDownloads(std::span<const CoverJob> jobs, std::span<const std::string> regions,
+                                  std::string_view baseUrl, const CoverDownloadIo& io) {
+    DownloadSummary sum;
+    u32 streak = 0;  // Fehler in Folge
+    std::vector<u8> body;
+    for (const CoverJob& job : jobs) {
+        enum class Res { Missing, Ok, Failed } res = Res::Missing;
+        std::string_view okRegion;
+        if (streak >= kMaxConsecutiveDownloadFailures || io.cancelled()) {
+            res = Res::Failed;  // nicht mehr versucht
+        } else {
+            for (const std::string& region : regions) {
+                if (io.cancelled()) {
+                    res = Res::Failed;
+                    break;
+                }
+                const auto url = parseUrl(gametdbCoverUrl(baseUrl, region, job.id6));
+                if (!url) {
+                    res = Res::Failed;
+                    break;
+                }
+                const HttpOutcome o = io.get(*url, body);
+                if (o == HttpOutcome::Failed) {
+                    res = Res::Failed;
+                    break;
+                }
+                if (o == HttpOutcome::NotFound || !isPng(body)) continue;
+                if (!io.save(job.stem, body)) {
+                    res = Res::Failed;
+                    break;
+                }
+                res = Res::Ok;
+                okRegion = region;
+                break;
+            }
+            if (res == Res::Failed) {
+                if (++streak == kMaxConsecutiveDownloadFailures)
+                    io.log("NL_COVER_DL_ABORT failures=" + std::to_string(kMaxConsecutiveDownloadFailures));
+            } else {
+                streak = 0;
+            }
+        }
+        switch (res) {
+            case Res::Ok:
+                ++sum.ok;
+                io.finished(job.stem);
+                io.log("NL_COVER_DL " + job.id6 + " " + std::string(okRegion) + " ok");
+                break;
+            case Res::Missing:
+                ++sum.missing;
+                io.log("NL_COVER_DL " + job.id6 + " missing");
+                break;
+            case Res::Failed:
+                ++sum.failed;
+                io.log("NL_COVER_DL " + job.id6 + " failed");
+                break;
+        }
+        io.jobDone();
+    }
+    return sum;
 }
 
 bool isPng(std::span<const u8> data) {

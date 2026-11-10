@@ -423,8 +423,9 @@ int main(int, char**) {
         std::vector<const nl::Game*> games;
         games.reserve(store.games().size());
         for (const nl::Game& g : store.games()) games.push_back(&g);
-        std::vector<nl::CoverJob> jobs = nl::coverDownloadJobs(
-            games, [&](const std::string& path) { return nl::fileSize(fs, path).has_value(); }, libRoot);
+        const auto present = nl::existingCoverFiles(fs, libRoot);  // vier Ordnerlisten statt zwei je Spiel
+        std::vector<nl::CoverJob> jobs =
+            nl::coverDownloadJobs(games, [&](const std::string& path) { return present.count(path) > 0; }, libRoot);
         nl::log::line("NL_COVER_DL_START jobs=%u", static_cast<unsigned>(jobs.size()));
         if (jobs.empty()) {
             dialog.open(nl::ui::kStrNoMissingCovers, nl::ui::kStrNoMissingCoversText);
@@ -459,7 +460,8 @@ int main(int, char**) {
                 coverToastFrames = 90;
             }
         }
-        if (auto sum = net.take()) {
+        // Die Zusammenfassung wartet, solange der Dialog etwas anderes zeigt (z. B. einen Startfehler).
+        if (auto sum = scenes.contains(&dialog) ? std::nullopt : net.take()) {
             for (const std::string& line : net.takeLogLines()) nl::log::line("%s", line.c_str());
             for (const std::string& stem : net.takeFinishedStems()) covers.invalidate(stem);
             nl::log::line("NL_COVER_DL_DONE ok=%u missing=%u failed=%u", static_cast<unsigned>(sum->ok),

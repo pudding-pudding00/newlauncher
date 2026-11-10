@@ -1,6 +1,7 @@
 #include "platform/net_worker.hpp"
 
 #include <cstdio>
+#include <span>
 
 #include <network.h>
 #include <unistd.h>
@@ -135,53 +136,20 @@ DownloadSummary NetWorker::run() {
     }
     log("NL_NET ok");
 
-    std::vector<u8> body;
-    for (const CoverJob& job : jobs_) {
-        if (cancel_) {
-            ++sum.failed;  // nicht mehr versucht
-            continue;
-        }
-        enum class Res { Missing, Ok, Failed } res = Res::Missing;
-        const char* okRegion = "";
-        for (const std::string& region : regions_) {
-            const auto url = parseUrl(gametdbCoverUrl(base_, region, job.id6));
-            if (!url) {
-                res = Res::Failed;
-                break;
-            }
-            const HttpOutcome o = httpGet(*url, kMaxCoverDownloadBytes, body);
-            if (o == HttpOutcome::Failed) {
-                res = Res::Failed;
-                break;
-            }
-            if (o == HttpOutcome::NotFound || !isPng(body)) continue;
-            const std::string path = coverSrcPath(root_, job.stem);
-            static_cast<void>(fs_->makeDirs(parentDir(path)));
-            if (!fs_->writeAtomic(path, body).isOk()) {
-                res = Res::Failed;
-                break;
-            }
-            res = Res::Ok;
-            okRegion = region.c_str();
-            break;
-        }
-        switch (res) {
-            case Res::Ok:
-                ++sum.ok;
-                finished(job.stem);
-                log(format("NL_COVER_DL %s %s ok", job.id6.c_str(), okRegion));
-                break;
-            case Res::Missing:
-                ++sum.missing;
-                log(format("NL_COVER_DL %s missing", job.id6.c_str()));
-                break;
-            case Res::Failed:
-                ++sum.failed;
-                log(format("NL_COVER_DL %s failed", job.id6.c_str()));
-                break;
-        }
-        done_ = done_ + 1;
-    }
+    CoverDownloadIo io;
+    io.get = [this](const Url& url, std::vector<u8>& body) {
+        return httpGet(url, kMaxCoverDownloadBytes, body, &cancel_);
+    };
+    io.save = [this](const std::string& stem, std::span<const u8> png) {
+        const std::string path = coverSrcPath(root_, stem);
+        static_cast<void>(fs_->makeDirs(parentDir(path)));
+        return fs_->writeAtomic(path, png).isOk();
+    };
+    io.cancelled = [this] { return cancel_; };
+    io.log = [this](std::string line) { log(std::move(line)); };
+    io.finished = [this](const std::string& stem) { finished(stem); };
+    io.jobDone = [this] { done_ = done_ + 1; };
+    sum = runCoverDownloads(jobs_, regions_, base_, io);
     return sum;
 }
 

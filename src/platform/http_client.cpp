@@ -13,6 +13,7 @@ namespace nl::platform {
 
 namespace {
 constexpr s32 kTimeoutMs = 10000;
+constexpr s32 kSliceMs = 100;  // Abbruch-Prüfung beim Warten
 constexpr u32 kIosNonBlock = 4;  // IOS-Wert für O_NONBLOCK; libogc reicht net_fcntl-Flags unverändert durch
 constexpr s32 kPollIn = 0x0001, kPollOut = 0x0008;
 
@@ -33,15 +34,24 @@ bool resolve(const std::string& host, in_addr& out) {
 
 u64 elapsedMs(u64 start) { return ticks_to_millisecs(diff_ticks(start, gettime())); }
 
-// Wartet auf ein Ereignis; false bei Timeout oder Fehler.
-bool waitFor(s32 sock, u32 events) {
-    pollsd p{sock, events, 0};
-    return net_poll(&p, 1, kTimeoutMs) > 0 && (p.revents & events) != 0;
+bool isCancelled(const volatile bool* cancel) { return cancel != nullptr && *cancel; }
+
+// Wartet auf ein Ereignis; false bei Timeout, Fehler oder Abbruch.
+bool waitFor(s32 sock, u32 events, const volatile bool* cancel) {
+    const u64 start = gettime();
+    while (!isCancelled(cancel)) {
+        pollsd p{sock, events, 0};
+        const s32 r = net_poll(&p, 1, kSliceMs);
+        if (r > 0) return (p.revents & events) != 0;
+        if (r < 0 || elapsedMs(start) > static_cast<u64>(kTimeoutMs)) return false;
+    }
+    return false;
 }
 
-bool connectWithTimeout(s32 sock, const sockaddr_in& addr) {
+bool connectWithTimeout(s32 sock, const sockaddr_in& addr, const volatile bool* cancel) {
     const u64 start = gettime();
     for (;;) {
+        if (isCancelled(cancel)) return false;
         const s32 r = net_connect(sock, reinterpret_cast<sockaddr*>(const_cast<sockaddr_in*>(&addr)), sizeof addr);
         if (r >= 0 || r == -EISCONN) return true;
         if (r != -EINPROGRESS && r != -EALREADY && r != -EAGAIN) return false;
@@ -50,14 +60,14 @@ bool connectWithTimeout(s32 sock, const sockaddr_in& addr) {
     }
 }
 
-bool sendAll(s32 sock, const std::string& data) {
+bool sendAll(s32 sock, const std::string& data, const volatile bool* cancel) {
     std::size_t sent = 0;
     while (sent < data.size()) {
         const s32 r = net_send(sock, data.data() + sent, static_cast<s32>(data.size() - sent), 0);
         if (r > 0) {
             sent += static_cast<std::size_t>(r);
         } else if (r == -EAGAIN) {
-            if (!waitFor(sock, kPollOut)) return false;
+            if (!waitFor(sock, kPollOut, cancel)) return false;
         } else {
             return false;
         }
@@ -73,7 +83,7 @@ struct Socket {
 };
 }  // namespace
 
-HttpOutcome httpGet(const Url& url, u32 maxBody, std::vector<u8>& body) {
+HttpOutcome httpGet(const Url& url, u32 maxBody, std::vector<u8>& body, const volatile bool* cancel) {
     body.clear();
     in_addr ip{};
     if (!resolve(url.host, ip)) return HttpOutcome::Failed;
@@ -87,8 +97,8 @@ HttpOutcome httpGet(const Url& url, u32 maxBody, std::vector<u8>& body) {
     addr.sin_family = AF_INET;
     addr.sin_port = htons(url.port);
     addr.sin_addr = ip;
-    if (!connectWithTimeout(sock.fd, addr)) return HttpOutcome::Failed;
-    if (!sendAll(sock.fd, buildGetRequest(url))) return HttpOutcome::Failed;
+    if (!connectWithTimeout(sock.fd, addr, cancel)) return HttpOutcome::Failed;
+    if (!sendAll(sock.fd, buildGetRequest(url), cancel)) return HttpOutcome::Failed;
 
     HttpParser parser(maxBody);
     static u8 buf[4096];  // nur der Netz-Thread ruft httpGet auf
@@ -100,7 +110,7 @@ HttpOutcome httpGet(const Url& url, u32 maxBody, std::vector<u8>& body) {
         } else if (r == 0) {
             state = parser.finish();
         } else if (r == -EAGAIN) {
-            if (!waitFor(sock.fd, kPollIn)) return HttpOutcome::Failed;
+            if (!waitFor(sock.fd, kPollIn, cancel)) return HttpOutcome::Failed;
         } else {
             return HttpOutcome::Failed;
         }

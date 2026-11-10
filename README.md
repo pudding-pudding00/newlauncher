@@ -231,6 +231,7 @@ Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel
 | `NL_NET ok`, `NL_NET_FAIL <code>` | Netzwerk für „Fehlende Cover laden“ bereit bzw. nicht verfügbar |
 | `NL_COVER_DL_START jobs=<n>` | „Fehlende Cover laden“: Anzahl fehlender Wii/GC-Cover |
 | `NL_COVER_DL <id6> <region> ok`, `NL_COVER_DL <id6> missing\|failed` | Ergebnis je Spiel |
+| `NL_COVER_DL_ABORT failures=3` | drei Fehler in Folge: übrige Spiele werden nicht mehr versucht (`failed`) |
 | `NL_COVER_DL_DONE ok=<n> missing=<n> failed=<n>` | Download fertig, Dialog offen |
 | `NL_WARN <text>` | nicht kritischer Fehler (z. B. kaputter Cache verworfen) |
 

@@ -11,6 +11,9 @@
 
 namespace nl {
 
+// Ergebnis eines GET (Plattform: platform::httpGet; Tests: Attrappe).
+enum class HttpOutcome : u8 { Ok, NotFound, Failed };
+
 struct Url {
     std::string host;
     u16 port = 80;

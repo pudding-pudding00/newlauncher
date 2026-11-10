@@ -68,7 +68,7 @@ void SettingsScene::onEnter() {
     focus_ = 0;
     keysSincePointerMove_ = false;
     pendingAction_ = AppCommand::None;
-    if (live_ != nullptr) saved_ = entered_ = *live_;
+    if (live_ != nullptr) saved_ = *live_;
 }
 
 bool SettingsScene::dirty() const { return live_ != nullptr && !sameSettings(*live_, saved_); }
@@ -173,7 +173,7 @@ void SettingsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         std::string v = live_ != nullptr ? valueText(*live_, row) : std::string();
         const float vw = v.empty() ? 0.0f : gfx::measureText(value, v);
         float labelMax = r.w - 16 - vw - (vw > 0 ? 12 : 0);
-        if (row == SettingRow::Library && live_ != nullptr && live_->library != entered_.library) {
+        if (row == SettingRow::Library && restartHintShown()) {
             const std::string_view hint = tr(Str::TakesEffectAfterRestart);
             const float hw = gfx::measureText(small, hint);
             gfx::drawText(dl, small, r.x + r.w - 8 - vw - 10 - hw, base, hint, t.textMuted);

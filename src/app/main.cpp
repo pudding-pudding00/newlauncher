@@ -373,6 +373,7 @@ int main(int, char**) {
     mainScene.setHomeMenu(&homeMenu);
     nl::ui::SettingsScene settings;
     settings.setConfig(&config);
+    settings.setActiveLibrary(libRoot == "usb:" ? nl::Config::LibraryDevice::Usb : nl::Config::LibraryDevice::Sd);
     homeMenu.setSettings(&settings);
     nl::platform::NetWorker net;
     mainScene.setFavoriteKeys(&store);

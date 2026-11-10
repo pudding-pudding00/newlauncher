@@ -48,12 +48,12 @@ Selbsttest in Dolphin (geskriptete Eingaben, keine Allokation im Leerlauf, absic
 python tools/dolphin_smoke.py --dol build/wii/nl_selftest.dol --marker "NL_LIBRARY games=12" --marker NL_FAV_SAVED --marker "NL_SEARCH mario=5" --marker "NL_OVERRIDE_SAVED n64/Super Mario 64 (Europe) (En,Fr,De).z64 not64" --marker "NL_PREFLIGHT_FAIL Unsupported GM8P01" --marker "NL_VC_CHANNEL 000100014E4C5443 NL Testkanal" --marker "NL_VCMAP_SAVED n=2" --marker "NL_SELFTEST_COVERS" --marker "NL_ALLOC_IDLE 0" --marker NL_SELFTEST_OK --marker "NL_CRASH id=7" --marker "NL_LANG en" --marker NL_CONFIG_SAVED
 ```
 
-Klänge und Musik in Dolphin (UI-Klänge melden sich mit `[debug] log_sounds = 1` als `NL_SOUND`; die Fixtures legen `tone.ogg` in den Musikordner; beim Spielstart stoppt der Ton vor dem Chainload):
+Klänge und Musik in Dolphin (UI-Klänge melden sich mit `[debug] log_sounds = 1` als `NL_SOUND`; die Fixtures legen `tone.ogg` und die kaputte `header_only.ogg` in den Musikordner; beim Spielstart stoppt der Ton vor dem Chainload):
 ```bash
 python tools/dolphin_smoke.py --marker "NL_AUDIO ok" --marker NL_READY
 ```
 ```bash
-python tools/dolphin_smoke.py --marker NL_READY --marker "NL_MUSIC play sd:/newlauncher/music/tone.ogg rate=32000 ch=1"
+python tools/dolphin_smoke.py --marker NL_READY --marker "NL_MUSIC play sd:/newlauncher/music/tone.ogg rate=32000 ch=1" --marker "NL_MUSIC_FAIL sd:/newlauncher/music/header_only.ogg"
 ```
 ```bash
 python tools/dolphin_smoke.py --autostart "nes/Super Mario Bros. (World).nes" --marker NL_AUDIO_STOP --marker "ARGV 1"

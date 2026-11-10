@@ -172,3 +172,24 @@ TEST_CASE_FIXTURE(Fixture, "Klänge: Wert ändern Confirm, Fokus runter Move, au
     focusRow(SettingRow::VcMap);
     CHECK(press(Action::Confirm).sound == UiSound::Confirm);
 }
+
+TEST_CASE_FIXTURE(Fixture, "Hinweis „nach Neustart“ vergleicht mit dem Gerät beim Start, nicht beim Öffnen") {
+    CHECK_FALSE(s.restartHintShown());
+    focusRow(SettingRow::Library);
+    press(Action::Right);  // USB → SD
+    CHECK(s.restartHintShown());
+    press(Action::Back);   // gespeichert, geschlossen
+    s.onEnter();           // wieder geöffnet: Neustart steht weiter aus
+    CHECK(s.restartHintShown());
+    focusRow(SettingRow::Library);
+    press(Action::Left);   // zurück auf das laufende Gerät
+    CHECK_FALSE(s.restartHintShown());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Hinweis „nach Neustart“ nach USB-Rückfall auf SD") {
+    s.setActiveLibrary(Config::LibraryDevice::Sd);  // config.ini sagt USB, gestartet wurde mit SD
+    CHECK(s.restartHintShown());
+    focusRow(SettingRow::Library);
+    press(Action::Right);  // → SD, also das laufende Gerät
+    CHECK_FALSE(s.restartHintShown());
+}

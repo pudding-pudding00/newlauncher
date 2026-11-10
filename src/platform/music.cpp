@@ -96,18 +96,14 @@ bool Music::idleWhileDisabled() {
 
 void Music::run() {
     Playlist playlist(files_, seed_);
-    u32 failures = 0;
     while (!quit_) {
         if (idleWhileDisabled()) break;
         const std::string path = playlist.next();
-        if (playFile(path)) {
-            failures = 0;
-            continue;
-        }
+        if (playFile(path)) continue;
         if (quit_) break;
-        ++failures;
+        playlist.markBroken();  // nicht erneut versuchen: kein Fehler-Log je Runde
         log("NL_MUSIC_FAIL " + path);
-        if (shouldStopMusic(failures, playlist.size())) {
+        if (playlist.allBroken()) {
             log("NL_MUSIC_OFF");
             break;
         }
@@ -131,16 +127,6 @@ bool Music::playFile(const std::string& path) {
     }
     const s32 format = info->channels == 2 ? VOICE_STEREO_16BIT : VOICE_MONO_16BIT;
     const s32 rate = static_cast<s32>(info->rate);
-    // Nur bei Stückwechsel melden: ein einzelnes Stück wiederholt sich sonst alle paar Sekunden im Log,
-    // und SYS_Report allokiert auf dem Haupt-Thread (Leerlauf-Zähler im Selbsttest).
-    if (path != lastLogged_) {
-        lastLogged_ = path;
-        char line[200];
-        std::snprintf(line, sizeof line, "NL_MUSIC play %s rate=%d ch=%d", path.c_str(), static_cast<int>(rate),
-                      info->channels);
-        log(line);
-    }
-
     bool ok = true;
     bool first = true;
     int bitstream = 0;
@@ -160,6 +146,17 @@ bool Music::playFile(const std::string& path) {
             filled += static_cast<u32>(n);
         }
         if (!ok || filled == 0) break;
+        if (first) {
+            // Nur bei Stückwechsel melden: ein einzelnes Stück wiederholt sich sonst alle paar Sekunden im Log,
+            // und SYS_Report allokiert auf dem Haupt-Thread (Leerlauf-Zähler im Selbsttest).
+            if (path != lastLogged_) {
+                lastLogged_ = path;
+                char line[200];
+                std::snprintf(line, sizeof line, "NL_MUSIC play %s rate=%d ch=%d", path.c_str(),
+                              static_cast<int>(rate), info->channels);
+                log(line);
+            }
+        }
         const u32 bytes = (filled + 31) & ~31u;  // ASND will Vielfache von 32 Byte
         std::memset(buf + filled, 0, bytes - filled);
         DCFlushRange(buf, bytes);
@@ -195,7 +192,9 @@ bool Music::playFile(const std::string& path) {
         usleep(10 * 1000);
     }
     ov_clear(&vf);  // schließt die Datei über closeCb
-    return ok;
+    // Kopf ohne Audiodaten (z. B. abgebrochene Kopie) ist ein Fehler: sonst kreiste der Thread mit
+    // Priorität 70 ohne Pause und hungerte den Haupt-Thread aus (Review M6/I1).
+    return ok && !first;
 }
 
 }  // namespace nl::platform

@@ -67,8 +67,49 @@ TEST_CASE("asndVolume") {
     CHECK(nl::asndVolume(-5) == 0);
 }
 
-TEST_CASE("shouldStopMusic") {
-    CHECK(nl::shouldStopMusic(0, 0));
-    CHECK_FALSE(nl::shouldStopMusic(2, 3));
-    CHECK(nl::shouldStopMusic(3, 3));
+TEST_CASE("Playlist: kaputte Stücke werden danach übersprungen") {
+    nl::Playlist p(files(4), 7);
+    const std::string bad = "sd:/m/2.ogg";
+    bool marked = false;
+    for (int i = 0; i < 40; ++i) {
+        const std::string& f = p.next();
+        if (marked) CHECK(f != bad);
+        if (f == bad) {
+            p.markBroken();
+            marked = true;
+        }
+    }
+    CHECK(marked);
+    CHECK_FALSE(p.allBroken());
+}
+
+TEST_CASE("Playlist: ein spielbares Stück reicht, auch über Rundengrenzen") {
+    // Review M6/I2: früher zählten Fehler über die Rundengrenze weiter (X,Y | X → drei in Folge → Musik aus).
+    for (nl::u32 seed = 1; seed <= 50; ++seed) {
+        nl::Playlist p({"g", "x", "y"}, seed);
+        int good = 0;
+        for (int i = 0; i < 30; ++i) {
+            if (p.next() == "g") {
+                ++good;
+            } else {
+                p.markBroken();
+            }
+            REQUIRE_FALSE(p.allBroken());
+        }
+        CHECK(good >= 20);  // nach dem ersten Fehlerdurchgang nur noch „g“
+    }
+}
+
+TEST_CASE("Playlist: allBroken erst, wenn jedes Stück gescheitert ist") {
+    nl::Playlist p(files(3), 3);
+    CHECK_FALSE(p.allBroken());
+    p.next();
+    p.markBroken();
+    p.next();
+    p.markBroken();
+    CHECK_FALSE(p.allBroken());
+    p.next();
+    p.markBroken();
+    CHECK(p.allBroken());
+    CHECK(nl::Playlist({}, 1).allBroken());  // leer: nichts zu spielen
 }

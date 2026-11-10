@@ -13,7 +13,11 @@ class SettingsScene final : public Scene {
 public:
     static constexpr int kCount = static_cast<int>(SettingRow::Count);
 
-    void setConfig(Config* live) { live_ = live; }
+    // Beim Start aufrufen: das Bibliotheksgerät der Live-Config gilt als das gemountete (Hinweis „nach Neustart“).
+    void setConfig(Config* live) {
+        live_ = live;
+        if (live != nullptr) bootLibrary_ = live->library;
+    }
 
     void update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) override;
     void draw(const UiContext& ctx, gfx::DrawList& dl) override;
@@ -21,6 +25,8 @@ public:
     void onEnter() override;
 
     int focus() const { return focus_; }
+    void setActiveLibrary(Config::LibraryDevice mounted) { bootLibrary_ = mounted; }  // gemountetes Gerät (Rückfall auf SD)
+    bool restartHintShown() const { return live_ != nullptr && live_->library != bootLibrary_; }
     gfx::Rect rowRect(const UiContext& ctx, int row) const;
 
 private:
@@ -30,7 +36,7 @@ private:
 
     Config* live_ = nullptr;
     Config saved_;       // Stand bei onEnter bzw. nach dem letzten SaveSettings
-    Config entered_;     // Stand bei onEnter (Hinweis „nach Neustart“ beim Bibliotheksgerät)
+    Config::LibraryDevice bootLibrary_ = Config::LibraryDevice::Usb;  // beim Start gemountet
     AppCommand pendingAction_ = AppCommand::None;  // Aktion nach SaveSettings im nächsten Frame
     int focus_ = 0;
     bool keysSincePointerMove_ = false;

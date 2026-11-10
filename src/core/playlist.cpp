@@ -7,6 +7,7 @@ namespace nl {
 
 Playlist::Playlist(std::vector<std::string> files, u32 seed) : files_(std::move(files)), state_(seed == 0 ? 1 : seed) {
     order_.resize(files_.size());
+    broken_.assign(files_.size(), false);
     pos_ = order_.size();  // erste next() mischt
 }
 
@@ -31,10 +32,19 @@ void Playlist::shuffle() {
 }
 
 const std::string& Playlist::next() {
-    if (pos_ >= order_.size()) shuffle();
-    last_ = order_[pos_++];
+    // Kaputte Stücke bleiben in der Mischung (gleiche Zufallsfolge), werden aber übersprungen.
+    do {
+        if (pos_ >= order_.size()) shuffle();
+        last_ = order_[pos_++];
+    } while (broken_[last_]);
     hasLast_ = true;
     return files_[last_];
+}
+
+void Playlist::markBroken() {
+    if (!hasLast_ || broken_[last_]) return;
+    broken_[last_] = true;
+    ++brokenCount_;
 }
 
 int asndVolume(int percent) {

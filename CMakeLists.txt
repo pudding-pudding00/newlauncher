@@ -35,6 +35,8 @@ add_library(nl_core STATIC
     src/core/wii_title.cpp
     src/core/cmpr.cpp
     src/core/tex_file.cpp
+    src/core/cover_image.cpp
+    src/core/cover_paths.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp

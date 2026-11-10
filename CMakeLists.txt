@@ -37,6 +37,7 @@ add_library(nl_core STATIC
     src/core/tex_file.cpp
     src/core/cover_image.cpp
     src/core/cover_paths.cpp
+    src/core/cover_cache.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp

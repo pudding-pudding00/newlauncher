@@ -5,6 +5,7 @@
 // Absturzbildschirm sieht.
 
 #include "app/cover_service.hpp"
+#include "core/config.hpp"
 #include "core/library_store.hpp"
 #include "ui/debug_overlay.hpp"
 #include "ui/details_scene.hpp"
@@ -12,6 +13,7 @@
 #include "ui/keyboard.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/scene.hpp"
+#include "ui/settings_scene.hpp"
 #include "ui/vc_map_scene.hpp"
 
 namespace nl::app {
@@ -27,7 +29,8 @@ struct SelftestView {
     const ui::Scene* dialog;  // Fehlerdialog beim Start (M3)
     const ui::DetailsScene* details;  // Detailansicht (M4: Startmethode)
     const ui::VcMapScene* vcMap;      // VC-Zuordnungsdialog (M4)
-    const ui::Scene* actions;         // Einstellungsszene hinter „Einstellungen“ (Task 8 benennt um)
+    const ui::SettingsScene* settings;  // Einstellungen hinter der HOME-Kachel (M6)
+    const Config* config;               // live geänderte Konfiguration (M6)
     const CoverService* covers;       // Cover-Cache und -Thread (M5)
 };
 

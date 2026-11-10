@@ -131,7 +131,10 @@ bool Music::playFile(const std::string& path) {
     }
     const s32 format = info->channels == 2 ? VOICE_STEREO_16BIT : VOICE_MONO_16BIT;
     const s32 rate = static_cast<s32>(info->rate);
-    {
+    // Nur bei Stückwechsel melden: ein einzelnes Stück wiederholt sich sonst alle paar Sekunden im Log,
+    // und SYS_Report allokiert auf dem Haupt-Thread (Leerlauf-Zähler im Selbsttest).
+    if (path != lastLogged_) {
+        lastLogged_ = path;
         char line[200];
         std::snprintf(line, sizeof line, "NL_MUSIC play %s rate=%d ch=%d", path.c_str(), static_cast<int>(rate),
                       info->channels);

@@ -43,6 +43,7 @@ private:
     mutex_t mutex_ = LWP_MUTEX_NULL;
     std::vector<std::string> files_, logLines_;
     u32 seed_ = 1;
+    std::string lastLogged_;  // nur im Musik-Thread
     std::array<u8*, kBuffers> buffers_{};
     volatile bool quit_ = false;
     volatile bool enabled_ = true;

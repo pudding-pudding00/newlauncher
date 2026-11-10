@@ -115,20 +115,6 @@ nl::EmulatorTable loadEmulators(nl::FileSystem& fs, bool sdOk) {
     return nl::EmulatorTable::fromIni(nl::IniDoc::parse(nl::defaultEmulatorsText()));
 }
 
-const char* errorCodeName(nl::ErrorCode c) {
-    switch (c) {
-        case nl::ErrorCode::NotFound: return "NotFound";
-        case nl::ErrorCode::IoError: return "IoError";
-        case nl::ErrorCode::InvalidData: return "InvalidData";
-        case nl::ErrorCode::VersionMismatch: return "VersionMismatch";
-        case nl::ErrorCode::NotMounted: return "NotMounted";
-        case nl::ErrorCode::Timeout: return "Timeout";
-        case nl::ErrorCode::Unsupported: return "Unsupported";
-        case nl::ErrorCode::Cancelled: return "Cancelled";
-    }
-    return "?";
-}
-
 // Ein Frame: Eingabe, Szene(n) aktualisieren, zeichnen, präsentieren. Gemeinsam für Startphase und Hauptschleife.
 struct Frame {
     nl::gfx::Renderer& renderer;
@@ -315,7 +301,7 @@ int main(int, char**) {
     // Spec 9: Preflight, Verlauf, Chainload. Kehrt nur zurück, wenn der Start scheitert (dann mit Dialog).
     auto launchGame = [&](const nl::Game& game) {
         const std::string key = game.key;  // game kann auf Bibliotheksdaten zeigen
-        auto showError = [&](const nl::Error& e) {
+        auto showError = [&](const nl::LaunchError& e) {
             char title[64];
             char text[256];
             nl::ui::launchErrorText(e, title, sizeof title, text, sizeof text);
@@ -323,9 +309,10 @@ int main(int, char**) {
             scenes.push(&dialog);
         };
         auto plan = launchAllowed ? nl::preflightEmulator(fs, game, libRoot, emulators)
-                                  : nl::Result<nl::LaunchPlan>::err({nl::ErrorCode::IoError, "Speicher belegt"});
+                                  : nl::Result<nl::LaunchPlan, nl::LaunchError>::err(
+                                        {nl::LaunchFailure::NoMemory, "Speicher für den Start ist belegt."});
         if (!plan.isOk()) {
-            nl::log::line("NL_PREFLIGHT_FAIL %s %s", errorCodeName(plan.error().code), key.c_str());
+            nl::log::line("NL_PREFLIGHT_FAIL %s %s", nl::launchFailureName(plan.error().kind), key.c_str());
             showError(plan.error());
             return;
         }
@@ -336,7 +323,7 @@ int main(int, char**) {
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
         if (auto loaded = nl::launch::loadDolToBuffer(fs, plan.value()); !loaded.isOk()) {
             nl::log::line("NL_WARN DOL nicht geladen: %s", loaded.error().context.c_str());
-            showError({nl::ErrorCode::InvalidData, plan.value().dolPath});
+            showError({nl::LaunchFailure::EmuInvalid, plan.value().dolPath});
             return;
         }
         if (sdOk) nl::log::flushLogFile(fs, kLogPath);

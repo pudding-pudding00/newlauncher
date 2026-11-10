@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <string_view>
 
-#include "core/result.hpp"
+#include "core/launch_plan.hpp"
 
 namespace nl::ui {
 
@@ -13,6 +13,6 @@ namespace nl::ui {
 std::size_t copyEllipsized(char* out, std::size_t cap, std::string_view src);
 
 // Titel und Text zu einem Fehler aus preflightEmulator. Rückgabe = Länge des Textes.
-int launchErrorText(const Error& e, char* title, std::size_t titleCap, char* text, std::size_t textCap);
+int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, char* text, std::size_t textCap);
 
 }  // namespace nl::ui

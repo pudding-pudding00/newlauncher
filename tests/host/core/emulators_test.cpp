@@ -21,6 +21,12 @@ TEST_CASE("Datei überschreibt nur vorhandene Schlüssel") {
     CHECK(t.forConsole(Console::Snes)->dol == "sd:/apps/snes9xgx/boot.dol");
 }
 
+TEST_CASE("leeres dol fällt auf den Standard zurück, leeres args bleibt leer") {
+    const EmulatorTable t = EmulatorTable::fromIni(IniDoc::parse("[snes]\ndol =\nargs =\n"));
+    CHECK(t.forConsole(Console::Snes)->dol == "sd:/apps/snes9xgx/boot.dol");
+    CHECK(t.forConsole(Console::Snes)->args.empty());
+}
+
 TEST_CASE("N64, GC und Wii liefern nullptr") {
     const EmulatorTable t = EmulatorTable::fromIni(IniDoc::parse(""));
     CHECK(t.forConsole(Console::N64) == nullptr);

@@ -140,7 +140,7 @@ Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel
 | `NL_FAV_SAVED <schlüssel>` | Favoriten gespeichert |
 | `NL_SEARCH mario=<n>` | Selbsttest: Treffer der Suche „MARIO“ |
 | `NL_EMULATORS ok\|default` | `emulators.ini` gelesen bzw. Standardwerte genutzt |
-| `NL_PREFLIGHT_FAIL <code> <schlüssel>` | Start abgelehnt (z. B. `Unsupported`, `NotFound`), Dialog offen |
+| `NL_PREFLIGHT_FAIL <art> <schlüssel>` | Start abgelehnt (`Unsupported`, `EmuMissing`, `EmuInvalid`, `RomMissing`, `ArgsTooLong`, `NoMemory`), Dialog offen |
 | `NL_HISTORY_SAVED` | Verlauf vor dem Start gespeichert |
 | `NL_LAUNCH <schlüssel>` | Chainload beginnt |
 | `NL_AUTOSTART <schlüssel>` | Testmodus: `[debug] autostart` in `config.ini` startet das Spiel nach `NL_READY` |

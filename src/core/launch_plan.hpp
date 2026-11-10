@@ -13,6 +13,15 @@
 
 namespace nl {
 
+// Warum ein Start scheitert; bestimmt den Dialogtext (nicht die Dateiendung).
+enum class LaunchFailure : u8 { Unsupported, EmuMissing, EmuInvalid, RomMissing, ArgsTooLong, NoMemory };
+const char* launchFailureName(LaunchFailure f);  // Log-Marker NL_PREFLIGHT_FAIL
+
+struct LaunchError {
+    LaunchFailure kind;
+    std::string context;  // Konsolenname bzw. Pfad
+};
+
 struct LaunchPlan {
     std::string dolPath;
     u32 dolSize = 0;
@@ -22,6 +31,6 @@ struct LaunchPlan {
 
 // Fehler: Unsupported (Konsole ohne Backend, Kontext Konsolenname), NotFound (DOL oder ROM fehlt,
 // Kontext Pfad), InvalidData (DOL ungültig/zu groß mit DOL-Pfad, oder argv zu lang).
-Result<LaunchPlan> preflightEmulator(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus);
+Result<LaunchPlan, LaunchError> preflightEmulator(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus);
 
 }  // namespace nl

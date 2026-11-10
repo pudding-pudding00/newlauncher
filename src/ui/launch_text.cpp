@@ -11,18 +11,6 @@ namespace {
 
 constexpr std::string_view kEllipsis = "\xE2\x80\xA6";
 
-bool endsWithDol(std::string_view s) {
-    if (s.size() < 4) return false;
-    const std::string_view ext = s.substr(s.size() - 4);
-    constexpr std::string_view want = ".dol";
-    for (std::size_t i = 0; i < 4; ++i) {
-        char c = ext[i];
-        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
-        if (c != want[i]) return false;
-    }
-    return true;
-}
-
 // Ersetzt das erste %s im Muster durch arg (Pfade dürfen selbst % enthalten, daher kein printf).
 std::string fill(std::string_view pattern, std::string_view arg) {
     std::string out(pattern);
@@ -52,22 +40,16 @@ std::size_t copyEllipsized(char* out, std::size_t cap, std::string_view src) {
     return cut + kEllipsis.size();
 }
 
-int launchErrorText(const Error& e, char* title, std::size_t titleCap, char* text, std::size_t textCap) {
+int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, char* text, std::size_t textCap) {
     copyEllipsized(title, titleCap, kStrLaunchFailed);
     std::string msg;
-    switch (e.code) {
-        case ErrorCode::NotFound:
-            msg = fill(endsWithDol(e.context) ? kStrEmuMissing : kStrRomMissing, e.context);
-            break;
-        case ErrorCode::InvalidData:
-            msg = endsWithDol(e.context) ? fill(kStrEmuInvalid, e.context) : std::string(kStrArgsTooLong);
-            break;
-        case ErrorCode::Unsupported:
-            msg = fill(kStrUnsupported, e.context);
-            break;
-        default:
-            msg = e.context;
-            break;
+    switch (e.kind) {
+        case LaunchFailure::EmuMissing: msg = fill(kStrEmuMissing, e.context); break;
+        case LaunchFailure::EmuInvalid: msg = fill(kStrEmuInvalid, e.context); break;
+        case LaunchFailure::RomMissing: msg = fill(kStrRomMissing, e.context); break;
+        case LaunchFailure::ArgsTooLong: msg = kStrArgsTooLong; break;
+        case LaunchFailure::Unsupported: msg = fill(kStrUnsupported, e.context); break;
+        case LaunchFailure::NoMemory: msg = e.context; break;
     }
     return static_cast<int>(copyEllipsized(text, textCap, msg));
 }

@@ -42,14 +42,16 @@ void booter_main(void) {
     const u8* dol = (const u8*)boot->dolAddr;
     const struct DolHeader* h = (const struct DolHeader*)dol;
 
+    // BSS zuerst nullen: elf2dol fasst den BSS-Bereich grob zusammen, er kann Datensektionen wie
+    // .sdata2 überdecken. Erst danach die Sektionen kopieren, sonst würden deren Daten genullt.
+    if (h->bssSize != 0) {
+        zeroBytes((volatile u8*)h->bssAddress, h->bssSize);
+        syncRange(h->bssAddress, h->bssSize);
+    }
     for (u32 i = 0; i < 18; ++i) {
         if (h->size[i] == 0) continue;
         copyBytes((volatile u8*)h->address[i], dol + h->offset[i], h->size[i]);
         syncRange(h->address[i], h->size[i]);
-    }
-    if (h->bssSize != 0) {
-        zeroBytes((volatile u8*)h->bssAddress, h->bssSize);
-        syncRange(h->bssAddress, h->bssSize);
     }
 
     const u32 entry = h->entry;

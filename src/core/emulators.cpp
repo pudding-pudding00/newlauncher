@@ -41,7 +41,9 @@ EmulatorTable EmulatorTable::fromIni(const IniDoc& doc) {
     for (Console c : kRomConsoles) {
         const std::string_view key = consoleInfo(c).key;
         EmulatorEntry e;
-        e.dol = std::string(doc.get(key, "dol", defaults.get(key, "dol")));
+        // Leeres dol wäre ein sicherer Fehlstart; leeres args ist dagegen gültig (nur argv[0]).
+        const std::string_view dol = doc.get(key, "dol", "");
+        e.dol = std::string(dol.empty() ? defaults.get(key, "dol") : dol);
         e.args = std::string(doc.get(key, "args", defaults.get(key, "args")));
         t.entries_[static_cast<std::size_t>(c)] = std::move(e);
     }

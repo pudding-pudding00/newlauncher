@@ -13,6 +13,7 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::SetN64Method: return "set_n64_method";
         case AppCommand::OpenVcMap: return "open_vc_map";
         case AppCommand::SaveVcMap: return "save_vc_map";
+        case AppCommand::FetchCovers: return "fetch_covers";
         case AppCommand::None: break;
     }
     return "none";

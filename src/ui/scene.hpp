@@ -27,6 +27,7 @@ enum class AppCommand : u8 {
     SetN64Method,  // game + n64Choice
     OpenVcMap,
     SaveVcMap,
+    FetchCovers,
 };
 const char* appCommandName(AppCommand c);
 

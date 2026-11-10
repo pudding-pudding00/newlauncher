@@ -17,5 +17,6 @@ std::vector<u64> installedTitleIds();  // nur Kanäle (isChannelTitle)
 std::vector<ChannelInfo> loadChannelNames(std::span<const u64> ids, BannerLang lang);
 
 BannerLang systemBannerLang();  // CONF_GetLanguage; unbekannt → English
+const char* systemCoverRegion();  // GameTDB-Region aus CONF_GetLanguage: DE, FR, JA, sonst EN
 
 }  // namespace nl::platform

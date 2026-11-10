@@ -3,13 +3,17 @@
 #include <gccore.h>
 #include <ogc/lwp_watchdog.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <ctime>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "app/cover_service.hpp"
 #include "core/config.hpp"
+#include "core/cover_download.hpp"
 #include "core/emulators.hpp"
 #include "core/index_file.hpp"
 #include "core/launch_layout.hpp"
@@ -27,12 +31,14 @@
 #include "launch/channel.hpp"
 #include "platform/crash.hpp"
 #include "platform/log.hpp"
+#include "platform/net_worker.hpp"
 #include "platform/nand_titles.hpp"
 #include "platform/scan_worker.hpp"
 #include "platform/std_fs.hpp"
 #include "platform/storage.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_input.hpp"
+#include "ui/actions_scene.hpp"
 #include "ui/debug_overlay.hpp"
 #include "ui/details_scene.hpp"
 #include "ui/dialog_scene.hpp"
@@ -328,6 +334,9 @@ int main(int, char**) {
     mainScene.setCovers(&covers);
     nl::ui::HomeMenu homeMenu;
     mainScene.setHomeMenu(&homeMenu);
+    nl::ui::ActionsScene actions;
+    homeMenu.setActions(&actions);
+    nl::platform::NetWorker net;
     mainScene.setFavoriteKeys(&store);
     nl::ui::JumpBar jumpBar(mainScene);
     mainScene.setJumpBar(&jumpBar);
@@ -375,6 +384,7 @@ int main(int, char**) {
         else nl::log::line("NL_WARN history.ini nicht gespeichert");
         nl::log::line("NL_LAUNCH %s", key.c_str());
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
+        net.join();
         covers.shutdown();
 
         if (target.value().kind == nl::LaunchTarget::Kind::Channel) {
@@ -401,6 +411,66 @@ int main(int, char**) {
         nl::platform::unmountAll();
         nl::platform::shutdownVideo();
         nl::launch::chainload(plan);
+    };
+
+    // Spec 6.4: „Fehlende Cover laden“ (Wii/GC ohne covers_src-PNG und .tex) über den Netz-Thread.
+    char coverToast[48] = "";
+    u32 coverToastDone = ~0u;
+    int coverToastFrames = 0;
+    auto fetchCovers = [&]() {
+        nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
+        if (net.running()) return;
+        std::vector<const nl::Game*> games;
+        games.reserve(store.games().size());
+        for (const nl::Game& g : store.games()) games.push_back(&g);
+        std::vector<nl::CoverJob> jobs = nl::coverDownloadJobs(
+            games, [&](const std::string& path) { return nl::fileSize(fs, path).has_value(); }, libRoot);
+        nl::log::line("NL_COVER_DL_START jobs=%u", static_cast<unsigned>(jobs.size()));
+        if (jobs.empty()) {
+            dialog.open(nl::ui::kStrNoMissingCovers, nl::ui::kStrNoMissingCoversText);
+            scenes.push(&dialog);
+            return;
+        }
+        std::vector<std::string> regions;
+        for (std::string_view r : nl::coverRegions(config.coverRegion, nl::platform::systemCoverRegion()))
+            regions.emplace_back(r);
+        const std::string base =
+            config.debugCoverUrl.empty() ? std::string(nl::kGametdbCoverBase) : config.debugCoverUrl;
+        if (!net.start(fs, libRoot, std::move(jobs), std::move(regions), base)) {
+            nl::log::line("NL_WARN Netz-Thread startet nicht");
+            return;
+        }
+        coverToastDone = ~0u;
+    };
+    // Fortschritt, Marker und Ergebnis des Netz-Threads übernehmen (Haupt-Thread).
+    auto pumpNet = [&]() {
+        for (const std::string& line : net.takeLogLines()) nl::log::line("%s", line.c_str());
+        for (const std::string& stem : net.takeFinishedStems()) covers.invalidate(stem);
+        if (net.running()) {
+            const u32 done = net.done();
+            if (done != coverToastDone) {  // Text nur bei Änderung neu bauen
+                std::snprintf(coverToast, sizeof coverToast, nl::ui::kStrCoverProgress, static_cast<unsigned>(done),
+                              static_cast<unsigned>(net.total()));
+                coverToastDone = done;
+                coverToastFrames = 0;
+            }
+            if (coverToastFrames-- <= 0) {  // Toast hält 2 s; vorher auffrischen
+                mainScene.showToast(coverToast);
+                coverToastFrames = 90;
+            }
+        }
+        if (auto sum = net.take()) {
+            for (const std::string& line : net.takeLogLines()) nl::log::line("%s", line.c_str());
+            for (const std::string& stem : net.takeFinishedStems()) covers.invalidate(stem);
+            nl::log::line("NL_COVER_DL_DONE ok=%u missing=%u failed=%u", static_cast<unsigned>(sum->ok),
+                          static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
+            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            char text[128];
+            std::snprintf(text, sizeof text, nl::ui::kStrCoversSummary, static_cast<unsigned>(sum->ok),
+                          static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
+            dialog.open(nl::ui::kStrCoversLoaded, text);
+            scenes.push(&dialog);
+        }
     };
 
     nl::ui::DebugOverlay debug;
@@ -508,6 +578,7 @@ int main(int, char**) {
             case nl::ui::AppCommand::PowerOff:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
+                net.join();
                 covers.shutdown();
                 if (sdOk) nl::log::flushLogFile(fs, kLogPath);
                 input.shutdown();
@@ -517,10 +588,14 @@ int main(int, char**) {
             case nl::ui::AppCommand::Launch:
                 if (req.game != nullptr) launchGame(*req.game);
                 break;
+            case nl::ui::AppCommand::FetchCovers:
+                fetchCovers();
+                break;
             case nl::ui::AppCommand::None:
                 break;
         }
         if (!running) break;
+        pumpNet();
         covers.pump();  // nach update (Wünsche dieses Frames), vor draw; Freigaben erst nach GX_DrawDone des Vorframes
 
         dl.clear();
@@ -555,6 +630,7 @@ int main(int, char**) {
                     nl::log::line("NL_WARN autostart %s fehlt", key.c_str());
                 }
             }
+            if (config.debugFetchCovers) fetchCovers();  // nur für Tests
         }
         if (readyReported && !coversReported && covers.idle()) {
             nl::log::line("NL_COVERS ready=%u", static_cast<unsigned>(covers.readyCount()));
@@ -566,6 +642,7 @@ int main(int, char**) {
 #endif
     }
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
+    net.join();
     covers.shutdown();
     if (sdOk) nl::log::flushLogFile(fs, kLogPath);
     input.shutdown();

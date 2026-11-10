@@ -14,7 +14,7 @@ constexpr float kHeaderH = 64.0f, kFooterH = 56.0f;
 constexpr float kTileH = 150.0f, kTileGap = 20.0f, kMaxTileW = 150.0f;
 
 const char* const kLabels[HomeMenu::kTileCount] = {kStrHomebrewChannel, kStrWiiMenu, kStrSettings, kStrPowerOff};
-const AppCommand kCommands[HomeMenu::kTileCount] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::OpenVcMap,
+const AppCommand kCommands[HomeMenu::kTileCount] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::None,
                                                     AppCommand::PowerOff};
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
@@ -58,8 +58,14 @@ void HomeMenu::update(const UiContext& ctx, const InputFrame& in, float, SceneRe
         return;
     }
     if (in.pressed(Action::Confirm) && !pointerOffTiles) {
+        if (focus_ == 2) {  // Einstellungen: HOME ausblenden, dann die Aktionsliste öffnen
+            if (actions_ != nullptr) {
+                out.pop = true;
+                out.push = actions_;
+            }
+            return;
+        }
         out.command = kCommands[focus_];
-        out.pop = out.command == AppCommand::OpenVcMap;  // Dialog ersetzt das Overlay
     }
 }
 

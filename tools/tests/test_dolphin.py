@@ -167,6 +167,51 @@ class DolphinToolsTest(unittest.TestCase):
         text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
         self.assertTrue(text.endswith("[debug]\nautostart = nes/Zelda (Europe) (Rev 1).nes\n"))
 
+    def test_smoke_cover_server_writes_debug_keys_and_pngs(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        seen = {}
+
+        def fake_start(root):
+            root = Path(root)
+            seen["en"] = (root / "EN/RMCP01.png").read_bytes()[:8]
+            seen["us"] = (root / "US/GM8P01.png").read_bytes()[:8]
+            seen["count"] = len([p for p in root.rglob("*") if p.is_file()])
+            return mock.Mock(), 12345
+
+        with mock.patch("dolphin_smoke.start_cover_server", side_effect=fake_start) as start:
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--timeout", "2", "--cover-server"])
+        start.assert_called_once()
+        self.assertEqual(seen["en"], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(seen["us"], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(seen["count"], 2)
+        text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertTrue(text.endswith("[debug]\ncover_url = http://127.0.0.1:12345\nfetch_covers = 1\n"))
+
+    def test_smoke_cover_server_and_autostart_share_one_debug_section(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        with mock.patch("dolphin_smoke.start_cover_server", return_value=(mock.Mock(), 7)):
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--timeout", "2", "--cover-server", "--autostart", "nes/a.nes"])
+        text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertEqual(text.count("[debug]"), 1)
+        self.assertTrue(text.endswith("[debug]\nautostart = nes/a.nes\ncover_url = http://127.0.0.1:7\n"
+                                      "fetch_covers = 1\n"))
+
+    def test_cover_server_serves_files(self):
+        import urllib.request
+        from dolphin_smoke import start_cover_server
+        root = self.tmp / "srv"
+        (root / "EN").mkdir(parents=True)
+        (root / "EN/X.png").write_bytes(b"abc")
+        server, port = start_cover_server(root)
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{port}/EN/X.png", timeout=5) as r:
+                self.assertEqual(r.read(), b"abc")
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_smoke_without_autostart_keeps_config(self):
         self._fake_dolphin("raise SystemExit(0)\n")
         self._run_smoke("2")

@@ -51,6 +51,7 @@ add_library(nl_core STATIC
     src/ui/test_library.cpp
     src/ui/main_scene.cpp
     src/ui/home_menu.cpp
+    src/ui/actions_scene.cpp
     src/ui/debug_overlay.cpp
     src/ui/pointer_cursor.cpp
     src/ui/startup_scene.cpp
@@ -116,6 +117,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/scan_worker.cpp
         src/platform/png_decode.cpp
         src/platform/cover_worker.cpp
+        src/platform/http_client.cpp
+        src/platform/net_worker.cpp
         src/app/cover_service.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp

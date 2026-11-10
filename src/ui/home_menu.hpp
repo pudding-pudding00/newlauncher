@@ -1,6 +1,6 @@
 #pragma once
 // HOME-Menü (Spec 3.3/6.8): Overlay mit Homebrew Channel, Wii-Menü, Einstellungen, Ausschalten.
-// „Einstellungen" öffnet bis M6 den Dialog „VC-Injects zuordnen“; der Akkustand folgt in M6.
+// „Einstellungen" öffnet bis M6 die Aktionsliste (VC-Injects, Cover laden); der Akkustand folgt in M6.
 
 #include "ui/scene.hpp"
 
@@ -14,6 +14,7 @@ public:
     void draw(const UiContext& ctx, gfx::DrawList& dl) override;
     bool isOverlay() const override { return true; }
     void onEnter() override;
+    void setActions(Scene* actions) { actions_ = actions; }  // Ziel der Kachel „Einstellungen“
 
     int focus() const { return focus_; }
     gfx::Rect tileRect(const UiContext& ctx, int index) const;
@@ -21,6 +22,7 @@ public:
 private:
     int hitTest(const UiContext& ctx, float x, float y) const;
 
+    Scene* actions_ = nullptr;
     int focus_ = 0;
     bool keysSincePointerMove_ = false;  // Richtungstaste nach der letzten Zeigerbewegung
 };

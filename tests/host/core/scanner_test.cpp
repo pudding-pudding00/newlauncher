@@ -118,6 +118,21 @@ TEST_CASE("bekannte Datei (Pfad+Größe) wird ohne Header-Lesen übernommen; ge�
     CHECK(byKey(third.index, "RMCP01")->title == "Neu");
 }
 
+TEST_CASE("Meta-Titel einer bekannten Disc verfällt, wenn meta.bin ihn nicht mehr liefert") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/wbfs/MKW [RMCP01]/RMCP01.wbfs", test::wbfsFile("RMCP01", "Mario Kart Wii"));
+    const MetaDb meta = metaWith("RMCP01", "Mario Kart (Meta)");
+    const ScanResult withMeta = scan(fs, nullptr, &meta);
+    REQUIRE(byKey(withMeta.index, "RMCP01") != nullptr);
+    REQUIRE(byKey(withMeta.index, "RMCP01")->title == "Mario Kart (Meta)");
+    const ScanResult without = scan(fs, &withMeta.index);
+    CHECK(byKey(without.index, "RMCP01")->title == "Mario Kart Wii");
+    CHECK(without.stats.headersRead == 1);
+    const ScanResult again = scan(fs, &without.index);
+    CHECK(again.stats.headersRead == 0);  // Header-Titel bleibt ohne erneutes Lesen gültig
+    CHECK(byKey(again.index, "RMCP01")->title == "Mario Kart Wii");
+}
+
 TEST_CASE("added/removed gegenüber previous") {
     test::MemFileSystem fs;
     fs.addFile("sd:/roms/nes/A.nes", {});

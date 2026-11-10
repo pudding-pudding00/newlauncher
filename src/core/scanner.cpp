@@ -126,7 +126,10 @@ private:
     void disc(Console c, std::string path, u64 size, u8 flags, bool wbfs) {
         IndexGame g{c, flags, "", "", std::move(path), size};
         auto it = prevByPath_.find(g.path);
-        if (it != prevByPath_.end() && it->second->size == size && it->second->console == c) {
+        const std::optional<std::string> fromMeta = metaTitle(g.console, it != prevByPath_.end() ? it->second->key : "");
+        // Ein übernommener Meta-Titel ohne aktuellen Meta-Eintrag ist veraltet: dann den Header neu lesen.
+        const bool staleMeta = it != prevByPath_.end() && (it->second->flags & kFlagTitleFromMeta) && !fromMeta;
+        if (it != prevByPath_.end() && !staleMeta && it->second->size == size && it->second->console == c) {
             g.key = it->second->key;
             g.title = it->second->title;
             g.flags = static_cast<u8>(flags | (it->second->flags & kFlagTitleFromHeader));
@@ -152,8 +155,17 @@ private:
                 g.title = g.key;
             }
         }
-        if (auto t = metaTitle(g)) g.title = *t;
+        if (auto t = metaTitle(g)) {
+            g.title = *t;
+            g.flags |= kFlagTitleFromMeta;
+        }
         add(std::move(g));
+    }
+
+    std::optional<std::string> metaTitle(Console c, std::string_view key) const {
+        if (key.empty()) return std::nullopt;
+        IndexGame probe{c, 0, std::string(key), "", "", 0};
+        return metaTitle(probe);
     }
 
     std::optional<std::string> metaTitle(const IndexGame& g) const {

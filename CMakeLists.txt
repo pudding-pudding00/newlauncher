@@ -26,6 +26,8 @@ add_library(nl_core STATIC
     src/core/scanner.cpp
     src/core/library_store.cpp
     src/core/dol.cpp
+    src/core/emulators.cpp
+    src/core/launch_args.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp

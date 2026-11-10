@@ -330,6 +330,7 @@ int main(int, char**) {
                 nl::platform::unmountAll();
                 SYS_ResetSystem(cmd == nl::ui::AppCommand::WiiMenu ? SYS_RETURNTOMENU : SYS_POWEROFF, 0, 0);
                 break;
+            case nl::ui::AppCommand::Launch:  // Task 7
             case nl::ui::AppCommand::None:
                 break;
         }

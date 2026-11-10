@@ -45,7 +45,18 @@ python tools/dolphin_smoke.py
 
 Selbsttest in Dolphin (geskriptete Eingaben, keine Allokation im Leerlauf, absichtlicher Absturz am Ende):
 ```bash
-python tools/dolphin_smoke.py --dol build/wii/nl_selftest.dol --marker "NL_LIBRARY games=12" --marker NL_FAV_SAVED --marker "NL_SEARCH mario=5" --marker "NL_OVERRIDE_SAVED n64/Super Mario 64 (Europe) (En,Fr,De).z64 not64" --marker "NL_PREFLIGHT_FAIL Unsupported GM8P01" --marker "NL_VC_CHANNEL 000100014E4C5443 NL Testkanal" --marker "NL_VCMAP_SAVED n=2" --marker "NL_SELFTEST_COVERS" --marker "NL_ALLOC_IDLE 0" --marker NL_SELFTEST_OK --marker "NL_CRASH id=7"
+python tools/dolphin_smoke.py --dol build/wii/nl_selftest.dol --marker "NL_LIBRARY games=12" --marker NL_FAV_SAVED --marker "NL_SEARCH mario=5" --marker "NL_OVERRIDE_SAVED n64/Super Mario 64 (Europe) (En,Fr,De).z64 not64" --marker "NL_PREFLIGHT_FAIL Unsupported GM8P01" --marker "NL_VC_CHANNEL 000100014E4C5443 NL Testkanal" --marker "NL_VCMAP_SAVED n=2" --marker "NL_SELFTEST_COVERS" --marker "NL_ALLOC_IDLE 0" --marker NL_SELFTEST_OK --marker "NL_CRASH id=7" --marker "NL_LANG en" --marker NL_CONFIG_SAVED
+```
+
+Klänge und Musik in Dolphin (UI-Klänge melden sich mit `[debug] log_sounds = 1` als `NL_SOUND`; die Fixtures legen `tone.ogg` und die kaputte `header_only.ogg` in den Musikordner; beim Spielstart stoppt der Ton vor dem Chainload):
+```bash
+python tools/dolphin_smoke.py --marker "NL_AUDIO ok" --marker NL_READY
+```
+```bash
+python tools/dolphin_smoke.py --marker NL_READY --marker "NL_MUSIC play sd:/newlauncher/music/tone.ogg rate=32000 ch=1" --marker "NL_MUSIC_FAIL sd:/newlauncher/music/header_only.ogg"
+```
+```bash
+python tools/dolphin_smoke.py --autostart "nes/Super Mario Bros. (World).nes" --marker NL_AUDIO_STOP --marker "ARGV 1"
 ```
 
 Chainload-Test in Dolphin (startet über `[debug] autostart` ein NES-Spiel der Fixtures; die Test-DOL `argv_echo` meldet die übergebenen Argumente):
@@ -92,6 +103,7 @@ sd:/newlauncher/emulators.ini   Emulator-Pfade und Argumente (wird beim ersten S
 sd:/newlauncher/n64_vc.ini   N64: Zuordnung Spiel → VC-Inject-Kanal (beim ersten Speichern angelegt)
 sd:/newlauncher/games.ini    N64: Startmethode je Spiel (beim ersten Speichern angelegt)
 sd:/newlauncher/favorites.ini, history.ini, log.txt
+sd:/newlauncher/music/*.ogg   Hintergrundmusik (Ogg Vorbis)
 <lib>:/newlauncher/cache/index.bin   Spiele-Index (vom Launcher geschrieben)
 <lib>:/newlauncher/cache/meta.bin    Metadaten (prepare_meta.py)
 <lib>:/newlauncher/covers_src/<stamm>.png   Cover-Quellen (prepare_covers.py bzw. „Fehlende Cover laden“)
@@ -114,11 +126,11 @@ Retro-Boxarts lädt ein zweites Skript von libretro-thumbnails nach `<lib>/newla
 python tools/prepare_covers.py E:/
 ```
 
-Wii/GC-Cover lädt der Launcher selbst: HOME-Menü → Einstellungen → „Fehlende Cover laden“ holt für alle Wii/GC-Spiele ohne Cover das PNG von GameTDB. Die Region kommt aus `[covers] region` in `config.ini` (`auto` = Systemsprache, sonst `EN`, `DE`, `FR`, `US`, `JA`), mit Rückfall auf `EN`, `US` und `JA`. Der Fortschritt steht unten als Hinweis, am Ende fasst ein Dialog zusammen.
+Wii/GC-Cover lädt der Launcher selbst: HOME-Menü → Einstellungen → „Fehlende Cover laden“ holt für alle Wii/GC-Spiele ohne Cover das PNG von GameTDB. Die Region kommt aus der Einstellung „Cover-Region“ (`[covers] region` in `config.ini` (`auto` = Systemsprache, sonst `EN`, `DE`, `FR`, `US`, `JA`), mit Rückfall auf `EN`, `US` und `JA`. Der Fortschritt steht unten als Hinweis, am Ende fasst ein Dialog zusammen.
 
 Der Launcher wandelt jedes PNG beim ersten Anzeigen in eine CMPR-Textur unter `<lib>/newlauncher/cache/covers/` um. Wer ein Cover in `covers_src` austauscht, löscht danach `cache/covers` (oder nur die passende `.tex`), sonst bleibt die alte Textur.
 
-Nur für Tests: `[debug] cover_url` ersetzt die GameTDB-Adresse, `[debug] fetch_covers = 1` löst „Fehlende Cover laden“ nach `NL_READY` aus.
+Nur für Tests: `[debug] cover_url` ersetzt die GameTDB-Adresse, `[debug] fetch_covers = 1` löst „Fehlende Cover laden“ nach `NL_READY` aus, `[debug] log_sounds = 1` meldet jeden gespielten UI-Klang als `NL_SOUND`.
 
 ## Emulatoren
 
@@ -163,7 +175,7 @@ n64/Super Mario 64 (Europe).z64 = not64
 n64/Mario Kart 64 (Europe).z64 = 000100014E4B5450
 ```
 
-Zuordnen lässt sich auch im Launcher: HOME → „Einstellungen“ öffnet bis M6 den Dialog „VC-Injects zuordnen“.
+Zuordnen lässt sich auch im Launcher: HOME → „Einstellungen“ → „VC-Injects zuordnen“.
 - Er listet alle N64-Spiele.
 - Links und Rechts wählen einen der installierten Kanäle oder „keiner“.
 - A übernimmt den Namensvorschlag.
@@ -191,7 +203,27 @@ In Dolphin legen `deploy_dolphin.py` und `dolphin_smoke.py` einen Testkanal „N
 - **Suche:** filtert live über alle Konsolen, ohne Rücksicht auf Groß/klein, Akzente und No-Intro-Tags; B beendet den Suchmodus.
 - **Details:** A auf einem Spiel; „Starten“ startet den Emulator (siehe [Emulatoren](#emulatoren)), Favorit per Knopf oder Taste 1.
 
-Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel von 19 bis 7 Uhr); das Zahnrad unten rechts schaltet sie für die laufende Sitzung um (Hell → Dunkel → Automatisch). Die Kachel „Einstellungen“ im HOME-Menü öffnet vorerst eine Aktionsliste (N64-VC-Zuordnung, „Fehlende Cover laden“); die Einstellungen selbst folgen mit M6.
+Das Zahnrad unten rechts schaltet die Darstellung für die laufende Sitzung um (Hell → Dunkel → Automatisch); dauerhaft legt sie die Einstellung „Darstellung“ fest.
+
+## Einstellungen
+
+HOME → „Einstellungen“ öffnet die Liste. Hoch und Runter wählen eine Zeile, Links und Rechts ändern den Wert, A führt eine Aktion aus, B schließt und speichert nach `sd:/newlauncher/config.ini`. Sprache, Darstellung, Klänge und Musik wirken sofort; das Bibliotheksgerät erst nach einem Neustart.
+
+| Einstellung | Werte | Standard | `config.ini` |
+|---|---|---|---|
+| Sprache | Automatisch (Systemsprache), Deutsch, Englisch | Automatisch | `[general] language = auto\|de\|en` |
+| Darstellung | Hell, Dunkel, Automatisch nach Uhrzeit | Hell | `[theme] mode = light\|dark\|auto` |
+| Dunkel von / bis | Uhrzeit | 19:00 / 07:00 | `[theme] dark_from`, `dark_to` (`HH:MM`) |
+| Musik | an/aus, Lautstärke 0–100 | an, 60 | `[audio] music = 0\|1`, `music_volume` |
+| UI-Klänge | an/aus | an | `[audio] sounds = 0\|1` |
+| Bibliotheksgerät | USB, SD | USB | `[general] library = usb\|sd` |
+| Cover-Region | Automatisch, EN, DE, FR, US, JA | Automatisch | `[covers] region` |
+
+Aktionen am Ende der Liste: „Bibliothek neu scannen“, „Fehlende Cover laden“ (siehe [Cover und Metadaten](#cover-und-metadaten)) und „VC-Injects zuordnen“ (siehe [N64](#n64)).
+
+### Musik
+
+Der Launcher spielt alle `.ogg`-Dateien (Ogg Vorbis, mono oder stereo) aus `sd:/newlauncher/music/` in zufälliger Reihenfolge; nach jeder Runde wird neu gemischt, ohne dass ein Stück direkt zweimal läuft. Ist der Ordner leer oder fehlt er, bleibt es still. Nicht lesbare Dateien werden übersprungen; scheitern alle Stücke einer Runde nacheinander, schaltet sich die Musik für die Sitzung ab (`NL_MUSIC_OFF`). Vor jedem Spielstart, Kanalstart und beim Verlassen stoppt der Ton.
 
 ## Log-Marker (Dolphin-Log, OSREPORT)
 
@@ -200,7 +232,7 @@ Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel
 | `NL_READY` | erster Frame gezeichnet |
 | `NL_ATLAS ok` | Schrift-Atlas aufgebaut |
 | `NL_ERROR <text>` | Start abgebrochen |
-| `NL_CMD <name>` | Befehl aus dem HOME-Menü bzw. Zahnrad (`exit_hbc`, `wii_menu`, `open_vc_map`, `fetch_covers`, `power_off`, `cycle_theme`) |
+| `NL_CMD <name>` | Befehl aus dem HOME-Menü, dem Zahnrad oder den Einstellungen (`exit_hbc`, `wii_menu`, `open_vc_map`, `fetch_covers`, `power_off`, `cycle_theme`, `settings_changed`, `save_settings`, `rescan`) |
 | `NL_ALLOC_IDLE <n>` | Selbsttest: Allokationen in 120 Leerlauf-Frames |
 | `NL_SELFTEST_OK` | Selbsttest bestanden |
 | `NL_PANIC <ausdruck> <datei>:<zeile>` | verletztes `NL_ASSERT` |
@@ -233,6 +265,15 @@ Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel
 | `NL_COVER_DL <id6> <region> ok`, `NL_COVER_DL <id6> missing\|failed` | Ergebnis je Spiel |
 | `NL_COVER_DL_ABORT failures=3` | drei Fehler in Folge: übrige Spiele werden nicht mehr versucht (`failed`) |
 | `NL_COVER_DL_DONE ok=<n> missing=<n> failed=<n>` | Download fertig, Dialog offen |
+| `NL_LANG <de\|en>` | aktive Sprache (beim Start und nach Änderung) |
+| `NL_CONFIG_SAVED` | Einstellungen in `config.ini` gespeichert |
+| `NL_RESCAN start` | „Bibliothek neu scannen“ gestartet |
+| `NL_BATTERY p1=<n> p2=<n> p3=<n> p4=<n>` | HOME-Menü geöffnet: Batteriestand je Wiimote (0–4, −1 = nicht verbunden) |
+| `NL_AUDIO ok`, `NL_AUDIO_FAIL <grund>` | Klänge bereit bzw. nicht verfügbar |
+| `NL_AUDIO_STOP` | Ton vor Spielstart oder Beenden gestoppt |
+| `NL_SOUND <move\|confirm\|back\|open\|error>` | gespielter UI-Klang (nur mit `[debug] log_sounds = 1`) |
+| `NL_MUSIC play <pfad> rate=<hz> ch=<n>` | neues Musikstück |
+| `NL_MUSIC_FAIL <pfad>`, `NL_MUSIC_OFF` | Stück nicht abspielbar bzw. Musik abgeschaltet |
 | `NL_WARN <text>` | nicht kritischer Fehler (z. B. kaputter Cache verworfen) |
 
 ## Schriften

@@ -1,5 +1,5 @@
 #include "ui/home_menu.hpp"
-#include "ui/actions_scene.hpp"
+#include "ui/settings_scene.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/test_library.hpp"
 #include "support/fake_font.hpp"
@@ -64,10 +64,10 @@ TEST_CASE_FIXTURE(Fixture, "Right bis zum Ende, Left bis zum Anfang, kein Umlauf
 TEST_CASE_FIXTURE(Fixture, "Confirm auf den Kacheln") {
     const AppCommand expected[4] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::None,
                                     AppCommand::PowerOff};
-    ActionsScene actions;
+    SettingsScene settings;
     for (int i = 0; i < 4; ++i) {
         HomeMenu m;
-        m.setActions(&actions);
+        m.setSettings(&settings);
         m.onEnter();
         for (int k = 0; k < i; ++k) step(m, action(Action::Right));
         const SceneRequests r = step(m, action(Action::Confirm));
@@ -76,17 +76,17 @@ TEST_CASE_FIXTURE(Fixture, "Confirm auf den Kacheln") {
     }
 }
 
-TEST_CASE_FIXTURE(Fixture, "Einstellungen öffnet die Aktionsliste, ohne Kommando") {
-    ActionsScene actions;
+TEST_CASE_FIXTURE(Fixture, "Einstellungen öffnet die Einstellungsszene, ohne Kommando") {
+    SettingsScene settings;
     HomeMenu m;
-    m.setActions(&actions);
+    m.setSettings(&settings);
     m.onEnter();
     step(m, action(Action::Right));
     step(m, action(Action::Right));
     const SceneRequests r = step(m, action(Action::Confirm));
     CHECK(r.command == AppCommand::None);
-    CHECK(r.pop);  // HOME-Overlay schließt, danach öffnet die Aktionsliste
-    CHECK(r.push == &actions);
+    CHECK(r.pop);  // HOME-Overlay schließt, danach öffnen die Einstellungen
+    CHECK(r.push == &settings);
 }
 
 TEST_CASE_FIXTURE(Fixture, "Einstellungen ohne Aktionsliste: nichts passiert") {
@@ -182,4 +182,16 @@ TEST_CASE_FIXTURE(Fixture, "draw in 640 und 854: keine verworfenen Quads, alles 
             CHECK(v.y <= 484);
         }
     }
+}
+
+TEST_CASE_FIXTURE(Fixture, "Klänge: rechts Move, B Back, Kachel Confirm, Einstellungen Open") {
+    SettingsScene settings;
+    HomeMenu m;
+    m.setSettings(&settings);
+    m.onEnter();
+    CHECK(step(m, action(Action::Right)).sound == UiSound::Move);
+    CHECK(step(m, action(Action::Confirm)).sound == UiSound::Confirm);  // Wii-Menü
+    CHECK(step(m, action(Action::Right)).sound == UiSound::Move);
+    CHECK(step(m, action(Action::Confirm)).sound == UiSound::Open);
+    CHECK(step(m, action(Action::Back)).sound == UiSound::Back);
 }

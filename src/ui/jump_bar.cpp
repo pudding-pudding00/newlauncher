@@ -29,6 +29,7 @@ Rect JumpBar::cellRect(const UiContext& ctx, int index) const {
 }
 
 void JumpBar::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
+    FocusSound sound(out, focus_);
     int hit = -1;
     if (in.pointerValid) {
         for (int i = 0; i < kCellCount && hit < 0; ++i)
@@ -51,6 +52,7 @@ void JumpBar::update(const UiContext& ctx, const InputFrame& in, float, SceneReq
         if (focus_ == kSearchCell) out.push = target_.openSearch();
         else target_.jumpToBucket(bucketOf(focus_));
         out.pop = true;
+        out.sound = out.push != nullptr ? UiSound::Open : UiSound::Confirm;
     }
 }
 
@@ -65,7 +67,7 @@ void JumpBar::draw(const UiContext& ctx, gfx::DrawList& dl) {
         const bool focused = i == focus_;
         if (focused) gfx::roundRect(dl, s, Rect{r.x + 1, r.y + 4, r.w - 2, r.h - 8}, 8, t.accent);
         char letter[2] = {bucketOf(i), '\0'};
-        const char* label = i == kSearchCell ? kStrSearch : letter;
+        const char* label = i == kSearchCell ? tr(Str::Search) : letter;
         const bool available = i == kSearchCell || target_.hasBucket(bucketOf(i));
         const Color c = focused ? t.onAccent : (available ? t.text : t.textMuted);
         const float w = gfx::measureText(f, label);

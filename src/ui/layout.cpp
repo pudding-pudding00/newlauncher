@@ -142,9 +142,9 @@ int GridModel::hitTest(float x, float y, float scroll) const {
 int infoLine(const Game& g, char* out, std::size_t cap) {
     const char* label = consoleInfo(g.console).label;
     if (g.year != 0 && g.players != 0)
-        return writef(out, cap, "%s \xC2\xB7 %u \xC2\xB7 %u %s", label, g.year, g.players, kStrPlayer);
+        return writef(out, cap, "%s \xC2\xB7 %u \xC2\xB7 %u %s", label, g.year, g.players, tr(Str::Player));
     if (g.year != 0) return writef(out, cap, "%s \xC2\xB7 %u", label, g.year);
-    if (g.players != 0) return writef(out, cap, "%s \xC2\xB7 %u %s", label, g.players, kStrPlayer);
+    if (g.players != 0) return writef(out, cap, "%s \xC2\xB7 %u %s", label, g.players, tr(Str::Player));
     return writef(out, cap, "%s", label);
 }
 
@@ -154,8 +154,10 @@ int formatClock(int minuteOfDay, char* out, std::size_t cap) {
 }
 
 int formatDate(int weekday, int day, int month, int year, char* out, std::size_t cap) {
-    return writef(out, cap, "%s, %d. %s %d", kStrWeekdays[clampi(weekday, 0, 6)], clampi(day, 1, 31),
-                  kStrMonths[clampi(month, 1, 12) - 1], year);
+    if (language() == Lang::En) {
+        return writef(out, cap, "%s, %s %d, %d", weekdayName(weekday), monthName(month), clampi(day, 1, 31), year);
+    }
+    return writef(out, cap, "%s, %d. %s %d", weekdayName(weekday), clampi(day, 1, 31), monthName(month), year);
 }
 
 }  // namespace nl::ui

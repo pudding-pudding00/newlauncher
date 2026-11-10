@@ -18,6 +18,7 @@
 #include "core/index_file.hpp"
 #include "core/launch_layout.hpp"
 #include "core/launch_plan.hpp"
+#include "core/playlist.hpp"
 #include "core/library_store.hpp"
 #include "core/meta_db.hpp"
 #include "core/n64.hpp"
@@ -30,7 +31,9 @@
 #include "launch/chainloader.hpp"
 #include "launch/channel.hpp"
 #include "platform/crash.hpp"
+#include "platform/audio.hpp"
 #include "platform/log.hpp"
+#include "platform/music.hpp"
 #include "platform/net_worker.hpp"
 #include "platform/nand_titles.hpp"
 #include "platform/scan_worker.hpp"
@@ -38,7 +41,7 @@
 #include "platform/storage.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_input.hpp"
-#include "ui/actions_scene.hpp"
+#include "ui/settings_scene.hpp"
 #include "ui/debug_overlay.hpp"
 #include "ui/details_scene.hpp"
 #include "ui/dialog_scene.hpp"
@@ -102,7 +105,9 @@ bool writeText(nl::FileSystem& fs, const char* path, const std::string& text) {
     return fs.writeAtomic(path, std::span<const u8>(p, text.size())).isOk();
 }
 
-nl::Config loadConfig(nl::FileSystem& fs, bool sdOk) {
+// text erhält den gelesenen bzw. neu geschriebenen Inhalt (Grundlage für configToIniText).
+nl::Config loadConfig(nl::FileSystem& fs, bool sdOk, std::string& text) {
+    text = nl::defaultConfigText();
     if (!sdOk) {
         nl::log::line("NL_CONFIG default (keine SD)");
         return nl::Config{};
@@ -111,7 +116,8 @@ nl::Config loadConfig(nl::FileSystem& fs, bool sdOk) {
     if (data.isOk()) {
         const auto& b = data.value();
         nl::log::line("NL_CONFIG ok");
-        return nl::configFromIni(nl::IniDoc::parse(std::string_view(reinterpret_cast<const char*>(b.data()), b.size())));
+        text.assign(reinterpret_cast<const char*>(b.data()), b.size());
+        return nl::configFromIni(nl::IniDoc::parse(text));
     }
     static_cast<void>(fs.makeDirs(kConfigDir));
     writeText(fs, kConfigPath, nl::defaultConfigText());
@@ -174,7 +180,20 @@ int main(int, char**) {
     // 1. SD und Konfiguration (Spec 6.1 Schritt 2)
     nl::platform::StdFileSystem fs;
     const bool sdOk = nl::platform::mountSd();
-    const nl::Config config = loadConfig(fs, sdOk);
+    std::string configText;
+    nl::Config config = loadConfig(fs, sdOk, configText);  // die Einstellungsszene ändert sie live
+    const bool systemGerman = CONF_GetLanguage() == CONF_LANG_GERMAN;
+    nl::ui::setLanguage(nl::ui::resolveLanguage(config.language, systemGerman));
+    nl::log::line("NL_LANG %s", nl::ui::langKey(nl::ui::language()));
+    auto saveConfig = [&]() {
+        std::string text = nl::configToIniText(config, configText);
+        if (sdOk && writeText(fs, kConfigPath, text)) {
+            configText = std::move(text);
+            nl::log::line("NL_CONFIG_SAVED");
+        } else {
+            nl::log::line("NL_WARN config.ini nicht gespeichert");
+        }
+    };
     const nl::EmulatorTable emulators = loadEmulators(fs, sdOk);
 
     // 2. Video, Renderer, Atlas, Theme aus der Konfiguration
@@ -197,6 +216,24 @@ int main(int, char**) {
 
     nl::platform::WiiInput input;
     input.init(renderer.logicalWidth(), renderer.logicalHeight());
+    nl::platform::Audio audio;
+    audio.init();
+    audio.setSounds(config.sounds);
+    nl::platform::Music music;  // startet nach NL_READY, Stimme 0
+    music.setVolume(config.musicVolume);
+    auto pumpMusic = [&]() {
+        for (const std::string& line : music.takeLogLines()) nl::log::line("%s", line.c_str());
+    };
+    auto startMusic = [&]() {
+        if (music.started() || !sdOk) return;
+        music.start(nl::musicFiles(fs, "sd:/newlauncher/music"), static_cast<u32>(gettime()));
+    };
+    // Vor jedem Verlassen des Launchers: erst den Musik-Thread (er speist Stimme 0), dann ASND.
+    auto stopAudio = [&]() {
+        music.stop();
+        pumpMusic();
+        audio.shutdown();
+    };
     nl::ui::InputMapper mapper;
 
     nl::ui::UiContext ctx;
@@ -334,8 +371,10 @@ int main(int, char**) {
     mainScene.setCovers(&covers);
     nl::ui::HomeMenu homeMenu;
     mainScene.setHomeMenu(&homeMenu);
-    nl::ui::ActionsScene actions;
-    homeMenu.setActions(&actions);
+    nl::ui::SettingsScene settings;
+    settings.setConfig(&config);
+    settings.setActiveLibrary(libRoot == "usb:" ? nl::Config::LibraryDevice::Usb : nl::Config::LibraryDevice::Sd);
+    homeMenu.setSettings(&settings);
     nl::platform::NetWorker net;
     mainScene.setFavoriteKeys(&store);
     nl::ui::JumpBar jumpBar(mainScene);
@@ -366,12 +405,13 @@ int main(int, char**) {
             nl::ui::launchErrorText(e, title, sizeof title, text, sizeof text);
             dialog.open(title, text);
             scenes.push(&dialog);
+            audio.play(nl::UiSound::Error);
         };
         const nl::N64Inputs inputs = n64Inputs(game);
         auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Dol && !launchAllowed) {
             target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(
-                {nl::LaunchFailure::NoMemory, "Speicher für den Start ist belegt."});
+                {nl::LaunchFailure::NoMemory, nl::ui::tr(nl::ui::Str::NoMemory)});
         }
         if (!target.isOk()) {
             nl::log::line("NL_PREFLIGHT_FAIL %s %s", nl::launchFailureName(target.error().kind), key.c_str());
@@ -390,6 +430,7 @@ int main(int, char**) {
         if (target.value().kind == nl::LaunchTarget::Kind::Channel) {
             const u64 titleId = target.value().titleId;
             nl::log::line("NL_LAUNCH_VC %s", nl::formatTitleId(titleId).c_str());
+            stopAudio();
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
             input.shutdown();
             nl::platform::unmountAll();
@@ -406,6 +447,7 @@ int main(int, char**) {
             showError({nl::LaunchFailure::EmuInvalid, plan.dolPath});
             return;
         }
+        stopAudio();
         if (sdOk) nl::log::flushLogFile(fs, kLogPath);
         input.shutdown();
         nl::platform::unmountAll();
@@ -428,7 +470,7 @@ int main(int, char**) {
             nl::coverDownloadJobs(games, [&](const std::string& path) { return present.count(path) > 0; }, libRoot);
         nl::log::line("NL_COVER_DL_START jobs=%u", static_cast<unsigned>(jobs.size()));
         if (jobs.empty()) {
-            dialog.open(nl::ui::kStrNoMissingCovers, nl::ui::kStrNoMissingCoversText);
+            dialog.open(nl::ui::tr(nl::ui::Str::NoMissingCovers), nl::ui::tr(nl::ui::Str::NoMissingCoversText));
             scenes.push(&dialog);
             return;
         }
@@ -450,7 +492,7 @@ int main(int, char**) {
         if (net.running()) {
             const u32 done = net.done();
             if (done != coverToastDone) {  // Text nur bei Änderung neu bauen
-                std::snprintf(coverToast, sizeof coverToast, nl::ui::kStrCoverProgress, static_cast<unsigned>(done),
+                std::snprintf(coverToast, sizeof coverToast, nl::ui::tr(nl::ui::Str::CoverProgress), static_cast<unsigned>(done),
                               static_cast<unsigned>(net.total()));
                 coverToastDone = done;
                 coverToastFrames = 0;
@@ -468,9 +510,9 @@ int main(int, char**) {
                           static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
             char text[128];
-            std::snprintf(text, sizeof text, nl::ui::kStrCoversSummary, static_cast<unsigned>(sum->ok),
+            std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::CoversSummary), static_cast<unsigned>(sum->ok),
                           static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
-            dialog.open(nl::ui::kStrCoversLoaded, text);
+            dialog.open(nl::ui::tr(nl::ui::Str::CoversLoaded), text);
             scenes.push(&dialog);
         }
     };
@@ -485,12 +527,13 @@ int main(int, char**) {
         const u64 frameStart = gettime();
 #ifdef NL_SELFTEST
         const nl::app::SelftestView view{mainScene, scenes, debug, worker.running(), store, ctx, keyboard, &dialog,
-                                                 &details, &vcMapScene, &actions, &covers};
+                                                 &details, &vcMapScene, &settings, &config, &covers};
         input.poll();  // Geräte weiter abfragen, Eingaben kommen aber aus dem Skript
         const nl::ui::InputFrame in = frame.begin(nl::app::selftestInput(frameNo, view));
 #else
         const nl::ui::InputFrame in = frame.begin(input.poll());
 #endif
+        ctx.battery = input.battery();
         // Ergebnis des Hintergrund-Scans übernehmen (Spec 6.1 Schritt 6)
         if (auto result = worker.take()) {
             if (result->isOk()) {
@@ -511,7 +554,14 @@ int main(int, char**) {
         covers.beginFrame(static_cast<u32>(frameNo) + 1, static_cast<float>(frameNo) * kFrameMs);
         nl::ui::SceneRequests req;
         const nl::ui::AppCommand cmd = scenes.update(ctx, in, kFrameMs, &req);
+        if (req.sound != nl::UiSound::None) {
+            audio.play(req.sound);
+            if (config.debugLogSounds && config.sounds) nl::log::line("NL_SOUND %s", nl::uiSoundName(req.sound));
+        }
         if (req.push == &details) refreshDetailsN64();  // MainScene hat die Details gerade geöffnet
+        if (req.push == &homeMenu)
+            nl::log::line("NL_BATTERY p1=%d p2=%d p3=%d p4=%d", ctx.battery[0], ctx.battery[1], ctx.battery[2],
+                          ctx.battery[3]);
         switch (cmd) {
             case nl::ui::AppCommand::SetN64Method: {
                 if (req.game == nullptr) break;
@@ -528,7 +578,7 @@ int main(int, char**) {
             case nl::ui::AppCommand::OpenVcMap: {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 if (!channelsLoaded) {
-                    channels = nl::platform::loadChannelNames(installedTitles, nl::platform::systemBannerLang());
+                    channels = nl::platform::loadChannelNames(installedTitles, nl::platform::bannerLangFor(nl::ui::language()));
                     channelsLoaded = true;
                     nl::log::line("NL_VC_CHANNELS n=%u", static_cast<unsigned>(channels.size()));
                     for (const nl::ChannelInfo& c : channels)
@@ -564,13 +614,43 @@ int main(int, char**) {
                 if (sdOk && writeText(fs, kFavoritesPath, text)) nl::log::line("NL_FAV_SAVED %s", key.c_str());
                 else nl::log::line("NL_WARN favorites.ini nicht gespeichert");
                 mainScene.setLibrary(libraryView(), focusKey);
-                mainScene.showToast(nowFavorite ? nl::ui::kStrFavAdded : nl::ui::kStrFavRemoved);
+                mainScene.showToast(nowFavorite ? nl::ui::tr(nl::ui::Str::FavAdded) : nl::ui::tr(nl::ui::Str::FavRemoved));
                 if (details.game() != nullptr && key == details.game()->key) details.setFavorite(nowFavorite);
                 break;
             }
             case nl::ui::AppCommand::CycleTheme:
                 ctx.themeMode = nl::nextMode(ctx.themeMode);
+                config.themeMode = ctx.themeMode;
                 nl::log::line("NL_CMD %s %s", nl::ui::appCommandName(cmd), nl::themeModeName(ctx.themeMode));
+                saveConfig();
+                break;
+            case nl::ui::AppCommand::SettingsChanged: {
+                const nl::ui::Lang lang = nl::ui::resolveLanguage(config.language, systemGerman);
+                if (lang != nl::ui::language()) {
+                    nl::ui::setLanguage(lang);
+                    channelsLoaded = false;  // Kanalnamen beim nächsten Öffnen in der neuen Sprache laden
+                    nl::log::line("NL_LANG %s", nl::ui::langKey(lang));
+                }
+                ctx.themeMode = config.themeMode;
+                theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, config.darkFromMin, config.darkToMin), true);
+                audio.setSounds(config.sounds);
+                music.setEnabled(config.music);
+                music.setVolume(config.musicVolume);
+                if (config.music) startMusic();  // beim Start ausgeschaltet gewesen
+                break;
+            }
+            case nl::ui::AppCommand::SaveSettings:
+                config.themeMode = ctx.themeMode;
+                saveConfig();
+                break;
+            case nl::ui::AppCommand::Rescan:
+                if (worker.running()) break;  // läuft schon, das Ergebnis kommt über den Scan-Pfad unten
+                if (!worker.start(fs, libRoot, nullptr, metaPtr)) {
+                    nl::log::line("NL_WARN Neu-Scan nicht gestartet");
+                    break;
+                }
+                mainScene.showToast(nl::ui::tr(nl::ui::Str::Rescanning));
+                nl::log::line("NL_RESCAN start");
                 break;
             case nl::ui::AppCommand::ExitToHbc:  // Spec 6.8: aufräumen, exit(0)
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
@@ -582,6 +662,7 @@ int main(int, char**) {
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
                 net.join();
                 covers.shutdown();
+                stopAudio();
                 if (sdOk) nl::log::flushLogFile(fs, kLogPath);
                 input.shutdown();
                 nl::platform::unmountAll();
@@ -598,6 +679,7 @@ int main(int, char**) {
         }
         if (!running) break;
         pumpNet();
+        pumpMusic();
         covers.pump();  // nach update (Wünsche dieses Frames), vor draw; Freigaben erst nach GX_DrawDone des Vorframes
 
         dl.clear();
@@ -620,6 +702,7 @@ int main(int, char**) {
             nl::log::line("NL_READY");
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
             readyReported = true;
+            if (config.music) startMusic();
             if (const std::string& key = config.debugAutostart; !key.empty()) {  // nur für Tests
                 const nl::Game* found = nullptr;
                 for (const nl::Game& g : store.games()) {
@@ -646,6 +729,7 @@ int main(int, char**) {
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
     net.join();
     covers.shutdown();
+    stopAudio();
     if (sdOk) nl::log::flushLogFile(fs, kLogPath);
     input.shutdown();
     nl::platform::unmountAll();

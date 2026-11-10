@@ -198,3 +198,13 @@ TEST_CASE_FIXTURE(Fixture, "MainScene: Bibliothek wechselt während der Suche �
     CHECK(s.grid().count() == 2);
     CHECK(std::string(s.barLabelText(0)) == "Suche: mario");
 }
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: Klänge – A auf Taste Confirm, Fertig Confirm, Pfeil Move, B Back") {
+    SpySearch t;
+    Keyboard k(t);
+    k.onEnter();
+    CHECK(step(k, action(Action::Confirm)).sound == UiSound::Confirm);
+    CHECK(step(k, action(Action::Right)).sound == UiSound::Move);
+    CHECK(tap(k, k.keyRect(ctx, k.keyIndex(Keyboard::kDone))).sound == UiSound::Confirm);
+    CHECK(step(k, action(Action::Back)).sound == UiSound::Back);
+}

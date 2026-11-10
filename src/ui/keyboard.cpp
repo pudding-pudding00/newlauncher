@@ -93,6 +93,7 @@ void Keyboard::press(int key, SceneRequests& out) {
 }
 
 void Keyboard::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
+    FocusSound sound(out, focus_);
     int hit = -1;
     if (in.pointerValid) {
         for (int i = 0; i < keyCount() && hit < 0; ++i)
@@ -131,7 +132,10 @@ void Keyboard::update(const UiContext& ctx, const InputFrame& in, float, SceneRe
         return;
     }
     const bool pointerOff = in.pointerValid && hit < 0 && !keysSincePointerMove_;
-    if (in.pressed(Action::Confirm) && !pointerOff) press(focus_, out);
+    if (in.pressed(Action::Confirm) && !pointerOff) {
+        press(focus_, out);
+        out.sound = UiSound::Confirm;
+    }
 }
 
 void Keyboard::draw(const UiContext& ctx, gfx::DrawList& dl) {
@@ -145,7 +149,7 @@ void Keyboard::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const gfx::FontFace& title = ctx.fonts->face(gfx::FontSize::Title, gfx::FontWeight::Medium);
     const Rect field{(ctx.width - 420) / 2, top + 8, 420, 36};
     gfx::roundRect(dl, s, field, 10, t.bg);
-    const char* shown = text_.empty() ? kStrSearchHint : text_.c_str();
+    const char* shown = text_.empty() ? tr(Str::SearchHint) : text_.c_str();
     gfx::drawTextEllipsis(dl, title, field.x + 12, field.y + field.h / 2 + (title.ascent - title.descent) / 2, field.w - 24,
                           shown, text_.empty() ? t.textMuted : t.text);
 
@@ -156,7 +160,7 @@ void Keyboard::draw(const UiContext& ctx, gfx::DrawList& dl) {
         gfx::roundRect(dl, s, r, 8, focused ? t.accent : t.tile);
         const char c = keyChar(i);
         char single[2] = {c, '\0'};
-        const char* label = c == kSpace ? kStrKeySpace : c == kBackspace ? kStrKeyDelete : c == kDone ? kStrKeyDone : single;
+        const char* label = c == kSpace ? tr(Str::KeySpace) : c == kBackspace ? tr(Str::KeyDelete) : c == kDone ? tr(Str::KeyDone) : single;
         const float w = gfx::measureText(f, label);
         gfx::drawTextEllipsis(dl, f, w < r.w - 8 ? r.x + (r.w - w) / 2 : r.x + 4, r.y + r.h / 2 + (f.ascent - f.descent) / 2,
                               r.w - 8, label, focused ? t.onAccent : t.text);

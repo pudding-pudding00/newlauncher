@@ -41,16 +41,16 @@ std::size_t copyEllipsized(char* out, std::size_t cap, std::string_view src) {
 }
 
 int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, char* text, std::size_t textCap) {
-    copyEllipsized(title, titleCap, kStrLaunchFailed);
+    copyEllipsized(title, titleCap, tr(Str::LaunchFailed));
     std::string msg;
     switch (e.kind) {
-        case LaunchFailure::EmuMissing: msg = fill(kStrEmuMissing, e.context); break;
-        case LaunchFailure::EmuInvalid: msg = fill(kStrEmuInvalid, e.context); break;
-        case LaunchFailure::RomMissing: msg = fill(kStrRomMissing, e.context); break;
-        case LaunchFailure::ArgsTooLong: msg = kStrArgsTooLong; break;
-        case LaunchFailure::Unsupported: msg = fill(kStrUnsupported, e.context); break;
+        case LaunchFailure::EmuMissing: msg = fill(tr(Str::EmuMissing), e.context); break;
+        case LaunchFailure::EmuInvalid: msg = fill(tr(Str::EmuInvalid), e.context); break;
+        case LaunchFailure::RomMissing: msg = fill(tr(Str::RomMissing), e.context); break;
+        case LaunchFailure::ArgsTooLong: msg = tr(Str::ArgsTooLong); break;
+        case LaunchFailure::Unsupported: msg = fill(tr(Str::Unsupported), e.context); break;
         case LaunchFailure::NoMemory: msg = e.context; break;
-        case LaunchFailure::NoN64Path: msg = kStrNoN64Path; break;
+        case LaunchFailure::NoN64Path: msg = tr(Str::NoN64Path); break;
     }
     return static_cast<int>(copyEllipsized(text, textCap, msg));
 }

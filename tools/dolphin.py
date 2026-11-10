@@ -52,8 +52,12 @@ def write_dev_config(user_dir: Path) -> None:
 
 
 def dolphin_command(exe: Path, user_dir: Path, dol: Path) -> list[str]:
-    """Startbefehl; -u isoliert die Konfiguration vom privaten Dolphin des Nutzers."""
-    return [str(exe), "-u", str(user_dir), "-b", "-e", str(dol)]
+    """Startbefehl; -u isoliert die Konfiguration vom privaten Dolphin des Nutzers.
+
+    -C setzt die Lautstärke nur für diesen Lauf auf 0 (nicht gespeichert): die Test-Musik ist ein Dauerton,
+    der DSP läuft trotzdem wie sonst. Muss hinter -u <dir> stehen (Fake-Dolphin in den Tests ist Python).
+    """
+    return [str(exe), "-u", str(user_dir), "-b", "-C", "Dolphin.DSP.Volume=0", "-e", str(dol)]
 
 
 def reset_log(user_dir: Path) -> None:

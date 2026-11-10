@@ -28,8 +28,8 @@ bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y 
 Rect grow(Rect r, float d) { return Rect{r.x - d, r.y - d, r.w + 2 * d, r.h + 2 * d}; }
 
 const char* barLabel(const BarEntry& e) {
-    if (e.kind == BarKind::Favorites) return kStrFavorites;
-    if (e.kind == BarKind::Recent) return kStrRecent;
+    if (e.kind == BarKind::Favorites) return tr(Str::Favorites);
+    if (e.kind == BarKind::Recent) return tr(Str::Recent);
     return consoleInfo(e.console).label;
 }
 
@@ -156,7 +156,7 @@ void MainScene::setQuery(std::string_view query) {
         searchActive_ = true;
     }
     searchQuery_.assign(query);
-    std::snprintf(searchLabel_, sizeof searchLabel_, "%s: %s", kStrSearch, searchQuery_.c_str());
+    std::snprintf(searchLabel_, sizeof searchLabel_, "%s: %s", tr(Str::Search), searchQuery_.c_str());
     searchResults_.clear();
     for (const Game& g : lib_.games)
         if (matchesQuery(foldForSearch(g.title), folded)) searchResults_.push_back(&g);
@@ -302,7 +302,7 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
     }
     if (!modeKnown_ || ctx.themeMode != lastMode_) {
         if (modeKnown_) {
-            std::snprintf(toastBuf_, sizeof toastBuf_, "%s: %s", kStrAppearance, themeModeName(ctx.themeMode));
+            std::snprintf(toastBuf_, sizeof toastBuf_, "%s: %s", tr(Str::Appearance), tr(ctx.themeMode == ThemeMode::Light ? Str::ThemeLight : ctx.themeMode == ThemeMode::Dark ? Str::ThemeDark : Str::ThemeAuto));
             toastMs_ = kToastMs;
         }
         modeKnown_ = true;
@@ -311,6 +311,7 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
         toastMs_ -= dtMs;
     }
 
+    const int focusBefore = grid_.focus(), barBefore = barIndex_;
     layoutBar(ctx);
     handlePointer(ctx, in);
 
@@ -323,7 +324,10 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
 
     if (in.pressed(Action::Home) && home_ != nullptr) out.push = home_;
     if (in.pressed(Action::Search) && jumpBar_ != nullptr) out.push = jumpBar_;
-    if (in.pressed(Action::Back) && searchActive_) setQuery("");
+    if (in.pressed(Action::Back) && searchActive_) {
+        setQuery("");
+        out.sound = UiSound::Back;
+    }
     if (in.pressed(Action::Favorite)) {
         if (const Game* g = focusedGame()) {
             out.command = AppCommand::ToggleFavorite;
@@ -337,14 +341,15 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
             out.command = AppCommand::CycleTheme;
         } else if (hover_ == Hover::Bar && hoverBar_ >= 0) {
             selectBar(hoverBar_, ctx.width, ctx.height);
+            out.sound = UiSound::Confirm;
         } else if (const Game* g = focusedGame(); g != nullptr && details_ != nullptr) {
             const bool fav = detailsStore_ != nullptr && detailsStore_->isFavorite(g->key);
             const u32 last = detailsStore_ != nullptr ? detailsStore_->lastPlayed(g->key) : 0;
             details_->open(*g, fav, last);
             out.push = details_;
         }
-        // Spiele starten folgt mit M3.
     }
+    deriveSound(out, (grid_.focus() != focusBefore && grid_.focus() >= 0) || barIndex_ != barBefore);
 
     layoutBar(ctx);
     if (grid_.targetScroll() != scroll_.target()) scroll_.to(grid_.targetScroll(), kAnimMs);
@@ -489,7 +494,7 @@ void MainScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     }
     if (grid_.count() == 0) {
         const gfx::FontFace& f = ctx.fonts->face(FontSize::Title, FontWeight::Regular);
-        const char* empty = searchActive_ && bar_[barIndex_].kind == BarKind::Search ? kStrNoResults : kStrNoGames;
+        const char* empty = searchActive_ && bar_[barIndex_].kind == BarKind::Search ? tr(Str::NoResults) : tr(Str::NoGames);
         const float w = gfx::measureText(f, empty);
         gfx::drawText(dl, f, (ctx.width - w) / 2, viewTop + grid_.viewHeight() / 2, empty, t.textMuted);
     }

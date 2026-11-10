@@ -24,9 +24,9 @@ constexpr N64Method methodOf(int choice) { return static_cast<N64Method>(choice 
 
 const char* whyText(N64Unavailable why) {
     switch (why) {
-        case N64Unavailable::NotMapped: return kStrWhyNotMapped;
-        case N64Unavailable::NotInstalled: return kStrWhyNotInstalled;
-        case N64Unavailable::DolMissing: return kStrWhyDolMissing;
+        case N64Unavailable::NotMapped: return tr(Str::WhyNotMapped);
+        case N64Unavailable::NotInstalled: return tr(Str::WhyNotInstalled);
+        case N64Unavailable::DolMissing: return tr(Str::WhyDolMissing);
         case N64Unavailable::None: break;
     }
     return "";
@@ -63,14 +63,14 @@ int detailsInfoLine(const Game& g, u32 lastPlayedUnix, char* out, std::size_t ca
     if (g.year != 0) appendf(out, cap, len, "%s%u", " \xC2\xB7 ", g.year);
     if (g.players != 0) {
         appendf(out, cap, len, "%s%u", " \xC2\xB7 ", g.players);
-        appendf(out, cap, len, " %s", kStrPlayer);
+        appendf(out, cap, len, " %s", tr(Str::Player));
     }
     if (lastPlayedUnix != 0) {
         int y = 0, m = 0, d = 0;
         civilFromDays(static_cast<long>(lastPlayedUnix / 86400u), y, m, d);
         char date[32];
         std::snprintf(date, sizeof date, "%02d.%02d.%04d", d, m, y);
-        appendf(out, cap, len, " \xC2\xB7 %s", kStrLastPlayed);
+        appendf(out, cap, len, " \xC2\xB7 %s", tr(Str::LastPlayed));
         appendf(out, cap, len, " %s", date);
     }
     return len;
@@ -79,7 +79,7 @@ int detailsInfoLine(const Game& g, u32 lastPlayedUnix, char* out, std::size_t ca
 int n64HintLine(const N64Decision& d, char* out, std::size_t cap) {
     if (cap == 0) return 0;
     std::string s;
-    if (d.overrideIgnored || d.mappingIgnored) s = kStrOverrideIgnored;
+    if (d.overrideIgnored || d.mappingIgnored) s = tr(Str::OverrideIgnored);
     bool first = true;
     for (int i = 0; i < static_cast<int>(kN64MethodCount); ++i) {
         const N64Unavailable why = d.why[static_cast<std::size_t>(i)];
@@ -113,10 +113,10 @@ void DetailsScene::refreshN64Text() {
         const char* autoLabel = nullptr;
         for (int c = 1; c < kChoiceCount && autoLabel == nullptr; ++c)
             if (n64_.available(methodOf(c))) autoLabel = n64MethodLabel(methodOf(c));
-        if (autoLabel != nullptr) std::snprintf(value, sizeof value, kStrMethodAuto, autoLabel);
-        else std::snprintf(value, sizeof value, "%s", kStrMethodAutoNone);
+        if (autoLabel != nullptr) std::snprintf(value, sizeof value, tr(Str::MethodAuto), autoLabel);
+        else std::snprintf(value, sizeof value, "%s", tr(Str::MethodAutoNone));
     }
-    std::snprintf(method_, sizeof method_, kStrMethod, value);
+    std::snprintf(method_, sizeof method_, tr(Str::Method), value);
 }
 
 void DetailsScene::open(const Game& game, bool favorite, u32 lastPlayedUnix) {
@@ -148,6 +148,7 @@ Rect DetailsScene::buttonRect([[maybe_unused]] const UiContext& ctx, int index) 
 }
 
 void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
+    FocusSound sound(out, focus_);
     if (covers_ != nullptr && hasGame_) covers_->want(game_, CoverPriority::Visible);
     if (ctx.minuteOfDay != clockMinute_) {
         clockMinute_ = ctx.minuteOfDay;
@@ -260,7 +261,7 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
 
     // Knöpfe
     const gfx::FontFace& bf = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
-    const char* labels[2] = {kStrStart, favorite_ ? kStrFavRemove : kStrFavorite};
+    const char* labels[2] = {tr(Str::Start), favorite_ ? tr(Str::FavRemove) : tr(Str::Favorite)};
     for (int i = 0; i < 2; ++i) {
         const Rect r = buttonRect(ctx, i);
         const bool focused = i == focus_;  // kFocusMethod hebt keinen Knopf hervor
@@ -277,7 +278,7 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     gfx::fillRect(dl, s, Rect{0, top, ctx.width, kInfoBarH}, t.bar);
     gfx::fillRect(dl, s, Rect{0, top, ctx.width, 1}, t.barBorder);
     gfx::drawTextEllipsis(dl, body, kMargin, top + 36 + (body.ascent - body.descent) / 2, ctx.width - 2 * kMargin - 80,
-                          kStrDetailsHelp, t.text2);
+                          tr(Str::DetailsHelp), t.text2);
     const gfx::FontFace& clock = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
     const float cw = gfx::measureText(clock, clock_);
     gfx::drawText(dl, clock, ctx.width - kMargin - cw, top + 36 + (clock.ascent - clock.descent) / 2, clock_, t.text2);

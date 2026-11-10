@@ -8,6 +8,7 @@
 #include "core/types.hpp"
 #include "core/vc_map.hpp"
 #include "core/wii_title.hpp"
+#include "ui/strings.hpp"
 
 namespace nl::platform {
 
@@ -17,6 +18,8 @@ std::vector<u64> installedTitleIds();  // nur Kanäle (isChannelTitle)
 std::vector<ChannelInfo> loadChannelNames(std::span<const u64> ids, BannerLang lang);
 
 BannerLang systemBannerLang();  // CONF_GetLanguage; unbekannt → English
+// Kanalnamen in der Sprache des Launchers: De → German, En → English.
+constexpr BannerLang bannerLangFor(ui::Lang l) { return l == ui::Lang::De ? BannerLang::German : BannerLang::English; }
 const char* systemCoverRegion();  // GameTDB-Region aus CONF_GetLanguage: DE, FR, JA, sonst EN
 
 }  // namespace nl::platform

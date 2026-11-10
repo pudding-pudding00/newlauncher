@@ -1,5 +1,7 @@
 #include "ui/home_menu.hpp"
 
+#include <cstdio>
+
 #include "gfx/text.hpp"
 #include "ui/strings.hpp"
 
@@ -13,7 +15,7 @@ using gfx::Rect;
 constexpr float kHeaderH = 64.0f, kFooterH = 56.0f;
 constexpr float kTileH = 150.0f, kTileGap = 20.0f, kMaxTileW = 150.0f;
 
-const char* const kLabels[HomeMenu::kTileCount] = {kStrHomebrewChannel, kStrWiiMenu, kStrSettings, kStrPowerOff};
+const Str kLabels[HomeMenu::kTileCount] = {Str::HomebrewChannel, Str::WiiMenu, Str::Settings, Str::PowerOff};
 const AppCommand kCommands[HomeMenu::kTileCount] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::None,
                                                     AppCommand::PowerOff};
 
@@ -41,6 +43,7 @@ int HomeMenu::hitTest(const UiContext& ctx, float x, float y) const {
 }
 
 void HomeMenu::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
+    FocusSound sound(out, focus_);
     const int hit = in.pointerValid ? hitTest(ctx, in.pointerX, in.pointerY) : -1;
     if (in.pointerValid && in.pointerMoved) {
         if (hit >= 0) focus_ = hit;
@@ -58,10 +61,10 @@ void HomeMenu::update(const UiContext& ctx, const InputFrame& in, float, SceneRe
         return;
     }
     if (in.pressed(Action::Confirm) && !pointerOffTiles) {
-        if (focus_ == 2) {  // Einstellungen: HOME ausblenden, dann die Aktionsliste öffnen
-            if (actions_ != nullptr) {
+        if (focus_ == 2) {  // Einstellungen: HOME ausblenden, dann die Einstellungsszene öffnen
+            if (settings_ != nullptr) {
                 out.pop = true;
-                out.push = actions_;
+                out.push = settings_;
             }
             return;
         }
@@ -76,7 +79,7 @@ void HomeMenu::draw(const UiContext& ctx, gfx::DrawList& dl) {
     gfx::fillRect(dl, s, Rect{0, 0, ctx.width, kHeaderH}, t.bar);
     gfx::fillRect(dl, s, Rect{0, kHeaderH, ctx.width, 3}, t.accent);
     const gfx::FontFace& head = ctx.fonts->face(FontSize::Title, FontWeight::Medium);
-    gfx::drawText(dl, head, 32, kHeaderH / 2 + (head.ascent - head.descent) / 2, kStrHomeMenu, t.text);
+    gfx::drawText(dl, head, 32, kHeaderH / 2 + (head.ascent - head.descent) / 2, tr(Str::HomeMenu), t.text);
 
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
     for (int i = 0; i < kTileCount; ++i) {
@@ -87,7 +90,7 @@ void HomeMenu::draw(const UiContext& ctx, gfx::DrawList& dl) {
         gfx::circle(dl, s, r.x + r.w / 2, r.y + 52, 26, t.accentSoft);
 
         gfx::Line lines[2];
-        const std::string_view text(kLabels[i]);
+        const std::string_view text(tr(kLabels[i]));
         const int n = gfx::wrapText(label, text, r.w - 16, lines);
         float baseline = r.y + 104 + label.ascent / 2;
         for (int k = 0; k < n; ++k) {
@@ -101,9 +104,28 @@ void HomeMenu::draw(const UiContext& ctx, gfx::DrawList& dl) {
 
     gfx::fillRect(dl, s, Rect{0, ctx.height - kFooterH, ctx.width, kFooterH}, t.bar);
     const gfx::FontFace& small = ctx.fonts->face(FontSize::Body, FontWeight::Regular);
-    const float w = gfx::measureText(small, kStrHomeCloses);
-    gfx::drawText(dl, small, (ctx.width - w) / 2, ctx.height - kFooterH / 2 + (small.ascent - small.descent) / 2,
-                  kStrHomeCloses, t.text2);
+    const float base = ctx.height - kFooterH / 2 + (small.ascent - small.descent) / 2;
+    // links P1..P4 mit vier Balken; schwach (<= 1 Balken) in danger, nicht verbunden als „P<n> –“
+    constexpr float kBarW = 5.0f, kBarGap = 2.0f, kBarH = 12.0f, kGroupGap = 18.0f;
+    float x = 32.0f;
+    for (int p = 0; p < 4; ++p) {
+        const int bars = ctx.battery[static_cast<std::size_t>(p)];
+        char name[8];
+        std::snprintf(name, sizeof name, bars < 0 ? "P%d \xE2\x80\x93" : "P%d", p + 1);
+        gfx::drawText(dl, small, x, base, name, bars < 0 ? t.textMuted : t.text2);
+        x += gfx::measureText(small, name) + 6.0f;
+        if (bars >= 0) {
+            const Color on = bars <= 1 ? t.danger : t.text2;
+            const float top = ctx.height - kFooterH / 2 - kBarH / 2;
+            for (int b = 0; b < 4; ++b) {
+                gfx::fillRect(dl, s, Rect{x, top, kBarW, kBarH}, b < bars ? on : t.barBorder);
+                x += kBarW + kBarGap;
+            }
+        }
+        x += kGroupGap;
+    }
+    const float w = gfx::measureText(small, tr(Str::HomeCloses));
+    gfx::drawText(dl, small, ctx.width - 32 - w, base, tr(Str::HomeCloses), t.text2);
 }
 
 }  // namespace nl::ui

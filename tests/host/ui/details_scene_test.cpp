@@ -227,7 +227,7 @@ TEST_CASE("Hinweiszeile nennt Gründe") {
     in.override_ = N64Method::Wii64;
     in.not64Dol = true;
     n64HintLine(decideN64(in), buf, sizeof buf);
-    CHECK(std::string(buf) == std::string(kStrOverrideIgnored) + " VC-Inject: nicht zugeordnet · Wii64: DOL fehlt");
+    CHECK(std::string(buf) == std::string(tr(Str::OverrideIgnored)) + " VC-Inject: nicht zugeordnet · Wii64: DOL fehlt");
     n64HintLine(decision(true, true, true), buf, sizeof buf);
     CHECK(std::string(buf).empty());
 }
@@ -253,4 +253,17 @@ TEST_CASE_FIXTURE(Fixture, "Details: großes Cover aus dem Provider, angefordert
     CHECK(br.x - tl.x == doctest::Approx(200.0));
     CHECK(br.y - tl.y == doctest::Approx(280.0));
     CHECK(tl.color.a == 255);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Klänge: A auf Cover öffnet Details mit Open; Details: rechts Move, B Back, A Confirm") {
+    const Library lib = testLibrary();
+    MainScene s(lib);
+    DetailsScene d;
+    s.setDetails(&d, nullptr);
+    step(s, InputFrame{});
+    CHECK(step(s, action(Action::Confirm)).sound == UiSound::Open);
+    d.onEnter();
+    CHECK(step(d, action(Action::Right)).sound == UiSound::Move);
+    CHECK(step(d, action(Action::Confirm)).sound == UiSound::Confirm);
+    CHECK(step(d, action(Action::Back)).sound == UiSound::Back);
 }

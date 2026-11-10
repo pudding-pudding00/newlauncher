@@ -4,15 +4,24 @@
 #include <optional>
 #include <reent.h>
 
+#include <ogc/lwp.h>
+
 #include "core/assert.hpp"
 #include "core/n64.hpp"
+#include "core/settings_model.hpp"
 #include "platform/log.hpp"
+#include "ui/strings.hpp"
 
 // Allokationszähler: das Ziel nl_selftest linkt mit --wrap für _malloc_r, _memalign_r und
 // _realloc_r. In libogc 3 springt malloc() bei Größen über 63 Byte direkt zu _memalign_r,
 // deshalb reicht _malloc_r allein nicht.
 namespace {
 volatile unsigned g_allocs = 0;
+// Nur der Haupt-Thread zählt: der Musik-Thread (Tremor) allokiert bei jedem Stückwechsel nebenher.
+lwp_t g_mainThread = LWP_THREAD_NULL;
+inline void countAlloc() {
+    if (g_mainThread != LWP_THREAD_NULL && LWP_GetSelf() == g_mainThread) g_allocs = g_allocs + 1;
+}
 }
 
 extern "C" void* __real__malloc_r(struct _reent* r, std::size_t n);
@@ -20,15 +29,15 @@ extern "C" void* __real__memalign_r(struct _reent* r, std::size_t align, std::si
 extern "C" void* __real__realloc_r(struct _reent* r, void* p, std::size_t n);
 
 extern "C" void* __wrap__malloc_r(struct _reent* r, std::size_t n) {
-    g_allocs = g_allocs + 1;
+    countAlloc();
     return __real__malloc_r(r, n);
 }
 extern "C" void* __wrap__memalign_r(struct _reent* r, std::size_t align, std::size_t n) {
-    g_allocs = g_allocs + 1;
+    countAlloc();
     return __real__memalign_r(r, align, n);
 }
 extern "C" void* __wrap__realloc_r(struct _reent* r, void* p, std::size_t n) {
-    g_allocs = g_allocs + 1;
+    countAlloc();
     return __real__realloc_r(r, p, n);
 }
 
@@ -41,7 +50,7 @@ using B = ui::RawInput::Button;
 // Fixture-Leiste: 0 Favoriten, 1 Zuletzt, 2 Wii, 3 GC, 4 GBA, 5 N64, 6 SNES, 7 GB, 8 NES.
 constexpr int kTypeStart = 182;          // Suche: "MARIO" per Zeiger tippen, je Taste 3 Frames
 constexpr const char* kTyped = "MARIO";
-constexpr int kIdleStart = 440, kIdleEnd = 560;
+constexpr int kIdleStart = 540, kIdleEnd = 660;  // hinter allen Eingaben
 constexpr const char* kSm64 = "n64/Super Mario 64 (Europe) (En,Fr,De).z64";
 constexpr const char* kMk64 = "n64/Mario Kart 64 (Europe).z64";
 constexpr u64 kTestChannel = 0x000100014E4C5443ull;  // tools/wii_title.py
@@ -71,6 +80,7 @@ bool isEven(int f) { return (f & 1) == 0; }
 }  // namespace
 
 ui::RawInput selftestInput(int frame, const SelftestView& v) {
+    if (g_mainThread == LWP_THREAD_NULL) g_mainThread = LWP_GetSelf();  // erster Aufruf: Haupt-Thread
     // M1-Teil: Leiste, Fokus, Zeiger, HOME, Debug
     switch (frame) {
         case 30: case 32: return press(B::Plus);      // Favoriten → Zuletzt → Wii (2 Spiele)
@@ -105,23 +115,33 @@ ui::RawInput selftestInput(int frame, const SelftestView& v) {
         case 274: return press(B::A);
         case 290: return press(B::B);
         case 306: return press(B::B);
-        // M4/M5: HOME → Kachel 2 (Einstellungen) → Aktionsliste → „VC-Injects zuordnen“;
-        // „Super Mario 64" dem Testkanal zuordnen, schließen
+        // M6: HOME → Kachel 2 (Einstellungen); Sprache De → En → De, Lautstärke 60 → 50, B speichert
         case 312: return press(B::HomeBtn);
         case 328: case 330: return press(B::DRight);
         case 334: return press(B::A);
-        case 350: return press(B::A);
-        case 378:
+        case 350: return press(B::DRight);
+        case 354: return press(B::DLeft);
+        case 368: return press(B::DLeft);  // Zeile 5 (Lautstärke), siehe Runter-Folge unten
+        case 372: return press(B::B);
+        // M4/M5: HOME → Einstellungen → Zeile 11 „VC-Injects zuordnen“ → A;
+        // „Super Mario 64" dem Testkanal zuordnen, schließen
+        case 388: return press(B::HomeBtn);  // erst nach dem Ausblenden der Einstellungen (200 ms)
+        case 404: case 406: return press(B::DRight);
+        case 410: return press(B::A);
+        case 450: return press(B::A);
+        case 478:
             if (v.vcMap->focusedRow() != rowOf(*v.vcMap, kSm64)) return press(B::DDown);
             break;
-        case 382: return press(B::DRight);
-        case 386: return press(B::B);
+        case 482: return press(B::DRight);
+        case 486: return press(B::B);
         // M5: zur GB-Leiste (GC → GBA → N64 → SNES → GB); das Tetris-Cover ist absichtlich kaputt (NL_COVER_FAIL)
-        case 404: case 406: case 408: case 410: return press(B::Plus);
+        case 504: case 506: case 508: case 510: return press(B::Plus);
         default: break;
     }
     if (frame >= 104 && frame <= 114 && isEven(frame)) return press(B::DRight);
     if (frame >= 142 && frame <= 156 && isEven(frame)) return press(B::DRight);
+    if (frame >= 358 && frame <= 366 && isEven(frame)) return press(B::DDown);  // 5× → Lautstärke
+    if (frame >= 428 && frame <= 448 && isEven(frame)) return press(B::DDown);  // 11× → VC-Injects
     if (frame >= kTypeStart && frame < kTypeStart + 15) {
         const int i = (frame - kTypeStart) / 3, phase = (frame - kTypeStart) % 3;
         const gfx::Rect r = v.keyboard.keyRect(v.ctx, v.keyboard.keyIndex(kTyped[i]));
@@ -183,8 +203,15 @@ void selftestAfterFrame(int frame, const SelftestView& v) {
         case 304: NL_ASSERT(v.scenes.depth() == 2); break;
         case 310: NL_ASSERT(v.scenes.depth() == 1); break;
         case 314: NL_ASSERT(v.scenes.depth() == 2); break;  // HOME-Menü
-        case 348: NL_ASSERT(v.scenes.top() == v.actions); break;  // Aktionsliste nach dem HOME-Menü
-        case 376: {
+        case 348: NL_ASSERT(v.scenes.top() == v.settings); break;  // Einstellungen nach dem HOME-Menü
+        case 352: NL_ASSERT(ui::language() == ui::Lang::En); break;  // NL_LANG en
+        case 356: NL_ASSERT(ui::language() == ui::Lang::De); break;
+        case 367: NL_ASSERT(v.settings->focus() == static_cast<int>(SettingRow::Volume)); break;
+        case 370: NL_ASSERT(v.config->musicVolume == 50); break;
+        case 374: NL_ASSERT(v.config->musicVolume == 50); break;  // nach B: NL_CONFIG_SAVED
+        case 426: NL_ASSERT(v.scenes.top() == v.settings); break;
+        case 449: NL_ASSERT(v.settings->focus() == static_cast<int>(SettingRow::VcMap)); break;
+        case 476: {
             NL_ASSERT(v.scenes.top() == v.vcMap);
             NL_ASSERT(v.vcMap->rows().size() == 2);
             NL_ASSERT(v.vcMap->channelCount() == 1);
@@ -193,9 +220,9 @@ void selftestAfterFrame(int frame, const SelftestView& v) {
             NL_ASSERT(v.vcMap->selection(mk) == std::optional<u64>(kTestChannel));
             break;
         }
-        case 384: NL_ASSERT(v.vcMap->selection(rowOf(*v.vcMap, kSm64)) == std::optional<u64>(kTestChannel)); break;
-        case 402: NL_ASSERT(v.scenes.depth() == 1); break;  // NL_VCMAP_SAVED n=2
-        case 412: NL_ASSERT(v.main.barIndex() == 7); break;  // GB
+        case 484: NL_ASSERT(v.vcMap->selection(rowOf(*v.vcMap, kSm64)) == std::optional<u64>(kTestChannel)); break;
+        case 502: NL_ASSERT(v.scenes.depth() == 1); break;  // NL_VCMAP_SAVED n=2
+        case 512: NL_ASSERT(v.main.barIndex() == 7); break;  // GB
         case kIdleStart:
             NL_ASSERT(!v.scanRunning);
             NL_ASSERT(v.covers->idle());              // M5: alle gewünschten Cover fertig

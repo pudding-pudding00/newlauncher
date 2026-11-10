@@ -102,10 +102,61 @@ void VcMap::set(std::string_view gameKey, std::optional<u64> titleId) {
     if (titleId) map_.emplace_back(std::string(gameKey), *titleId);
 }
 
-IniDoc VcMap::toIni() const {
-    std::string text = std::string("[") + kSection + "]\n";
-    for (const auto& [k, id] : map_) text += k + " = " + formatTitleId(id) + "\n";
-    return IniDoc::parse(text);
+IniDoc VcMap::toIni() const { return IniDoc::parse(serialize({})); }
+
+std::string VcMap::serialize(std::string_view original) const {
+    std::string out;
+    std::vector<bool> written(map_.size(), false);
+    auto entryLine = [&](std::size_t i) {
+        out += map_[i].first + " = " + formatTitleId(map_[i].second) + "\n";
+        written[i] = true;
+    };
+    auto writeRemaining = [&] {
+        for (std::size_t i = 0; i < map_.size(); ++i)
+            if (!written[i]) entryLine(i);
+    };
+    auto indexOf = [&](std::string_view key) -> std::ptrdiff_t {
+        for (std::size_t i = 0; i < map_.size(); ++i)
+            if (map_[i].first == key) return static_cast<std::ptrdiff_t>(i);
+        return -1;
+    };
+
+    bool inMap = false, sawMap = false;
+    while (!original.empty()) {
+        const std::size_t nl = original.find('\n');
+        std::string_view line = original.substr(0, nl);
+        original = nl == std::string_view::npos ? std::string_view{} : original.substr(nl + 1);
+        if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
+        const std::string_view t = trim(line);
+        if (t.size() >= 2 && t.front() == '[' && t.back() == ']') {
+            if (inMap) writeRemaining();
+            inMap = trim(t.substr(1, t.size() - 2)) == kSection;
+            sawMap = sawMap || inMap;
+            out.append(line).append("\n");
+            continue;
+        }
+        const std::size_t eq = t.find('=');
+        const bool comment = !t.empty() && (t.front() == ';' || t.front() == '#');
+        if (!inMap || comment || eq == std::string_view::npos) {
+            out.append(line).append("\n");
+            continue;
+        }
+        const std::string_view k = trim(t.substr(0, eq));
+        if (k.empty() || !parseTitleId(trim(t.substr(eq + 1)))) {
+            out.append(line).append("\n");  // unlesbar: so stehen lassen, wie der Nutzer ihn geschrieben hat
+            continue;
+        }
+        const std::string key = k.find('/') == std::string_view::npos ? std::string(kN64Prefix) + std::string(k) : std::string(k);
+        const std::ptrdiff_t i = indexOf(key);
+        if (i >= 0 && !written[static_cast<std::size_t>(i)]) entryLine(static_cast<std::size_t>(i));
+        // sonst: gelöscht oder doppelt → entfällt
+    }
+    if (inMap) writeRemaining();
+    if (!sawMap && std::find(written.begin(), written.end(), false) != written.end()) {
+        out += std::string("[") + kSection + "]\n";
+        writeRemaining();
+    }
+    return out;
 }
 
 float vcMatchScore(std::string_view romTitle, std::string_view channelName) {

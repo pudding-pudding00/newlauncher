@@ -33,6 +33,9 @@ public:
     std::optional<u64> titleFor(std::string_view gameKey) const;
     void set(std::string_view gameKey, std::optional<u64> titleId);  // nullopt löscht
     IniDoc toIni() const;
+    // Schreibt `original` neu: Kommentare, Leerzeilen, fremde Abschnitte und unlesbare Einträge bleiben,
+    // erkannte [map]-Einträge werden aktualisiert oder entfernt, neue kommen ans Ende von [map].
+    std::string serialize(std::string_view original) const;
     std::size_t size() const { return map_.size(); }
 
 private:

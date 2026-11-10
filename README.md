@@ -125,8 +125,9 @@ In den Details eines N64-Spiels führt Hoch auf die Zeile „Startmethode“. Li
 
 ```ini
 ; sd:/newlauncher/games.ini
+; Werte: vc | not64 | wii64 (Kommentare nur als ganze Zeile)
 [n64_method]
-n64/Super Mario 64 (Europe).z64 = not64   ; vc | not64 | wii64
+n64/Super Mario 64 (Europe).z64 = not64
 
 ; sd:/newlauncher/n64_vc.ini (Title-ID als 16 Hex-Ziffern)
 [map]

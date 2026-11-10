@@ -76,6 +76,13 @@ void fillClock(nl::ui::UiContext& ctx) {
     ctx.weekday = (t->tm_wday + 6) % 7;  // tm: 0 = Sonntag → 0 = Montag
 }
 
+std::string readText(nl::FileSystem& fs, const char* path) {
+    auto data = nl::readAllWithFallback(fs, path, kMaxIniBytes);
+    if (!data.isOk()) return {};
+    const auto& bytes = data.value();
+    return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+}
+
 nl::IniDoc readIni(nl::FileSystem& fs, const char* path) {
     auto data = nl::readAllWithFallback(fs, path, kMaxIniBytes);
     if (!data.isOk()) return nl::IniDoc{};
@@ -249,11 +256,13 @@ int main(int, char**) {
     nl::LibraryStore store;
     nl::GameOverrides overrides;
     nl::VcMap vcMapping;
+    std::string vcMapText;  // Originaltext: Kommentare und unlesbare Einträge überleben das Speichern
     if (sdOk) {
         store.loadFavorites(readIni(fs, kFavoritesPath));
         store.loadHistory(readIni(fs, kHistoryPath));
         overrides = nl::GameOverrides::fromIni(readIni(fs, kGamesPath));
-        vcMapping = nl::VcMap::fromIni(readIni(fs, kVcMapPath));
+        vcMapText = readText(fs, kVcMapPath);
+        vcMapping = nl::VcMap::fromIni(nl::IniDoc::parse(vcMapText));
     }
 
     // N64-Startwege (Spec 6.6): Kanäle im NAND und die beiden Emulator-DOLs, einmal pro Sitzung.
@@ -458,9 +467,11 @@ int main(int, char**) {
             }
             case nl::ui::AppCommand::SaveVcMap: {
                 for (const nl::ui::VcMapRow& row : vcMapScene.rows()) vcMapping.set(row.key, row.mapped);
-                if (sdOk && writeText(fs, kVcMapPath, vcMapping.toIni().serialize()))
+                std::string text = vcMapping.serialize(vcMapText);
+                if (sdOk && writeText(fs, kVcMapPath, text)) {
+                    vcMapText = std::move(text);
                     nl::log::line("NL_VCMAP_SAVED n=%u", static_cast<unsigned>(vcMapping.size()));
-                else nl::log::line("NL_WARN n64_vc.ini nicht gespeichert");
+                } else nl::log::line("NL_WARN n64_vc.ini nicht gespeichert");
                 refreshDetailsN64();
                 break;
             }

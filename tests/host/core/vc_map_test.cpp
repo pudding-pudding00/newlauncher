@@ -67,3 +67,36 @@ TEST_CASE("Namensabgleich mit leeren Eingaben") {
     CHECK_FALSE(suggestChannel("Super Mario 64", std::vector<ChannelInfo>{}).has_value());
     CHECK_FALSE(suggestChannel("Super Mario 64", std::vector<ChannelInfo>{{1, ""}}).has_value());
 }
+
+TEST_CASE("VcMap::serialize behält Kommentare, kaputte Einträge und fremde Abschnitte") {
+    // Spec §10: unter HBC-Rechten notiert man Kanalnamen als Kommentar in n64_vc.ini; Speichern darf sie nicht löschen.
+    const std::string original =
+        "; NAMP = Mario Party\n"
+        "[map]\n"
+        "# Notiz\n"
+        "n64/A.z64 = 000100014E414D50\n"
+        "n64/B.z64 = 0x123\n"
+        "C.z64 = 000100014E414D51\n"
+        "[andere]\n"
+        "x = 1";
+    VcMap m = VcMap::fromIni(IniDoc::parse(original));
+    m.set("n64/A.z64", 0x0001000100000001ULL);
+    m.set("n64/C.z64", std::nullopt);
+    m.set("n64/D.z64", 0x0001000100000002ULL);
+    CHECK(m.serialize(original) ==
+          "; NAMP = Mario Party\n"
+          "[map]\n"
+          "# Notiz\n"
+          "n64/A.z64 = 0001000100000001\n"
+          "n64/B.z64 = 0x123\n"
+          "n64/D.z64 = 0001000100000002\n"
+          "[andere]\n"
+          "x = 1\n");
+}
+
+TEST_CASE("VcMap::serialize legt [map] an, wenn die Datei keinen hat") {
+    VcMap m;
+    m.set("n64/A.z64", 0x0001000100000001ULL);
+    CHECK(m.serialize("; nur Kommentar\n") == "; nur Kommentar\n[map]\nn64/A.z64 = 0001000100000001\n");
+    CHECK(m.serialize("") == "[map]\nn64/A.z64 = 0001000100000001\n");
+}

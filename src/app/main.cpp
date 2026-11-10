@@ -288,6 +288,7 @@ int main(int, char**) {
     std::string libRoot = "sd:";
     if (config.library == nl::Config::LibraryDevice::Usb) {
         nl::platform::UsbMount usb;
+        const u64 usbStart = gettime();  // Echtzeit: auch Dialog, blockierender Mount und 50-Hz-Frames
         usb.begin(config.usbTimeoutSec);
         bool decided = false;
         while (!decided) {
@@ -307,7 +308,7 @@ int main(int, char**) {
             }
             startupFrame();
         }
-        usbWaitMs = usb.waitedMs();
+        usbWaitMs = msSince(usbStart);
     }
     nl::log::line("NL_MOUNT %s", libRoot.c_str());
     const std::string cacheDir = libRoot + "/newlauncher/cache";
@@ -537,6 +538,7 @@ int main(int, char**) {
             nl::log::line("NL_COVER_DL_DONE ok=%u missing=%u failed=%u", static_cast<unsigned>(sum->ok),
                           static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (perf) perf->pause();  // der Flush gehört zur Messung, nicht zum Launcher
             char text[128];
             std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::CoversSummary), static_cast<unsigned>(sum->ok),
                           static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
@@ -752,6 +754,7 @@ int main(int, char**) {
                 nl::log::line("%s", line);
             }
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (perf) perf->pause();  // Flush und Musikstart liegen im nächsten Abstand
             readyReported = true;
             if (config.music) startMusic();
             if (const std::string& key = config.debugAutostart; !key.empty()) {  // nur für Tests
@@ -771,6 +774,7 @@ int main(int, char**) {
         if (readyReported && !coversReported && covers.idle()) {
             nl::log::line("NL_COVERS ready=%u", static_cast<unsigned>(covers.readyCount()));
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (perf) perf->pause();
             coversReported = true;
         }
 #ifdef NL_SELFTEST

@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from check_perf import evaluate, main, parse_log  # noqa: E402
 
 # Dieselbe Zeile erzeugt tests/host/core/perf_stats_test.cpp („formatSummary enthält alle Felder …“).
-SUMMARY = ("NL_PERF summary ready_ms=1420 usb_wait_ms=900 hz=60 frames=301 slow=1 max_ms=40.0 cover_n=100 "
+SUMMARY = ("NL_PERF summary ready_ms=1420 usb_wait_ms=900 hz=60 frames=301 slow=1 busy_slow=0 max_ms=40.0 cover_n=100 "
            "cover_p50=25.0 cover_p95=47.5 cover_max=50.0 mem1_free=1000 mem2_free=2000 heap_free=3000")
 
 
@@ -104,6 +104,22 @@ class CheckPerfTest(unittest.TestCase):
         self.assertEqual(checks["Blockierung"].status, "PASS")  # ohne langsame Frames kann nichts blockiert haben
         self.assertEqual(checks["Allokationen"].status, "N/A")
         self.assertIn("Selbsttest-Karte", checks["Allokationen"].value)
+
+    def test_blocking_from_summary_when_windows_dropped(self):
+        # Ringpuffer: das blockierte Startfenster ist weg, die übrigen Fenster sind sauber.
+        text = "NL_PERF frames n=300 slow=0 max_ms=17.0 busy=0\n" + summary(slow=2, busy_slow=2)
+        checks = by_name(evaluate(parse_log(text)))
+        self.assertEqual(checks["Blockierung"].status, "FAIL")
+        self.assertIn("2", checks["Blockierung"].value)
+        self.assertIn("Ringpuffer", checks["Blockierung"].value)
+
+    def test_blocking_pass_from_summary_without_windows(self):
+        checks = by_name(evaluate(parse_log(summary(slow=3, busy_slow=0))))
+        self.assertEqual(checks["Blockierung"].status, "PASS")
+        self.assertEqual(checks["Bildrate"].status, "FAIL")
+
+    def test_shared_summary_has_busy_slow(self):
+        self.assertEqual(parse_log(SUMMARY).summary["busy_slow"], 0)
 
     def test_blocking_unknown_without_windows(self):
         checks = by_name(evaluate(parse_log(summary(slow=3))))

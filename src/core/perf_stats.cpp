@@ -8,12 +8,17 @@ namespace nl {
 PerfStats::PerfStats(int refreshHz) : hz_(refreshHz > 0 ? refreshHz : 60), slowMs_(1.5f * 1000.0f / static_cast<float>(hz_)) {}
 
 void PerfStats::frame(float intervalMs, bool busy) {
+    if (skipNext_) {
+        skipNext_ = false;
+        return;
+    }
     const bool slow = intervalMs > slowMs_;
     ++winFrames_;
     ++totalFrames_;
     if (slow) {
         ++winSlow_;
         ++totalSlow_;
+        if (busy) ++totalBusySlow_;
     }
     winMax_ = std::max(winMax_, intervalMs);
     totalMax_ = std::max(totalMax_, intervalMs);
@@ -66,11 +71,11 @@ int PerfStats::formatSummary(char* out, std::size_t cap, u32 mem1Free, u32 mem2F
         pmax = *std::max_element(covers_.begin(), covers_.begin() + static_cast<std::ptrdiff_t>(coverCount_));
     }
     return std::snprintf(out, cap,
-                         "NL_PERF summary ready_ms=%u usb_wait_ms=%u hz=%d frames=%u slow=%u max_ms=%.1f cover_n=%u "
+                         "NL_PERF summary ready_ms=%u usb_wait_ms=%u hz=%d frames=%u slow=%u busy_slow=%u max_ms=%.1f cover_n=%u "
                          "cover_p50=%.1f cover_p95=%.1f cover_max=%.1f mem1_free=%u mem2_free=%u heap_free=%u",
                          static_cast<unsigned>(readyMs_), static_cast<unsigned>(usbWaitMs_), hz_,
                          static_cast<unsigned>(totalFrames_), static_cast<unsigned>(totalSlow_),
-                         static_cast<double>(totalMax_), static_cast<unsigned>(coverCount_), static_cast<double>(p50),
+                         static_cast<unsigned>(totalBusySlow_), static_cast<double>(totalMax_), static_cast<unsigned>(coverCount_), static_cast<double>(p50),
                          static_cast<double>(p95), static_cast<double>(pmax), static_cast<unsigned>(mem1Free),
                          static_cast<unsigned>(mem2Free), static_cast<unsigned>(heapFree));
 }

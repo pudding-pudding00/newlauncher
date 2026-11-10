@@ -14,12 +14,11 @@ public:
     void begin(int timeoutSec);
     State poll(float dtMs);  // Gerät "usb:"
     int secondsLeft() const;
-    u32 waitedMs() const { return static_cast<u32>(waitedMs_); }  // Perf: Wartezeit über alle Versuche
 
 
 private:
     State state_ = State::Waiting;
-    float elapsedMs_ = 0.0f, nextTryMs_ = 0.0f, timeoutMs_ = 0.0f, waitedMs_ = 0.0f;
+    float elapsedMs_ = 0.0f, nextTryMs_ = 0.0f, timeoutMs_ = 0.0f;
 };
 
 void unmountAll();

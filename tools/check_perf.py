@@ -100,7 +100,14 @@ def evaluate(log: PerfLog) -> list[Check]:
 
     blocked = [i for i, w in enumerate(log.windows, 1) if w.get("busy") == 1 and w.get("slow", 0) > 0]
     busy = sum(1 for w in log.windows if w.get("busy") == 1)
-    if blocked:
+    seen = sum(w.get("n", 0) for w in log.windows)
+    gap = " (frühe Fensterzeilen fehlen im Log, Ringpuffer)" if seen < s.get("frames", 0) else ""
+    if "busy_slow" in s:
+        # Die Summary zählt über die ganze Sitzung; Fensterzeilen sind nur ein Hinweis, wo.
+        where = f" (Fenster {', '.join(map(str, blocked))} im Log)" if blocked else ""
+        value = f"{s['busy_slow']} langsame Frames während Hintergrundarbeit{where}{gap}"
+        checks.append(Check("Blockierung", value, "keine", "FAIL" if s["busy_slow"] > 0 else "PASS"))
+    elif blocked:
         checks.append(Check("Blockierung", "langsame Frames in Fenster " + ", ".join(map(str, blocked)), "keine",
                             "FAIL"))
     elif log.windows:

@@ -19,6 +19,9 @@ public:
     explicit PerfStats(int refreshHz);
 
     void frame(float intervalMs, bool busy);
+    // Der nächste frame()-Abstand zählt nicht: er enthält einen eigenen Log-Flush der Messung (NL_READY,
+    // NL_COVERS, NL_COVER_DL_DONE), keine Arbeit des Launchers.
+    void pause() { skipNext_ = true; }
     bool windowFull() const { return winFrames_ >= kWindowFrames; }
     // "NL_PERF frames n=… slow=… max_ms=… busy=0|1", danach beginnt ein neues Fenster.
     int takeWindow(char* out, std::size_t cap);
@@ -30,6 +33,7 @@ public:
     int formatSummary(char* out, std::size_t cap, u32 mem1Free, u32 mem2Free, u32 heapFree) const;
 
     u32 slowFrames() const { return totalSlow_; }
+    u32 busySlowFrames() const { return totalBusySlow_; }  // langsam, während Scan/Download/Umwandlung lief
 
 private:
     float percentile(u32 permille) const;  // Nearest-Rank über die Ring-Werte; nicht bei leerem Ring
@@ -39,7 +43,8 @@ private:
     u32 winFrames_ = 0, winSlow_ = 0;
     float winMax_ = 0;
     bool winBusy_ = false;
-    u32 totalFrames_ = 0, totalSlow_ = 0;
+    u32 totalFrames_ = 0, totalSlow_ = 0, totalBusySlow_ = 0;
+    bool skipNext_ = false;
     float totalMax_ = 0;
     std::array<float, kCoverRing> covers_{};
     std::size_t coverCount_ = 0, coverHead_ = 0;

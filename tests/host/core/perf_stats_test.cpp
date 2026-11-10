@@ -78,8 +78,31 @@ TEST_CASE("formatSummary enthält alle Felder in der festen Reihenfolge") {
     char buf[400];
     p.formatSummary(buf, sizeof buf, 1000, 2000, 3000);
     CHECK(std::string(buf) ==
-          "NL_PERF summary ready_ms=1420 usb_wait_ms=900 hz=60 frames=301 slow=1 max_ms=40.0 cover_n=100 "
+          "NL_PERF summary ready_ms=1420 usb_wait_ms=900 hz=60 frames=301 slow=1 busy_slow=0 max_ms=40.0 cover_n=100 "
           "cover_p50=25.0 cover_p95=47.5 cover_max=50.0 mem1_free=1000 mem2_free=2000 heap_free=3000");
+}
+
+TEST_CASE("pause: der nächste Abstand zählt nicht (eigener Log-Flush)") {
+    nl::PerfStats p(60);
+    p.frame(16.7f, false);
+    p.pause();
+    p.frame(120.0f, true);  // enthält den Flush: übersprungen
+    p.frame(40.0f, false);  // danach wird wieder gemessen
+    CHECK(p.slowFrames() == 1);
+    CHECK(window(p) == "NL_PERF frames n=2 slow=1 max_ms=40.0 busy=0");
+}
+
+TEST_CASE("busy_slow: langsame Frames während Hintergrundarbeit, über Fenster hinweg") {
+    nl::PerfStats p(60);
+    p.frame(40.0f, true);
+    p.frame(40.0f, false);
+    p.frame(16.0f, true);
+    (void)window(p);
+    p.frame(30.0f, true);
+    CHECK(p.busySlowFrames() == 2);
+    char buf[400];
+    p.formatSummary(buf, sizeof buf, 0, 0, 0);
+    CHECK(std::string(buf).find("frames=4 slow=3 busy_slow=2 ") != std::string::npos);
 }
 
 TEST_CASE("formatBoot") {

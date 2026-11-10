@@ -312,6 +312,40 @@ int main(int, char**) {
     nl::ui::SceneStack scenes;
     scenes.push(&mainScene);
 
+    // Spec 9: Preflight, Verlauf, Chainload. Kehrt nur zurück, wenn der Start scheitert (dann mit Dialog).
+    auto launchGame = [&](const nl::Game& game) {
+        const std::string key = game.key;  // game kann auf Bibliotheksdaten zeigen
+        auto showError = [&](const nl::Error& e) {
+            char title[64];
+            char text[256];
+            nl::ui::launchErrorText(e, title, sizeof title, text, sizeof text);
+            dialog.open(title, text);
+            scenes.push(&dialog);
+        };
+        auto plan = launchAllowed ? nl::preflightEmulator(fs, game, libRoot, emulators)
+                                  : nl::Result<nl::LaunchPlan>::err({nl::ErrorCode::IoError, "Speicher belegt"});
+        if (!plan.isOk()) {
+            nl::log::line("NL_PREFLIGHT_FAIL %s %s", errorCodeName(plan.error().code), key.c_str());
+            showError(plan.error());
+            return;
+        }
+        store.recordPlayed(key, static_cast<u32>(std::time(nullptr)));
+        if (sdOk && writeText(fs, kHistoryPath, store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
+        else nl::log::line("NL_WARN history.ini nicht gespeichert");
+        nl::log::line("NL_LAUNCH %s", key.c_str());
+        worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
+        if (auto loaded = nl::launch::loadDolToBuffer(fs, plan.value()); !loaded.isOk()) {
+            nl::log::line("NL_WARN DOL nicht geladen: %s", loaded.error().context.c_str());
+            showError({nl::ErrorCode::InvalidData, plan.value().dolPath});
+            return;
+        }
+        if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+        input.shutdown();
+        nl::platform::unmountAll();
+        nl::platform::shutdownVideo();
+        nl::launch::chainload(plan.value());
+    };
+
     nl::ui::DebugOverlay debug;
     nl::FrameStats stats;
     bool readyReported = false;
@@ -375,40 +409,9 @@ int main(int, char**) {
                 nl::platform::unmountAll();
                 SYS_ResetSystem(cmd == nl::ui::AppCommand::WiiMenu ? SYS_RETURNTOMENU : SYS_POWEROFF, 0, 0);
                 break;
-            case nl::ui::AppCommand::Launch: {  // Spec 9: Preflight, Verlauf, Chainload
-                if (req.game == nullptr) break;
-                const nl::Game game = *req.game;
-                auto showError = [&](const nl::Error& e) {
-                    char title[64];
-                    char text[256];
-                    nl::ui::launchErrorText(e, title, sizeof title, text, sizeof text);
-                    dialog.open(title, text);
-                    scenes.push(&dialog);
-                };
-                auto plan = launchAllowed
-                                ? nl::preflightEmulator(fs, game, libRoot, emulators)
-                                : nl::Result<nl::LaunchPlan>::err({nl::ErrorCode::IoError, "Speicher belegt"});
-                if (!plan.isOk()) {
-                    nl::log::line("NL_PREFLIGHT_FAIL %s %s", errorCodeName(plan.error().code), game.key);
-                    showError(plan.error());
-                    break;
-                }
-                store.recordPlayed(game.key, static_cast<u32>(std::time(nullptr)));
-                if (sdOk && writeText(fs, kHistoryPath, store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
-                else nl::log::line("NL_WARN history.ini nicht gespeichert");
-                nl::log::line("NL_LAUNCH %s", game.key);
-                worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
-                if (auto loaded = nl::launch::loadDolToBuffer(fs, plan.value()); !loaded.isOk()) {
-                    nl::log::line("NL_WARN DOL nicht geladen: %s", loaded.error().context.c_str());
-                    showError({nl::ErrorCode::InvalidData, plan.value().dolPath});
-                    break;
-                }
-                if (sdOk) nl::log::flushLogFile(fs, kLogPath);
-                input.shutdown();
-                nl::platform::unmountAll();
-                nl::platform::shutdownVideo();
-                nl::launch::chainload(plan.value());
-            }
+            case nl::ui::AppCommand::Launch:
+                if (req.game != nullptr) launchGame(*req.game);
+                break;
             case nl::ui::AppCommand::None:
                 break;
         }
@@ -434,6 +437,18 @@ int main(int, char**) {
             nl::log::line("NL_READY");
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
             readyReported = true;
+            if (const std::string& key = config.debugAutostart; !key.empty()) {  // nur für Tests
+                const nl::Game* found = nullptr;
+                for (const nl::Game& g : store.games()) {
+                    if (key == g.key) found = &g;
+                }
+                if (found != nullptr) {
+                    nl::log::line("NL_AUTOSTART %s", key.c_str());
+                    launchGame(*found);
+                } else {
+                    nl::log::line("NL_WARN autostart %s fehlt", key.c_str());
+                }
+            }
         }
 #ifdef NL_SELFTEST
         nl::app::selftestAfterFrame(frameNo, view);

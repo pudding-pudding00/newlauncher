@@ -25,6 +25,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Log-Marker, der erscheinen muss (mehrfach angebbar)")
     parser.add_argument("--no-fixtures", dest="fixtures", action="store_false",
                         help="Fixture-Bibliothek nicht auf die SD kopieren")
+    parser.add_argument("--autostart", metavar="KEY",
+                        help="Spielschlüssel, den der Launcher nach NL_READY startet ([debug] autostart)")
     args = parser.parse_args(argv)
     markers = args.markers or DEFAULT_MARKERS
 
@@ -44,6 +46,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.fixtures:
             # Ohne alten Index startet der Launcher mit einem vollständigen Scan der Fixtures.
             (sd / "newlauncher/cache/index.bin").unlink(missing_ok=True)
+        if args.autostart:
+            with (sd / "newlauncher/config.ini").open("a", encoding="utf-8", newline="\n") as f:
+                f.write(f"[debug]\nautostart = {args.autostart}\n")
         reset_log(user_dir)
     except OSError as e:
         print(f"SMOKE FEHLER: Dev-Ordner nicht vorbereitet (läuft Dolphin noch?): {e}")

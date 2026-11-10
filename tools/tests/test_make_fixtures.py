@@ -30,6 +30,11 @@ class MakeFixturesTest(unittest.TestCase):
         roms = [p for p in (self.out / "roms").rglob("*") if p.is_file() and p.suffix.lower() not in (".txt", ".keep", "")]
         self.assertEqual(len(roms), 9)
 
+    def test_emulators_ini_points_all_consoles_to_argv_echo(self):
+        text = (self.out / "newlauncher/emulators.ini").read_text(encoding="utf-8")
+        for console in ["nes", "snes", "gb", "gbc", "gba"]:
+            self.assertIn(f"[{console}]\ndol = sd:/apps/argv_echo/boot.dol\nargs = {{dir}}|{{file}}\n", text)
+
     def test_config_uses_sd_library(self):
         text = (self.out / "newlauncher/config.ini").read_text(encoding="utf-8")
         self.assertIn("library = sd", text)

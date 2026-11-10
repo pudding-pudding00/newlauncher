@@ -19,6 +19,11 @@ CONFIG_INI = (
     "[covers]\nregion = auto\n"
 )
 
+# Alle GX-Konsolen starten die Test-DOL argv_echo; sie meldet die übergebenen argv im Dolphin-Log.
+EMULATORS_INI = "".join(
+    f"[{c}]\ndol = sd:/apps/argv_echo/boot.dol\nargs = {{dir}}|{{file}}\n" for c in ["nes", "snes", "gb", "gbc", "gba"]
+)
+
 EMPTY_ROMS = [
     "roms/nes/Super Mario Bros. (World).nes",
     "roms/nes/Zelda (Europe) (Rev 1).nes",
@@ -64,6 +69,7 @@ def write(out: Path, rel: str, data: bytes | str) -> None:
 
 def main(out: Path) -> int:
     write(out, "newlauncher/config.ini", CONFIG_INI)
+    write(out, "newlauncher/emulators.ini", EMULATORS_INI)
     write(out, "newlauncher/favorites.ini",
           "[favorites]\nRMCP01\nnes/Super Mario Bros. (World).nes\nn64/gibts nicht.z64\n")
     write(out, "newlauncher/history.ini",

@@ -116,6 +116,35 @@ class DolphinToolsTest(unittest.TestCase):
         self.assertTrue((sd / "apps/newlauncher/boot.dol").is_file())
         self.assertTrue((sd / "apps/newlauncher/meta.xml").is_file())
 
+    def test_deploy_copies_argv_echo(self):
+        dist = self.tmp / "dist"
+        dist.mkdir()
+        echo = self.tmp / "argv_echo.dol"
+        echo.write_bytes(b"echo")
+        sd = self.tmp / "sd"
+        deploy(self.dol, sd, dist, argv_echo=echo)
+        self.assertEqual((sd / "apps/argv_echo/boot.dol").read_bytes(), b"echo")
+
+    def test_deploy_skips_missing_argv_echo(self):
+        dist = self.tmp / "dist"
+        dist.mkdir()
+        sd = self.tmp / "sd"
+        deploy(self.dol, sd, dist, argv_echo=self.tmp / "fehlt.dol")
+        self.assertFalse((sd / "apps/argv_echo").exists())
+
+    def test_smoke_autostart_appends_debug_section(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                    "--timeout", "2", "--autostart", "nes/Zelda (Europe) (Rev 1).nes"])
+        text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertTrue(text.endswith("[debug]\nautostart = nes/Zelda (Europe) (Rev 1).nes\n"))
+
+    def test_smoke_without_autostart_keeps_config(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        self._run_smoke("2")
+        text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertNotIn("[debug]", text)
+
     def test_smoke_reports_missing_dolphin(self):
         self.assertEqual(smoke_main(["--dolphin", str(self.tmp / "fehlt.exe"), "--dol", str(self.dol),
                                      "--user-dir", str(self.user)]), 2)

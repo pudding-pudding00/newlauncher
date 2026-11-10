@@ -22,6 +22,7 @@ struct Config {
     int musicVolume = 60;
     bool sounds = true;
     std::string coverRegion = "auto";
+    std::string debugAutostart;  // [debug] autostart: Spielschlüssel, der nach NL_READY startet
 };
 
 Config configFromIni(const IniDoc& ini);

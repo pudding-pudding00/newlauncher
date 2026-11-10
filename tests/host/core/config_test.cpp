@@ -59,6 +59,12 @@ TEST_CASE("configFromIni: ungültige Werte fallen auf Standard") {
     CHECK(c.coverRegion == "auto");
 }
 
+TEST_CASE("configFromIni: [debug] autostart wird gelesen, fehlt → leer") {
+    CHECK(nl::configFromIni(nl::IniDoc::parse("")).debugAutostart.empty());
+    const auto c = nl::configFromIni(nl::IniDoc::parse("[debug]\nautostart = nes/Zelda (Europe) (Rev 1).nes\n"));
+    CHECK(c.debugAutostart == "nes/Zelda (Europe) (Rev 1).nes");
+}
+
 TEST_CASE("parseClock") {
     CHECK(parseClock("07:00", -1) == 420);
     CHECK(parseClock("7:5", -1) == 425);

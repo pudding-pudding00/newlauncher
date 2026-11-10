@@ -53,6 +53,7 @@ Config configFromIni(const IniDoc& ini) {
     for (std::string_view allowed : {"auto", "EN", "DE", "FR", "US", "JA"}) {
         if (region == allowed) c.coverRegion = std::string(region);
     }
+    c.debugAutostart = std::string(ini.get("debug", "autostart"));  // nur für Tests (Spec 9)
     return c;
 }
 

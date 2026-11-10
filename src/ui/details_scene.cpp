@@ -148,6 +148,7 @@ Rect DetailsScene::buttonRect([[maybe_unused]] const UiContext& ctx, int index) 
 }
 
 void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
+    FocusSound sound(out, focus_);
     if (covers_ != nullptr && hasGame_) covers_->want(game_, CoverPriority::Visible);
     if (ctx.minuteOfDay != clockMinute_) {
         clockMinute_ = ctx.minuteOfDay;

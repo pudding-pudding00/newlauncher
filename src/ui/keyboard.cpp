@@ -93,6 +93,7 @@ void Keyboard::press(int key, SceneRequests& out) {
 }
 
 void Keyboard::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
+    FocusSound sound(out, focus_);
     int hit = -1;
     if (in.pointerValid) {
         for (int i = 0; i < keyCount() && hit < 0; ++i)
@@ -131,7 +132,10 @@ void Keyboard::update(const UiContext& ctx, const InputFrame& in, float, SceneRe
         return;
     }
     const bool pointerOff = in.pointerValid && hit < 0 && !keysSincePointerMove_;
-    if (in.pressed(Action::Confirm) && !pointerOff) press(focus_, out);
+    if (in.pressed(Action::Confirm) && !pointerOff) {
+        press(focus_, out);
+        out.sound = UiSound::Confirm;
+    }
 }
 
 void Keyboard::draw(const UiContext& ctx, gfx::DrawList& dl) {

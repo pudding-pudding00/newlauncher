@@ -150,3 +150,8 @@ TEST_CASE("configToIniText behält CRLF und schreibt jeden Schlüssel nur einmal
     for (std::size_t p = after.find("language ="); p != std::string::npos; p = after.find("language =", p + 1)) ++n;
     CHECK(n == 1);
 }
+
+TEST_CASE("configFromIni: [debug] log_sounds") {
+    CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugLogSounds);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nlog_sounds = 1\n")).debugLogSounds);
+}

@@ -25,6 +25,7 @@ struct Config {
     std::string debugAutostart;  // [debug] autostart: Spielschlüssel, der nach NL_READY startet
     std::string debugCoverUrl;   // [debug] cover_url: ersetzt die GameTDB-Basis (Smoke-Test)
     bool debugFetchCovers = false;  // [debug] fetch_covers = 1: „Fehlende Cover laden“ nach NL_READY
+    bool debugLogSounds = false;    // [debug] log_sounds = 1: NL_SOUND <name> je gespieltem Klang (Smoke-Test)
 };
 
 Config configFromIni(const IniDoc& ini);

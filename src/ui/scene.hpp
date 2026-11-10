@@ -6,6 +6,7 @@
 #include "core/easing.hpp"
 #include "core/game.hpp"
 #include "core/theme.hpp"
+#include "core/ui_sound.hpp"
 #include "gfx/draw_list.hpp"
 #include "gfx/font.hpp"
 #include "gfx/shapes.hpp"
@@ -44,6 +45,35 @@ struct SceneRequests {
     AppCommand command = AppCommand::None;
     const Game* game = nullptr;  // Ziel von ToggleFavorite, Launch und SetN64Method
     u8 n64Choice = 0;            // SetN64Method: 0 = Automatisch, sonst 1 + N64Method
+    UiSound sound = UiSound::None;  // main spielt ihn nach dem Update
+};
+
+// Klang-Regel (Spec 3.7): Overlay öffnen → Open, schließen → Back, Befehl → Confirm, Fokuswechsel → Move.
+// Ein schon gesetzter Klang bleibt; Szenen setzen Confirm selbst, wenn A ohne Befehl wirkt.
+inline void deriveSound(SceneRequests& out, bool focusMoved) {
+    if (out.sound != UiSound::None) return;
+    if (out.push != nullptr) out.sound = UiSound::Open;
+    else if (out.pop) out.sound = UiSound::Back;
+    else if (out.command != AppCommand::None) out.sound = UiSound::Confirm;
+    else if (focusMoved) out.sound = UiSound::Move;
+}
+
+// Ruft deriveSound beim Verlassen von update auf, auch nach frühem return.
+class FocusSound {
+public:
+    FocusSound(SceneRequests& out, const int& focus) : out_(out), focus_(focus), before_(focus) {}
+    ~FocusSound() {
+        if (!silent_) deriveSound(out_, focus_ != before_);
+    }
+    FocusSound(const FocusSound&) = delete;
+    FocusSound& operator=(const FocusSound&) = delete;
+    void silence() { silent_ = true; }  // dieser Frame bleibt still
+
+private:
+    SceneRequests& out_;
+    const int& focus_;
+    int before_;
+    bool silent_ = false;
 };
 
 class Scene {

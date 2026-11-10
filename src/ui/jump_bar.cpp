@@ -29,6 +29,7 @@ Rect JumpBar::cellRect(const UiContext& ctx, int index) const {
 }
 
 void JumpBar::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
+    FocusSound sound(out, focus_);
     int hit = -1;
     if (in.pointerValid) {
         for (int i = 0; i < kCellCount && hit < 0; ++i)
@@ -51,6 +52,7 @@ void JumpBar::update(const UiContext& ctx, const InputFrame& in, float, SceneReq
         if (focus_ == kSearchCell) out.push = target_.openSearch();
         else target_.jumpToBucket(bucketOf(focus_));
         out.pop = true;
+        out.sound = out.push != nullptr ? UiSound::Open : UiSound::Confirm;
     }
 }
 

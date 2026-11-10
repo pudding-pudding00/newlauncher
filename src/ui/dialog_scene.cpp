@@ -72,10 +72,16 @@ DialogScene::Layout DialogScene::layout(const UiContext& ctx) const {
 Rect DialogScene::buttonRect(const UiContext& ctx) const { return layout(ctx).button; }
 
 void DialogScene::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
-    if (in.pressed(Action::Back)) out.pop = true;
+    if (in.pressed(Action::Back)) {
+        out.pop = true;
+        out.sound = UiSound::Back;
+    }
     if (in.pressed(Action::Confirm)) {
         // Mit sichtbarem Zeiger zählt A nur auf dem Knopf, ohne Zeiger überall.
-        if (!in.pointerValid || contains(buttonRect(ctx), in.pointerX, in.pointerY)) out.pop = true;
+        if (!in.pointerValid || contains(buttonRect(ctx), in.pointerX, in.pointerY)) {
+            out.pop = true;
+            out.sound = UiSound::Confirm;
+        }
     }
 }
 

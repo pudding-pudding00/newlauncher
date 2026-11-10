@@ -1,4 +1,5 @@
 #include "core/library_store.hpp"
+#include "ui/home_menu.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/test_library.hpp"
 #include "support/fake_covers.hpp"
@@ -501,4 +502,16 @@ TEST_CASE_FIXTURE(Fixture, "Cover: ohne Textur bleibt der Platzhalter, ohne Prov
     dl.clear();
     s.draw(ctx, dl);
     CHECK_FALSE(hasCoverBatch(dl, 7));
+}
+
+TEST_CASE_FIXTURE(Fixture, "Klänge: rechts → Move, ohne Wirkung still, HOME → Open") {
+    const Library lib = testLibrary();
+    MainScene s(lib);
+    step(s, InputFrame{});
+    CHECK(step(s, action(Action::Right)).sound == UiSound::Move);
+    CHECK(step(s, action(Action::Up)).sound == UiSound::None);  // oberste Zeile: kein Fokuswechsel
+    CHECK(step(s, InputFrame{}).sound == UiSound::None);
+    HomeMenu home;
+    s.setHomeMenu(&home);
+    CHECK(step(s, action(Action::Home)).sound == UiSound::Open);
 }

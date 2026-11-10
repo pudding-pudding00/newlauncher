@@ -63,6 +63,7 @@ void VcMapScene::refreshText(int row) {
 }
 
 void VcMapScene::update(const UiContext&, const InputFrame& in, float, SceneRequests& out) {
+    FocusSound sound(out, focus_);
     if (in.pressed(Action::Back)) {
         out.pop = true;
         if (dirty_) out.command = AppCommand::SaveVcMap;
@@ -83,10 +84,13 @@ void VcMapScene::update(const UiContext&, const InputFrame& in, float, SceneRequ
         // Positionen -1 (keiner) … count-1; eine fremde ID zählt wie „keiner“.
         const int next = (channelIndex(r.mapped) + 1 + dir + count + 1) % (count + 1) - 1;
         select(focus_, next < 0 ? std::nullopt : std::optional<u64>(channels_[static_cast<std::size_t>(next)].titleId));
+        out.sound = UiSound::Confirm;
         return;
     }
-    if (in.pressed(Action::Confirm) && !r.mapped && r.suggestion && *r.suggestion < channels_.size())
+    if (in.pressed(Action::Confirm) && !r.mapped && r.suggestion && *r.suggestion < channels_.size()) {
         select(focus_, channels_[*r.suggestion].titleId);
+        out.sound = UiSound::Confirm;
+    }
 }
 
 void VcMapScene::draw(const UiContext& ctx, gfx::DrawList& dl) {

@@ -183,3 +183,15 @@ TEST_CASE_FIXTURE(Fixture, "draw in 640 und 854: keine verworfenen Quads, alles 
         }
     }
 }
+
+TEST_CASE_FIXTURE(Fixture, "Klänge: rechts Move, B Back, Kachel Confirm, Einstellungen Open") {
+    SettingsScene settings;
+    HomeMenu m;
+    m.setSettings(&settings);
+    m.onEnter();
+    CHECK(step(m, action(Action::Right)).sound == UiSound::Move);
+    CHECK(step(m, action(Action::Confirm)).sound == UiSound::Confirm);  // Wii-Menü
+    CHECK(step(m, action(Action::Right)).sound == UiSound::Move);
+    CHECK(step(m, action(Action::Confirm)).sound == UiSound::Open);
+    CHECK(step(m, action(Action::Back)).sound == UiSound::Back);
+}

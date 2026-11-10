@@ -43,6 +43,7 @@ int HomeMenu::hitTest(const UiContext& ctx, float x, float y) const {
 }
 
 void HomeMenu::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
+    FocusSound sound(out, focus_);
     const int hit = in.pointerValid ? hitTest(ctx, in.pointerX, in.pointerY) : -1;
     if (in.pointerValid && in.pointerMoved) {
         if (hit >= 0) focus_ = hit;

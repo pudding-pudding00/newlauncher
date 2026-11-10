@@ -91,7 +91,9 @@ int SettingsScene::hitTest(const UiContext& ctx, float x, float y) const {
 }
 
 void SettingsScene::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
-    if (pendingAction_ != AppCommand::None) {  // SaveSettings lief im letzten Frame
+    FocusSound sound(out, focus_);
+    if (pendingAction_ != AppCommand::None) {  // SaveSettings lief im letzten Frame, der Klang auch
+        sound.silence();
         out.command = pendingAction_;
         out.pop = true;
         pendingAction_ = AppCommand::None;
@@ -132,6 +134,7 @@ void SettingsScene::update(const UiContext& ctx, const InputFrame& in, float, Sc
                 out.command = actionCommand(row);
                 out.pop = true;
             }
+            out.sound = UiSound::Confirm;
         }
         return;
     }

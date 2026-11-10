@@ -30,6 +30,7 @@
 #include "launch/chainloader.hpp"
 #include "launch/channel.hpp"
 #include "platform/crash.hpp"
+#include "platform/audio.hpp"
 #include "platform/log.hpp"
 #include "platform/net_worker.hpp"
 #include "platform/nand_titles.hpp"
@@ -213,6 +214,9 @@ int main(int, char**) {
 
     nl::platform::WiiInput input;
     input.init(renderer.logicalWidth(), renderer.logicalHeight());
+    nl::platform::Audio audio;
+    audio.init();
+    audio.setSounds(config.sounds);
     nl::ui::InputMapper mapper;
 
     nl::ui::UiContext ctx;
@@ -383,6 +387,7 @@ int main(int, char**) {
             nl::ui::launchErrorText(e, title, sizeof title, text, sizeof text);
             dialog.open(title, text);
             scenes.push(&dialog);
+            audio.play(nl::UiSound::Error);
         };
         const nl::N64Inputs inputs = n64Inputs(game);
         auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs);
@@ -407,6 +412,7 @@ int main(int, char**) {
         if (target.value().kind == nl::LaunchTarget::Kind::Channel) {
             const u64 titleId = target.value().titleId;
             nl::log::line("NL_LAUNCH_VC %s", nl::formatTitleId(titleId).c_str());
+            audio.shutdown();
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
             input.shutdown();
             nl::platform::unmountAll();
@@ -423,6 +429,7 @@ int main(int, char**) {
             showError({nl::LaunchFailure::EmuInvalid, plan.dolPath});
             return;
         }
+        audio.shutdown();
         if (sdOk) nl::log::flushLogFile(fs, kLogPath);
         input.shutdown();
         nl::platform::unmountAll();
@@ -529,6 +536,10 @@ int main(int, char**) {
         covers.beginFrame(static_cast<u32>(frameNo) + 1, static_cast<float>(frameNo) * kFrameMs);
         nl::ui::SceneRequests req;
         const nl::ui::AppCommand cmd = scenes.update(ctx, in, kFrameMs, &req);
+        if (req.sound != nl::UiSound::None) {
+            audio.play(req.sound);
+            if (config.debugLogSounds && config.sounds) nl::log::line("NL_SOUND %s", nl::uiSoundName(req.sound));
+        }
         if (req.push == &details) refreshDetailsN64();  // MainScene hat die Details gerade geöffnet
         if (req.push == &homeMenu)
             nl::log::line("NL_BATTERY p1=%d p2=%d p3=%d p4=%d", ctx.battery[0], ctx.battery[1], ctx.battery[2],
@@ -604,7 +615,8 @@ int main(int, char**) {
                 }
                 ctx.themeMode = config.themeMode;
                 theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, config.darkFromMin, config.darkToMin), true);
-                break;  // Audio-Einstellungen folgen mit den Klängen und der Musik
+                audio.setSounds(config.sounds);
+                break;
             }
             case nl::ui::AppCommand::SaveSettings:
                 config.themeMode = ctx.themeMode;
@@ -629,6 +641,7 @@ int main(int, char**) {
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
                 net.join();
                 covers.shutdown();
+                audio.shutdown();
                 if (sdOk) nl::log::flushLogFile(fs, kLogPath);
                 input.shutdown();
                 nl::platform::unmountAll();
@@ -693,6 +706,7 @@ int main(int, char**) {
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
     net.join();
     covers.shutdown();
+    audio.shutdown();
     if (sdOk) nl::log::flushLogFile(fs, kLogPath);
     input.shutdown();
     nl::platform::unmountAll();

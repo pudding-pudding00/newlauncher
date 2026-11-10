@@ -159,3 +159,16 @@ TEST_CASE_FIXTURE(Fixture, "draw in 640 und 854, beide Sprachen: keine verworfen
     }
     setLanguage(Lang::De);
 }
+
+TEST_CASE_FIXTURE(Fixture, "Klänge: Wert ändern Confirm, Fokus runter Move, ausgegraut still, B Back, Aktion Confirm") {
+    CHECK(press(Action::Right).sound == UiSound::Confirm);
+    CHECK(press(Action::Down).sound == UiSound::Move);
+    CHECK(press(Action::Right).sound == UiSound::Confirm);  // Theme
+    press(Action::Left);
+    CHECK(press(Action::Down).sound == UiSound::Move);       // DarkFrom: ausgegraut bei Theme hell
+    CHECK(press(Action::Right).sound == UiSound::None);
+    CHECK(press(Action::Back).sound == UiSound::Back);
+    s.onEnter();
+    focusRow(SettingRow::VcMap);
+    CHECK(press(Action::Confirm).sound == UiSound::Confirm);
+}

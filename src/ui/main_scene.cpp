@@ -311,6 +311,7 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
         toastMs_ -= dtMs;
     }
 
+    const int focusBefore = grid_.focus(), barBefore = barIndex_;
     layoutBar(ctx);
     handlePointer(ctx, in);
 
@@ -323,7 +324,10 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
 
     if (in.pressed(Action::Home) && home_ != nullptr) out.push = home_;
     if (in.pressed(Action::Search) && jumpBar_ != nullptr) out.push = jumpBar_;
-    if (in.pressed(Action::Back) && searchActive_) setQuery("");
+    if (in.pressed(Action::Back) && searchActive_) {
+        setQuery("");
+        out.sound = UiSound::Back;
+    }
     if (in.pressed(Action::Favorite)) {
         if (const Game* g = focusedGame()) {
             out.command = AppCommand::ToggleFavorite;
@@ -337,14 +341,15 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
             out.command = AppCommand::CycleTheme;
         } else if (hover_ == Hover::Bar && hoverBar_ >= 0) {
             selectBar(hoverBar_, ctx.width, ctx.height);
+            out.sound = UiSound::Confirm;
         } else if (const Game* g = focusedGame(); g != nullptr && details_ != nullptr) {
             const bool fav = detailsStore_ != nullptr && detailsStore_->isFavorite(g->key);
             const u32 last = detailsStore_ != nullptr ? detailsStore_->lastPlayed(g->key) : 0;
             details_->open(*g, fav, last);
             out.push = details_;
         }
-        // Spiele starten folgt mit M3.
     }
+    deriveSound(out, (grid_.focus() != focusBefore && grid_.focus() >= 0) || barIndex_ != barBefore);
 
     layoutBar(ctx);
     if (grid_.targetScroll() != scroll_.target()) scroll_.to(grid_.targetScroll(), kAnimMs);

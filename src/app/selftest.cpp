@@ -235,6 +235,9 @@ void selftestAfterFrame(int frame, const SelftestView& v) {
             log::line("NL_ALLOC_IDLE %u", allocs);
             NL_ASSERT(allocs == 0);
             log::line("NL_SELFTEST_OK");
+            // Auf der Wii ist log.txt der einzige Weg zu NL_ALLOC_IDLE (SYS_Report ist dort stumm), und der
+            // Absturz-Handler schreibt keine Dateien: vorher sichern. Die Allokationen sind schon gezählt.
+            if (v.logFs != nullptr && log::flushLogFile(*v.logFs, v.logPath)) log::line("NL_SELFTEST_LOG_SAVED");
             __builtin_trap();  // erwartet: Absturzbildschirm mit NL_CRASH id=7
         }
         default: break;

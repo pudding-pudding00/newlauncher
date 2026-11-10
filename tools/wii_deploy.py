@@ -172,6 +172,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wiiload", metavar="IP", help="DOL per wiiload an die Wii senden statt kopieren")
     parser.add_argument("--dol", type=Path, help="DOL (Standard: Release bzw. Selbsttest aus build/wii)")
     args = parser.parse_args(argv)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")  # Windows-Konsole (cp1252) kennt „→“ nicht
     dol = args.dol or (SELFTEST_DOL if args.selftest else RELEASE_DOL)
     try:
         if args.wiiload:

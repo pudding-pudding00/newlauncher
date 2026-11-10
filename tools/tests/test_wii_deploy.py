@@ -144,5 +144,20 @@ class DeployTest(unittest.TestCase):
         self.assertIn("perf = 1", (self.sd / "newlauncher/config.ini").read_text(encoding="utf-8"))
 
 
+class ConsoleEncodingTest(unittest.TestCase):
+    def test_cli_on_cp1252_console(self):
+        # Windows-Konsole: stdout ist cp1252, die Meldungen enthalten „→“.
+        import os
+        import subprocess
+        with tempfile.TemporaryDirectory() as d:
+            dol = Path(d) / "x.dol"
+            dol.write_bytes(b"DOL")
+            (Path(d) / "sd").mkdir()
+            env = dict(os.environ, PYTHONIOENCODING="cp1252")
+            r = subprocess.run([sys.executable, str(Path(__file__).resolve().parents[1] / "wii_deploy.py"),
+                                str(Path(d) / "sd"), "--selftest", "--dol", str(dol)],
+                               env=env, capture_output=True)
+            self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
+
 if __name__ == "__main__":
     unittest.main()

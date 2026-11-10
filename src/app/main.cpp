@@ -566,7 +566,8 @@ int main(int, char**) {
         prevFrameStart = frameStart;
 #ifdef NL_SELFTEST
         const nl::app::SelftestView view{mainScene, scenes, debug, worker.running(), store, ctx, keyboard, &dialog,
-                                                 &details, &vcMapScene, &settings, &config, &covers};
+                                                 &details, &vcMapScene, &settings, &config, &covers,
+                                                 sdOk ? &fs : nullptr, kLogPath};
         input.poll();  // Geräte weiter abfragen, Eingaben kommen aber aus dem Skript
         const nl::ui::InputFrame in = frame.begin(nl::app::selftestInput(frameNo, view));
 #else

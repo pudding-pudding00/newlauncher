@@ -10,13 +10,21 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::CycleTheme: return "cycle_theme";
         case AppCommand::ToggleFavorite: return "toggle_favorite";
         case AppCommand::Launch: return "launch";
+        case AppCommand::SetN64Method: return "set_n64_method";
+        case AppCommand::OpenVcMap: return "open_vc_map";
+        case AppCommand::SaveVcMap: return "save_vc_map";
         case AppCommand::None: break;
     }
     return "none";
 }
 
 void SceneStack::push(Scene* s) {
-    if (s == nullptr || depth_ >= kMaxDepth) return;
+    if (s == nullptr) return;
+    if (depth_ > 0 && entries_[depth_ - 1].popping) {  // erst ausblenden lassen, dann öffnen
+        pushAfterPop_ = s;
+        return;
+    }
+    if (depth_ >= kMaxDepth) return;
     Entry& e = entries_[depth_++];
     e.scene = s;
     e.popping = false;

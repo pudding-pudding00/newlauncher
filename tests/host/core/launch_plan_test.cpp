@@ -128,3 +128,73 @@ TEST_CASE("Preflight schreibt nichts") {
     REQUIRE(preflightEmulator(fs, nesGame(), "sd:", emus()).isOk());
     CHECK(fs.writes == 0);
 }
+
+namespace {
+constexpr const char* kSm64 = "sd:/roms/n64/Super Mario 64 (Europe).z64";
+constexpr u64 kVcId = 0x000100014E414D50ULL;
+Game n64Game() {
+    return Game{Console::N64, "n64/Super Mario 64 (Europe).z64", "Super Mario 64", 0, 0, nullptr, "roms/n64/Super Mario 64 (Europe).z64", 0, 0};
+}
+}  // namespace
+
+TEST_CASE("preflightGame: N64 über Not64 baut argv mit {path}") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/apps/not64/boot.dol", goodDol());
+    fs.addFile(kSm64, {});
+    N64Inputs in;
+    in.not64Dol = true;
+    auto r = preflightGame(fs, n64Game(), "sd:", emus(), &in);
+    REQUIRE(r.isOk());
+    CHECK(r.value().kind == LaunchTarget::Kind::Dol);
+    CHECK(r.value().n64 == N64Method::Not64);
+    REQUIRE(r.value().dol.args.size() == 2);
+    CHECK(r.value().dol.args[0] == "sd:/apps/not64/boot.dol");
+    CHECK(r.value().dol.args[1] == kSm64);
+}
+
+TEST_CASE("preflightGame: N64 über VC liefert Kanalziel") {
+    test::MemFileSystem fs;  // leer: weder DOL noch ROM nötig
+    const std::vector<u64> installed{kVcId};
+    N64Inputs in;
+    in.mappedTitle = kVcId;
+    in.installedTitles = installed;
+    auto r = preflightGame(fs, n64Game(), "sd:", emus(), &in);
+    REQUIRE(r.isOk());
+    CHECK(r.value().kind == LaunchTarget::Kind::Channel);
+    CHECK(r.value().titleId == kVcId);
+    CHECK(r.value().n64 == N64Method::Vc);
+}
+
+TEST_CASE("preflightGame: N64 ohne Weg → NoN64Path") {
+    test::MemFileSystem fs;
+    N64Inputs in;
+    auto r = preflightGame(fs, n64Game(), "sd:", emus(), &in);
+    REQUIRE_FALSE(r.isOk());
+    CHECK(r.error().kind == LaunchFailure::NoN64Path);
+    CHECK(r.error().context == consoleInfo(Console::N64).name);
+    auto none = preflightGame(fs, n64Game(), "sd:", emus(), nullptr);
+    REQUIRE_FALSE(none.isOk());
+    CHECK(none.error().kind == LaunchFailure::NoN64Path);
+    CHECK(std::string(launchFailureName(LaunchFailure::NoN64Path)) == "NoN64Path");
+}
+
+TEST_CASE("preflightGame: NES unverändert wie preflightEmulator") {
+    auto fs = fsWith(goodDol());
+    auto r = preflightGame(fs, nesGame(), "sd:", emus(), nullptr);
+    REQUIRE(r.isOk());
+    CHECK(r.value().kind == LaunchTarget::Kind::Dol);
+    CHECK_FALSE(r.value().n64.has_value());
+    CHECK(r.value().dol.dolPath == kDol);
+    REQUIRE(r.value().dol.args.size() == 3);
+    auto gc = preflightGame(fs, nesGame("games/x/game.iso", Console::Gc), "sd:", emus(), nullptr);
+    REQUIRE_FALSE(gc.isOk());
+    CHECK(gc.error().kind == LaunchFailure::Unsupported);
+}
+
+TEST_CASE("fileSize") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/apps/x/boot.dol", std::vector<u8>(123, 0));
+    CHECK(fileSize(fs, "sd:/apps/x/boot.dol") == 123u);
+    CHECK_FALSE(fileSize(fs, "sd:/apps/x/fehlt.dol").has_value());
+    CHECK_FALSE(fileSize(fs, "sd:/apps/fehlt/boot.dol").has_value());
+}

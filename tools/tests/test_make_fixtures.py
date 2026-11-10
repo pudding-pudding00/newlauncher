@@ -35,6 +35,13 @@ class MakeFixturesTest(unittest.TestCase):
         for console in ["nes", "snes", "gb", "gbc", "gba"]:
             self.assertIn(f"[{console}]\ndol = sd:/apps/argv_echo/boot.dol\nargs = {{dir}}|{{file}}\n", text)
 
+    def test_n64_paths(self):
+        emus = (self.out / "newlauncher/emulators.ini").read_text(encoding="utf-8")
+        self.assertIn("[n64_not64]\ndol = sd:/apps/argv_echo/boot.dol\nargs = {path}\n", emus)
+        self.assertNotIn("[n64_wii64]", emus)  # Standard-DOL fehlt in den Fixtures absichtlich
+        vc = (self.out / "newlauncher/n64_vc.ini").read_text(encoding="utf-8")
+        self.assertEqual(vc, "[map]\nn64/Mario Kart 64 (Europe).z64 = 000100014E4C5443\n")
+
     def test_config_uses_sd_library(self):
         text = (self.out / "newlauncher/config.ini").read_text(encoding="utf-8")
         self.assertIn("library = sd", text)

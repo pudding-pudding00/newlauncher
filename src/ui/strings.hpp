@@ -40,6 +40,21 @@ inline constexpr const char* kStrRomMissing = "Spieldatei nicht gefunden:\n%s";
 inline constexpr const char* kStrUnsupported = "Starten für %s folgt in einer späteren Version.";
 inline constexpr const char* kStrArgsTooLong = "Pfad zu lang für den Emulator.";
 inline constexpr const char* kStrOk = "OK";
+inline constexpr const char* kStrNoN64Path = "Kein N64-Startweg verfügbar.\nVC-Inject zuordnen oder Not64/Wii64 auf die SD legen.";
+inline constexpr const char* kStrMethod = "Startmethode: %s";
+inline constexpr const char* kStrMethodAuto = "Automatisch (→ %s)";
+inline constexpr const char* kStrMethodAutoNone = "Automatisch (kein Weg)";
+inline constexpr const char* kStrWhyNotMapped = "nicht zugeordnet";
+inline constexpr const char* kStrWhyNotInstalled = "Kanal nicht installiert";
+inline constexpr const char* kStrWhyDolMissing = "DOL fehlt";
+inline constexpr const char* kStrOverrideIgnored = "Gewählter Weg nicht verfügbar – automatisch gewählt.";
+inline constexpr const char* kStrVcMapTitle = "VC-Injects zuordnen";
+inline constexpr const char* kStrVcNone = "—";
+inline constexpr const char* kStrVcSuggest = "Vorschlag: %s (A übernimmt)";
+inline constexpr const char* kStrVcNotInstalled = "%s (nicht installiert)";
+inline constexpr const char* kStrVcNoChannels = "Keine Kanäle installiert.";
+inline constexpr const char* kStrVcNoGames = "Keine N64-Spiele in der Bibliothek.";
+inline constexpr const char* kStrVcMapHelp = "A Vorschlag · ◀▶ Kanal · B Speichern und zurück";
 
 inline constexpr const char* kStrWeekdays[7] = {"Montag",  "Dienstag", "Mittwoch", "Donnerstag",
                                                  "Freitag", "Samstag",  "Sonntag"};

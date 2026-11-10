@@ -50,6 +50,7 @@ int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, cha
         case LaunchFailure::ArgsTooLong: msg = kStrArgsTooLong; break;
         case LaunchFailure::Unsupported: msg = fill(kStrUnsupported, e.context); break;
         case LaunchFailure::NoMemory: msg = e.context; break;
+        case LaunchFailure::NoN64Path: msg = kStrNoN64Path; break;
     }
     return static_cast<int>(copyEllipsized(text, textCap, msg));
 }

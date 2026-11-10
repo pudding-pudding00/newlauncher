@@ -1,6 +1,6 @@
 #pragma once
 // HOME-Menü (Spec 3.3/6.8): Overlay mit Homebrew Channel, Wii-Menü, Einstellungen, Ausschalten.
-// „Einstellungen" ist bis M6 sichtbar, aber inaktiv; der Akkustand folgt ebenfalls in M6.
+// „Einstellungen" öffnet bis M6 den Dialog „VC-Injects zuordnen“; der Akkustand folgt in M6.
 
 #include "ui/scene.hpp"
 

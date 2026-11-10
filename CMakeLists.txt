@@ -29,6 +29,10 @@ add_library(nl_core STATIC
     src/core/emulators.cpp
     src/core/launch_args.cpp
     src/core/launch_plan.cpp
+    src/core/n64.cpp
+    src/core/n64_choice.cpp
+    src/core/vc_map.cpp
+    src/core/wii_title.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp
@@ -46,6 +50,7 @@ add_library(nl_core STATIC
     src/ui/jump_bar.cpp
     src/ui/keyboard.cpp
     src/ui/details_scene.cpp
+    src/ui/vc_map_scene.cpp
     src/ui/dialog_scene.cpp
     src/ui/launch_text.cpp
 )
@@ -93,6 +98,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/log.cpp
         src/platform/video.cpp
         src/launch/chainloader.cpp
+        src/launch/channel.cpp
+        src/platform/nand_titles.cpp
         src/platform/wii_input.cpp
         src/platform/crash.cpp
         src/platform/storage.cpp

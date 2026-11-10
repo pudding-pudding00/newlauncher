@@ -45,12 +45,20 @@ python tools/dolphin_smoke.py
 
 Selbsttest in Dolphin (geskriptete Eingaben, keine Allokation im Leerlauf, absichtlicher Absturz am Ende):
 ```bash
-python tools/dolphin_smoke.py --dol build/wii/nl_selftest.dol --marker "NL_LIBRARY games=12" --marker NL_FAV_SAVED --marker "NL_SEARCH mario=5" --marker "NL_PREFLIGHT_FAIL Unsupported n64/" --marker "NL_ALLOC_IDLE 0" --marker NL_SELFTEST_OK --marker "NL_CRASH id=7"
+python tools/dolphin_smoke.py --dol build/wii/nl_selftest.dol --marker "NL_LIBRARY games=12" --marker NL_FAV_SAVED --marker "NL_SEARCH mario=5" --marker "NL_OVERRIDE_SAVED n64/Super Mario 64 (Europe) (En,Fr,De).z64 not64" --marker "NL_PREFLIGHT_FAIL Unsupported GM8P01" --marker "NL_VC_CHANNEL 000100014E4C5443 NL Testkanal" --marker "NL_VCMAP_SAVED n=2" --marker "NL_ALLOC_IDLE 0" --marker NL_SELFTEST_OK --marker "NL_CRASH id=7"
 ```
 
 Chainload-Test in Dolphin (startet über `[debug] autostart` ein NES-Spiel der Fixtures; die Test-DOL `argv_echo` meldet die übergebenen Argumente):
 ```bash
 python tools/dolphin_smoke.py --autostart "nes/Zelda (Europe) (Rev 1).nes" --marker "NL_LAUNCH nes/Zelda (Europe) (Rev 1).nes" --marker "NL_ARGV argc=3" --marker "NL_ARGV 0 sd:/apps/argv_echo/boot.dol" --marker "NL_ARGV 1 sd:/roms/nes/" --marker "NL_ARGV 2 Zelda (Europe) (Rev 1).nes"
+```
+
+N64 in Dolphin: Not64-Weg (die Fixtures setzen `[n64_not64]` auf `argv_echo`) und VC-Weg über den Testkanal (dessen Boot-Content ist ebenfalls `argv_echo`):
+```bash
+python tools/dolphin_smoke.py --autostart "n64/Super Mario 64 (Europe) (En,Fr,De).z64" --marker "NL_N64 n64/Super Mario 64 (Europe) (En,Fr,De).z64 not64" --marker "NL_ARGV argc=2" --marker "NL_ARGV 0 sd:/apps/argv_echo/boot.dol" --marker "NL_ARGV 1 sd:/roms/n64/Super Mario 64 (Europe) (En,Fr,De).z64"
+```
+```bash
+python tools/dolphin_smoke.py --autostart "n64/Mario Kart 64 (Europe).z64" --marker "NL_N64 n64/Mario Kart 64 (Europe).z64 vc" --marker "NL_LAUNCH_VC 000100014E4C5443" --marker "NL_ARGV argc="
 ```
 
 Die CI baut `newlauncher.dol`, `nl_selftest.dol` und `argv_echo.dol` und lädt sie als Artefakte hoch.
@@ -73,6 +81,8 @@ python tools/make_fixtures.py tests/fixtures/sd
 sd:/apps/newlauncher/        boot.dol, meta.xml
 sd:/newlauncher/config.ini   Einstellungen (wird beim ersten Start mit Standardwerten angelegt)
 sd:/newlauncher/emulators.ini   Emulator-Pfade und Argumente (wird beim ersten Start angelegt)
+sd:/newlauncher/n64_vc.ini   N64: Zuordnung Spiel → VC-Inject-Kanal (beim ersten Speichern angelegt)
+sd:/newlauncher/games.ini    N64: Startmethode je Spiel (beim ersten Speichern angelegt)
 sd:/newlauncher/favorites.ini, history.ini, log.txt
 <lib>:/newlauncher/cache/index.bin   Spiele-Index (vom Launcher geschrieben)
 <lib>:/newlauncher/cache/meta.bin    Metadaten (PC-Skript, ab M5)
@@ -90,15 +100,49 @@ NES, SNES, GB, GBC und GBA starten über Emulator-DOLs von der SD. Der Launcher 
 | `nes` | `sd:/apps/fceugx/boot.dol` | `{dir}\|{file}` |
 | `snes` | `sd:/apps/snes9xgx/boot.dol` | `{dir}\|{file}` |
 | `gb`, `gbc`, `gba` | `sd:/apps/vbagx/boot.dol` | `{dir}\|{file}` |
+| `n64_not64` | `sd:/apps/not64/boot.dol` | `{path}` |
+| `n64_wii64` | `sd:/apps/wii64/boot.dol` | `{path}` |
 
 `args` ist eine durch `|` getrennte Liste; jeder Eintrag wird ein `argv`-Element hinter `argv[0]` (immer der DOL-Pfad). Platzhalter:
 - `{dir}`: Ordner der ROM mit abschließendem `/`
 - `{file}`: Dateiname
 - `{path}`: vollständiger Pfad
 
-Fehlende Einträge fallen auf den Standard zurück. N64 (Not64/Wii64) folgt mit M4. Bis dahin zeigt „Starten“ bei N64, GameCube und Wii einen Hinweis.
+Fehlende Einträge fallen auf den Standard zurück. GameCube und Wii folgen mit M5; bis dahin zeigt „Starten“ dort einen Hinweis.
 
 Vor dem Start prüft der Launcher, ob die DOL existiert und gültig ist und ob die ROM vorhanden ist. Fehlt etwas, erscheint ein Dialog, und der Launcher läuft weiter.
+
+### N64
+
+Ein N64-Spiel startet auf einem von drei Wegen. Ohne eigene Wahl nimmt der Launcher den ersten verfügbaren:
+1. **VC-Inject**: Das Spiel ist in `n64_vc.ini` einem Kanal zugeordnet, und der Kanal ist installiert. Der Launcher startet den Kanal direkt.
+2. **Not64**: Die DOL aus `[n64_not64]` existiert.
+3. **Wii64**: Die DOL aus `[n64_wii64]` existiert.
+
+Gibt es keinen Weg, erscheint beim Start ein Hinweis (`NoN64Path`).
+
+In den Details eines N64-Spiels führt Hoch auf die Zeile „Startmethode“. Links und Rechts wechseln dort zwischen „Automatisch“ und den verfügbaren Wegen. Die Wahl wird sofort in `games.ini` gespeichert. Ist ein gewählter Weg später nicht mehr verfügbar, gilt wieder die Auto-Wahl, und die Details zeigen den Grund.
+
+```ini
+; sd:/newlauncher/games.ini
+; Werte: vc | not64 | wii64 (Kommentare nur als ganze Zeile)
+[n64_method]
+n64/Super Mario 64 (Europe).z64 = not64
+
+; sd:/newlauncher/n64_vc.ini (Title-ID als 16 Hex-Ziffern)
+[map]
+n64/Mario Kart 64 (Europe).z64 = 000100014E4B5450
+```
+
+Zuordnen lässt sich auch im Launcher: HOME → „Einstellungen“ öffnet bis M6 den Dialog „VC-Injects zuordnen“.
+- Er listet alle N64-Spiele.
+- Links und Rechts wählen einen der installierten Kanäle oder „keiner“.
+- A übernimmt den Namensvorschlag.
+- B speichert und schließt.
+
+Kanäle zeigt der Dialog mit ihrem Bannernamen, ist der nicht lesbar, mit der Title-ID.
+
+In Dolphin legen `deploy_dolphin.py` und `dolphin_smoke.py` einen Testkanal „NL Testkanal“ (`000100014E4C5443`) im Dev-NAND `../wii_tools/dolphin-user/Wii/` an. Sein Boot-Content ist die Test-DOL `argv_echo`. Die Fixtures ordnen ihm „Mario Kart 64“ zu.
 
 ## Bedienung
 
@@ -127,7 +171,7 @@ Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel
 | `NL_READY` | erster Frame gezeichnet |
 | `NL_ATLAS ok` | Schrift-Atlas aufgebaut |
 | `NL_ERROR <text>` | Start abgebrochen |
-| `NL_CMD <name>` | Befehl aus dem HOME-Menü bzw. Zahnrad (`exit_hbc`, `wii_menu`, `power_off`, `cycle_theme`) |
+| `NL_CMD <name>` | Befehl aus dem HOME-Menü bzw. Zahnrad (`exit_hbc`, `wii_menu`, `open_vc_map`, `power_off`, `cycle_theme`) |
 | `NL_ALLOC_IDLE <n>` | Selbsttest: Allokationen in 120 Leerlauf-Frames |
 | `NL_SELFTEST_OK` | Selbsttest bestanden |
 | `NL_PANIC <ausdruck> <datei>:<zeile>` | verletztes `NL_ASSERT` |
@@ -140,7 +184,13 @@ Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel
 | `NL_FAV_SAVED <schlüssel>` | Favoriten gespeichert |
 | `NL_SEARCH mario=<n>` | Selbsttest: Treffer der Suche „MARIO“ |
 | `NL_EMULATORS ok\|default` | `emulators.ini` gelesen bzw. Standardwerte genutzt |
-| `NL_PREFLIGHT_FAIL <art> <schlüssel>` | Start abgelehnt (`Unsupported`, `EmuMissing`, `EmuInvalid`, `RomMissing`, `ArgsTooLong`, `NoMemory`), Dialog offen |
+| `NL_PREFLIGHT_FAIL <art> <schlüssel>` | Start abgelehnt (`Unsupported`, `EmuMissing`, `EmuInvalid`, `RomMissing`, `ArgsTooLong`, `NoMemory`, `NoN64Path`), Dialog offen |
+| `NL_NAND channels=<n>` | beim Start: Anzahl installierter Kanäle |
+| `NL_VC_CHANNELS n=<n>`, `NL_VC_CHANNEL <titleid> <name>` | Zuordnungsdialog geöffnet: Kanalliste |
+| `NL_OVERRIDE_SAVED <schlüssel> <auto\|vc\|not64\|wii64>` | Startmethode in `games.ini` gespeichert |
+| `NL_VCMAP_SAVED n=<anzahl>` | `n64_vc.ini` gespeichert |
+| `NL_N64 <schlüssel> <vc\|not64\|wii64>` | gewählter N64-Weg beim Start |
+| `NL_LAUNCH_VC <titleid>` | Kanalstart beginnt |
 | `NL_HISTORY_SAVED` | Verlauf vor dem Start gespeichert |
 | `NL_LAUNCH <schlüssel>` | Chainload beginnt |
 | `NL_AUTOSTART <schlüssel>` | Testmodus: `[debug] autostart` in `config.ini` startet das Spiel nach `NL_READY` |

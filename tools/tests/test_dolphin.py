@@ -125,6 +125,34 @@ class DolphinToolsTest(unittest.TestCase):
         deploy(self.dol, sd, dist, argv_echo=echo)
         self.assertEqual((sd / "apps/argv_echo/boot.dol").read_bytes(), b"echo")
 
+    def test_deploy_installs_test_channel_into_nand(self):
+        dist = self.tmp / "dist"
+        dist.mkdir()
+        echo = self.tmp / "argv_echo.dol"
+        echo.write_bytes(b"echo")
+        nand = self.tmp / "Wii"
+        deploy(self.dol, self.tmp / "sd", dist, argv_echo=echo, wii_root=nand)
+        self.assertEqual((nand / "title/00010001/4e4c5443/content/00000001.app").read_bytes(), b"echo")
+        deploy(self.dol, self.tmp / "sd2", dist, argv_echo=self.tmp / "fehlt.dol", wii_root=self.tmp / "Wii2")
+        self.assertFalse((self.tmp / "Wii2").exists())
+
+    def test_deploy_removes_stale_launch_file(self):
+        # Ein abgebrochener Kanalstart hinterlässt /sys/launch.sys; Dolphin startete den Titel sonst beim nächsten Boot.
+        dist = self.tmp / "dist"
+        dist.mkdir()
+        nand = self.tmp / "Wii"
+        (nand / "sys").mkdir(parents=True)
+        (nand / "sys/launch.sys").write_bytes(b"alt")
+        deploy(self.dol, self.tmp / "sd", dist, argv_echo=self.tmp / "fehlt.dol", wii_root=nand)
+        self.assertFalse((nand / "sys/launch.sys").exists())
+
+    def test_smoke_installs_test_channel(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        with mock.patch("dolphin_smoke.deploy", wraps=deploy) as d:
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--timeout", "2"])
+        self.assertEqual(d.call_args.kwargs.get("wii_root"), self.user.resolve() / "Wii")
+
     def test_deploy_skips_missing_argv_echo(self):
         dist = self.tmp / "dist"
         dist.mkdir()

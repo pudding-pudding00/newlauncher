@@ -20,6 +20,7 @@ constexpr float kButtonR = 22.0f;
 constexpr float kFocusScale = 0.08f;
 constexpr float kToastMs = 2000.0f;
 constexpr float kAnimMs = 200.0f;
+constexpr float kCoverInset = 4.0f;
 constexpr int kTitleLines = 3;
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
@@ -356,6 +357,22 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
     barScroll_.update(dtMs);
     focusAnim_.update(dtMs);
     refreshTexts(ctx);
+    requestCovers();
+}
+
+void MainScene::requestCovers() {
+    if (covers_ == nullptr) return;
+    const float scroll = scroll_.value();
+    const float top = grid_.viewTop(), bottom = top + grid_.viewHeight();
+    const float ahead = 2.0f * grid_.rowPitch();
+    const int n = std::min(grid_.count(), static_cast<int>(games_.size()));
+    for (int i = 0; i < n; ++i) {
+        const Rect r = grid_.tileRect(i, scroll);
+        if (r.y + r.h < top - ahead) continue;
+        if (r.y > bottom + ahead) break;  // Kacheln sind zeilenweise sortiert
+        const bool visible = r.y + r.h >= top && r.y <= bottom;
+        covers_->want(*games_[i], visible ? CoverPriority::Visible : CoverPriority::Prefetch);
+    }
 }
 
 void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rect r, bool focused) const {
@@ -366,13 +383,7 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
     if (index < 0 || index >= static_cast<int>(games_.size())) return;
     const Game& g = *games_[index];
 
-    const gfx::FontFace& label = ctx.fonts->face(FontSize::Small, FontWeight::Medium);
-    const char* tag = consoleInfo(g.console).label;
-    const float tagW = gfx::measureText(label, tag) + 12.0f;
-    gfx::roundRect(dl, s, Rect{r.x + 8, r.y + 8, tagW, 18}, 9, t.accentSoft);
-    if (store_ != nullptr && store_->isFavorite(g.key)) gfx::circle(dl, s, r.x + r.w - 14, r.y + 17, 4, t.accent);
-    gfx::drawText(dl, label, r.x + 14, r.y + 8 + 9 + (label.ascent - label.descent) / 2, tag, t.accentSoftText);
-
+    // Platzhalter (Titel) zuerst: das Cover blendet darüber ein, Tag und Favoritenpunkt liegen obenauf.
     const gfx::FontFace& body = ctx.fonts->face(FontSize::Small, FontWeight::Regular);
     const float maxW = r.w - 16.0f;
     gfx::Line lines[kTitleLines];
@@ -385,6 +396,21 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
         gfx::drawTextEllipsis(dl, body, r.x + 8, baseline, maxW, line, t.text);
         baseline += body.lineHeight;
     }
+
+    if (covers_ != nullptr) {
+        const CoverView cv = covers_->view(g);
+        if (cv.texture != 0 && cv.alpha > 0.0f) {
+            const u8 a = static_cast<u8>(std::clamp(cv.alpha, 0.0f, 1.0f) * 255.0f);
+            dl.quad(cv.texture, fitCoverRect(r, kCoverInset), gfx::UvRect{0, 0, 1, 1}, Color{255, 255, 255, a});
+        }
+    }
+
+    const gfx::FontFace& label = ctx.fonts->face(FontSize::Small, FontWeight::Medium);
+    const char* tag = consoleInfo(g.console).label;
+    const float tagW = gfx::measureText(label, tag) + 12.0f;
+    gfx::roundRect(dl, s, Rect{r.x + 8, r.y + 8, tagW, 18}, 9, t.accentSoft);
+    if (store_ != nullptr && store_->isFavorite(g.key)) gfx::circle(dl, s, r.x + r.w - 14, r.y + 17, 4, t.accent);
+    gfx::drawText(dl, label, r.x + 14, r.y + 8 + 9 + (label.ascent - label.descent) / 2, tag, t.accentSoftText);
 }
 
 void MainScene::drawTopBar(const UiContext& ctx, gfx::DrawList& dl) const {

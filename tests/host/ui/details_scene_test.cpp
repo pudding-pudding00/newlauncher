@@ -2,6 +2,7 @@
 #include "ui/details_scene.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/test_library.hpp"
+#include "support/fake_covers.hpp"
 #include "support/fake_font.hpp"
 #include <doctest/doctest.h>
 #include <cstring>
@@ -229,4 +230,27 @@ TEST_CASE("Hinweiszeile nennt Gründe") {
     CHECK(std::string(buf) == std::string(kStrOverrideIgnored) + " VC-Inject: nicht zugeordnet · Wii64: DOL fehlt");
     n64HintLine(decision(true, true, true), buf, sizeof buf);
     CHECK(std::string(buf).empty());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Details: großes Cover aus dem Provider, angefordert mit Visible") {
+    DetailsScene d;
+    test::FakeCovers covers;
+    covers.views["n64/sm64.z64"] = CoverView{9, 1.0f};
+    d.setCovers(&covers);
+    const Game g{Console::N64, "n64/sm64.z64", "Super Mario 64", 1996, 1};
+    d.open(g, false, 0);
+    step(d, InputFrame{});
+    CHECK(covers.wants["n64/sm64.z64"].visible == 1);
+    CHECK(covers.wants["n64/sm64.z64"].prefetch == 0);
+    dl.clear();
+    d.draw(ctx, dl);
+    const gfx::Batch* cover = nullptr;
+    for (const gfx::Batch& b : dl.batches())
+        if (b.texture == 9) cover = &b;
+    REQUIRE(cover != nullptr);
+    const gfx::Vertex& tl = dl.vertices()[cover->firstVertex];
+    const gfx::Vertex& br = dl.vertices()[cover->firstVertex + 2];
+    CHECK(br.x - tl.x == doctest::Approx(200.0));
+    CHECK(br.y - tl.y == doctest::Approx(280.0));
+    CHECK(tl.color.a == 255);
 }

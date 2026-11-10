@@ -83,4 +83,13 @@ BannerLang systemBannerLang() {
     return BannerLang::English;
 }
 
+const char* systemCoverRegion() {
+    switch (CONF_GetLanguage()) {
+        case CONF_LANG_GERMAN: return "DE";
+        case CONF_LANG_FRENCH: return "FR";
+        case CONF_LANG_JAPANESE: return "JA";
+        default: return "EN";
+    }
+}
+
 }  // namespace nl::platform

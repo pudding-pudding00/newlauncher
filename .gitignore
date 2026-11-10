@@ -18,3 +18,4 @@ __pycache__/
 *.gbc
 *.gba
 !tests/fixtures/**
+.cache/

@@ -1,4 +1,5 @@
 #include "ui/home_menu.hpp"
+#include "ui/actions_scene.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/test_library.hpp"
 #include "support/fake_font.hpp"
@@ -61,10 +62,12 @@ TEST_CASE_FIXTURE(Fixture, "Right bis zum Ende, Left bis zum Anfang, kein Umlauf
 }
 
 TEST_CASE_FIXTURE(Fixture, "Confirm auf den Kacheln") {
-    const AppCommand expected[4] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::OpenVcMap,
+    const AppCommand expected[4] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::None,
                                     AppCommand::PowerOff};
+    ActionsScene actions;
     for (int i = 0; i < 4; ++i) {
         HomeMenu m;
+        m.setActions(&actions);
         m.onEnter();
         for (int k = 0; k < i; ++k) step(m, action(Action::Right));
         const SceneRequests r = step(m, action(Action::Confirm));
@@ -73,14 +76,28 @@ TEST_CASE_FIXTURE(Fixture, "Confirm auf den Kacheln") {
     }
 }
 
-TEST_CASE_FIXTURE(Fixture, "Einstellungen öffnet den VC-Dialog") {
+TEST_CASE_FIXTURE(Fixture, "Einstellungen öffnet die Aktionsliste, ohne Kommando") {
+    ActionsScene actions;
+    HomeMenu m;
+    m.setActions(&actions);
+    m.onEnter();
+    step(m, action(Action::Right));
+    step(m, action(Action::Right));
+    const SceneRequests r = step(m, action(Action::Confirm));
+    CHECK(r.command == AppCommand::None);
+    CHECK(r.pop);  // HOME-Overlay schließt, danach öffnet die Aktionsliste
+    CHECK(r.push == &actions);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Einstellungen ohne Aktionsliste: nichts passiert") {
     HomeMenu m;
     m.onEnter();
     step(m, action(Action::Right));
     step(m, action(Action::Right));
     const SceneRequests r = step(m, action(Action::Confirm));
-    CHECK(r.command == AppCommand::OpenVcMap);
-    CHECK(r.pop);  // HOME-Overlay schließt, der Dialog kommt als Vollbildszene
+    CHECK(r.command == AppCommand::None);
+    CHECK_FALSE(r.pop);
+    CHECK(r.push == nullptr);
 }
 
 TEST_CASE_FIXTURE(Fixture, "Home schließt; Back schließt") {

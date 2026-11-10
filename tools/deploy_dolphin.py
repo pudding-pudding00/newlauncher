@@ -23,6 +23,9 @@ def deploy(dol: Path | None, sd_dir: Path, dist_dir: Path, fixtures_dir: Path | 
         (wii_root / "sys/launch.sys").unlink(missing_ok=True)
     shutil.copytree(dist_dir, sd_dir, dirs_exist_ok=True)
     if fixtures_dir is not None:
+        # Jede Abnahme soll wirklich konvertieren und laden: alte .tex und Cover-Quellen weg.
+        for rel in ("newlauncher/cache/covers", "newlauncher/covers_src"):
+            shutil.rmtree(sd_dir / rel, ignore_errors=True)
         shutil.copytree(fixtures_dir, sd_dir, dirs_exist_ok=True)
     if argv_echo.is_file():
         (sd_dir / "apps/argv_echo").mkdir(parents=True, exist_ok=True)

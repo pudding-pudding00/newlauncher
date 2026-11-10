@@ -76,3 +76,12 @@ TEST_CASE("parseClock") {
     CHECK(parseClock("123:00", -1) == -1);
     CHECK(parseClock(" 8:15 ", -1) == 495);
 }
+
+TEST_CASE("configFromIni: [debug] cover_url und fetch_covers") {
+    const auto d = nl::configFromIni(nl::IniDoc::parse(""));
+    CHECK(d.debugCoverUrl.empty());
+    CHECK_FALSE(d.debugFetchCovers);
+    const auto c = nl::configFromIni(nl::IniDoc::parse("[debug]\ncover_url = http://127.0.0.1:8123\nfetch_covers = 1\n"));
+    CHECK(c.debugCoverUrl == "http://127.0.0.1:8123");
+    CHECK(c.debugFetchCovers);
+}

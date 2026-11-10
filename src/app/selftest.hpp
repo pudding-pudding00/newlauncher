@@ -4,6 +4,7 @@
 // im Leerlauf und löst am Ende absichtlich einen Absturz aus, damit der Smoke-Test auch den
 // Absturzbildschirm sieht.
 
+#include "app/cover_service.hpp"
 #include "core/library_store.hpp"
 #include "ui/debug_overlay.hpp"
 #include "ui/details_scene.hpp"
@@ -26,6 +27,8 @@ struct SelftestView {
     const ui::Scene* dialog;  // Fehlerdialog beim Start (M3)
     const ui::DetailsScene* details;  // Detailansicht (M4: Startmethode)
     const ui::VcMapScene* vcMap;      // VC-Zuordnungsdialog (M4)
+    const ui::Scene* actions;         // Aktionsliste hinter „Einstellungen“ (M5)
+    const CoverService* covers;       // Cover-Cache und -Thread (M5)
 };
 
 ui::RawInput selftestInput(int frame, const SelftestView& v);

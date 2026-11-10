@@ -1,11 +1,12 @@
 #pragma once
-// Detailansicht (Spec 3.2): Cover-Platzhalter, Titel, Infozeile, Beschreibung, Knöpfe Starten/Favorit.
+// Detailansicht (Spec 3.2): Cover (sonst Platzhalter), Titel, Infozeile, Beschreibung, Knöpfe Starten/Favorit.
 // Hält eigene Kopien der Spieltexte: ein Hintergrund-Scan darf die Bibliothek austauschen, während sie offen ist.
 
 #include <optional>
 #include <string>
 
 #include "core/n64_choice.hpp"
+#include "ui/cover_provider.hpp"
 #include "ui/scene.hpp"
 
 namespace nl::ui {
@@ -14,6 +15,7 @@ class DetailsScene final : public Scene {
 public:
     void open(const Game& game, bool favorite, u32 lastPlayedUnix);
     void setFavorite(bool favorite) { favorite_ = favorite; }
+    void setCovers(CoverProvider* covers) { covers_ = covers; }  // nullptr = Platzhalter
     // N64: Zeile „Startmethode“ (Spec 6.6). Wirkt nur bei geöffnetem N64-Spiel; open() setzt sie zurück.
     void setN64(const N64Decision& decision, std::optional<N64Method> override_);
     int methodChoice() const { return choice_; }  // 0 = Automatisch, sonst 1 + N64Method
@@ -31,6 +33,7 @@ private:
     std::string key_, title_, description_, path_;
     Game game_{};
     bool hasGame_ = false;
+    CoverProvider* covers_ = nullptr;
     bool favorite_ = false;
     u32 lastPlayed_ = 0;
     int focus_ = 0;

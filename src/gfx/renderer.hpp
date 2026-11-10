@@ -4,6 +4,7 @@
 #include "core/result.hpp"
 #include "gfx/draw_list.hpp"
 #include "gfx/font_loader.hpp"
+#include "gfx/texture_table.hpp"
 #include "platform/video.hpp"
 
 namespace nl::gfx {
@@ -18,7 +19,8 @@ public:
     float pixelScaleX() const { return pixelScaleX_; }
 
     void beginFrame(Color clear);
-    void submit(const DrawList& list);
+    // Batches mit Textur ≥ kCoverTextureBase holen ihre CMPR-Texel aus covers (nullptr: auslassen).
+    void submit(const DrawList& list, const CoverTextures* covers = nullptr);
     void endFrame();  // VSync + Pufferwechsel
 
     u32 drawCallsLastFrame() const { return drawCallsLast_; }
@@ -31,6 +33,7 @@ private:
     float pixelScaleX_ = 1.0f;
     int next_ = 1;
     bool efbCleared_ = false;
+    u32 coverGeneration_ = 0;
     u32 drawCalls_ = 0, drawCallsLast_ = 0, textureBytes_ = 0;
 };
 

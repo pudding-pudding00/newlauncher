@@ -54,6 +54,12 @@ inline constexpr const char* kStrVcSuggest = "Vorschlag: %s (A übernimmt)";
 inline constexpr const char* kStrVcNotInstalled = "%s (nicht installiert)";
 inline constexpr const char* kStrVcNoChannels = "Keine Kanäle installiert.";
 inline constexpr const char* kStrVcNoGames = "Keine N64-Spiele in der Bibliothek.";
+inline constexpr const char* kStrFetchCovers = "Fehlende Cover laden";
+inline constexpr const char* kStrCoverProgress = "Cover: %u/%u";
+inline constexpr const char* kStrNoMissingCovers = "Keine fehlenden Cover";
+inline constexpr const char* kStrNoMissingCoversText = "Alle Wii- und GameCube-Spiele haben schon ein Cover.";
+inline constexpr const char* kStrCoversLoaded = "Cover geladen";
+inline constexpr const char* kStrCoversSummary = "%u geladen, %u nicht gefunden, %u fehlgeschlagen";
 inline constexpr const char* kStrVcMapHelp = "A Vorschlag · ◀▶ Kanal · B Speichern und zurück";
 
 inline constexpr const char* kStrWeekdays[7] = {"Montag",  "Dienstag", "Mittwoch", "Donnerstag",

@@ -1,5 +1,6 @@
 #include "ui/details_scene.hpp"
 
+#include <algorithm>
 #include <cstdio>
 
 #include "gfx/text.hpp"
@@ -147,6 +148,7 @@ Rect DetailsScene::buttonRect([[maybe_unused]] const UiContext& ctx, int index) 
 }
 
 void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
+    if (covers_ != nullptr && hasGame_) covers_->want(game_, CoverPriority::Visible);
     if (ctx.minuteOfDay != clockMinute_) {
         clockMinute_ = ctx.minuteOfDay;
         formatClock(clockMinute_, clock_, sizeof clock_);
@@ -207,13 +209,20 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     gfx::fillRect(dl, s, Rect{0, 0, ctx.width, ctx.height}, t.bg);
     if (!hasGame_) return;
 
-    // Cover-Platzhalter (Cover folgen mit M5)
+    // Cover über dem Platzhalter (Konsolenname), eingeblendet mit dem Alpha des Providers
     const Rect cover{kMargin, kTop, kCoverW, kCoverH};
     gfx::roundRect(dl, s, cover, 14, t.tile);
     const gfx::FontFace& big = ctx.fonts->face(FontSize::Title, FontWeight::Medium);
     const char* label = consoleInfo(game_.console).label;
     const float lw = gfx::measureText(big, label);
     gfx::drawText(dl, big, cover.x + (cover.w - lw) / 2, cover.y + cover.h / 2, label, t.accentSoftText);
+    if (covers_ != nullptr) {
+        const CoverView cv = covers_->view(game_);
+        if (cv.texture != 0 && cv.alpha > 0.0f) {
+            const u8 a = static_cast<u8>(std::min(cv.alpha, 1.0f) * 255.0f);
+            dl.quad(cv.texture, cover, gfx::UvRect{0, 0, 1, 1}, Color{255, 255, 255, a});
+        }
+    }
 
     // Rechte Spalte: Titel (2 Zeilen), Infozeile, Beschreibung (3 Zeilen)
     const float x = cover.x + cover.w + 32.0f;

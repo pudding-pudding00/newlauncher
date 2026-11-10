@@ -27,6 +27,7 @@ enum class AppCommand : u8 {
     SetN64Method,  // game + n64Choice
     OpenVcMap,
     SaveVcMap,
+    FetchCovers,
 };
 const char* appCommandName(AppCommand c);
 
@@ -59,6 +60,7 @@ public:
     void draw(const UiContext& ctx, gfx::DrawList& dl);
     Scene* top() const { return depth_ > 0 ? entries_[depth_ - 1].scene : nullptr; }
     int depth() const { return depth_; }
+    bool contains(const Scene* s) const;  // auf dem Stapel oder nach dem Ausblenden angefordert
 
 private:
     static constexpr int kMaxDepth = 4;

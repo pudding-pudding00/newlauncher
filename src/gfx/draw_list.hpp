@@ -10,7 +10,8 @@
 
 namespace nl::gfx {
 
-using TextureId = u8;  // 0 = UI-Atlas; weitere ab M5 (Cover)
+using TextureId = u16;  // 0 = UI-Atlas, ab kCoverTextureBase die Cover-Slots
+inline constexpr TextureId kCoverTextureBase = 1;  // Cover-Slot s ist kCoverTextureBase + s
 
 struct Vertex {
     float x, y, u, v;

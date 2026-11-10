@@ -121,3 +121,31 @@ TEST_CASE("favorites() und recent() folgen setGames") {
     s.setGames(lib({"nes/a.nes"}), nullptr);
     CHECK(s.favorites().size() == 1);
 }
+
+TEST_CASE("recordPlayed setzt an den Anfang, entfernt Duplikat, kappt bei 20, historyIni round-trip") {
+    std::vector<std::string> keys;
+    IndexData d;
+    for (int i = 0; i < 22; ++i) {
+        keys.push_back("nes/" + std::to_string(i) + ".nes");
+        d.games.push_back(IndexGame{Console::Nes, 0, keys.back(), keys.back(), keys.back(), 1});
+    }
+    LibraryStore s;
+    s.setGames(std::move(d), nullptr);
+    for (int i = 0; i < 22; ++i) s.recordPlayed(keys[i], 1000);  // gleiche Sekunde: keiner darf verloren gehen
+    REQUIRE(s.recent().size() == kHistoryMax);
+    CHECK(std::strcmp(s.recent()[0]->key, "nes/21.nes") == 0);
+    s.recordPlayed("nes/5.nes", 2000);
+    REQUIRE(s.recent().size() == kHistoryMax);
+    CHECK(std::strcmp(s.recent()[0]->key, "nes/5.nes") == 0);
+    CHECK(std::strcmp(s.recent()[1]->key, "nes/21.nes") == 0);
+    CHECK(s.lastPlayed("nes/5.nes") == 2000u);
+    CHECK(s.lastPlayed("nes/0.nes") == 0u);  // aus dem Verlauf gefallen
+
+    LibraryStore t;
+    t.setGames(s.index(), nullptr);
+    t.loadHistory(IniDoc::parse(s.historyIni().serialize()));
+    REQUIRE(t.recent().size() == kHistoryMax);
+    CHECK(std::strcmp(t.recent()[0]->key, "nes/5.nes") == 0);
+    CHECK(t.lastPlayed("nes/5.nes") == 2000u);
+    CHECK(t.lastPlayed("nes/21.nes") == 1000u);
+}

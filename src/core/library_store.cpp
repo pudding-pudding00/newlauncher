@@ -96,6 +96,21 @@ u32 LibraryStore::lastPlayed(std::string_view key) const {
     return 0;
 }
 
+void LibraryStore::recordPlayed(std::string_view key, u32 unixTime) {
+    auto it = std::find_if(history_.begin(), history_.end(), [&](const auto& h) { return h.second == key; });
+    if (it != history_.end()) history_.erase(it);
+    history_.emplace(history_.begin(), unixTime, std::string(key));
+    if (history_.size() > static_cast<std::size_t>(kHistoryMax)) history_.resize(kHistoryMax);
+    rebuildLists();
+}
+
+IniDoc LibraryStore::historyIni() const {
+    // Über den Text statt set(), weil set() gleiche Zeitstempel (zwei Starts in einer Sekunde) zusammenlegt.
+    std::string text = "[history]\n";
+    for (const auto& [t, k] : history_) text += std::to_string(t) + " = " + k + "\n";
+    return IniDoc::parse(text);
+}
+
 void LibraryStore::rebuildLists() {
     favoriteGames_.clear();
     for (const std::string& k : favoriteKeys_)

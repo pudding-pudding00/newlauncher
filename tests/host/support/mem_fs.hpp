@@ -27,7 +27,8 @@ public:
         dirs_[path] = mtime;
     }
     void remove(const std::string& path) { files_.erase(path); }
-    int reads = 0;  // Anzahl read()-Aufrufe (für Tests zum Header-Lesen)
+    int reads = 0;   // Anzahl read()-Aufrufe (für Tests zum Header-Lesen)
+    int writes = 0;  // Anzahl writeAtomic()/makeDirs()-Aufrufe
 
     Result<std::vector<DirEntry>> list(std::string_view dir) override {
         const std::string d(dir);
@@ -59,12 +60,14 @@ public:
     }
 
     Result<void> writeAtomic(std::string_view file, std::span<const u8> data) override {
+        ++writes;
         if (failWrites) return Result<void>::err(Error{ErrorCode::IoError, "schreibgeschützt"});
         addFile(std::string(file), std::vector<u8>(data.begin(), data.end()));
         return Result<void>::ok();
     }
 
     Result<void> makeDirs(std::string_view dir) override {
+        ++writes;
         addDir(std::string(dir));
         return Result<void>::ok();
     }

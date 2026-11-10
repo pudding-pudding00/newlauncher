@@ -102,7 +102,9 @@ bool writeText(nl::FileSystem& fs, const char* path, const std::string& text) {
     return fs.writeAtomic(path, std::span<const u8>(p, text.size())).isOk();
 }
 
-nl::Config loadConfig(nl::FileSystem& fs, bool sdOk) {
+// text erhält den gelesenen bzw. neu geschriebenen Inhalt (Grundlage für configToIniText).
+nl::Config loadConfig(nl::FileSystem& fs, bool sdOk, std::string& text) {
+    text = nl::defaultConfigText();
     if (!sdOk) {
         nl::log::line("NL_CONFIG default (keine SD)");
         return nl::Config{};
@@ -111,7 +113,8 @@ nl::Config loadConfig(nl::FileSystem& fs, bool sdOk) {
     if (data.isOk()) {
         const auto& b = data.value();
         nl::log::line("NL_CONFIG ok");
-        return nl::configFromIni(nl::IniDoc::parse(std::string_view(reinterpret_cast<const char*>(b.data()), b.size())));
+        text.assign(reinterpret_cast<const char*>(b.data()), b.size());
+        return nl::configFromIni(nl::IniDoc::parse(text));
     }
     static_cast<void>(fs.makeDirs(kConfigDir));
     writeText(fs, kConfigPath, nl::defaultConfigText());
@@ -174,7 +177,20 @@ int main(int, char**) {
     // 1. SD und Konfiguration (Spec 6.1 Schritt 2)
     nl::platform::StdFileSystem fs;
     const bool sdOk = nl::platform::mountSd();
-    nl::Config config = loadConfig(fs, sdOk);  // die Einstellungsszene ändert sie live
+    std::string configText;
+    nl::Config config = loadConfig(fs, sdOk, configText);  // die Einstellungsszene ändert sie live
+    const bool systemGerman = CONF_GetLanguage() == CONF_LANG_GERMAN;
+    nl::ui::setLanguage(nl::ui::resolveLanguage(config.language, systemGerman));
+    nl::log::line("NL_LANG %s", nl::ui::langKey(nl::ui::language()));
+    auto saveConfig = [&]() {
+        std::string text = nl::configToIniText(config, configText);
+        if (sdOk && writeText(fs, kConfigPath, text)) {
+            configText = std::move(text);
+            nl::log::line("NL_CONFIG_SAVED");
+        } else {
+            nl::log::line("NL_WARN config.ini nicht gespeichert");
+        }
+    };
     const nl::EmulatorTable emulators = loadEmulators(fs, sdOk);
 
     // 2. Video, Renderer, Atlas, Theme aus der Konfiguration
@@ -533,7 +549,7 @@ int main(int, char**) {
             case nl::ui::AppCommand::OpenVcMap: {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 if (!channelsLoaded) {
-                    channels = nl::platform::loadChannelNames(installedTitles, nl::platform::systemBannerLang());
+                    channels = nl::platform::loadChannelNames(installedTitles, nl::platform::bannerLangFor(nl::ui::language()));
                     channelsLoaded = true;
                     nl::log::line("NL_VC_CHANNELS n=%u", static_cast<unsigned>(channels.size()));
                     for (const nl::ChannelInfo& c : channels)
@@ -575,7 +591,33 @@ int main(int, char**) {
             }
             case nl::ui::AppCommand::CycleTheme:
                 ctx.themeMode = nl::nextMode(ctx.themeMode);
+                config.themeMode = ctx.themeMode;
                 nl::log::line("NL_CMD %s %s", nl::ui::appCommandName(cmd), nl::themeModeName(ctx.themeMode));
+                saveConfig();
+                break;
+            case nl::ui::AppCommand::SettingsChanged: {
+                const nl::ui::Lang lang = nl::ui::resolveLanguage(config.language, systemGerman);
+                if (lang != nl::ui::language()) {
+                    nl::ui::setLanguage(lang);
+                    channelsLoaded = false;  // Kanalnamen beim nächsten Öffnen in der neuen Sprache laden
+                    nl::log::line("NL_LANG %s", nl::ui::langKey(lang));
+                }
+                ctx.themeMode = config.themeMode;
+                theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, config.darkFromMin, config.darkToMin), true);
+                break;  // Audio-Einstellungen folgen mit den Klängen und der Musik
+            }
+            case nl::ui::AppCommand::SaveSettings:
+                config.themeMode = ctx.themeMode;
+                saveConfig();
+                break;
+            case nl::ui::AppCommand::Rescan:
+                if (worker.running()) break;  // läuft schon, das Ergebnis kommt über den Scan-Pfad unten
+                if (!worker.start(fs, libRoot, nullptr, metaPtr)) {
+                    nl::log::line("NL_WARN Neu-Scan nicht gestartet");
+                    break;
+                }
+                mainScene.showToast(nl::ui::tr(nl::ui::Str::Rescanning));
+                nl::log::line("NL_RESCAN start");
                 break;
             case nl::ui::AppCommand::ExitToHbc:  // Spec 6.8: aufräumen, exit(0)
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
@@ -598,9 +640,6 @@ int main(int, char**) {
             case nl::ui::AppCommand::FetchCovers:
                 fetchCovers();
                 break;
-            case nl::ui::AppCommand::SettingsChanged:  // Verdrahtung folgt in M6 Task 5
-            case nl::ui::AppCommand::SaveSettings:
-            case nl::ui::AppCommand::Rescan:
             case nl::ui::AppCommand::None:
                 break;
         }

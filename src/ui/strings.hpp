@@ -88,7 +88,8 @@
     X(TakesEffectAfterRestart, "nach Neustart", "after restart") \
     X(CoverRegion, "Cover-Region", "Cover region") \
     X(Rescan, "Bibliothek neu scannen", "Rescan library") \
-    X(SettingsHelp, "◀▶ Ändern · A Auswählen · B Zurück", "◀▶ Change · A Select · B Back")
+    X(SettingsHelp, "◀▶ Ändern · A Auswählen · B Zurück", "◀▶ Change · A Select · B Back") \
+    X(Rescanning, "Bibliothek wird neu durchsucht …", "Rescanning library …")
 // clang-format on
 
 namespace nl::ui {

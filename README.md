@@ -45,7 +45,7 @@ python tools/dolphin_smoke.py
 
 Selbsttest in Dolphin (geskriptete Eingaben, keine Allokation im Leerlauf, absichtlicher Absturz am Ende):
 ```bash
-python tools/dolphin_smoke.py --dol build/wii/nl_selftest.dol --marker "NL_LIBRARY games=12" --marker NL_FAV_SAVED --marker "NL_SEARCH mario=5" --marker "NL_OVERRIDE_SAVED n64/Super Mario 64 (Europe) (En,Fr,De).z64 not64" --marker "NL_PREFLIGHT_FAIL Unsupported GM8P01" --marker "NL_VC_CHANNEL 000100014E4C5443 NL Testkanal" --marker "NL_VCMAP_SAVED n=2" --marker "NL_ALLOC_IDLE 0" --marker NL_SELFTEST_OK --marker "NL_CRASH id=7"
+python tools/dolphin_smoke.py --dol build/wii/nl_selftest.dol --marker "NL_LIBRARY games=12" --marker NL_FAV_SAVED --marker "NL_SEARCH mario=5" --marker "NL_OVERRIDE_SAVED n64/Super Mario 64 (Europe) (En,Fr,De).z64 not64" --marker "NL_PREFLIGHT_FAIL Unsupported GM8P01" --marker "NL_VC_CHANNEL 000100014E4C5443 NL Testkanal" --marker "NL_VCMAP_SAVED n=2" --marker "NL_SELFTEST_COVERS" --marker "NL_ALLOC_IDLE 0" --marker NL_SELFTEST_OK --marker "NL_CRASH id=7"
 ```
 
 Chainload-Test in Dolphin (startet über `[debug] autostart` ein NES-Spiel der Fixtures; die Test-DOL `argv_echo` meldet die übergebenen Argumente):
@@ -59,6 +59,14 @@ python tools/dolphin_smoke.py --autostart "n64/Super Mario 64 (Europe) (En,Fr,De
 ```
 ```bash
 python tools/dolphin_smoke.py --autostart "n64/Mario Kart 64 (Europe).z64" --marker "NL_N64 n64/Mario Kart 64 (Europe).z64 vc" --marker "NL_LAUNCH_VC 000100014E4C5443" --marker "NL_ARGV argc="
+```
+
+Cover in Dolphin: das Fixture-PNG wird auf der Wii nach CMPR umgewandelt und im Cache abgelegt; `--cover-server` startet zusätzlich einen lokalen HTTP-Server (127.0.0.1, freier Port) mit zwei Test-Covern und löst über `[debug] cover_url` und `fetch_covers` „Fehlende Cover laden“ aus:
+```bash
+python tools/dolphin_smoke.py --marker "NL_COVER_CONVERTED nes/Super Mario Bros. (World)" --marker "NL_COVERS ready="
+```
+```bash
+python tools/dolphin_smoke.py --cover-server --marker "NL_NET ok" --marker "NL_COVER_DL RMCP01 EN ok" --marker "NL_COVER_DL GM8P01 US ok" --marker "NL_COVER_DL RMGP01 missing" --marker "NL_COVER_DL_DONE ok=2 missing=1 failed=0"
 ```
 
 Die CI baut `newlauncher.dol`, `nl_selftest.dol` und `argv_echo.dol` und lädt sie als Artefakte hoch.
@@ -85,11 +93,32 @@ sd:/newlauncher/n64_vc.ini   N64: Zuordnung Spiel → VC-Inject-Kanal (beim erst
 sd:/newlauncher/games.ini    N64: Startmethode je Spiel (beim ersten Speichern angelegt)
 sd:/newlauncher/favorites.ini, history.ini, log.txt
 <lib>:/newlauncher/cache/index.bin   Spiele-Index (vom Launcher geschrieben)
-<lib>:/newlauncher/cache/meta.bin    Metadaten (PC-Skript, ab M5)
+<lib>:/newlauncher/cache/meta.bin    Metadaten (prepare_meta.py)
+<lib>:/newlauncher/covers_src/<stamm>.png   Cover-Quellen (prepare_covers.py bzw. „Fehlende Cover laden“)
+<lib>:/newlauncher/cache/covers/<stamm>.tex Cover als CMPR-Textur (vom Launcher erzeugt)
 <lib>:/wbfs/Titel [ID6]/ID6.wbfs|.iso    Wii
 <lib>:/games/Titel [ID6]/game.iso        GameCube
 <lib>:/roms/nes|snes|gb|gbc|gba|n64/     ROMs
 ```
+
+## Cover und Metadaten
+
+Metadaten (Titel, Jahr, Hersteller, Genre) erzeugt ein PC-Skript als `<lib>/newlauncher/cache/meta.bin`. Wii/GC-Titel kommen aus `wiitdb.xml` von [GameTDB](https://www.gametdb.com/) (Download „wiitdb.zip“, entpacken), Retro-Titel aus den No-Intro-DATs von libretro (lädt das Skript selbst, `--offline` verzichtet darauf, `--dat-dir` nimmt eigene DATs):
+```bash
+python tools/prepare_meta.py --wiitdb wiitdb.xml --lang DE E:/
+```
+`--lang` wählt die Sprache der Wii/GC-Titel (`EN`, `DE`, `FR`, `JA`, …); fehlt sie in der Datenbank, gilt Englisch.
+
+Retro-Boxarts lädt ein zweites Skript von libretro-thumbnails nach `<lib>/newlauncher/covers_src/` (vorhandene PNGs bleiben, `--force` lädt neu):
+```bash
+python tools/prepare_covers.py E:/
+```
+
+Wii/GC-Cover lädt der Launcher selbst: HOME-Menü → Einstellungen → „Fehlende Cover laden“ holt für alle Wii/GC-Spiele ohne Cover das PNG von GameTDB. Die Region kommt aus `[covers] region` in `config.ini` (`auto` = Systemsprache, sonst `EN`, `DE`, `FR`, `US`, `JA`), mit Rückfall auf `EN`, `US` und `JA`. Der Fortschritt steht unten als Hinweis, am Ende fasst ein Dialog zusammen.
+
+Der Launcher wandelt jedes PNG beim ersten Anzeigen in eine CMPR-Textur unter `<lib>/newlauncher/cache/covers/` um. Wer ein Cover in `covers_src` austauscht, löscht danach `cache/covers` (oder nur die passende `.tex`), sonst bleibt die alte Textur.
+
+Nur für Tests: `[debug] cover_url` ersetzt die GameTDB-Adresse, `[debug] fetch_covers = 1` löst „Fehlende Cover laden“ nach `NL_READY` aus.
 
 ## Emulatoren
 
@@ -162,7 +191,7 @@ In Dolphin legen `deploy_dolphin.py` und `dolphin_smoke.py` einen Testkanal „N
 - **Suche:** filtert live über alle Konsolen, ohne Rücksicht auf Groß/klein, Akzente und No-Intro-Tags; B beendet den Suchmodus.
 - **Details:** A auf einem Spiel; „Starten“ startet den Emulator (siehe [Emulatoren](#emulatoren)), Favorit per Knopf oder Taste 1.
 
-Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel von 19 bis 7 Uhr); das Zahnrad unten rechts schaltet sie für die laufende Sitzung um (Hell → Dunkel → Automatisch), Einstellungen folgen mit M6.
+Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel von 19 bis 7 Uhr); das Zahnrad unten rechts schaltet sie für die laufende Sitzung um (Hell → Dunkel → Automatisch). Die Kachel „Einstellungen“ im HOME-Menü öffnet vorerst eine Aktionsliste (N64-VC-Zuordnung, „Fehlende Cover laden“); die Einstellungen selbst folgen mit M6.
 
 ## Log-Marker (Dolphin-Log, OSREPORT)
 
@@ -171,7 +200,7 @@ Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel
 | `NL_READY` | erster Frame gezeichnet |
 | `NL_ATLAS ok` | Schrift-Atlas aufgebaut |
 | `NL_ERROR <text>` | Start abgebrochen |
-| `NL_CMD <name>` | Befehl aus dem HOME-Menü bzw. Zahnrad (`exit_hbc`, `wii_menu`, `open_vc_map`, `power_off`, `cycle_theme`) |
+| `NL_CMD <name>` | Befehl aus dem HOME-Menü bzw. Zahnrad (`exit_hbc`, `wii_menu`, `open_vc_map`, `fetch_covers`, `power_off`, `cycle_theme`) |
 | `NL_ALLOC_IDLE <n>` | Selbsttest: Allokationen in 120 Leerlauf-Frames |
 | `NL_SELFTEST_OK` | Selbsttest bestanden |
 | `NL_PANIC <ausdruck> <datei>:<zeile>` | verletztes `NL_ASSERT` |
@@ -195,6 +224,14 @@ Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel
 | `NL_LAUNCH <schlüssel>` | Chainload beginnt |
 | `NL_AUTOSTART <schlüssel>` | Testmodus: `[debug] autostart` in `config.ini` startet das Spiel nach `NL_READY` |
 | `NL_ARGV argc=<n>`, `NL_ARGV <i> <wert>` | Test-DOL `argv_echo`: empfangene Argumente |
+| `NL_COVER_CONVERTED <stamm>` | PNG in CMPR-Textur umgewandelt und im Cache abgelegt |
+| `NL_COVER_FAIL <stamm> <grund>` | Cover nicht lesbar (Platzhalter bleibt) |
+| `NL_COVERS ready=<n>` | Cover-Thread untätig: Anzahl geladener Cover |
+| `NL_SELFTEST_COVERS ready=<n>` | Selbsttest: geladene Cover vor dem Leerlauf-Fenster |
+| `NL_NET ok`, `NL_NET_FAIL <code>` | Netzwerk für „Fehlende Cover laden“ bereit bzw. nicht verfügbar |
+| `NL_COVER_DL_START jobs=<n>` | „Fehlende Cover laden“: Anzahl fehlender Wii/GC-Cover |
+| `NL_COVER_DL <id6> <region> ok`, `NL_COVER_DL <id6> missing\|failed` | Ergebnis je Spiel |
+| `NL_COVER_DL_DONE ok=<n> missing=<n> failed=<n>` | Download fertig, Dialog offen |
 | `NL_WARN <text>` | nicht kritischer Fehler (z. B. kaputter Cache verworfen) |
 
 ## Schriften

@@ -41,7 +41,7 @@ using B = ui::RawInput::Button;
 // Fixture-Leiste: 0 Favoriten, 1 Zuletzt, 2 Wii, 3 GC, 4 GBA, 5 N64, 6 SNES, 7 GB, 8 NES.
 constexpr int kTypeStart = 182;          // Suche: "MARIO" per Zeiger tippen, je Taste 3 Frames
 constexpr const char* kTyped = "MARIO";
-constexpr int kIdleStart = 400, kIdleEnd = 520;
+constexpr int kIdleStart = 440, kIdleEnd = 560;
 constexpr const char* kSm64 = "n64/Super Mario 64 (Europe) (En,Fr,De).z64";
 constexpr const char* kMk64 = "n64/Mario Kart 64 (Europe).z64";
 constexpr u64 kTestChannel = 0x000100014E4C5443ull;  // tools/wii_title.py
@@ -105,15 +105,19 @@ ui::RawInput selftestInput(int frame, const SelftestView& v) {
         case 274: return press(B::A);
         case 290: return press(B::B);
         case 306: return press(B::B);
-        // M4: HOME → Kachel 2 (Einstellungen) → VC-Zuordnung; „Super Mario 64" dem Testkanal zuordnen, schließen
+        // M4/M5: HOME → Kachel 2 (Einstellungen) → Aktionsliste → „VC-Injects zuordnen“;
+        // „Super Mario 64" dem Testkanal zuordnen, schließen
         case 312: return press(B::HomeBtn);
         case 328: case 330: return press(B::DRight);
         case 334: return press(B::A);
-        case 362:
+        case 350: return press(B::A);
+        case 378:
             if (v.vcMap->focusedRow() != rowOf(*v.vcMap, kSm64)) return press(B::DDown);
             break;
-        case 366: return press(B::DRight);
-        case 370: return press(B::B);
+        case 382: return press(B::DRight);
+        case 386: return press(B::B);
+        // M5: zur GB-Leiste (GC → GBA → N64 → SNES → GB); das Tetris-Cover ist absichtlich kaputt (NL_COVER_FAIL)
+        case 404: case 406: case 408: case 410: return press(B::Plus);
         default: break;
     }
     if (frame >= 104 && frame <= 114 && isEven(frame)) return press(B::DRight);
@@ -179,7 +183,8 @@ void selftestAfterFrame(int frame, const SelftestView& v) {
         case 304: NL_ASSERT(v.scenes.depth() == 2); break;
         case 310: NL_ASSERT(v.scenes.depth() == 1); break;
         case 314: NL_ASSERT(v.scenes.depth() == 2); break;  // HOME-Menü
-        case 360: {
+        case 348: NL_ASSERT(v.scenes.top() == v.actions); break;  // Aktionsliste nach dem HOME-Menü
+        case 376: {
             NL_ASSERT(v.scenes.top() == v.vcMap);
             NL_ASSERT(v.vcMap->rows().size() == 2);
             NL_ASSERT(v.vcMap->channelCount() == 1);
@@ -188,10 +193,14 @@ void selftestAfterFrame(int frame, const SelftestView& v) {
             NL_ASSERT(v.vcMap->selection(mk) == std::optional<u64>(kTestChannel));
             break;
         }
-        case 368: NL_ASSERT(v.vcMap->selection(rowOf(*v.vcMap, kSm64)) == std::optional<u64>(kTestChannel)); break;
-        case 386: NL_ASSERT(v.scenes.depth() == 1); break;  // NL_VCMAP_SAVED n=2
+        case 384: NL_ASSERT(v.vcMap->selection(rowOf(*v.vcMap, kSm64)) == std::optional<u64>(kTestChannel)); break;
+        case 402: NL_ASSERT(v.scenes.depth() == 1); break;  // NL_VCMAP_SAVED n=2
+        case 412: NL_ASSERT(v.main.barIndex() == 7); break;  // GB
         case kIdleStart:
             NL_ASSERT(!v.scanRunning);
+            NL_ASSERT(v.covers->idle());              // M5: alle gewünschten Cover fertig
+            NL_ASSERT(v.covers->readyCount() >= 1);   // mindestens SMB aus der Favoritenleiste
+            log::line("NL_SELFTEST_COVERS ready=%u", static_cast<unsigned>(v.covers->readyCount()));
             g_allocs = 0;
             break;
         case kIdleEnd: {

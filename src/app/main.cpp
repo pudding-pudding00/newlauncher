@@ -483,7 +483,7 @@ int main(int, char**) {
         const u64 frameStart = gettime();
 #ifdef NL_SELFTEST
         const nl::app::SelftestView view{mainScene, scenes, debug, worker.running(), store, ctx, keyboard, &dialog,
-                                                 &details, &vcMapScene};
+                                                 &details, &vcMapScene, &actions, &covers};
         input.poll();  // Geräte weiter abfragen, Eingaben kommen aber aus dem Skript
         const nl::ui::InputFrame in = frame.begin(nl::app::selftestInput(frameNo, view));
 #else

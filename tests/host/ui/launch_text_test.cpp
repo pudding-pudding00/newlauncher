@@ -65,3 +65,8 @@ TEST_CASE("Text länger als Puffer wird mit … gekürzt, nie überlaufen") {
     for (std::size_t i = 0; i + 3 < u.size(); ++i)
         if (static_cast<u8>(u[i]) == 0xC3) CHECK(static_cast<u8>(u[i + 1]) == 0xBC);
 }
+
+TEST_CASE("launchErrorText: NoN64Path") {
+    const Texts t = render(LaunchFailure::NoN64Path, "Nintendo 64");
+    CHECK(std::string(t.text) == kStrNoN64Path);
+}

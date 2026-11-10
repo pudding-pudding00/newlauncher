@@ -6,6 +6,8 @@
 #include <doctest/doctest.h>
 #include <cstring>
 #include <string>
+#include <vector>
+#include "ui/strings.hpp"
 using namespace nl;
 using namespace nl::ui;
 
@@ -140,4 +142,91 @@ TEST_CASE_FIXTURE(Fixture, "MainScene: Confirm auf fokussierter Kachel öffnet D
     CHECK(std::string(d.game()->title) == std::string(s.infoTitle()));
     step(s, action(Action::NextConsole));  // Zuletzt: leer
     CHECK(step(s, action(Action::Confirm)).push == nullptr);
+}
+
+namespace {
+const Game kSm64{Console::N64, "n64/sm64.z64", "Super Mario 64", 1996, 1};
+N64Decision decision(bool vc, bool not64, bool wii64) {
+    N64Inputs in;
+    static const std::vector<u64> installed{0x000100014E414D50ULL};
+    if (vc) {
+        in.mappedTitle = 0x000100014E414D50ULL;
+        in.installedTitles = installed;
+    }
+    in.not64Dol = not64;
+    in.wii64Dol = wii64;
+    return decideN64(in);
+}
+constexpr int choiceOf(N64Method m) { return 1 + static_cast<int>(m); }
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "N64: Hoch fokussiert die Startmethode, Runter zurück auf Starten") {
+    DetailsScene d;
+    d.open(kSm64, false, 0);
+    step(d, action(Action::Up));
+    CHECK(d.focusedButton() == 0);  // ohne setN64 keine Zeile
+    d.setN64(decision(false, true, true), std::nullopt);
+    step(d, action(Action::Up));
+    CHECK(d.focusedButton() == DetailsScene::kFocusMethod);
+    step(d, action(Action::Down));
+    CHECK(d.focusedButton() == 0);
+    d.open(Game{Console::Nes, "nes/x.nes", "X", 0, 0}, false, 0);
+    step(d, action(Action::Up));
+    CHECK(d.focusedButton() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "N64: Rechts wechselt Automatisch → nächster verfügbarer Weg und meldet SetN64Method") {
+    DetailsScene d;
+    d.open(kSm64, false, 0);
+    d.setN64(decision(false, true, true), std::nullopt);
+    CHECK(d.methodChoice() == 0);
+    step(d, action(Action::Up));
+    SceneRequests r = step(d, action(Action::Right));
+    CHECK(r.command == AppCommand::SetN64Method);
+    CHECK(r.n64Choice == choiceOf(N64Method::Not64));
+    REQUIRE(r.game != nullptr);
+    CHECK(std::string(r.game->key) == "n64/sm64.z64");
+    CHECK(d.methodChoice() == choiceOf(N64Method::Not64));
+    r = step(d, action(Action::Right));
+    CHECK(r.n64Choice == choiceOf(N64Method::Wii64));
+    r = step(d, action(Action::Right));
+    CHECK(r.n64Choice == 0);
+    CHECK(d.methodChoice() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "N64: Links läuft rückwärts und überspringt Nicht-Verfügbares") {
+    DetailsScene d;
+    d.open(kSm64, false, 0);
+    d.setN64(decision(false, true, true), std::nullopt);
+    step(d, action(Action::Up));
+    SceneRequests r = step(d, action(Action::Left));
+    CHECK(r.n64Choice == choiceOf(N64Method::Wii64));
+    step(d, action(Action::Left));
+    r = step(d, action(Action::Left));
+    CHECK(r.n64Choice == 0);  // Not64 → Automatisch, VC übersprungen
+}
+
+TEST_CASE_FIXTURE(Fixture, "N64: gesetzter, nicht verfügbarer Override bleibt sichtbar gewählt") {
+    DetailsScene d;
+    d.open(kSm64, false, 0);
+    const N64Decision dec = decision(false, true, false);
+    REQUIRE(dec.why[static_cast<std::size_t>(N64Method::Wii64)] == N64Unavailable::DolMissing);
+    d.setN64(dec, N64Method::Wii64);
+    CHECK(d.methodChoice() == choiceOf(N64Method::Wii64));
+    step(d, action(Action::Up));
+    const SceneRequests r = step(d, action(Action::Right));
+    CHECK(r.n64Choice == 0);
+}
+
+TEST_CASE("Hinweiszeile nennt Gründe") {
+    char buf[256];
+    n64HintLine(decision(false, true, false), buf, sizeof buf);
+    CHECK(std::string(buf) == "VC-Inject: nicht zugeordnet · Wii64: DOL fehlt");
+    N64Inputs in;
+    in.override_ = N64Method::Wii64;
+    in.not64Dol = true;
+    n64HintLine(decideN64(in), buf, sizeof buf);
+    CHECK(std::string(buf) == std::string(kStrOverrideIgnored) + " VC-Inject: nicht zugeordnet · Wii64: DOL fehlt");
+    n64HintLine(decision(true, true, true), buf, sizeof buf);
+    CHECK(std::string(buf).empty());
 }

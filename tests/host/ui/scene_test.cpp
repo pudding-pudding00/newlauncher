@@ -206,3 +206,9 @@ TEST_CASE_FIXTURE(Fixture, "pop und push in einer Anforderung: erst ausblenden, 
     CHECK(next.enters == 1);
     CHECK(st.depth() == 2);
 }
+
+TEST_CASE("appCommandName für die M4-Befehle") {
+    CHECK(std::strcmp(appCommandName(AppCommand::SetN64Method), "set_n64_method") == 0);
+    CHECK(std::strcmp(appCommandName(AppCommand::OpenVcMap), "open_vc_map") == 0);
+    CHECK(std::strcmp(appCommandName(AppCommand::SaveVcMap), "save_vc_map") == 0);
+}

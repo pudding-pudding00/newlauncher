@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "gfx/text.hpp"
+#include "ui/launch_text.hpp"
 #include "ui/layout.hpp"
 #include "ui/strings.hpp"
 
@@ -15,6 +16,20 @@ using gfx::Rect;
 
 constexpr float kMargin = 32.0f, kTop = 32.0f, kCoverW = 200.0f, kCoverH = 280.0f, kInfoBarH = 72.0f;
 constexpr float kButtonW = 168.0f, kButtonH = 44.0f;
+constexpr float kMethodH = 40.0f, kMethodGap = 16.0f;
+constexpr int kChoiceCount = 1 + static_cast<int>(kN64MethodCount);
+
+constexpr N64Method methodOf(int choice) { return static_cast<N64Method>(choice - 1); }
+
+const char* whyText(N64Unavailable why) {
+    switch (why) {
+        case N64Unavailable::NotMapped: return kStrWhyNotMapped;
+        case N64Unavailable::NotInstalled: return kStrWhyNotInstalled;
+        case N64Unavailable::DolMissing: return kStrWhyDolMissing;
+        case N64Unavailable::None: break;
+    }
+    return "";
+}
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
 
@@ -60,6 +75,49 @@ int detailsInfoLine(const Game& g, u32 lastPlayedUnix, char* out, std::size_t ca
     return len;
 }
 
+int n64HintLine(const N64Decision& d, char* out, std::size_t cap) {
+    if (cap == 0) return 0;
+    std::string s;
+    if (d.overrideIgnored || d.mappingIgnored) s = kStrOverrideIgnored;
+    bool first = true;
+    for (int i = 0; i < static_cast<int>(kN64MethodCount); ++i) {
+        const N64Unavailable why = d.why[static_cast<std::size_t>(i)];
+        if (why == N64Unavailable::None) continue;
+        if (!first) s += " \xC2\xB7 ";
+        else if (!s.empty()) s += ' ';
+        first = false;
+        s += n64MethodLabel(static_cast<N64Method>(i));
+        s += ": ";
+        s += whyText(why);
+    }
+    return static_cast<int>(copyEllipsized(out, cap, s));
+}
+
+void DetailsScene::setN64(const N64Decision& decision, std::optional<N64Method> override_) {
+    if (!hasGame_ || game_.console != Console::N64) return;
+    hasN64_ = true;
+    n64_ = decision;
+    choice_ = override_ ? 1 + static_cast<int>(*override_) : 0;
+    n64HintLine(n64_, hint_, sizeof hint_);
+    refreshN64Text();
+}
+
+bool DetailsScene::choiceAllowed(int c) const { return c == 0 || n64_.available(methodOf(c)); }
+
+void DetailsScene::refreshN64Text() {
+    char value[80];
+    if (choice_ != 0) {
+        std::snprintf(value, sizeof value, "%s", n64MethodLabel(methodOf(choice_)));
+    } else {
+        const char* autoLabel = nullptr;
+        for (int c = 1; c < kChoiceCount && autoLabel == nullptr; ++c)
+            if (n64_.available(methodOf(c))) autoLabel = n64MethodLabel(methodOf(c));
+        if (autoLabel != nullptr) std::snprintf(value, sizeof value, kStrMethodAuto, autoLabel);
+        else std::snprintf(value, sizeof value, "%s", kStrMethodAutoNone);
+    }
+    std::snprintf(method_, sizeof method_, kStrMethod, value);
+}
+
 void DetailsScene::open(const Game& game, bool favorite, u32 lastPlayedUnix) {
     key_ = game.key != nullptr ? game.key : "";
     title_ = game.title != nullptr ? game.title : "";
@@ -75,6 +133,11 @@ void DetailsScene::open(const Game& game, bool favorite, u32 lastPlayedUnix) {
     lastPlayed_ = lastPlayedUnix;
     focus_ = 0;
     keysSincePointerMove_ = false;
+    hasN64_ = false;
+    n64_ = N64Decision{};
+    choice_ = 0;
+    method_[0] = '\0';
+    hint_[0] = '\0';
     detailsInfoLine(game_, lastPlayed_, info_, sizeof info_);
 }
 
@@ -97,9 +160,30 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, Sce
             keysSincePointerMove_ = false;
         }
     }
-    if (in.pressed(Action::Left) && focus_ > 0) --focus_;
-    if (in.pressed(Action::Right) && focus_ < 1) ++focus_;
-    if (in.pressed(Action::Left) || in.pressed(Action::Right)) keysSincePointerMove_ = true;
+    if (focus_ == kFocusMethod) {
+        const int dir = in.pressed(Action::Right) ? 1 : in.pressed(Action::Left) ? -1 : 0;
+        if (dir != 0) {
+            keysSincePointerMove_ = true;
+            int c = choice_;
+            do c = (c + dir + kChoiceCount) % kChoiceCount;
+            while (!choiceAllowed(c));
+            choice_ = c;
+            refreshN64Text();
+            out.command = AppCommand::SetN64Method;
+            out.game = &game_;
+            out.n64Choice = static_cast<u8>(choice_);
+            return;
+        }
+        if (in.pressed(Action::Down)) {
+            focus_ = 0;
+            keysSincePointerMove_ = true;
+        }
+    } else {
+        if (in.pressed(Action::Left) && focus_ > 0) --focus_;
+        if (in.pressed(Action::Right) && focus_ < 1) ++focus_;
+        if (in.pressed(Action::Up) && hasN64_) focus_ = kFocusMethod;
+        if (in.pressed(Action::Left) || in.pressed(Action::Right) || in.pressed(Action::Up)) keysSincePointerMove_ = true;
+    }
 
     if (in.pressed(Action::Back)) {
         out.pop = true;
@@ -111,7 +195,7 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, Sce
         return;
     }
     const bool pointerOff = in.pointerValid && hit < 0 && !keysSincePointerMove_;
-    if (in.pressed(Action::Confirm) && !pointerOff && hasGame_) {
+    if (in.pressed(Action::Confirm) && !pointerOff && hasGame_ && focus_ != kFocusMethod) {
         out.command = focus_ == 0 ? AppCommand::Launch : AppCommand::ToggleFavorite;
         out.game = &game_;
     }
@@ -147,10 +231,22 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, info_, t.text2);
     y += body.lineHeight + 12.0f;
     const std::string_view desc(description_);
-    n = gfx::wrapText(body, desc, w, lines);
+    n = gfx::wrapText(body, desc, w, std::span<gfx::Line>(lines, hasN64_ ? 2 : 3));
     for (int i = 0; i < n; ++i) {
         gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, desc.substr(lines[i].start, lines[i].length), t.text);
         y += body.lineHeight;
+    }
+
+    // N64: Startmethode zwischen Beschreibung und Knöpfen, Gründe unter den Knöpfen
+    if (hasN64_) {
+        const Rect b0 = buttonRect(ctx, 0);
+        const Rect row{b0.x, b0.y - kMethodGap - kMethodH, 2 * kButtonW + 16.0f, kMethodH};
+        const bool focused = focus_ == kFocusMethod;
+        if (focused) gfx::roundRect(dl, s, Rect{row.x - 3, row.y - 3, row.w + 6, row.h + 6}, kMethodH / 2 + 3, t.accent);
+        gfx::roundRect(dl, s, row, kMethodH / 2, t.tile);
+        gfx::drawTextEllipsis(dl, body, row.x + 16, row.y + row.h / 2 + (body.ascent - body.descent) / 2, row.w - 32, method_, t.text);
+        if (hint_[0] != '\0')
+            gfx::drawTextEllipsis(dl, body, b0.x, b0.y + kButtonH + 12 + body.ascent, w, hint_, t.text2);
     }
 
     // Knöpfe
@@ -158,7 +254,7 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const char* labels[2] = {kStrStart, favorite_ ? kStrFavRemove : kStrFavorite};
     for (int i = 0; i < 2; ++i) {
         const Rect r = buttonRect(ctx, i);
-        const bool focused = i == focus_;
+        const bool focused = i == focus_;  // kFocusMethod hebt keinen Knopf hervor
         const Color bg = focused ? t.accent : (i == 0 ? t.accentSoft : t.tile);
         if (focused) gfx::roundRect(dl, s, Rect{r.x - 3, r.y - 3, r.w + 6, r.h + 6}, kButtonH / 2 + 3, t.accent);
         gfx::roundRect(dl, s, r, kButtonH / 2, bg);

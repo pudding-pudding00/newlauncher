@@ -22,7 +22,12 @@ struct UiContext {
     int day = 1, month = 1, year = 2026, weekday = 0;  // weekday 0 = Montag
 };
 
-enum class AppCommand : u8 { None, ExitToHbc, WiiMenu, PowerOff, CycleTheme, ToggleFavorite, Launch };
+enum class AppCommand : u8 {
+    None, ExitToHbc, WiiMenu, PowerOff, CycleTheme, ToggleFavorite, Launch,
+    SetN64Method,  // game + n64Choice
+    OpenVcMap,
+    SaveVcMap,
+};
 const char* appCommandName(AppCommand c);
 
 class Scene;
@@ -30,7 +35,8 @@ struct SceneRequests {
     Scene* push = nullptr;
     bool pop = false;
     AppCommand command = AppCommand::None;
-    const Game* game = nullptr;  // Ziel von ToggleFavorite und Launch
+    const Game* game = nullptr;  // Ziel von ToggleFavorite, Launch und SetN64Method
+    u8 n64Choice = 0;            // SetN64Method: 0 = Automatisch, sonst 1 + N64Method
 };
 
 class Scene {

@@ -40,6 +40,14 @@ inline constexpr const char* kStrRomMissing = "Spieldatei nicht gefunden:\n%s";
 inline constexpr const char* kStrUnsupported = "Starten für %s folgt in einer späteren Version.";
 inline constexpr const char* kStrArgsTooLong = "Pfad zu lang für den Emulator.";
 inline constexpr const char* kStrOk = "OK";
+inline constexpr const char* kStrNoN64Path = "Kein N64-Startweg verfügbar.\nVC-Inject zuordnen oder Not64/Wii64 auf die SD legen.";
+inline constexpr const char* kStrMethod = "Startmethode: %s";
+inline constexpr const char* kStrMethodAuto = "Automatisch (→ %s)";
+inline constexpr const char* kStrMethodAutoNone = "Automatisch (kein Weg)";
+inline constexpr const char* kStrWhyNotMapped = "nicht zugeordnet";
+inline constexpr const char* kStrWhyNotInstalled = "Kanal nicht installiert";
+inline constexpr const char* kStrWhyDolMissing = "DOL fehlt";
+inline constexpr const char* kStrOverrideIgnored = "Gewählter Weg nicht verfügbar – automatisch gewählt.";
 
 inline constexpr const char* kStrWeekdays[7] = {"Montag",  "Dienstag", "Mittwoch", "Donnerstag",
                                                  "Freitag", "Samstag",  "Sonntag"};

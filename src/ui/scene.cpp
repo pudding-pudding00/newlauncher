@@ -10,6 +10,9 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::CycleTheme: return "cycle_theme";
         case AppCommand::ToggleFavorite: return "toggle_favorite";
         case AppCommand::Launch: return "launch";
+        case AppCommand::SetN64Method: return "set_n64_method";
+        case AppCommand::OpenVcMap: return "open_vc_map";
+        case AppCommand::SaveVcMap: return "save_vc_map";
         case AppCommand::None: break;
     }
     return "none";

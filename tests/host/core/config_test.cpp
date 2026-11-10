@@ -85,3 +85,68 @@ TEST_CASE("configFromIni: [debug] cover_url und fetch_covers") {
     CHECK(c.debugCoverUrl == "http://127.0.0.1:8123");
     CHECK(c.debugFetchCovers);
 }
+
+TEST_CASE("formatClock") {
+    CHECK(formatClock(0) == "00:00");
+    CHECK(formatClock(1140) == "19:00");
+    CHECK(formatClock(1410) == "23:30");
+}
+
+TEST_CASE("configToIniText erhält [debug], Kommentare und unbekannte Schlüssel") {
+    const std::string before =
+        "; Kommentar oben\n[general]\nlanguage = auto\nfoo = 1\n# noch ein Kommentar\n[debug]\nautostart = nes/x.nes\n";
+    const std::string after = configToIniText(Config{}, before);
+    CHECK(after.find("; Kommentar oben\n") != std::string::npos);
+    CHECK(after.find("# noch ein Kommentar\n") != std::string::npos);
+    CHECK(after.find("foo = 1\n") != std::string::npos);
+    CHECK(after.find("[debug]\nautostart = nes/x.nes\n") != std::string::npos);
+    // Fehlende Abschnitte und Schlüssel kommen dazu.
+    CHECK(after.find("[audio]") != std::string::npos);
+    CHECK(after.find("region = auto") != std::string::npos);
+}
+
+TEST_CASE("configToIniText Round-Trip") {
+    Config c;
+    c.language = Config::Language::En;
+    c.themeMode = ThemeMode::Auto;
+    c.darkFromMin = 19 * 60 + 30;
+    c.music = false;
+    c.musicVolume = 40;
+    c.sounds = false;
+    c.library = Config::LibraryDevice::Sd;
+    c.coverRegion = "FR";
+    const std::string text = configToIniText(c, defaultConfigText());
+    const Config r = configFromIni(IniDoc::parse(text));
+    CHECK(r.language == Config::Language::En);
+    CHECK(r.themeMode == ThemeMode::Auto);
+    CHECK(r.darkFromMin == 19 * 60 + 30);
+    CHECK(r.darkToMin == 7 * 60);
+    CHECK(r.music == false);
+    CHECK(r.musicVolume == 40);
+    CHECK(r.sounds == false);
+    CHECK(r.library == Config::LibraryDevice::Sd);
+    CHECK(r.coverRegion == "FR");
+    CHECK(text.find("language = en") != std::string::npos);
+    CHECK(text.find("dark_from = 19:30") != std::string::npos);
+    CHECK(text.find("music = 0") != std::string::npos);
+    CHECK(text.find("region = FR") != std::string::npos);
+}
+
+TEST_CASE("configToIniText: ungültiger Wert wird als Standard geschrieben") {
+    const std::string before = "[audio]\nmusic_volume = 300\n";
+    const Config c = configFromIni(IniDoc::parse(before));
+    const std::string after = configToIniText(c, before);
+    CHECK(after.find("music_volume = 60") != std::string::npos);
+    CHECK(after.find("300") == std::string::npos);
+}
+
+TEST_CASE("configToIniText behält CRLF und schreibt jeden Schlüssel nur einmal") {
+    const std::string before = "[general]\r\nlanguage = de\r\n[theme]\r\nmode = dark\r\n";
+    const std::string after = configToIniText(Config{}, before);
+    CHECK(after.find("language = auto\r\n") != std::string::npos);
+    CHECK(after.find("mode = light\r\n") != std::string::npos);
+    CHECK(after.find("\n[") == after.find("\r\n[") + 1);
+    std::size_t n = 0;
+    for (std::size_t p = after.find("language ="); p != std::string::npos; p = after.find("language =", p + 1)) ++n;
+    CHECK(n == 1);
+}

@@ -17,6 +17,7 @@ add_library(nl_core STATIC
     src/core/crash_report.cpp
     src/core/ini.cpp
     src/core/config.cpp
+    src/core/settings_model.cpp
     src/core/utf8.cpp
     src/core/text_fold.cpp
     src/core/bin_io.cpp

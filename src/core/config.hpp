@@ -30,5 +30,11 @@ struct Config {
 Config configFromIni(const IniDoc& ini);
 std::string defaultConfigText();
 int parseClock(std::string_view hhmm, int fallback);  // "19:00" → 1140
+std::string formatClock(int minuteOfDay);              // 1140 → "19:00"
+
+// Schreibt alle Schlüssel aus Spec 5.4 in den bisherigen Dateitext. Kommentare, unbekannte Schlüssel,
+// fremde Abschnitte (auch [debug]) und das Zeilenende (CRLF/LF) bleiben erhalten; fehlende Schlüssel
+// kommen ans Ende ihres Abschnitts, fehlende Abschnitte ans Dateiende.
+std::string configToIniText(const Config& c, std::string_view previousText);
 
 }  // namespace nl

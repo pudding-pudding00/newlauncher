@@ -60,7 +60,7 @@ class DolphinToolsTest(unittest.TestCase):
 
     def test_dolphin_command_always_isolates_user_dir(self):
         cmd = dolphin_command(Path("D.exe"), self.user, Path("a.dol"))
-        self.assertEqual(cmd, ["D.exe", "-u", str(self.user), "-b", "-e", "a.dol"])
+        self.assertEqual(cmd, ["D.exe", "-u", str(self.user), "-b", "-C", "Dolphin.DSP.Volume=0", "-e", "a.dol"])
 
     def test_reset_log_removes_stale_marker(self):
         log_path(self.user).parent.mkdir(parents=True)

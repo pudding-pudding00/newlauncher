@@ -15,6 +15,16 @@ add_library(nl_core STATIC
     src/core/console.cpp
     src/core/frame_stats.cpp
     src/core/crash_report.cpp
+    src/core/ini.cpp
+    src/core/config.cpp
+    src/core/utf8.cpp
+    src/core/text_fold.cpp
+    src/core/bin_io.cpp
+    src/core/index_file.cpp
+    src/core/meta_db.cpp
+    src/core/disc_header.cpp
+    src/core/scanner.cpp
+    src/core/library_store.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp
@@ -28,6 +38,10 @@ add_library(nl_core STATIC
     src/ui/home_menu.cpp
     src/ui/debug_overlay.cpp
     src/ui/pointer_cursor.cpp
+    src/ui/startup_scene.cpp
+    src/ui/jump_bar.cpp
+    src/ui/keyboard.cpp
+    src/ui/details_scene.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 nl_apply_flags(nl_core)
@@ -49,6 +63,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/video.cpp
         src/platform/wii_input.cpp
         src/platform/crash.cpp
+        src/platform/storage.cpp
+        src/platform/std_fs.cpp
+        src/platform/scan_worker.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp
     )
@@ -57,7 +74,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         add_executable(${name} ${ARGN})
         target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS})
         target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
-        target_link_libraries(${name} PRIVATE nl_core nl_fonts ${FREETYPE_STATIC_LIBRARIES} wiiuse bte)
+        target_link_libraries(${name} PRIVATE nl_core nl_fonts ${FREETYPE_STATIC_LIBRARIES} fat wiiuse bte)
         target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}")
         nl_apply_flags(${name})
         ogc_create_dol(${name})

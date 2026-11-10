@@ -14,6 +14,25 @@ inline constexpr const char* kStrHomeCloses = "HOME schließt";
 inline constexpr const char* kStrNoGames = "Keine Spiele";
 inline constexpr const char* kStrAppearance = "Darstellung";
 inline constexpr const char* kStrPlayer = "Spieler";
+inline constexpr const char* kStrWaitUsb = "Warte auf USB …";
+inline constexpr const char* kStrNoUsb = "Kein USB-Gerät gefunden";
+inline constexpr const char* kStrRetry = "Erneut versuchen";
+inline constexpr const char* kStrUseSd = "SD verwenden";
+inline constexpr const char* kStrScanning = "Bibliothek wird durchsucht …";
+inline constexpr const char* kStrFiles = "Dateien";
+inline constexpr const char* kStrSearch = "Suche";
+inline constexpr const char* kStrSearchHint = "Titel eingeben …";
+inline constexpr const char* kStrNoResults = "Keine Treffer";
+inline constexpr const char* kStrKeySpace = "Leerzeichen";
+inline constexpr const char* kStrKeyDelete = "Löschen";
+inline constexpr const char* kStrKeyDone = "Fertig";
+inline constexpr const char* kStrLastPlayed = "zuletzt";
+inline constexpr const char* kStrStart = "Starten";
+inline constexpr const char* kStrFavorite = "Favorit";
+inline constexpr const char* kStrFavRemove = "Favorit entfernen";
+inline constexpr const char* kStrDetailsHelp = "A Starten · B Zurück · 1 Favorit";
+inline constexpr const char* kStrFavAdded = "Zu Favoriten hinzugefügt";
+inline constexpr const char* kStrFavRemoved = "Aus Favoriten entfernt";
 
 inline constexpr const char* kStrWeekdays[7] = {"Montag",  "Dienstag", "Mittwoch", "Donnerstag",
                                                  "Freitag", "Samstag",  "Sonntag"};

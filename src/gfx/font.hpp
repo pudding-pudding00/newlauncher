@@ -2,6 +2,7 @@
 // Schriftmodell (Spec 3.7): drei Größen, zwei Schnitte, Glyphen für Latin-1 plus „…".
 
 #include "core/types.hpp"
+#include "core/utf8.hpp"
 #include "gfx/draw_list.hpp"
 
 #include <cstddef>
@@ -42,8 +43,6 @@ struct FontSet {
 
 int glyphIndex(u32 codepoint);  // unbekannt → Index von '?'
 
-// Liest einen Codepoint ab `pos` und rückt `pos` um mindestens 1 vor.
-// Ungültige, überlange, abgeschnittene Folgen und Surrogate ergeben '?'.
-u32 decodeUtf8(std::string_view s, std::size_t& pos);
+using nl::decodeUtf8;  // liegt in core/utf8.hpp
 
 }  // namespace nl::gfx

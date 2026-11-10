@@ -12,6 +12,10 @@ struct Game {
     const char* title;  // UTF-8
     u16 year;           // 0 = unbekannt
     u8 players;         // 0 = unbekannt
+    const char* description = nullptr;  // aus meta.bin, sonst nullptr
+    const char* path = nullptr;         // relativ zum Bibliotheksgerät
+    u64 size = 0;
+    u8 flags = 0;                       // IndexFlags
 };
 
 }  // namespace nl

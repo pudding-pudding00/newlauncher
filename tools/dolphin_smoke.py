@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from deploy_dolphin import DEFAULT_DOL, DIST_DIR, deploy
+from deploy_dolphin import DEFAULT_DOL, DIST_DIR, FIXTURES_DIR, deploy
 from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_path, reset_log,
                      sd_sync_dir, wait_for_markers, write_dev_config)
 
@@ -23,6 +23,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--marker", action="append", dest="markers",
                         help="Log-Marker, der erscheinen muss (mehrfach angebbar)")
+    parser.add_argument("--no-fixtures", dest="fixtures", action="store_false",
+                        help="Fixture-Bibliothek nicht auf die SD kopieren")
     args = parser.parse_args(argv)
     markers = args.markers or DEFAULT_MARKERS
 
@@ -37,7 +39,11 @@ def main(argv: list[str] | None = None) -> int:
         # Nur der Launcher selbst wird als boot.dol installiert. Andere DOLs (z. B. nl_selftest.dol)
         # startet Dolphin direkt per -e; sie dürfen den Launcher auf der SD nicht ersetzen.
         is_launcher = args.dol.name == DEFAULT_DOL.name
-        deploy(args.dol if is_launcher else None, sd_sync_dir(user_dir), DIST_DIR)
+        sd = sd_sync_dir(user_dir)
+        deploy(args.dol if is_launcher else None, sd, DIST_DIR, FIXTURES_DIR if args.fixtures else None)
+        if args.fixtures:
+            # Ohne alten Index startet der Launcher mit einem vollständigen Scan der Fixtures.
+            (sd / "newlauncher/cache/index.bin").unlink(missing_ok=True)
         reset_log(user_dir)
     except OSError as e:
         print(f"SMOKE FEHLER: Dev-Ordner nicht vorbereitet (läuft Dolphin noch?): {e}")

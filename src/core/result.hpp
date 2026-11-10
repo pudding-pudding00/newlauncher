@@ -19,6 +19,7 @@ enum class ErrorCode : std::uint16_t {
     NotMounted,
     Timeout,
     Unsupported,
+    Cancelled,
 };
 
 struct Error {

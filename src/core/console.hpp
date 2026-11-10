@@ -2,6 +2,8 @@
 // Konsolentabelle (Spec 5.3). Die enum-Reihenfolge ist die Anzeige-Reihenfolge:
 // nach Generation, innerhalb einer Generation Heimkonsole vor Handheld.
 
+#include <array>
+
 #include "core/types.hpp"
 
 namespace nl {
@@ -16,6 +18,8 @@ struct ConsoleInfo {
     const char* name;   // voller Name, z. B. "Nintendo 64"
     u8 generation;
     bool handheld;
+    const char* folder;                       // relativ zum Bibliotheksgerät (Spec 5.3)
+    std::array<const char*, 3> extensions;    // klein, mit Punkt; nullptr = unbenutzt
 };
 
 const ConsoleInfo& consoleInfo(Console c);

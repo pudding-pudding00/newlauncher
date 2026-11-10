@@ -28,4 +28,11 @@ void Video::present(int index) {
     VIDEO_WaitVSync();
 }
 
+void shutdownVideo() {
+    VIDEO_SetBlack(true);
+    VIDEO_Flush();
+    VIDEO_WaitVSync();
+    VIDEO_WaitVSync();
+}
+
 }  // namespace nl::platform

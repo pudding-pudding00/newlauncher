@@ -6,6 +6,7 @@
 
 #include "core/easing.hpp"
 #include "core/library_store.hpp"
+#include "ui/cover_provider.hpp"
 #include "ui/details_scene.hpp"
 #include "ui/jump_bar.hpp"
 #include "ui/keyboard.hpp"
@@ -30,6 +31,8 @@ public:
     void showToast(const char* text);                     // ersetzt die Infozeile für 2 s
     void setFavoriteKeys(const LibraryStore* store) { store_ = store; }  // für die Favoriten-Markierung
     void setJumpBar(Scene* jumpBar) { jumpBar_ = jumpBar; }
+    // nullptr = immer Platzhalter. update() fordert sichtbare Kacheln und zwei Reihen darüber/darunter an.
+    void setCovers(CoverProvider* covers) { covers_ = covers; }
     void setKeyboard(Scene* keyboard) { keyboard_ = keyboard; }
     // Confirm auf fokussierter Kachel öffnet die Detailansicht; store liefert Favorit und Verlauf (darf nullptr sein).
     void setDetails(DetailsScene* details, const LibraryStore* store) {
@@ -71,6 +74,7 @@ private:
     void drawTopBar(const UiContext& ctx, gfx::DrawList& dl) const;
     void drawInfoBar(const UiContext& ctx, gfx::DrawList& dl) const;
     const Game* focusedGame() const;
+    void requestCovers();
 
     Library lib_;
     void rebuildBar();
@@ -92,6 +96,7 @@ private:
     Scene* jumpBar_ = nullptr;
     Scene* keyboard_ = nullptr;
     DetailsScene* details_ = nullptr;
+    CoverProvider* covers_ = nullptr;
     const LibraryStore* detailsStore_ = nullptr;
     u32 bucketMask_ = 0;
     bool searchActive_ = false;

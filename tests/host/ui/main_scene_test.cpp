@@ -1,9 +1,12 @@
 #include "core/library_store.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/test_library.hpp"
+#include "support/fake_covers.hpp"
 #include "support/fake_font.hpp"
 #include <doctest/doctest.h>
+#include <cstdio>
 #include <string>
+#include <vector>
 using namespace nl;
 using namespace nl::ui;
 
@@ -406,4 +409,96 @@ TEST_CASE_FIXTURE(Fixture, "Favorit im Favoriten-Eintrag entfernen: kein Zugriff
     CHECK(s.barIndex() == 0);
     CHECK(std::string(s.infoTitle()) == "C");
     CHECK(s.focusIndex() == 1);
+}
+
+namespace {
+struct ManyGames {
+    std::vector<std::string> keys, titles;
+    std::vector<Game> games;
+    explicit ManyGames(int n) {
+        for (int i = 0; i < n; ++i) {
+            char buf[16];
+            std::snprintf(buf, sizeof buf, "%02d", i);
+            keys.push_back(std::string("nes/") + buf);
+            titles.push_back(std::string("Spiel ") + buf);
+        }
+        for (int i = 0; i < n; ++i) games.push_back(Game{Console::Nes, keys[i].c_str(), titles[i].c_str(), 0, 0});
+    }
+    Library library() const { return Library{games, {}, {}}; }
+};
+
+bool hasCoverBatch(const gfx::DrawList& dl, gfx::TextureId tex) {
+    for (const gfx::Batch& b : dl.batches())
+        if (b.texture == tex) return true;
+    return false;
+}
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "Cover: sichtbare Kacheln Visible, zwei Reihen darunter Prefetch, Rest gar nicht") {
+    const ManyGames many(60);
+    MainScene s(many.library());
+    test::FakeCovers covers;
+    s.setCovers(&covers);
+    step(s, InputFrame{});
+    const GridModel& g = s.grid();
+    const float top = g.viewTop(), bottom = top + g.viewHeight();
+    int visible = 0, prefetch = 0;
+    for (int i = 0; i < g.count(); ++i) {
+        const gfx::Rect r = g.tileRect(i, 0.0f);
+        const auto& c = covers.wants[many.keys[i]];
+        CAPTURE(i);
+        if (r.y + r.h >= top && r.y <= bottom) {
+            CHECK(c.visible == 1);
+            CHECK(c.prefetch == 0);
+            ++visible;
+        } else if (r.y <= bottom + 2 * g.rowPitch()) {
+            CHECK(c.prefetch == 1);
+            CHECK(c.visible == 0);
+            ++prefetch;
+        } else {
+            CHECK(c.visible + c.prefetch == 0);
+        }
+    }
+    CHECK(visible > 0);
+    CHECK(prefetch > 0);
+    CHECK(covers.wants["nes/59"].visible + covers.wants["nes/59"].prefetch == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Cover: Quad mit Textur und Alpha aus dem Provider") {
+    const ManyGames many(3);
+    MainScene s(many.library());
+    test::FakeCovers covers;
+    covers.views["nes/00"] = CoverView{7, 0.5f};
+    s.setCovers(&covers);
+    step(s, InputFrame{});
+    dl.clear();
+    s.draw(ctx, dl);
+    const gfx::Batch* cover = nullptr;
+    for (const gfx::Batch& b : dl.batches())
+        if (b.texture == 7) cover = &b;
+    REQUIRE(cover != nullptr);
+    CHECK(cover->vertexCount == 4);
+    const gfx::Vertex& v = dl.vertices()[cover->firstVertex];
+    CHECK((v.color.a == 127 || v.color.a == 128));
+    CHECK(v.u == 0.0f);
+    CHECK(v.v == 0.0f);
+    // Seitenverhältnis 5:7
+    const gfx::Vertex& br = dl.vertices()[cover->firstVertex + 2];
+    CHECK((br.x - v.x) / (br.y - v.y) == doctest::Approx(5.0 / 7.0).epsilon(0.01));
+}
+
+TEST_CASE_FIXTURE(Fixture, "Cover: ohne Textur bleibt der Platzhalter, ohne Provider auch") {
+    const ManyGames many(3);
+    MainScene s(many.library());
+    test::FakeCovers covers;
+    s.setCovers(&covers);
+    step(s, InputFrame{});
+    dl.clear();
+    s.draw(ctx, dl);
+    for (const gfx::Batch& b : dl.batches()) CHECK(b.texture == 0);
+    s.setCovers(nullptr);
+    step(s, InputFrame{});
+    dl.clear();
+    s.draw(ctx, dl);
+    CHECK_FALSE(hasCoverBatch(dl, 7));
 }

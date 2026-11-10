@@ -57,9 +57,9 @@ void VcMapScene::refreshText(int row) {
     std::string& out = right_[static_cast<std::size_t>(row)];
     const int idx = channelIndex(r.mapped);
     if (idx >= 0) out = channelDisplayName(channels_[static_cast<std::size_t>(idx)]);
-    else if (r.mapped) out = fill(kStrVcNotInstalled, formatTitleId(*r.mapped));
-    else if (r.suggestion && *r.suggestion < channels_.size()) out = fill(kStrVcSuggest, channelDisplayName(channels_[*r.suggestion]));
-    else out = kStrVcNone;
+    else if (r.mapped) out = fill(tr(Str::VcNotInstalled), formatTitleId(*r.mapped));
+    else if (r.suggestion && *r.suggestion < channels_.size()) out = fill(tr(Str::VcSuggest), channelDisplayName(channels_[*r.suggestion]));
+    else out = tr(Str::VcNone);
 }
 
 void VcMapScene::update(const UiContext&, const InputFrame& in, float, SceneRequests& out) {
@@ -98,16 +98,16 @@ void VcMapScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     gfx::fillRect(dl, s, Rect{0, kHeaderH, ctx.width, 3}, t.accent);
     const gfx::FontFace& head = ctx.fonts->face(FontSize::Title, FontWeight::Medium);
     gfx::drawTextEllipsis(dl, head, kMargin, kHeaderH / 2 + (head.ascent - head.descent) / 2, ctx.width - 2 * kMargin,
-                          kStrVcMapTitle, t.text);
+                          tr(Str::VcMapTitle), t.text);
 
     const gfx::FontFace& body = ctx.fonts->face(FontSize::Body, FontWeight::Regular);
     const float w = ctx.width - 2 * kMargin;
     float y = kListTop;
     if (rows_.empty()) {
-        gfx::drawTextEllipsis(dl, body, kMargin, y + body.ascent, w, kStrVcNoGames, t.text2);
+        gfx::drawTextEllipsis(dl, body, kMargin, y + body.ascent, w, tr(Str::VcNoGames), t.text2);
     } else {
         if (channels_.empty()) {
-            gfx::drawTextEllipsis(dl, body, kMargin, y + body.ascent, w, kStrVcNoChannels, t.text2);
+            gfx::drawTextEllipsis(dl, body, kMargin, y + body.ascent, w, tr(Str::VcNoChannels), t.text2);
             y += body.lineHeight + 8.0f;
         }
         const float leftW = w * 0.5f - 24.0f;
@@ -131,7 +131,7 @@ void VcMapScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const float top = ctx.height - kFooterH;
     gfx::fillRect(dl, s, Rect{0, top, ctx.width, kFooterH}, t.bar);
     gfx::fillRect(dl, s, Rect{0, top, ctx.width, 1}, t.barBorder);
-    gfx::drawTextEllipsis(dl, body, kMargin, top + kFooterH / 2 + (body.ascent - body.descent) / 2, w, kStrVcMapHelp, t.text2);
+    gfx::drawTextEllipsis(dl, body, kMargin, top + kFooterH / 2 + (body.ascent - body.descent) / 2, w, tr(Str::VcMapHelp), t.text2);
 }
 
 }  // namespace nl::ui

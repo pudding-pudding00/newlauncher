@@ -65,7 +65,7 @@ void JumpBar::draw(const UiContext& ctx, gfx::DrawList& dl) {
         const bool focused = i == focus_;
         if (focused) gfx::roundRect(dl, s, Rect{r.x + 1, r.y + 4, r.w - 2, r.h - 8}, 8, t.accent);
         char letter[2] = {bucketOf(i), '\0'};
-        const char* label = i == kSearchCell ? kStrSearch : letter;
+        const char* label = i == kSearchCell ? tr(Str::Search) : letter;
         const bool available = i == kSearchCell || target_.hasBucket(bucketOf(i));
         const Color c = focused ? t.onAccent : (available ? t.text : t.textMuted);
         const float w = gfx::measureText(f, label);

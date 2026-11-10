@@ -13,7 +13,7 @@ using gfx::Rect;
 constexpr float kHeaderH = 64.0f, kFooterH = 56.0f;
 constexpr float kTileH = 150.0f, kTileGap = 20.0f, kMaxTileW = 150.0f;
 
-const char* const kLabels[HomeMenu::kTileCount] = {kStrHomebrewChannel, kStrWiiMenu, kStrSettings, kStrPowerOff};
+const Str kLabels[HomeMenu::kTileCount] = {Str::HomebrewChannel, Str::WiiMenu, Str::Settings, Str::PowerOff};
 const AppCommand kCommands[HomeMenu::kTileCount] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::None,
                                                     AppCommand::PowerOff};
 
@@ -76,7 +76,7 @@ void HomeMenu::draw(const UiContext& ctx, gfx::DrawList& dl) {
     gfx::fillRect(dl, s, Rect{0, 0, ctx.width, kHeaderH}, t.bar);
     gfx::fillRect(dl, s, Rect{0, kHeaderH, ctx.width, 3}, t.accent);
     const gfx::FontFace& head = ctx.fonts->face(FontSize::Title, FontWeight::Medium);
-    gfx::drawText(dl, head, 32, kHeaderH / 2 + (head.ascent - head.descent) / 2, kStrHomeMenu, t.text);
+    gfx::drawText(dl, head, 32, kHeaderH / 2 + (head.ascent - head.descent) / 2, tr(Str::HomeMenu), t.text);
 
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
     for (int i = 0; i < kTileCount; ++i) {
@@ -87,7 +87,7 @@ void HomeMenu::draw(const UiContext& ctx, gfx::DrawList& dl) {
         gfx::circle(dl, s, r.x + r.w / 2, r.y + 52, 26, t.accentSoft);
 
         gfx::Line lines[2];
-        const std::string_view text(kLabels[i]);
+        const std::string_view text(tr(kLabels[i]));
         const int n = gfx::wrapText(label, text, r.w - 16, lines);
         float baseline = r.y + 104 + label.ascent / 2;
         for (int k = 0; k < n; ++k) {
@@ -101,9 +101,9 @@ void HomeMenu::draw(const UiContext& ctx, gfx::DrawList& dl) {
 
     gfx::fillRect(dl, s, Rect{0, ctx.height - kFooterH, ctx.width, kFooterH}, t.bar);
     const gfx::FontFace& small = ctx.fonts->face(FontSize::Body, FontWeight::Regular);
-    const float w = gfx::measureText(small, kStrHomeCloses);
+    const float w = gfx::measureText(small, tr(Str::HomeCloses));
     gfx::drawText(dl, small, (ctx.width - w) / 2, ctx.height - kFooterH / 2 + (small.ascent - small.descent) / 2,
-                  kStrHomeCloses, t.text2);
+                  tr(Str::HomeCloses), t.text2);
 }
 
 }  // namespace nl::ui

@@ -55,7 +55,7 @@ private:
 int detailsInfoLine(const Game& g, u32 lastPlayedUnix, char* out, std::size_t cap);
 
 // Gründe für nicht verfügbare Wege, z. B. "VC-Inject: nicht zugeordnet · Wii64: DOL fehlt";
-// bei ignoriertem Override mit kStrOverrideIgnored davor. Leer, wenn alles verfügbar ist.
+// bei ignoriertem Override mit tr(Str::OverrideIgnored) davor. Leer, wenn alles verfügbar ist.
 int n64HintLine(const N64Decision& d, char* out, std::size_t cap);
 
 }  // namespace nl::ui

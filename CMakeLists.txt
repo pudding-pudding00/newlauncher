@@ -48,6 +48,7 @@ add_library(nl_core STATIC
     src/ui/input.cpp
     src/ui/scene.cpp
     src/ui/layout.cpp
+    src/ui/strings.cpp
     src/ui/test_library.cpp
     src/ui/main_scene.cpp
     src/ui/home_menu.cpp

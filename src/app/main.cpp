@@ -371,7 +371,7 @@ int main(int, char**) {
         auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Dol && !launchAllowed) {
             target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(
-                {nl::LaunchFailure::NoMemory, "Speicher für den Start ist belegt."});
+                {nl::LaunchFailure::NoMemory, nl::ui::tr(nl::ui::Str::NoMemory)});
         }
         if (!target.isOk()) {
             nl::log::line("NL_PREFLIGHT_FAIL %s %s", nl::launchFailureName(target.error().kind), key.c_str());
@@ -428,7 +428,7 @@ int main(int, char**) {
             nl::coverDownloadJobs(games, [&](const std::string& path) { return present.count(path) > 0; }, libRoot);
         nl::log::line("NL_COVER_DL_START jobs=%u", static_cast<unsigned>(jobs.size()));
         if (jobs.empty()) {
-            dialog.open(nl::ui::kStrNoMissingCovers, nl::ui::kStrNoMissingCoversText);
+            dialog.open(nl::ui::tr(nl::ui::Str::NoMissingCovers), nl::ui::tr(nl::ui::Str::NoMissingCoversText));
             scenes.push(&dialog);
             return;
         }
@@ -450,7 +450,7 @@ int main(int, char**) {
         if (net.running()) {
             const u32 done = net.done();
             if (done != coverToastDone) {  // Text nur bei Änderung neu bauen
-                std::snprintf(coverToast, sizeof coverToast, nl::ui::kStrCoverProgress, static_cast<unsigned>(done),
+                std::snprintf(coverToast, sizeof coverToast, nl::ui::tr(nl::ui::Str::CoverProgress), static_cast<unsigned>(done),
                               static_cast<unsigned>(net.total()));
                 coverToastDone = done;
                 coverToastFrames = 0;
@@ -468,9 +468,9 @@ int main(int, char**) {
                           static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
             char text[128];
-            std::snprintf(text, sizeof text, nl::ui::kStrCoversSummary, static_cast<unsigned>(sum->ok),
+            std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::CoversSummary), static_cast<unsigned>(sum->ok),
                           static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
-            dialog.open(nl::ui::kStrCoversLoaded, text);
+            dialog.open(nl::ui::tr(nl::ui::Str::CoversLoaded), text);
             scenes.push(&dialog);
         }
     };
@@ -564,7 +564,7 @@ int main(int, char**) {
                 if (sdOk && writeText(fs, kFavoritesPath, text)) nl::log::line("NL_FAV_SAVED %s", key.c_str());
                 else nl::log::line("NL_WARN favorites.ini nicht gespeichert");
                 mainScene.setLibrary(libraryView(), focusKey);
-                mainScene.showToast(nowFavorite ? nl::ui::kStrFavAdded : nl::ui::kStrFavRemoved);
+                mainScene.showToast(nowFavorite ? nl::ui::tr(nl::ui::Str::FavAdded) : nl::ui::tr(nl::ui::Str::FavRemoved));
                 if (details.game() != nullptr && key == details.game()->key) details.setFavorite(nowFavorite);
                 break;
             }

@@ -19,9 +19,9 @@ Texts render(LaunchFailure kind, const char* context) {
 }
 }  // namespace
 
-TEST_CASE("launchErrorText: EmuMissing → kStrEmuMissing mit Pfad") {
+TEST_CASE("launchErrorText: EmuMissing → tr(Str::EmuMissing) mit Pfad") {
     const Texts t = render(LaunchFailure::EmuMissing, "sd:/apps/fceugx/boot.dol");
-    CHECK(std::string(t.title) == kStrLaunchFailed);
+    CHECK(std::string(t.title) == tr(Str::LaunchFailed));
     CHECK(std::string(t.text) == "Emulator nicht gefunden:\nsd:/apps/fceugx/boot.dol");
 }
 
@@ -32,14 +32,14 @@ TEST_CASE("launchErrorText: Fehlerart entscheidet, nicht die Dateiendung") {
           "Emulator-Datei ist ungültig:\nsd:/apps/x/boot.elf");
 }
 
-TEST_CASE("launchErrorText: RomMissing → kStrRomMissing") {
+TEST_CASE("launchErrorText: RomMissing → tr(Str::RomMissing)") {
     const Texts t = render(LaunchFailure::RomMissing, "sd:/roms/nes/Zelda.nes");
     CHECK(std::string(t.text) == "Spieldatei nicht gefunden:\nsd:/roms/nes/Zelda.nes");
 }
 
-TEST_CASE("launchErrorText: EmuInvalid → kStrEmuInvalid, ArgsTooLong → kStrArgsTooLong") {
+TEST_CASE("launchErrorText: EmuInvalid → tr(Str::EmuInvalid), ArgsTooLong → tr(Str::ArgsTooLong)") {
     CHECK(std::string(render(LaunchFailure::EmuInvalid, "sd:/apps/x/boot.DOL").text) == "Emulator-Datei ist ungültig:\nsd:/apps/x/boot.DOL");
-    CHECK(std::string(render(LaunchFailure::ArgsTooLong, "Argumente zu lang").text) == kStrArgsTooLong);
+    CHECK(std::string(render(LaunchFailure::ArgsTooLong, "Argumente zu lang").text) == tr(Str::ArgsTooLong));
 }
 
 TEST_CASE("launchErrorText: Unsupported → Konsolenname im Text") {
@@ -68,5 +68,5 @@ TEST_CASE("Text länger als Puffer wird mit … gekürzt, nie überlaufen") {
 
 TEST_CASE("launchErrorText: NoN64Path") {
     const Texts t = render(LaunchFailure::NoN64Path, "Nintendo 64");
-    CHECK(std::string(t.text) == kStrNoN64Path);
+    CHECK(std::string(t.text) == tr(Str::NoN64Path));
 }

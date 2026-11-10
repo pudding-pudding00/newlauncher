@@ -12,7 +12,7 @@ using gfx::Rect;
 
 constexpr float kCardMaxW = 420.0f, kPad = 24.0f, kRowH = 52.0f, kRowGap = 8.0f, kTitleH = 44.0f;
 
-const char* const kLabels[ActionsScene::kCount] = {kStrVcMapTitle, kStrFetchCovers};
+const Str kLabels[ActionsScene::kCount] = {Str::VcMapTitle, Str::FetchCovers};
 const AppCommand kCommands[ActionsScene::kCount] = {AppCommand::OpenVcMap, AppCommand::FetchCovers};
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
@@ -70,7 +70,7 @@ void ActionsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     gfx::roundRect(dl, s, card, 16.0f, t.bg);
 
     const gfx::FontFace& head = ctx.fonts->face(FontSize::Title, FontWeight::Medium);
-    gfx::drawTextEllipsis(dl, head, card.x + kPad, card.y + kPad + head.ascent, card.w - 2 * kPad, kStrSettings, t.text);
+    gfx::drawTextEllipsis(dl, head, card.x + kPad, card.y + kPad + head.ascent, card.w - 2 * kPad, tr(Str::Settings), t.text);
 
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
     for (int i = 0; i < kCount; ++i) {
@@ -79,7 +79,7 @@ void ActionsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         if (focused) gfx::roundRect(dl, s, Rect{r.x - 3, r.y - 3, r.w + 6, r.h + 6}, 13, t.accent);
         gfx::roundRect(dl, s, r, 10, focused ? t.tileFocus : t.tile);
         gfx::drawTextEllipsis(dl, label, r.x + 16, r.y + r.h / 2 + (label.ascent - label.descent) / 2, r.w - 32,
-                              kLabels[i], t.text);
+                              tr(kLabels[i]), t.text);
     }
 }
 

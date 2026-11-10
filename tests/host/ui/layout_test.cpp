@@ -1,4 +1,5 @@
 #include "ui/layout.hpp"
+#include "ui/strings.hpp"
 #include "ui/test_library.hpp"
 #include <doctest/doctest.h>
 #include <cstring>
@@ -175,4 +176,16 @@ TEST_CASE("formatDate") {
     CHECK(std::string_view(buf) == "Montag, 9. November 2026");
     formatDate(9, 1, 13, 2026, buf, sizeof buf);
     CHECK(std::string_view(buf) == "Sonntag, 1. Dezember 2026");
+}
+
+TEST_CASE("formatDate folgt der Sprache") {
+    const Lang saved = language();
+    char buf[64];
+    setLanguage(Lang::En);
+    formatDate(0, 10, 11, 2026, buf, sizeof buf);
+    CHECK(std::string_view(buf) == "Monday, November 10, 2026");
+    setLanguage(Lang::De);
+    formatDate(0, 10, 11, 2026, buf, sizeof buf);
+    CHECK(std::string_view(buf) == "Montag, 10. November 2026");
+    setLanguage(saved);
 }

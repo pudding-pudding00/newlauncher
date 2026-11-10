@@ -98,9 +98,9 @@ void DialogScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
 
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
     gfx::roundRect(dl, *ctx.shapes, l.button, kButtonH / 2, t.accent);
-    const float w = gfx::measureText(label, kStrOk);
+    const float w = gfx::measureText(label, tr(Str::Ok));
     gfx::drawText(dl, label, l.button.x + (l.button.w - w) / 2,
-                  l.button.y + l.button.h / 2 + (label.ascent - label.descent) / 2, kStrOk, t.onAccent);
+                  l.button.y + l.button.h / 2 + (label.ascent - label.descent) / 2, tr(Str::Ok), t.onAccent);
 }
 
 }  // namespace nl::ui

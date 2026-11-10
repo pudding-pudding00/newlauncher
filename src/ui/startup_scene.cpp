@@ -24,7 +24,7 @@ void centered(gfx::DrawList& dl, const gfx::FontFace& f, float width, float base
 
 void StartupScene::showWaitingUsb(int secondsLeft) {
     phase_ = Phase::WaitingUsb;
-    std::snprintf(status_, sizeof status_, "%s (%d s)", kStrWaitUsb, secondsLeft < 0 ? 0 : secondsLeft);
+    std::snprintf(status_, sizeof status_, "%s (%d s)", tr(Str::WaitUsb), secondsLeft < 0 ? 0 : secondsLeft);
 }
 
 void StartupScene::showUsbFailed() {
@@ -34,12 +34,12 @@ void StartupScene::showUsbFailed() {
     phase_ = Phase::UsbFailed;
     focus_ = 0;
     keysSincePointerMove_ = false;
-    std::snprintf(status_, sizeof status_, "%s", kStrNoUsb);
+    std::snprintf(status_, sizeof status_, "%s", tr(Str::NoUsb));
 }
 
 void StartupScene::showScanning(u32 filesSeen) {
     phase_ = Phase::Scanning;
-    std::snprintf(status_, sizeof status_, "%s %u %s", kStrScanning, static_cast<unsigned>(filesSeen), kStrFiles);
+    std::snprintf(status_, sizeof status_, "%s %u %s", tr(Str::Scanning), static_cast<unsigned>(filesSeen), tr(Str::Files));
 }
 
 StartupScene::Choice StartupScene::takeChoice() {
@@ -80,7 +80,7 @@ void StartupScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     if (status_[0] != '\0') centered(dl, body, ctx.width, ctx.height / 2, status_, t.text2);
     if (phase_ != Phase::UsbFailed) return;
 
-    const char* labels[2] = {kStrRetry, kStrUseSd};
+    const char* labels[2] = {tr(Str::Retry), tr(Str::UseSd)};
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
     for (int i = 0; i < 2; ++i) {
         const Rect r = buttonRect(ctx, i);

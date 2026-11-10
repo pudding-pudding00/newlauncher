@@ -227,7 +227,7 @@ TEST_CASE("Hinweiszeile nennt Gründe") {
     in.override_ = N64Method::Wii64;
     in.not64Dol = true;
     n64HintLine(decideN64(in), buf, sizeof buf);
-    CHECK(std::string(buf) == std::string(kStrOverrideIgnored) + " VC-Inject: nicht zugeordnet · Wii64: DOL fehlt");
+    CHECK(std::string(buf) == std::string(tr(Str::OverrideIgnored)) + " VC-Inject: nicht zugeordnet · Wii64: DOL fehlt");
     n64HintLine(decision(true, true, true), buf, sizeof buf);
     CHECK(std::string(buf).empty());
 }

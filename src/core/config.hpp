@@ -23,6 +23,8 @@ struct Config {
     bool sounds = true;
     std::string coverRegion = "auto";
     std::string debugAutostart;  // [debug] autostart: Spielschlüssel, der nach NL_READY startet
+    std::string debugCoverUrl;   // [debug] cover_url: ersetzt die GameTDB-Basis (Smoke-Test)
+    bool debugFetchCovers = false;  // [debug] fetch_covers = 1: „Fehlende Cover laden“ nach NL_READY
 };
 
 Config configFromIni(const IniDoc& ini);

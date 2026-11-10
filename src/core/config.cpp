@@ -54,6 +54,8 @@ Config configFromIni(const IniDoc& ini) {
         if (region == allowed) c.coverRegion = std::string(region);
     }
     c.debugAutostart = std::string(ini.get("debug", "autostart"));  // nur für Tests (Spec 9)
+    c.debugCoverUrl = std::string(ini.get("debug", "cover_url"));
+    c.debugFetchCovers = parseIntIn(ini.get("debug", "fetch_covers"), 0, 1, 0) == 1;
     return c;
 }
 

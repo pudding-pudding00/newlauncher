@@ -19,4 +19,7 @@ private:
     bool widescreen_ = false;
 };
 
+// Vor dem Chainload: Bild schwarz schalten und zwei Bilder abwarten, damit kein Restbild flackert.
+void shutdownVideo();
+
 }  // namespace nl::platform

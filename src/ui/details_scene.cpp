@@ -14,7 +14,7 @@ using gfx::FontWeight;
 using gfx::Rect;
 
 constexpr float kMargin = 32.0f, kTop = 32.0f, kCoverW = 200.0f, kCoverH = 280.0f, kInfoBarH = 72.0f;
-constexpr float kButtonW = 168.0f, kButtonH = 44.0f, kHintMs = 2000.0f;
+constexpr float kButtonW = 168.0f, kButtonH = 44.0f;
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
 
@@ -64,16 +64,16 @@ void DetailsScene::open(const Game& game, bool favorite, u32 lastPlayedUnix) {
     key_ = game.key != nullptr ? game.key : "";
     title_ = game.title != nullptr ? game.title : "";
     description_ = game.description != nullptr ? game.description : "";
+    path_ = game.path != nullptr ? game.path : "";
     game_ = game;
     game_.key = key_.c_str();
     game_.title = title_.c_str();
     game_.description = description_.empty() ? nullptr : description_.c_str();
-    game_.path = nullptr;  // für M2 nicht nötig; M3 übergibt den Pfad beim Start
+    game_.path = path_.c_str();
     hasGame_ = true;
     favorite_ = favorite;
     lastPlayed_ = lastPlayedUnix;
     focus_ = 0;
-    hintMs_ = 0.0f;
     keysSincePointerMove_ = false;
     detailsInfoLine(game_, lastPlayed_, info_, sizeof info_);
 }
@@ -83,8 +83,7 @@ Rect DetailsScene::buttonRect([[maybe_unused]] const UiContext& ctx, int index) 
     return Rect{x, kTop + kCoverH - kButtonH, kButtonW, kButtonH};
 }
 
-void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) {
-    if (hintMs_ > 0.0f) hintMs_ -= dtMs;
+void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
     if (ctx.minuteOfDay != clockMinute_) {
         clockMinute_ = ctx.minuteOfDay;
         formatClock(clockMinute_, clock_, sizeof clock_);
@@ -113,12 +112,8 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float dtMs
     }
     const bool pointerOff = in.pointerValid && hit < 0 && !keysSincePointerMove_;
     if (in.pressed(Action::Confirm) && !pointerOff && hasGame_) {
-        if (focus_ == 0) {
-            hintMs_ = kHintMs;  // Starten folgt mit M3
-        } else {
-            out.command = AppCommand::ToggleFavorite;
-            out.game = &game_;
-        }
+        out.command = focus_ == 0 ? AppCommand::Launch : AppCommand::ToggleFavorite;
+        out.game = &game_;
     }
 }
 
@@ -172,13 +167,12 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
                               r.w - 16, labels[i], focused ? t.onAccent : (i == 0 ? t.accentSoftText : t.text));
     }
 
-    // Infoleiste: Tastenhilfe bzw. Hinweis, Uhrzeit
+    // Infoleiste: Tastenhilfe, Uhrzeit
     const float top = ctx.height - kInfoBarH;
     gfx::fillRect(dl, s, Rect{0, top, ctx.width, kInfoBarH}, t.bar);
     gfx::fillRect(dl, s, Rect{0, top, ctx.width, 1}, t.barBorder);
-    const char* help = hintMs_ > 0.0f ? kHintStart : kStrDetailsHelp;
-    gfx::drawTextEllipsis(dl, body, kMargin, top + 36 + (body.ascent - body.descent) / 2, ctx.width - 2 * kMargin - 80, help,
-                          hintMs_ > 0.0f ? t.accentSoftText : t.text2);
+    gfx::drawTextEllipsis(dl, body, kMargin, top + 36 + (body.ascent - body.descent) / 2, ctx.width - 2 * kMargin - 80,
+                          kStrDetailsHelp, t.text2);
     const gfx::FontFace& clock = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
     const float cw = gfx::measureText(clock, clock_);
     gfx::drawText(dl, clock, ctx.width - kMargin - cw, top + 36 + (clock.ascent - clock.descent) / 2, clock_, t.text2);

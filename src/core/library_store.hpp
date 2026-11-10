@@ -33,6 +33,8 @@ public:
 
     void loadHistory(const IniDoc& ini);  // [history] <unixzeit> = <schlüssel>
     u32 lastPlayed(std::string_view key) const;
+    void recordPlayed(std::string_view key, u32 unixTime);  // an den Anfang, Duplikat raus, max. kHistoryMax
+    IniDoc historyIni() const;                               // neueste zuerst
 
     std::span<const Game* const> favorites() const { return favoriteGames_; }
     std::span<const Game* const> recent() const { return recentGames_; }

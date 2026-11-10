@@ -33,6 +33,13 @@ inline constexpr const char* kStrFavRemove = "Favorit entfernen";
 inline constexpr const char* kStrDetailsHelp = "A Starten · B Zurück · 1 Favorit";
 inline constexpr const char* kStrFavAdded = "Zu Favoriten hinzugefügt";
 inline constexpr const char* kStrFavRemoved = "Aus Favoriten entfernt";
+inline constexpr const char* kStrLaunchFailed = "Start nicht möglich";
+inline constexpr const char* kStrEmuMissing = "Emulator nicht gefunden:\n%s";
+inline constexpr const char* kStrEmuInvalid = "Emulator-Datei ist ungültig:\n%s";
+inline constexpr const char* kStrRomMissing = "Spieldatei nicht gefunden:\n%s";
+inline constexpr const char* kStrUnsupported = "Starten für %s folgt in einer späteren Version.";
+inline constexpr const char* kStrArgsTooLong = "Pfad zu lang für den Emulator.";
+inline constexpr const char* kStrOk = "OK";
 
 inline constexpr const char* kStrWeekdays[7] = {"Montag",  "Dienstag", "Mittwoch", "Donnerstag",
                                                  "Freitag", "Samstag",  "Sonntag"};

@@ -21,6 +21,7 @@ struct SelftestView {
     const LibraryStore& store;
     const ui::UiContext& ctx;
     const ui::Keyboard& keyboard;
+    const ui::Scene* dialog;  // Fehlerdialog beim Start (M3)
 };
 
 ui::RawInput selftestInput(int frame, const SelftestView& v);

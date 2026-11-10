@@ -146,6 +146,7 @@ TEST_CASE_FIXTURE(Fixture, "AppCommand der obersten Szene wird zurückgegeben") 
     CHECK(st.update(ctx, InputFrame{}, 16) == AppCommand::PowerOff);
     CHECK(st.update(ctx, InputFrame{}, 16) == AppCommand::None);
     CHECK(std::strcmp(appCommandName(AppCommand::ExitToHbc), "exit_hbc") == 0);
+    CHECK(std::strcmp(appCommandName(AppCommand::Launch), "launch") == 0);
 }
 
 TEST_CASE_FIXTURE(Fixture, "pop auf der letzten Szene wird ignoriert") {

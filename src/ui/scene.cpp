@@ -9,6 +9,7 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::PowerOff: return "power_off";
         case AppCommand::CycleTheme: return "cycle_theme";
         case AppCommand::ToggleFavorite: return "toggle_favorite";
+        case AppCommand::Launch: return "launch";
         case AppCommand::None: break;
     }
     return "none";

@@ -65,16 +65,35 @@ TEST_CASE_FIXTURE(Fixture, "Details: Left/Right zwischen Starten und Favorit, Co
     CHECK(step(d, action(Action::Favorite)).command == AppCommand::ToggleFavorite);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Details: Starten zeigt Hinweis, kein Kommando; Back schließt") {
+TEST_CASE_FIXTURE(Fixture, "Details: A auf Starten liefert Launch mit dem Spiel (samt Pfad); Back schließt") {
     DetailsScene d;
-    d.open(Game{Console::Nes, "nes/a", "A", 0, 0}, true, 0);
+    std::string path = "roms/nes/a.nes";
+    Game g{Console::Nes, "nes/a", "A", 0, 0};
+    g.path = path.c_str();
+    d.open(g, true, 0);
+    path = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";  // die Szene hält eine eigene Kopie
     const SceneRequests r = step(d, action(Action::Confirm));
-    CHECK(r.command == AppCommand::None);
+    CHECK(r.command == AppCommand::Launch);
+    REQUIRE(r.game != nullptr);
+    CHECK(std::strcmp(r.game->key, "nes/a") == 0);
+    REQUIRE(r.game->path != nullptr);
+    CHECK(std::strcmp(r.game->path, "roms/nes/a.nes") == 0);
     CHECK_FALSE(r.pop);
-    CHECK(std::string(d.hintText()) == "Starten folgt mit M3");
-    step(d, InputFrame{}, 2100);
-    CHECK(std::string(d.hintText()) != "Starten folgt mit M3");
     CHECK(step(d, action(Action::Back)).pop);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Details: Zeiger neben den Knöpfen + A liefert nichts") {
+    DetailsScene d;
+    d.open(Game{Console::Nes, "nes/a", "A", 0, 0}, false, 0);
+    InputFrame f;
+    f.pointerValid = true;
+    f.pointerMoved = true;
+    f.pointerX = 5;
+    f.pointerY = 5;
+    step(d, f);
+    f.pointerMoved = false;
+    f.actions = 1u << static_cast<u32>(Action::Confirm);
+    CHECK(step(d, f).command == AppCommand::None);
 }
 
 TEST_CASE_FIXTURE(Fixture, "Details: hält eigene Kopien der Spieltexte") {

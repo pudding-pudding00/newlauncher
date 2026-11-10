@@ -25,6 +25,10 @@ add_library(nl_core STATIC
     src/core/disc_header.cpp
     src/core/scanner.cpp
     src/core/library_store.cpp
+    src/core/dol.cpp
+    src/core/emulators.cpp
+    src/core/launch_args.cpp
+    src/core/launch_plan.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp
@@ -42,6 +46,8 @@ add_library(nl_core STATIC
     src/ui/jump_bar.cpp
     src/ui/keyboard.cpp
     src/ui/details_scene.cpp
+    src/ui/dialog_scene.cpp
+    src/ui/launch_text.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 nl_apply_flags(nl_core)
@@ -57,10 +63,36 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/MPLUSRounded1c-Medium-latin1.ttf
     )
 
+    # App-Booter (Spec 9, M3): frei stehend, eigenes Linkerskript. Bewusst kein add_executable, weil die
+    # Toolchain dort -mrvl samt rvl.ld und libogc-crt0 einschleust.
+    set(NL_BOOTER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/launch/app_booter)
+    set(NL_BOOTER_ELF ${CMAKE_CURRENT_BINARY_DIR}/app_booter.elf)
+    set(NL_BOOTER_BIN ${CMAKE_CURRENT_BINARY_DIR}/app_booter.bin)
+    add_custom_command(
+        OUTPUT ${NL_BOOTER_BIN}
+        COMMAND ${CMAKE_C_COMPILER} -mcpu=750 -meabi -mhard-float -mregnames -G0 -Os -std=c11 -ffreestanding
+                -fno-builtin -fno-tree-loop-distribute-patterns -nostdlib -nostartfiles -Wall -Wextra -Werror
+                -Wl,-T,${NL_BOOTER_DIR}/booter.ld -Wl,--gc-sections -Wl,--no-warn-rwx-segments
+                -o ${NL_BOOTER_ELF} ${NL_BOOTER_DIR}/crt0.S ${NL_BOOTER_DIR}/booter.c
+        COMMAND ${DKP_OBJCOPY} -O binary ${NL_BOOTER_ELF} ${NL_BOOTER_BIN}
+        DEPENDS ${NL_BOOTER_DIR}/booter.c ${NL_BOOTER_DIR}/crt0.S ${NL_BOOTER_DIR}/booter.ld
+        COMMENT "App-Booter bauen"
+        VERBATIM
+    )
+    add_custom_target(nl_app_booter DEPENDS ${NL_BOOTER_BIN})
+    dkp_set_target_file(nl_app_booter ${NL_BOOTER_BIN})
+    dkp_add_embedded_binary_library(nl_booter nl_app_booter)
+
+    # Test-DOL für den Chainloader: gibt argc/argv über SYS_Report aus.
+    add_executable(argv_echo tests/wii/argv_echo.c)
+    target_compile_options(argv_echo PRIVATE -Wall -Wextra)
+    ogc_create_dol(argv_echo)
+
     set(NL_WII_SOURCES
         src/app/main.cpp
         src/platform/log.cpp
         src/platform/video.cpp
+        src/launch/chainloader.cpp
         src/platform/wii_input.cpp
         src/platform/crash.cpp
         src/platform/storage.cpp
@@ -74,7 +106,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         add_executable(${name} ${ARGN})
         target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS})
         target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
-        target_link_libraries(${name} PRIVATE nl_core nl_fonts ${FREETYPE_STATIC_LIBRARIES} fat wiiuse bte)
+        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} fat wiiuse bte)
         target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}")
         nl_apply_flags(${name})
         ogc_create_dol(${name})

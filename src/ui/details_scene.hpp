@@ -14,7 +14,6 @@ public:
     void setFavorite(bool favorite) { favorite_ = favorite; }
     int focusedButton() const { return focus_; }
     const Game* game() const { return hasGame_ ? &game_ : nullptr; }
-    const char* hintText() const { return hintMs_ > 0.0f ? kHintStart : ""; }
 
     void update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) override;
     void draw(const UiContext& ctx, gfx::DrawList& dl) override;
@@ -23,15 +22,12 @@ public:
     gfx::Rect buttonRect(const UiContext& ctx, int index) const;
 
 private:
-    static constexpr const char* kHintStart = "Starten folgt mit M3";
-
-    std::string key_, title_, description_;
+    std::string key_, title_, description_, path_;
     Game game_{};
     bool hasGame_ = false;
     bool favorite_ = false;
     u32 lastPlayed_ = 0;
     int focus_ = 0;
-    float hintMs_ = 0.0f;
     bool keysSincePointerMove_ = false;
     char info_[128] = "";
     char clock_[8] = "";

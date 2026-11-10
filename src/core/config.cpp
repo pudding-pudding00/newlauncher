@@ -60,6 +60,7 @@ Config configFromIni(const IniDoc& ini) {
     c.debugCoverUrl = std::string(ini.get("debug", "cover_url"));
     c.debugFetchCovers = parseIntIn(ini.get("debug", "fetch_covers"), 0, 1, 0) == 1;
     c.debugLogSounds = parseIntIn(ini.get("debug", "log_sounds"), 0, 1, 0) == 1;
+    c.debugPerf = parseIntIn(ini.get("debug", "perf"), 0, 1, 0) == 1;
     return c;
 }
 

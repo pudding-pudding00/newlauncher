@@ -1,5 +1,7 @@
 #include "ui/home_menu.hpp"
 
+#include <cstdio>
+
 #include "gfx/text.hpp"
 #include "ui/strings.hpp"
 
@@ -101,9 +103,28 @@ void HomeMenu::draw(const UiContext& ctx, gfx::DrawList& dl) {
 
     gfx::fillRect(dl, s, Rect{0, ctx.height - kFooterH, ctx.width, kFooterH}, t.bar);
     const gfx::FontFace& small = ctx.fonts->face(FontSize::Body, FontWeight::Regular);
+    const float base = ctx.height - kFooterH / 2 + (small.ascent - small.descent) / 2;
+    // links P1..P4 mit vier Balken; schwach (<= 1 Balken) in danger, nicht verbunden als „P<n> –“
+    constexpr float kBarW = 5.0f, kBarGap = 2.0f, kBarH = 12.0f, kGroupGap = 18.0f;
+    float x = 32.0f;
+    for (int p = 0; p < 4; ++p) {
+        const int bars = ctx.battery[static_cast<std::size_t>(p)];
+        char name[8];
+        std::snprintf(name, sizeof name, bars < 0 ? "P%d \xE2\x80\x93" : "P%d", p + 1);
+        gfx::drawText(dl, small, x, base, name, bars < 0 ? t.textMuted : t.text2);
+        x += gfx::measureText(small, name) + 6.0f;
+        if (bars >= 0) {
+            const Color on = bars <= 1 ? t.danger : t.text2;
+            const float top = ctx.height - kFooterH / 2 - kBarH / 2;
+            for (int b = 0; b < 4; ++b) {
+                gfx::fillRect(dl, s, Rect{x, top, kBarW, kBarH}, b < bars ? on : t.barBorder);
+                x += kBarW + kBarGap;
+            }
+        }
+        x += kGroupGap;
+    }
     const float w = gfx::measureText(small, tr(Str::HomeCloses));
-    gfx::drawText(dl, small, (ctx.width - w) / 2, ctx.height - kFooterH / 2 + (small.ascent - small.descent) / 2,
-                  tr(Str::HomeCloses), t.text2);
+    gfx::drawText(dl, small, ctx.width - 32 - w, base, tr(Str::HomeCloses), t.text2);
 }
 
 }  // namespace nl::ui

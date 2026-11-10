@@ -492,6 +492,7 @@ int main(int, char**) {
 #else
         const nl::ui::InputFrame in = frame.begin(input.poll());
 #endif
+        ctx.battery = input.battery();
         // Ergebnis des Hintergrund-Scans übernehmen (Spec 6.1 Schritt 6)
         if (auto result = worker.take()) {
             if (result->isOk()) {
@@ -513,6 +514,9 @@ int main(int, char**) {
         nl::ui::SceneRequests req;
         const nl::ui::AppCommand cmd = scenes.update(ctx, in, kFrameMs, &req);
         if (req.push == &details) refreshDetailsN64();  // MainScene hat die Details gerade geöffnet
+        if (req.push == &homeMenu)
+            nl::log::line("NL_BATTERY p1=%d p2=%d p3=%d p4=%d", ctx.battery[0], ctx.battery[1], ctx.battery[2],
+                          ctx.battery[3]);
         switch (cmd) {
             case nl::ui::AppCommand::SetN64Method: {
                 if (req.game == nullptr) break;
@@ -594,6 +598,9 @@ int main(int, char**) {
             case nl::ui::AppCommand::FetchCovers:
                 fetchCovers();
                 break;
+            case nl::ui::AppCommand::SettingsChanged:  // Verdrahtung folgt in M6 Task 5
+            case nl::ui::AppCommand::SaveSettings:
+            case nl::ui::AppCommand::Rescan:
             case nl::ui::AppCommand::None:
                 break;
         }

@@ -11,7 +11,7 @@ enum class ThemeMode : u8 { Light, Dark, Auto };
 
 struct Theme {
     Color bg, bar, barBorder, tile, tileFocus, text, text2, textMuted, accent, onAccent,
-        accentSoft, accentSoftText, overlayDim;
+        accentSoft, accentSoftText, overlayDim, danger;  // danger: schwacher Akku
 };
 
 const Theme& lightTheme();

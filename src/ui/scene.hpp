@@ -1,6 +1,8 @@
 #pragma once
 // Szenen (Spec 4.1): ein Stapel aus Vollbild-Szenen und Overlays; Overlays blenden 200 ms ein/aus.
 
+#include <array>
+
 #include "core/easing.hpp"
 #include "core/game.hpp"
 #include "core/theme.hpp"
@@ -20,6 +22,7 @@ struct UiContext {
     ThemeMode themeMode = ThemeMode::Auto;
     int minuteOfDay = 0;  // 0..1439
     int day = 1, month = 1, year = 2026, weekday = 0;  // weekday 0 = Montag
+    std::array<s8, 4> battery{-1, -1, -1, -1};         // Wiimote P1..P4: -1 = nicht verbunden, sonst 0..4 Balken
 };
 
 enum class AppCommand : u8 {

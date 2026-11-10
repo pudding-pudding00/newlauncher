@@ -1,5 +1,7 @@
 #include "core/theme.hpp"
 #include <doctest/doctest.h>
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 using namespace nl;
 
@@ -53,4 +55,24 @@ TEST_CASE("nextMode läuft im Kreis und hat Namen") {
     CHECK(nextMode(ThemeMode::Dark) == ThemeMode::Auto);
     CHECK(nextMode(ThemeMode::Auto) == ThemeMode::Light);
     CHECK(std::strcmp(themeModeName(ThemeMode::Auto), "Automatisch") == 0);
+}
+
+namespace {
+double channel(u8 v) {
+    const double c = v / 255.0;
+    return c <= 0.03928 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+}
+double luminance(Color c) { return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b); }
+double contrast(Color a, Color b) {
+    const double la = luminance(a), lb = luminance(b);
+    return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+}
+}  // namespace
+
+TEST_CASE("danger: Spec-Werte und Kontrast >= 3 zur Leiste") {
+    CHECK(lightTheme().danger == Color::fromHex(0xD93025));
+    CHECK(darkTheme().danger == Color::fromHex(0xF28B82));
+    CHECK(contrast(lightTheme().danger, lightTheme().bar) >= 3.0);
+    CHECK(contrast(darkTheme().danger, darkTheme().bar) >= 3.0);
+    CHECK(lerp(lightTheme(), darkTheme(), 1.0f).danger == darkTheme().danger);
 }

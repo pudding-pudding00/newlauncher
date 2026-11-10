@@ -5,6 +5,8 @@
 #include <gccore.h>
 #include <wiiuse/wpad.h>
 
+#include "core/battery.hpp"
+
 namespace nl::platform {
 
 namespace {
@@ -77,6 +79,14 @@ ui::RawInput WiiInput::poll() {
     for (int port = 0; port < 4; ++port) {
         r.held |= mapButtons(PAD_ButtonsHeld(port), kGc);
         takeStick(r, PAD_StickX(port) / 80.0f, PAD_StickY(port) / 80.0f);
+    }
+    if (pollCount_++ % 60 == 0) {
+        for (int chan = 0; chan < 4; ++chan) {
+            u32 type = 0;
+            const WPADData* d = WPAD_Data(chan);
+            battery_[static_cast<std::size_t>(chan)] =
+                WPAD_Probe(chan, &type) == WPAD_ERR_NONE && d != nullptr ? static_cast<s8>(batteryBars(d->battery_level)) : -1;
+        }
     }
     return r;
 }

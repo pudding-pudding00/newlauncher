@@ -29,6 +29,7 @@ add_library(nl_core STATIC
     src/core/emulators.cpp
     src/core/launch_args.cpp
     src/core/launch_plan.cpp
+    src/core/n64.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp

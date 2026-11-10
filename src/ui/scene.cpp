@@ -14,6 +14,9 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::OpenVcMap: return "open_vc_map";
         case AppCommand::SaveVcMap: return "save_vc_map";
         case AppCommand::FetchCovers: return "fetch_covers";
+        case AppCommand::SettingsChanged: return "settings_changed";
+        case AppCommand::SaveSettings: return "save_settings";
+        case AppCommand::Rescan: return "rescan";
         case AppCommand::None: break;
     }
     return "none";

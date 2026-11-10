@@ -27,7 +27,7 @@ struct SelftestView {
     const ui::Scene* dialog;  // Fehlerdialog beim Start (M3)
     const ui::DetailsScene* details;  // Detailansicht (M4: Startmethode)
     const ui::VcMapScene* vcMap;      // VC-Zuordnungsdialog (M4)
-    const ui::Scene* actions;         // Aktionsliste hinter „Einstellungen“ (M5)
+    const ui::Scene* actions;         // Einstellungsszene hinter „Einstellungen“ (Task 8 benennt um)
     const CoverService* covers;       // Cover-Cache und -Thread (M5)
 };
 

@@ -70,7 +70,25 @@
     X(NoMissingCoversText, "Alle Wii- und GameCube-Spiele haben schon ein Cover.", "All Wii and GameCube games already have a cover.") \
     X(CoversLoaded, "Cover geladen", "Covers downloaded") \
     X(CoversSummary, "%u geladen, %u nicht gefunden, %u fehlgeschlagen", "%u downloaded, %u not found, %u failed") \
-    X(VcMapHelp, "A Vorschlag · ◀▶ Kanal · B Speichern und zurück", "A Suggestion · ◀▶ Channel · B Save and back")
+    X(VcMapHelp, "A Vorschlag · ◀▶ Kanal · B Speichern und zurück", "A Suggestion · ◀▶ Channel · B Save and back") \
+    X(Language, "Sprache", "Language") \
+    X(LangAuto, "Automatisch", "Automatic") \
+    X(LangDe, "Deutsch", "Deutsch") \
+    X(LangEn, "English", "English") \
+    X(DarkFrom, "Dunkel ab", "Dark from") \
+    X(DarkTo, "Dunkel bis", "Dark until") \
+    X(Music, "Musik", "Music") \
+    X(Volume, "Lautstärke", "Volume") \
+    X(Sounds, "Klänge", "Sounds") \
+    X(On, "An", "On") \
+    X(Off, "Aus", "Off") \
+    X(LibraryDevice, "Bibliotheksgerät", "Library device") \
+    X(DeviceUsb, "USB", "USB") \
+    X(DeviceSd, "SD", "SD") \
+    X(TakesEffectAfterRestart, "nach Neustart", "after restart") \
+    X(CoverRegion, "Cover-Region", "Cover region") \
+    X(Rescan, "Bibliothek neu scannen", "Rescan library") \
+    X(SettingsHelp, "◀▶ Ändern · A Auswählen · B Zurück", "◀▶ Change · A Select · B Back")
 // clang-format on
 
 namespace nl::ui {

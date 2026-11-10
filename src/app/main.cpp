@@ -38,7 +38,7 @@
 #include "platform/storage.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_input.hpp"
-#include "ui/actions_scene.hpp"
+#include "ui/settings_scene.hpp"
 #include "ui/debug_overlay.hpp"
 #include "ui/details_scene.hpp"
 #include "ui/dialog_scene.hpp"
@@ -174,7 +174,7 @@ int main(int, char**) {
     // 1. SD und Konfiguration (Spec 6.1 Schritt 2)
     nl::platform::StdFileSystem fs;
     const bool sdOk = nl::platform::mountSd();
-    const nl::Config config = loadConfig(fs, sdOk);
+    nl::Config config = loadConfig(fs, sdOk);  // die Einstellungsszene ändert sie live
     const nl::EmulatorTable emulators = loadEmulators(fs, sdOk);
 
     // 2. Video, Renderer, Atlas, Theme aus der Konfiguration
@@ -334,8 +334,9 @@ int main(int, char**) {
     mainScene.setCovers(&covers);
     nl::ui::HomeMenu homeMenu;
     mainScene.setHomeMenu(&homeMenu);
-    nl::ui::ActionsScene actions;
-    homeMenu.setActions(&actions);
+    nl::ui::SettingsScene settings;
+    settings.setConfig(&config);
+    homeMenu.setSettings(&settings);
     nl::platform::NetWorker net;
     mainScene.setFavoriteKeys(&store);
     nl::ui::JumpBar jumpBar(mainScene);
@@ -485,7 +486,7 @@ int main(int, char**) {
         const u64 frameStart = gettime();
 #ifdef NL_SELFTEST
         const nl::app::SelftestView view{mainScene, scenes, debug, worker.running(), store, ctx, keyboard, &dialog,
-                                                 &details, &vcMapScene, &actions, &covers};
+                                                 &details, &vcMapScene, &settings, &covers};
         input.poll();  // Geräte weiter abfragen, Eingaben kommen aber aus dem Skript
         const nl::ui::InputFrame in = frame.begin(nl::app::selftestInput(frameNo, view));
 #else

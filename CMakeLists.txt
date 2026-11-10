@@ -53,7 +53,7 @@ add_library(nl_core STATIC
     src/ui/test_library.cpp
     src/ui/main_scene.cpp
     src/ui/home_menu.cpp
-    src/ui/actions_scene.cpp
+    src/ui/settings_scene.cpp
     src/ui/debug_overlay.cpp
     src/ui/pointer_cursor.cpp
     src/ui/startup_scene.cpp

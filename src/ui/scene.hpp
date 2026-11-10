@@ -28,6 +28,9 @@ enum class AppCommand : u8 {
     OpenVcMap,
     SaveVcMap,
     FetchCovers,
+    SettingsChanged,  // Einstellungsszene hat die Live-Config geändert (Sprache/Theme/Audio sofort anwenden)
+    SaveSettings,     // config.ini schreiben
+    Rescan,           // Bibliothek neu scannen
 };
 const char* appCommandName(AppCommand c);
 

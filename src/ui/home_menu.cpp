@@ -58,10 +58,10 @@ void HomeMenu::update(const UiContext& ctx, const InputFrame& in, float, SceneRe
         return;
     }
     if (in.pressed(Action::Confirm) && !pointerOffTiles) {
-        if (focus_ == 2) {  // Einstellungen: HOME ausblenden, dann die Aktionsliste öffnen
-            if (actions_ != nullptr) {
+        if (focus_ == 2) {  // Einstellungen: HOME ausblenden, dann die Einstellungsszene öffnen
+            if (settings_ != nullptr) {
                 out.pop = true;
-                out.push = actions_;
+                out.push = settings_;
             }
             return;
         }

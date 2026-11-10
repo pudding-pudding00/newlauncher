@@ -257,7 +257,7 @@ Mit `[debug] perf = 1` schreibt der Launcher:
 |---|---|
 | `NL_PERF boot first_frame_ms=<n> ready_ms=<n> usb_wait_ms=<n> hz=<50\|60>` | einmal nach `NL_READY`: Zeit bis zum ersten Bild und bis bedienbar, davon USB-Wartezeit |
 | `NL_PERF frames n=<n> slow=<n> max_ms=<x.y> busy=<0\|1>` | alle 300 Frames: Frames über 1,5 Bildperioden; `busy=1`, wenn Scan, Cover-Download oder Cover-Umwandlung lief |
-| `NL_PERF summary ready_ms=… hz=… frames=… slow=… max_ms=… cover_n=… cover_p50=… cover_p95=… cover_max=… mem1_free=… mem2_free=… heap_free=…` | vor jedem Log-Schreiben beim Spielstart und Beenden: alle Budget-Werte der Sitzung; Cover-Latenz vom ersten sichtbaren Wunsch bis zur fertigen Textur (ohne PNG-Umwandlung) |
+| `NL_PERF summary ready_ms=… usb_wait_ms=… hz=… frames=… slow=… busy_slow=… max_ms=… cover_n=… cover_p50=… cover_p95=… cover_max=… mem1_free=… mem2_free=… heap_free=…` | vor jedem Log-Schreiben beim Spielstart und Beenden: alle Budget-Werte der Sitzung; Cover-Latenz vom ersten sichtbaren Wunsch bis zur fertigen Textur (ohne PNG-Umwandlung) |
 
 ## Log-Marker (Dolphin-Log, OSREPORT)
 

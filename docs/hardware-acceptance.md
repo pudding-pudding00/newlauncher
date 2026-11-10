@@ -52,6 +52,7 @@ Nur notieren. Diese Daten braucht M8 (USB-Loader-Start, cIOS) und M9 (Nintendont
 | S4 | Platte abziehen, starten | Dialog nach `usb_timeout` Sekunden; „SD verwenden“ öffnet die SD-Bibliothek | |
 | S5 | HOME → Einstellungen → Bibliotheksgerät: SD, Neustart | Bibliothek von der SD, Hinweis auf Neustart erschien vorher | |
 | S6 | `newlauncher/cache/index.bin` auf dem Bibliotheksgerät löschen, starten | Scan-Fortschritt, danach bedienbar | |
+| S7 | Mit `--perf on`: Platte schlafen lassen bzw. kalt anstecken, `usb_timeout` kleiner als die Anlaufzeit, im Dialog einmal „Erneut versuchen“, Wartezeit mit der Uhr stoppen; danach sauber beenden und `check_perf.py` | `usb_wait_ms` in `NL_PERF summary` ≥ gestoppte Zeit (inkl. Dialog); „Start“ PASS | |
 
 ## D – Darstellung
 
@@ -147,13 +148,15 @@ Budgets aus Spec §7. Die Messung läuft nur mit `[debug] perf = 1`.
 
 | ID | Schritt | Erwartet | Ergebnis |
 |---|---|---|---|
-| P1 | Release-Karte mit `--perf on`: starten, 2 min scrollen, „Fehlende Cover laden“, „Bibliothek neu scannen“, ein Spiel starten | Spiel startet | |
+| P1 | Release-Karte mit `--perf on`, Cache vorhanden (zweiter Start), Platte wach: starten, 2 min scrollen, „Fehlende Cover laden“, „Bibliothek neu scannen“, ein Spiel starten | Spiel startet | |
 | P2 | `python tools/check_perf.py E:\newlauncher\log.txt F:\newlauncher\log.txt` | Exit 0, Tabelle unten eingefügt | |
 | P3 | Selbsttest-Karte nach X1: `F:\newlauncher\log.txt` | enthält `NL_ALLOC_IDLE 0` und `NL_SELFTEST_OK` | |
 
 `log.txt` ist ein Ringpuffer mit den letzten 16 KB. In langen Sitzungen fehlen `NL_PERF boot` und
-frühe Fenster. `check_perf.py` urteilt dann aus der letzten `NL_PERF summary` und markiert fehlende
-Zeilen als N/A.
+frühe Fenster. `check_perf.py` urteilt dann aus der letzten `NL_PERF summary` (sie enthält auch
+`busy_slow`, die langsamen Frames während Hintergrundarbeit), markiert fehlende Zeilen als N/A und
+weist auf fehlende Fensterzeilen hin. Die eigenen Log-Schreibvorgänge der Messung (`NL_READY`,
+`NL_COVERS`, `NL_COVER_DL_DONE`) zählen nicht als langsame Frames.
 
 Ergebnis von `check_perf.py`:
 

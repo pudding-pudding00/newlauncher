@@ -18,6 +18,7 @@
 #include "core/index_file.hpp"
 #include "core/launch_layout.hpp"
 #include "core/launch_plan.hpp"
+#include "core/playlist.hpp"
 #include "core/library_store.hpp"
 #include "core/meta_db.hpp"
 #include "core/n64.hpp"
@@ -32,6 +33,7 @@
 #include "platform/crash.hpp"
 #include "platform/audio.hpp"
 #include "platform/log.hpp"
+#include "platform/music.hpp"
 #include "platform/net_worker.hpp"
 #include "platform/nand_titles.hpp"
 #include "platform/scan_worker.hpp"
@@ -217,6 +219,21 @@ int main(int, char**) {
     nl::platform::Audio audio;
     audio.init();
     audio.setSounds(config.sounds);
+    nl::platform::Music music;  // startet nach NL_READY, Stimme 0
+    music.setVolume(config.musicVolume);
+    auto pumpMusic = [&]() {
+        for (const std::string& line : music.takeLogLines()) nl::log::line("%s", line.c_str());
+    };
+    auto startMusic = [&]() {
+        if (music.started() || !sdOk) return;
+        music.start(nl::musicFiles(fs, "sd:/newlauncher/music"), static_cast<u32>(gettime()));
+    };
+    // Vor jedem Verlassen des Launchers: erst den Musik-Thread (er speist Stimme 0), dann ASND.
+    auto stopAudio = [&]() {
+        music.stop();
+        pumpMusic();
+        audio.shutdown();
+    };
     nl::ui::InputMapper mapper;
 
     nl::ui::UiContext ctx;
@@ -412,7 +429,7 @@ int main(int, char**) {
         if (target.value().kind == nl::LaunchTarget::Kind::Channel) {
             const u64 titleId = target.value().titleId;
             nl::log::line("NL_LAUNCH_VC %s", nl::formatTitleId(titleId).c_str());
-            audio.shutdown();
+            stopAudio();
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
             input.shutdown();
             nl::platform::unmountAll();
@@ -429,7 +446,7 @@ int main(int, char**) {
             showError({nl::LaunchFailure::EmuInvalid, plan.dolPath});
             return;
         }
-        audio.shutdown();
+        stopAudio();
         if (sdOk) nl::log::flushLogFile(fs, kLogPath);
         input.shutdown();
         nl::platform::unmountAll();
@@ -616,6 +633,9 @@ int main(int, char**) {
                 ctx.themeMode = config.themeMode;
                 theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, config.darkFromMin, config.darkToMin), true);
                 audio.setSounds(config.sounds);
+                music.setEnabled(config.music);
+                music.setVolume(config.musicVolume);
+                if (config.music) startMusic();  // beim Start ausgeschaltet gewesen
                 break;
             }
             case nl::ui::AppCommand::SaveSettings:
@@ -641,7 +661,7 @@ int main(int, char**) {
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
                 net.join();
                 covers.shutdown();
-                audio.shutdown();
+                stopAudio();
                 if (sdOk) nl::log::flushLogFile(fs, kLogPath);
                 input.shutdown();
                 nl::platform::unmountAll();
@@ -658,6 +678,7 @@ int main(int, char**) {
         }
         if (!running) break;
         pumpNet();
+        pumpMusic();
         covers.pump();  // nach update (Wünsche dieses Frames), vor draw; Freigaben erst nach GX_DrawDone des Vorframes
 
         dl.clear();
@@ -680,6 +701,7 @@ int main(int, char**) {
             nl::log::line("NL_READY");
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
             readyReported = true;
+            if (config.music) startMusic();
             if (const std::string& key = config.debugAutostart; !key.empty()) {  // nur für Tests
                 const nl::Game* found = nullptr;
                 for (const nl::Game& g : store.games()) {
@@ -706,7 +728,7 @@ int main(int, char**) {
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
     net.join();
     covers.shutdown();
-    audio.shutdown();
+    stopAudio();
     if (sdOk) nl::log::flushLogFile(fs, kLogPath);
     input.shutdown();
     nl::platform::unmountAll();

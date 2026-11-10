@@ -1,6 +1,10 @@
 """Erzeugt die Fixture-Bibliothek für Dolphin-Tests (Spec 8.3): nur Dummy-Header und leere ROM-Dateien.
 
     python tools/make_fixtures.py tests/fixtures/sd
+
+Nicht von diesem Skript erzeugt, sondern eingecheckt: newlauncher/music/tone.ogg (Musik-Smoke-Test, 3 s 440 Hz,
+mono 32 kHz), einmalig erzeugt mit
+    ffmpeg -f lavfi -i "sine=frequency=440:duration=3" -ac 1 -ar 32000 -c:a libvorbis -q:a 0 tone.ogg
 """
 
 import struct

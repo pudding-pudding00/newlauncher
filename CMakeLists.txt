@@ -20,6 +20,7 @@ add_library(nl_core STATIC
     src/core/settings_model.cpp
     src/core/ui_sound.cpp
     src/core/synth.cpp
+    src/core/playlist.cpp
     src/core/utf8.cpp
     src/core/text_fold.cpp
     src/core/bin_io.cpp
@@ -124,6 +125,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/http_client.cpp
         src/platform/net_worker.cpp
         src/platform/audio.cpp
+        src/platform/music.cpp
         src/app/cover_service.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp
@@ -133,7 +135,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         add_executable(${name} ${ARGN})
         target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS} ${PNG_STATIC_INCLUDE_DIRS})
         target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
-        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} fat wiiuse bte asnd)
+        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} fat wiiuse bte asnd vorbisidec ogg)
         target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}")
         nl_apply_flags(${name})
         ogc_create_dol(${name})

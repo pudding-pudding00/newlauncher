@@ -11,6 +11,6 @@ void init();
 void line(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 // Schreibt den Ringpuffer (letzte 16 KB) in eine Datei, z. B. "sd:/newlauncher/log.txt" (Spec 4.2).
 // Nicht aus dem Absturz-Handler aufrufen.
-void flushLogFile(FileSystem& fs, std::string_view path);
+bool flushLogFile(FileSystem& fs, std::string_view path);  // true, wenn geschrieben
 
 }  // namespace nl::log

@@ -36,7 +36,12 @@ CoverState CoverCache::want(std::string_view stem, CoverPriority priority) {
     if (e->lastWanted != frame_ || priority > e->priority) e->priority = priority;
     e->lastWanted = frame_;
     e->wantSeq = ++seq_;
-    if (e->state == CoverState::Unknown) e->state = CoverState::Pending;
+    if (e->state == CoverState::Unknown) {
+        e->state = CoverState::Pending;
+        e->requestedAtMs = -1;
+    }
+    if (priority == CoverPriority::Visible && e->state == CoverState::Pending && e->requestedAtMs < 0)
+        e->requestedAtMs = nowMs_;
     return e->state;
 }
 
@@ -133,6 +138,14 @@ std::optional<u16> CoverCache::slotOf(std::string_view stem) const {
     const auto it = index_.find(stem);
     if (it == index_.end() || entries_[it->second].state != CoverState::Ready) return std::nullopt;
     return it->second;
+}
+
+std::optional<float> CoverCache::requestedAtMs(std::string_view stem) const {
+    const auto it = index_.find(stem);
+    if (it == index_.end()) return std::nullopt;
+    const Entry& e = entries_[it->second];
+    if (e.state != CoverState::Pending || e.requestedAtMs < 0) return std::nullopt;
+    return e.requestedAtMs;
 }
 
 const void* CoverCache::texelsOfSlot(u16 slot) const {

@@ -150,3 +150,21 @@ TEST_CASE("clear gibt alles frei, Generation zählt Änderungen") {
     CHECK(c.bytesUsed() == 0);
     CHECK(c.state("a/1") == CoverState::Unknown);
 }
+
+TEST_CASE("requestedAtMs ab dem ersten Visible-want") {
+    FakeMemory m;
+    CoverCache c(3 * kBytes, m);
+    c.beginFrame(1, 100);
+    c.want("nes/A", CoverPriority::Prefetch);
+    CHECK_FALSE(c.requestedAtMs("nes/A").has_value());
+    c.beginFrame(2, 116);
+    c.want("nes/A", CoverPriority::Visible);
+    REQUIRE(c.requestedAtMs("nes/A").has_value());
+    CHECK(*c.requestedAtMs("nes/A") == doctest::Approx(116.0f));
+    c.beginFrame(3, 132);
+    c.want("nes/A", CoverPriority::Visible);
+    CHECK(*c.requestedAtMs("nes/A") == doctest::Approx(116.0f));
+    finish(c, m, "nes/A");
+    CHECK_FALSE(c.requestedAtMs("nes/A").has_value());
+    CHECK_FALSE(c.requestedAtMs("nes/unbekannt").has_value());
+}

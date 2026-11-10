@@ -56,6 +56,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Fixture-Bibliothek nicht auf die SD kopieren")
     parser.add_argument("--autostart", metavar="KEY",
                         help="Spielschlüssel, den der Launcher nach NL_READY startet ([debug] autostart)")
+    parser.add_argument("--debug", action="append", default=[], metavar="KEY=VALUE",
+                        help="zusätzliche Zeile im [debug]-Abschnitt, z. B. perf=1 (mehrfach angebbar)")
     parser.add_argument("--cover-server", action="store_true",
                         help="lokalen Cover-Server starten und „Fehlende Cover laden“ nach NL_READY auslösen")
     args = parser.parse_args(argv)
@@ -71,6 +73,12 @@ def main(argv: list[str] | None = None) -> int:
     debug_lines = []
     if args.autostart:
         debug_lines.append(f"autostart = {args.autostart}")
+    for item in args.debug:
+        key, sep, value = item.partition("=")
+        if not sep or not key.strip():
+            print(f"SMOKE FEHLER: --debug erwartet KEY=VALUE: {item}")
+            return 2
+        debug_lines.append(f"{key.strip()} = {value.strip()}")
     if args.cover_server:
         server_dir = tempfile.TemporaryDirectory(prefix="nl_covers_")
         write_cover_server_files(Path(server_dir.name))

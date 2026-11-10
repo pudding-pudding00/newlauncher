@@ -32,6 +32,8 @@ struct SelftestView {
     const ui::SettingsScene* settings;  // Einstellungen hinter der HOME-Kachel (M6)
     const Config* config;               // live geänderte Konfiguration (M6)
     const CoverService* covers;       // Cover-Cache und -Thread (M5)
+    FileSystem* logFs;                // nullptr ohne SD; log.txt vor dem absichtlichen Absturz (M7, P3)
+    const char* logPath;
 };
 
 ui::RawInput selftestInput(int frame, const SelftestView& v);

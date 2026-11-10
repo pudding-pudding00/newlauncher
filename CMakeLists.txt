@@ -21,6 +21,7 @@ add_library(nl_core STATIC
     src/core/ui_sound.cpp
     src/core/synth.cpp
     src/core/playlist.cpp
+    src/core/perf_stats.cpp
     src/core/utf8.cpp
     src/core/text_fold.cpp
     src/core/bin_io.cpp

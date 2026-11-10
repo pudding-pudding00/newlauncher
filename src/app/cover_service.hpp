@@ -10,6 +10,7 @@
 
 #include "core/cover_cache.hpp"
 #include "core/fs.hpp"
+#include "core/perf_stats.hpp"
 #include "gfx/texture_table.hpp"
 #include "platform/cover_worker.hpp"
 #include "ui/cover_provider.hpp"
@@ -29,6 +30,10 @@ public:
     bool idle() const { return cache_.idle() && !worker_.running(); }
     u32 readyCount() const { return cache_.readyCount(); }
     u32 bytesUsed() const { return cache_.bytesUsed(); }
+    void setPerf(PerfStats* perf) { perf_ = perf; }  // nullptr: keine Messung
+    // Perf: der Thread arbeitet und hat zuletzt eine PNG umgewandelt. Eine Umwandlung belegt die CPU spürbar,
+    // ein .tex-Ladevorgang kaum; ob der laufende Auftrag umwandelt, steht erst in seinem Ergebnis.
+    bool converting() const { return worker_.running() && lastConverted_; }
 
     // ui::CoverProvider
     void want(const Game& game, CoverPriority priority) override;
@@ -54,6 +59,8 @@ private:
     Memory mem_;
     CoverCache cache_;
     platform::CoverWorker worker_;
+    PerfStats* perf_ = nullptr;
+    bool lastConverted_ = false;
     // Stamm je Game-Zeiger, damit want/view pro Frame nicht allokieren. Der Schlüssel wird mitgeprüft:
     // die Detailansicht nutzt dasselbe Game-Objekt für wechselnde Spiele.
     mutable std::unordered_map<const Game*, StemEntry> stems_;

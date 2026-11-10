@@ -2,6 +2,8 @@
 // Mount von SD und USB über libfat (Spec 6.1). USB wird nicht blockierend alle 500 ms versucht,
 // damit die Startszene „Warte auf USB …" weiter animiert.
 
+#include "core/types.hpp"
+
 namespace nl::platform {
 
 bool mountSd();  // Gerät "sd:"
@@ -12,6 +14,7 @@ public:
     void begin(int timeoutSec);
     State poll(float dtMs);  // Gerät "usb:"
     int secondsLeft() const;
+
 
 private:
     State state_ = State::Waiting;

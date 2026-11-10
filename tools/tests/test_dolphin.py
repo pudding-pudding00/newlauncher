@@ -167,6 +167,13 @@ class DolphinToolsTest(unittest.TestCase):
         text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
         self.assertTrue(text.endswith("[debug]\nautostart = nes/Zelda (Europe) (Rev 1).nes\n"))
 
+    def test_smoke_debug_option_appends_lines(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                    "--timeout", "2", "--debug", "perf=1", "--debug", "x = y"])
+        text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertTrue(text.endswith("[debug]\nperf = 1\nx = y\n"))
+
     def test_smoke_cover_server_writes_debug_keys_and_pngs(self):
         self._fake_dolphin("raise SystemExit(0)\n")
         seen = {}

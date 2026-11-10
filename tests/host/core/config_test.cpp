@@ -155,3 +155,8 @@ TEST_CASE("configFromIni: [debug] log_sounds") {
     CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugLogSounds);
     CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nlog_sounds = 1\n")).debugLogSounds);
 }
+
+TEST_CASE("configFromIni: [debug] perf") {
+    CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugPerf);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nperf = 1\n")).debugPerf);
+}

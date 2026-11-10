@@ -48,6 +48,10 @@ public:
     const void* texels(std::string_view stem) const;
     float fadeAlpha(std::string_view stem) const;
     std::optional<u16> slotOf(std::string_view stem) const;  // nur Ready
+    // Perf (M7): Zeitpunkt des ersten Visible-want in der laufenden Pending-Phase; Prefetch zählt nicht,
+    // weil die Latenz messen soll, wie lange ein sichtbarer Platz leer bleibt.
+    std::optional<float> requestedAtMs(std::string_view stem) const;
+    float nowMs() const { return nowMs_; }  // Zeit aus dem letzten beginFrame
     const void* texelsOfSlot(u16 slot) const;
     u32 bytesUsed() const { return bytesUsed_; }
     u32 readyCount() const { return readyCount_; }
@@ -65,6 +69,7 @@ private:
         void* texels = nullptr;
         u32 bytes = 0;
         float readyAtMs = 0;
+        float requestedAtMs = -1;  // < 0: keine Visible-Anfrage in dieser Pending-Phase
     };
     struct Hash {
         using is_transparent = void;

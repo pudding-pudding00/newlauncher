@@ -57,11 +57,11 @@ target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 nl_apply_flags(nl_core)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
-    # FreeType aus den devkitPro-portlibs (pacman -S ppc-freetype), statisch mit AbhÃ¤ngigkeiten.
+    # FreeType aus den devkitPro-portlibs (pacman -S ppc-freetype), statisch mit Abhängigkeiten.
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(FREETYPE REQUIRED freetype2)
 
-    # Schriften (Spec 3.7), per tools/subset_fonts.py auf Latin-1 + â€žâ€¦" reduziert.
+    # Schriften (Spec 3.7), per tools/subset_fonts.py auf Latin-1 + „…" reduziert.
     dkp_add_embedded_binary_library(nl_fonts
         ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/MPLUSRounded1c-Regular-latin1.ttf
         ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/MPLUSRounded1c-Medium-latin1.ttf
@@ -87,7 +87,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     dkp_set_target_file(nl_app_booter ${NL_BOOTER_BIN})
     dkp_add_embedded_binary_library(nl_booter nl_app_booter)
 
-    # Test-DOL fÃ¼r den Chainloader: gibt argc/argv Ã¼ber SYS_Report aus.
+    # Test-DOL für den Chainloader: gibt argc/argv über SYS_Report aus.
     add_executable(argv_echo tests/wii/argv_echo.c)
     target_compile_options(argv_echo PRIVATE -Wall -Wextra)
     ogc_create_dol(argv_echo)
@@ -118,7 +118,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
 
     nl_wii_target(newlauncher ${NL_WII_SOURCES})
 
-    # Selbsttest (Task 11): geskriptete Eingaben, AllokationszÃ¤hler, absichtlicher Absturz am Ende.
+    # Selbsttest (Task 11): geskriptete Eingaben, Allokationszähler, absichtlicher Absturz am Ende.
     nl_wii_target(nl_selftest ${NL_WII_SOURCES} src/app/selftest.cpp)
     target_compile_definitions(nl_selftest PRIVATE NL_SELFTEST)
     target_link_options(nl_selftest PRIVATE -Wl,--wrap=_malloc_r -Wl,--wrap=_memalign_r -Wl,--wrap=_realloc_r)

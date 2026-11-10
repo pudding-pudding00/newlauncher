@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from deploy_dolphin import deploy  # noqa: E402
 from make_fixtures import main as make_fixtures  # noqa: E402
 from metabin import read_meta_bin  # noqa: E402
+from pngfile import PNG_SIGNATURE  # noqa: E402
 
 
 class MakeFixturesTest(unittest.TestCase):
@@ -79,6 +80,36 @@ class MakeFixturesTest(unittest.TestCase):
         deploy(None, sd, dist, fixtures_dir=self.out)
         self.assertTrue((sd / "roms/n64/Mario Kart 64 (Europe).z64").is_file())
         self.assertTrue((sd / "newlauncher/config.ini").is_file())
+
+    def test_cover_sources(self):
+        src = self.out / "newlauncher/covers_src"
+        for rel, size in [("nes/Super Mario Bros. (World).png", (128, 180)),
+                          ("n64/Mario Kart 64 (Europe).png", (300, 300))]:
+            data = (src / rel).read_bytes()
+            self.assertEqual(data[:8], PNG_SIGNATURE, rel)
+            self.assertEqual(struct.unpack_from(">II", data, 16), size, rel)
+        junk = (src / "gb/Tetris (World) (Rev 1).png").read_bytes()
+        self.assertEqual(len(junk), 40)
+        self.assertNotEqual(junk[:8], PNG_SIGNATURE)
+
+    def test_deploy_clears_cover_cache_with_fixtures(self):
+        sd = Path(self._tmp.name) / "deployed"
+        dist = Path(self._tmp.name) / "dist"
+        dist.mkdir()
+        stale_tex = sd / "newlauncher/cache/covers/nes/alt.tex"
+        stale_src = sd / "newlauncher/covers_src/nes/alt.png"
+        keep = sd / "newlauncher/cache/meta_alt.bin"
+        for p in (stale_tex, stale_src, keep):
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(b"x")
+        deploy(None, sd, dist)  # ohne Fixtures bleibt alles stehen
+        self.assertTrue(stale_tex.is_file())
+        self.assertTrue(stale_src.is_file())
+        deploy(None, sd, dist, fixtures_dir=self.out)
+        self.assertFalse(stale_tex.exists())
+        self.assertFalse(stale_src.exists())
+        self.assertTrue(keep.is_file())
+        self.assertTrue((sd / "newlauncher/covers_src/nes/Super Mario Bros. (World).png").is_file())
 
 
 if __name__ == "__main__":

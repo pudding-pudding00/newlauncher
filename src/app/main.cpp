@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 
+#include "app/cover_service.hpp"
 #include "core/config.hpp"
 #include "core/emulators.hpp"
 #include "core/index_file.hpp"
@@ -203,7 +204,7 @@ int main(int, char**) {
     theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, config.darkFromMin, config.darkToMin), false);
     ctx.theme = &theme.current();
 
-    nl::gfx::DrawList dl(4096, 16);
+    nl::gfx::DrawList dl(4096, 256);  // Cover und Atlas wechseln sich pro Kachel ab
     Frame frame{renderer, input, mapper, ctx, theme, dl, config};
     nl::ui::StartupScene startup;
     auto startupFrame = [&]() {
@@ -322,7 +323,9 @@ int main(int, char**) {
     auto libraryView = [&]() { return nl::ui::Library{store.games(), store.favorites(), store.recent()}; };
 
     // 5. Hauptbildschirm
+    nl::app::CoverService covers(fs, libRoot);
     nl::ui::MainScene mainScene(libraryView());
+    mainScene.setCovers(&covers);
     nl::ui::HomeMenu homeMenu;
     mainScene.setHomeMenu(&homeMenu);
     mainScene.setFavoriteKeys(&store);
@@ -332,6 +335,7 @@ int main(int, char**) {
     mainScene.setKeyboard(&keyboard);
     nl::ui::DetailsScene details;
     mainScene.setDetails(&details, &store);
+    details.setCovers(&covers);
     nl::ui::DialogScene dialog;
     nl::ui::VcMapScene vcMapScene;
     nl::ui::SceneStack scenes;
@@ -371,6 +375,7 @@ int main(int, char**) {
         else nl::log::line("NL_WARN history.ini nicht gespeichert");
         nl::log::line("NL_LAUNCH %s", key.c_str());
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
+        covers.shutdown();
 
         if (target.value().kind == nl::LaunchTarget::Kind::Channel) {
             const u64 titleId = target.value().titleId;
@@ -401,6 +406,7 @@ int main(int, char**) {
     nl::ui::DebugOverlay debug;
     nl::FrameStats stats;
     bool readyReported = false;
+    bool coversReported = false;
     bool running = true;
     for (int frameNo = 0; running; ++frameNo) {
         static_cast<void>(frameNo);  // nur im Selbsttest gelesen
@@ -419,6 +425,7 @@ int main(int, char**) {
                 const nl::ScanStats st = result->value().stats;
                 const std::string focusKey = mainScene.focusedKey();  // vor setGames: danach sind die Zeiger ungültig
                 store.setGames(std::move(*result).value().index, metaPtr);
+                covers.libraryChanged();
                 mainScene.setLibrary(libraryView(), focusKey);
                 nl::log::line("NL_SCAN_DONE games=%u added=%u removed=%u", static_cast<unsigned>(store.games().size()),
                               static_cast<unsigned>(st.added), static_cast<unsigned>(st.removed));
@@ -429,6 +436,7 @@ int main(int, char**) {
         }
 
         if (in.pressed(nl::ui::Action::DebugToggle)) debug.toggle();
+        covers.beginFrame(static_cast<u32>(frameNo) + 1, static_cast<float>(frameNo) * kFrameMs);
         nl::ui::SceneRequests req;
         const nl::ui::AppCommand cmd = scenes.update(ctx, in, kFrameMs, &req);
         if (req.push == &details) refreshDetailsN64();  // MainScene hat die Details gerade geöffnet
@@ -500,6 +508,7 @@ int main(int, char**) {
             case nl::ui::AppCommand::PowerOff:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
+                covers.shutdown();
                 if (sdOk) nl::log::flushLogFile(fs, kLogPath);
                 input.shutdown();
                 nl::platform::unmountAll();
@@ -512,6 +521,7 @@ int main(int, char**) {
                 break;
         }
         if (!running) break;
+        covers.pump();  // nach update (Wünsche dieses Frames), vor draw; Freigaben erst nach GX_DrawDone des Vorframes
 
         dl.clear();
         scenes.draw(ctx, dl);
@@ -519,13 +529,13 @@ int main(int, char**) {
         debug.draw(ctx, dl);
         nl::ui::drawPointerCursor(ctx, dl, in);  // zuletzt: über allen Szenen und Overlays
         renderer.beginFrame(ctx.theme->bg);
-        renderer.submit(dl);
+        renderer.submit(dl, &covers);
 
         // Statistik für den nächsten Frame; CPU-Zeit ohne die VSync-Wartezeit in endFrame.
         stats.cpuMicros = static_cast<u32>(ticks_to_microsecs(diff_ticks(frameStart, gettime())));
         stats.quads = dl.quadCount();
         stats.droppedQuads = dl.droppedQuads();
-        stats.textureBytes = renderer.textureBytes();
+        stats.textureBytes = renderer.textureBytes() + covers.bytesUsed();
         renderer.endFrame();
         stats.drawCalls = renderer.drawCallsLastFrame();
 
@@ -546,11 +556,17 @@ int main(int, char**) {
                 }
             }
         }
+        if (readyReported && !coversReported && covers.idle()) {
+            nl::log::line("NL_COVERS ready=%u", static_cast<unsigned>(covers.readyCount()));
+            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            coversReported = true;
+        }
 #ifdef NL_SELFTEST
         nl::app::selftestAfterFrame(frameNo, view);
 #endif
     }
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
+    covers.shutdown();
     if (sdOk) nl::log::flushLogFile(fs, kLogPath);
     input.shutdown();
     nl::platform::unmountAll();

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from metabin import write_meta_bin
+from pngfile import solid_png
 
 WII_MAGIC = 0x5D1C9EA3
 GC_MAGIC = 0xC2339F3D
@@ -92,6 +93,10 @@ def main(out: Path) -> int:
     write(out, "wbfs/Super Mario Galaxy [RMGP01]/RMGP01.iso",
           bytes(disc_header("RMGP01", "Super Mario Galaxy", wii=True)))
     write(out, "wbfs/Kaputt [XXXX01]/XXXX01.wbfs", bytes([0xAB]) * 1024)
+    # Cover-Quellen (Spec 6.4): hochkant kleiner als 200×280, quadratisch größer, und eine kaputte PNG
+    write(out, "newlauncher/covers_src/nes/Super Mario Bros. (World).png", solid_png(128, 180, (220, 30, 30, 255)))
+    write(out, "newlauncher/covers_src/n64/Mario Kart 64 (Europe).png", solid_png(300, 300, (30, 60, 220, 255)))
+    write(out, "newlauncher/covers_src/gb/Tetris (World) (Rev 1).png", b"kein PNG, nur 40 Byte Testmuell!!!!!!!!!")
     print(f"Fixtures geschrieben nach {out}")
     return 0
 

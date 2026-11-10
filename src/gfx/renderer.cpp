@@ -11,7 +11,17 @@ namespace {
 constexpr u32 kFifoSize = 256 * 1024;
 GXTexObj g_atlasTex;
 
+GXTexObj g_coverTex;
+
 GXColor toGx(Color c) { return GXColor{c.r, c.g, c.b, c.a}; }
+
+// UI-Atlas (I8): Farbe = Rasterfarbe, Alpha = Rasteralpha × Texturintensität.
+void useAtlasTev() {
+    GX_SetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);
+    GX_SetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+    GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_RASA, GX_CA_TEXA, GX_CA_ZERO);
+    GX_SetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+}
 }  // namespace
 
 Result<void> Renderer::init(platform::Video& video) {
@@ -55,13 +65,10 @@ Result<void> Renderer::init(platform::Video& video) {
     GX_SetNumTexGens(1);
     GX_SetTexCoordGen(GX_TEXCOORD0, GX_TG_MTX2x4, GX_TG_TEX0, GX_IDENTITY);
 
-    // Eine TEV-Stufe: Farbe = Rasterfarbe, Alpha = Rasteralpha × Texturintensität (I8).
+    // Eine TEV-Stufe, je nach Textur Atlas- oder Cover-Modus (submit).
     GX_SetNumTevStages(1);
     GX_SetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
-    GX_SetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_RASC);
-    GX_SetTevColorOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
-    GX_SetTevAlphaIn(GX_TEVSTAGE0, GX_CA_ZERO, GX_CA_RASA, GX_CA_TEXA, GX_CA_ZERO);
-    GX_SetTevAlphaOp(GX_TEVSTAGE0, GX_TEV_ADD, GX_TB_ZERO, GX_CS_SCALE_1, GX_TRUE, GX_TEVPREV);
+    useAtlasTev();
 
     // Logisches Koordinatensystem: 640 bzw. 854 × 480, auf die EFB-Größe skaliert.
     Mtx44 proj;
@@ -93,11 +100,31 @@ void Renderer::beginFrame(Color clear) {
     drawCalls_ = 0;
 }
 
-void Renderer::submit(const DrawList& list) {
+void Renderer::submit(const DrawList& list, const CoverTextures* covers) {
+    // Cover-Slots wurden neu belegt oder freigegeben: gleiche Adresse kann jetzt anderes Bild sein.
+    if (covers != nullptr && covers->generation() != coverGeneration_) {
+        coverGeneration_ = covers->generation();
+        GX_InvalidateTexAll();
+    }
     const auto vertices = list.vertices();
+    TextureId bound = 0;
     for (const Batch& b : list.batches()) {
         if (b.vertexCount == 0) continue;
-        // Weitere Texturen (Cover) folgen in M5; Textur 0 ist der UI-Atlas.
+        if (b.texture != bound) {
+            if (b.texture == 0) {
+                GX_LoadTexObj(&g_atlasTex, GX_TEXMAP0);
+                useAtlasTev();
+            } else {
+                const void* texels = covers != nullptr ? covers->texels(b.texture) : nullptr;
+                if (texels == nullptr) continue;
+                GX_InitTexObj(&g_coverTex, const_cast<void*>(texels), 200, 280, GX_TF_CMPR, GX_CLAMP, GX_CLAMP,
+                              GX_FALSE);
+                GX_InitTexObjLOD(&g_coverTex, GX_LINEAR, GX_LINEAR, 0.0f, 0.0f, 0.0f, GX_FALSE, GX_FALSE, GX_ANISO_1);
+                GX_LoadTexObj(&g_coverTex, GX_TEXMAP0);
+                GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);  // Texel × Vertexfarbe, Alpha für die Einblendung
+            }
+            bound = b.texture;
+        }
         GX_Begin(GX_QUADS, GX_VTXFMT0, static_cast<u16>(b.vertexCount));
         for (u32 i = 0; i < b.vertexCount; ++i) {
             const Vertex& v = vertices[b.firstVertex + i];
@@ -107,6 +134,10 @@ void Renderer::submit(const DrawList& list) {
         }
         GX_End();
         ++drawCalls_;
+    }
+    if (bound != 0) {  // nächster Frame beginnt wieder mit dem Atlas
+        GX_LoadTexObj(&g_atlasTex, GX_TEXMAP0);
+        useAtlasTev();
     }
 }
 

@@ -18,9 +18,10 @@ jobs:
             '  message(FATAL_ERROR "CMake ${CMAKE_VERSION} ist zu alt, Presets v6 brauchen >= 3.25")' \
             'endif()' > /tmp/check_cmake.cmake
           cmake -P /tmp/check_cmake.cmake
-      - name: FreeType bereitstellen
+      - name: FreeType und libpng bereitstellen
         run: |
           test -f "$DEVKITPRO/portlibs/ppc/lib/libfreetype.a" || dkp-pacman -S --noconfirm --needed ppc-freetype
+          test -f "$DEVKITPRO/portlibs/ppc/lib/libpng.a" || dkp-pacman -S --noconfirm --needed ppc-libpng
       - name: DOL bauen
         run: cmake --preset wii && cmake --build --preset wii
       - uses: actions/upload-artifact@v4

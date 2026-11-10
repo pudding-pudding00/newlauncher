@@ -68,6 +68,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     # FreeType aus den devkitPro-portlibs (pacman -S ppc-freetype), statisch mit Abhängigkeiten.
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(FREETYPE REQUIRED freetype2)
+    # libpng für die Cover (pacman -S ppc-libpng); FreeType bringt sie meist schon mit.
+    pkg_check_modules(PNG REQUIRED libpng)
 
     # Schriften (Spec 3.7), per tools/subset_fonts.py auf Latin-1 + „…" reduziert.
     dkp_add_embedded_binary_library(nl_fonts
@@ -112,15 +114,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/storage.cpp
         src/platform/std_fs.cpp
         src/platform/scan_worker.cpp
+        src/platform/png_decode.cpp
+        src/platform/cover_worker.cpp
+        src/app/cover_service.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp
     )
 
     function(nl_wii_target name)
         add_executable(${name} ${ARGN})
-        target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS})
+        target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS} ${PNG_STATIC_INCLUDE_DIRS})
         target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
-        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} fat wiiuse bte)
+        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} fat wiiuse bte)
         target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}")
         nl_apply_flags(${name})
         ogc_create_dol(${name})

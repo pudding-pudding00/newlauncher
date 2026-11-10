@@ -42,7 +42,8 @@ def main(argv: list[str] | None = None) -> int:
         # startet Dolphin direkt per -e; sie dürfen den Launcher auf der SD nicht ersetzen.
         is_launcher = args.dol.name == DEFAULT_DOL.name
         sd = sd_sync_dir(user_dir)
-        deploy(args.dol if is_launcher else None, sd, DIST_DIR, FIXTURES_DIR if args.fixtures else None)
+        deploy(args.dol if is_launcher else None, sd, DIST_DIR, FIXTURES_DIR if args.fixtures else None,
+               wii_root=user_dir / "Wii")
         if args.fixtures:
             # Ohne alten Index startet der Launcher mit einem vollständigen Scan der Fixtures.
             (sd / "newlauncher/cache/index.bin").unlink(missing_ok=True)

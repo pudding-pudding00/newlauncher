@@ -15,13 +15,18 @@
 #include "core/launch_plan.hpp"
 #include "core/library_store.hpp"
 #include "core/meta_db.hpp"
+#include "core/n64.hpp"
+#include "core/n64_choice.hpp"
 #include "core/theme.hpp"
+#include "core/vc_map.hpp"
 #include "gfx/draw_list.hpp"
 #include "gfx/font_loader.hpp"
 #include "gfx/renderer.hpp"
 #include "launch/chainloader.hpp"
+#include "launch/channel.hpp"
 #include "platform/crash.hpp"
 #include "platform/log.hpp"
+#include "platform/nand_titles.hpp"
 #include "platform/scan_worker.hpp"
 #include "platform/std_fs.hpp"
 #include "platform/storage.hpp"
@@ -39,6 +44,7 @@
 #include "ui/scene.hpp"
 #include "ui/startup_scene.hpp"
 #include "ui/strings.hpp"
+#include "ui/vc_map_scene.hpp"
 
 #ifdef NL_SELFTEST
 #include "app/selftest.hpp"
@@ -52,6 +58,8 @@ constexpr const char* kConfigPath = "sd:/newlauncher/config.ini";
 constexpr const char* kFavoritesPath = "sd:/newlauncher/favorites.ini";
 constexpr const char* kHistoryPath = "sd:/newlauncher/history.ini";
 constexpr const char* kEmulatorsPath = "sd:/newlauncher/emulators.ini";
+constexpr const char* kVcMapPath = "sd:/newlauncher/n64_vc.ini";
+constexpr const char* kGamesPath = "sd:/newlauncher/games.ini";
 constexpr const char* kLogPath = "sd:/newlauncher/log.txt";
 constexpr std::size_t kMaxIniBytes = 256 * 1024;
 constexpr std::size_t kMaxIndexBytes = 16 * 1024 * 1024;
@@ -239,10 +247,31 @@ int main(int, char**) {
     const nl::MetaDb* metaPtr = meta ? &*meta : nullptr;
 
     nl::LibraryStore store;
+    nl::GameOverrides overrides;
+    nl::VcMap vcMapping;
     if (sdOk) {
         store.loadFavorites(readIni(fs, kFavoritesPath));
         store.loadHistory(readIni(fs, kHistoryPath));
+        overrides = nl::GameOverrides::fromIni(readIni(fs, kGamesPath));
+        vcMapping = nl::VcMap::fromIni(readIni(fs, kVcMapPath));
     }
+
+    // N64-Startwege (Spec 6.6): Kanäle im NAND und die beiden Emulator-DOLs, einmal pro Sitzung.
+    const std::vector<u64> installedTitles = nl::platform::installedTitleIds();
+    nl::log::line("NL_NAND channels=%u", static_cast<unsigned>(installedTitles.size()));
+    const bool not64Dol = nl::fileSize(fs, emulators.forN64(nl::N64Method::Not64)->dol).has_value();
+    const bool wii64Dol = nl::fileSize(fs, emulators.forN64(nl::N64Method::Wii64)->dol).has_value();
+    auto n64Inputs = [&](const nl::Game& g) {
+        nl::N64Inputs in;
+        in.override_ = overrides.n64Method(g.key);
+        in.mappedTitle = vcMapping.titleFor(g.key);
+        in.installedTitles = installedTitles;
+        in.not64Dol = not64Dol;
+        in.wii64Dol = wii64Dol;
+        return in;
+    };
+    std::vector<nl::ChannelInfo> channels;  // Namen erst beim ersten Öffnen des VC-Dialogs
+    bool channelsLoaded = false;
     auto saveIndex = [&](const nl::IndexData& index) {
         static_cast<void>(fs.makeDirs(cacheDir));
         const std::vector<u8> bytes = nl::writeIndex(index);
@@ -295,8 +324,16 @@ int main(int, char**) {
     nl::ui::DetailsScene details;
     mainScene.setDetails(&details, &store);
     nl::ui::DialogScene dialog;
+    nl::ui::VcMapScene vcMapScene;
     nl::ui::SceneStack scenes;
     scenes.push(&mainScene);
+
+    // Zeile „Startmethode“ der Detailansicht aus Override, Zuordnung und Verfügbarkeit.
+    auto refreshDetailsN64 = [&]() {
+        const nl::Game* g = details.game();
+        if (g == nullptr || g->console != nl::Console::N64) return;
+        details.setN64(nl::decideN64(n64Inputs(*g)), overrides.n64Method(g->key));
+    };
 
     // Spec 9: Preflight, Verlauf, Chainload. Kehrt nur zurück, wenn der Start scheitert (dann mit Dialog).
     auto launchGame = [&](const nl::Game& game) {
@@ -308,29 +345,48 @@ int main(int, char**) {
             dialog.open(title, text);
             scenes.push(&dialog);
         };
-        auto plan = launchAllowed ? nl::preflightEmulator(fs, game, libRoot, emulators)
-                                  : nl::Result<nl::LaunchPlan, nl::LaunchError>::err(
-                                        {nl::LaunchFailure::NoMemory, "Speicher für den Start ist belegt."});
-        if (!plan.isOk()) {
-            nl::log::line("NL_PREFLIGHT_FAIL %s %s", nl::launchFailureName(plan.error().kind), key.c_str());
-            showError(plan.error());
+        const nl::N64Inputs inputs = n64Inputs(game);
+        auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs);
+        if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Dol && !launchAllowed) {
+            target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(
+                {nl::LaunchFailure::NoMemory, "Speicher für den Start ist belegt."});
+        }
+        if (!target.isOk()) {
+            nl::log::line("NL_PREFLIGHT_FAIL %s %s", nl::launchFailureName(target.error().kind), key.c_str());
+            showError(target.error());
             return;
         }
+        if (target.value().n64) nl::log::line("NL_N64 %s %s", key.c_str(), nl::n64MethodKey(*target.value().n64));
         store.recordPlayed(key, static_cast<u32>(std::time(nullptr)));
         if (sdOk && writeText(fs, kHistoryPath, store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
         else nl::log::line("NL_WARN history.ini nicht gespeichert");
         nl::log::line("NL_LAUNCH %s", key.c_str());
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
-        if (auto loaded = nl::launch::loadDolToBuffer(fs, plan.value()); !loaded.isOk()) {
+
+        if (target.value().kind == nl::LaunchTarget::Kind::Channel) {
+            const u64 titleId = target.value().titleId;
+            nl::log::line("NL_LAUNCH_VC %s", nl::formatTitleId(titleId).c_str());
+            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            input.shutdown();
+            nl::platform::unmountAll();
+            nl::platform::shutdownVideo();
+            const nl::Result<void> r = nl::launch::launchChannel(titleId);
+            nl::log::line("NL_ERROR Kanalstart: %s", r.error().context.c_str());
+            SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
+            return;
+        }
+
+        const nl::LaunchPlan& plan = target.value().dol;
+        if (auto loaded = nl::launch::loadDolToBuffer(fs, plan); !loaded.isOk()) {
             nl::log::line("NL_WARN DOL nicht geladen: %s", loaded.error().context.c_str());
-            showError({nl::LaunchFailure::EmuInvalid, plan.value().dolPath});
+            showError({nl::LaunchFailure::EmuInvalid, plan.dolPath});
             return;
         }
         if (sdOk) nl::log::flushLogFile(fs, kLogPath);
         input.shutdown();
         nl::platform::unmountAll();
         nl::platform::shutdownVideo();
-        nl::launch::chainload(plan.value());
+        nl::launch::chainload(plan);
     };
 
     nl::ui::DebugOverlay debug;
@@ -365,7 +421,48 @@ int main(int, char**) {
         if (in.pressed(nl::ui::Action::DebugToggle)) debug.toggle();
         nl::ui::SceneRequests req;
         const nl::ui::AppCommand cmd = scenes.update(ctx, in, kFrameMs, &req);
+        if (req.push == &details) refreshDetailsN64();  // MainScene hat die Details gerade geöffnet
         switch (cmd) {
+            case nl::ui::AppCommand::SetN64Method: {
+                if (req.game == nullptr) break;
+                const std::string key = req.game->key;
+                const std::optional<nl::N64Method> method =
+                    req.n64Choice == 0 ? std::nullopt : std::optional<nl::N64Method>(static_cast<nl::N64Method>(req.n64Choice - 1));
+                overrides.setN64Method(key, method);
+                if (sdOk && writeText(fs, kGamesPath, overrides.toIni().serialize()))
+                    nl::log::line("NL_OVERRIDE_SAVED %s %s", key.c_str(), method ? nl::n64MethodKey(*method) : "auto");
+                else nl::log::line("NL_WARN games.ini nicht gespeichert");
+                refreshDetailsN64();
+                break;
+            }
+            case nl::ui::AppCommand::OpenVcMap: {
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (!channelsLoaded) {
+                    channels = nl::platform::loadChannelNames(installedTitles, nl::platform::systemBannerLang());
+                    channelsLoaded = true;
+                    nl::log::line("NL_VC_CHANNELS n=%u", static_cast<unsigned>(channels.size()));
+                    for (const nl::ChannelInfo& c : channels)
+                        nl::log::line("NL_VC_CHANNEL %s %s", nl::formatTitleId(c.titleId).c_str(), nl::channelDisplayName(c).c_str());
+                }
+                std::vector<nl::ui::VcMapRow> rows;
+                for (const nl::Game& g : store.games()) {
+                    if (g.console != nl::Console::N64) continue;
+                    nl::ui::VcMapRow row{g.key, g.title != nullptr ? g.title : g.key, vcMapping.titleFor(g.key), std::nullopt};
+                    if (!row.mapped) row.suggestion = nl::suggestChannel(row.title, channels);
+                    rows.push_back(std::move(row));
+                }
+                vcMapScene.open(std::move(rows), channels);
+                scenes.push(&vcMapScene);  // wartet, bis das HOME-Menü ausgeblendet ist
+                break;
+            }
+            case nl::ui::AppCommand::SaveVcMap: {
+                for (const nl::ui::VcMapRow& row : vcMapScene.rows()) vcMapping.set(row.key, row.mapped);
+                if (sdOk && writeText(fs, kVcMapPath, vcMapping.toIni().serialize()))
+                    nl::log::line("NL_VCMAP_SAVED n=%u", static_cast<unsigned>(vcMapping.size()));
+                else nl::log::line("NL_WARN n64_vc.ini nicht gespeichert");
+                refreshDetailsN64();
+                break;
+            }
             case nl::ui::AppCommand::ToggleFavorite: {
                 if (req.game == nullptr) break;
                 const std::string key = req.game->key;

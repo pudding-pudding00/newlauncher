@@ -212,3 +212,21 @@ TEST_CASE("appCommandName für die M4-Befehle") {
     CHECK(std::strcmp(appCommandName(AppCommand::OpenVcMap), "open_vc_map") == 0);
     CHECK(std::strcmp(appCommandName(AppCommand::SaveVcMap), "save_vc_map") == 0);
 }
+
+TEST_CASE_FIXTURE(Fixture, "push von außen, während ein Overlay ausblendet, wartet bis es weg ist") {
+    SceneStack st;
+    Recorder base, over(true), dialog;
+    st.push(&base);
+    st.push(&over);
+    st.update(ctx, InputFrame{}, 200);
+    over.next.pop = true;  // z. B. HOME-Menü: OpenVcMap + pop
+    st.update(ctx, InputFrame{}, 16);
+    over.next = SceneRequests{};
+    st.push(&dialog);  // die App öffnet den Dialog im selben Frame
+    CHECK(st.top() == &over);
+    CHECK(dialog.enters == 0);
+    st.update(ctx, InputFrame{}, 200);
+    CHECK(st.top() == &dialog);
+    CHECK(dialog.enters == 1);
+    CHECK(st.depth() == 2);
+}

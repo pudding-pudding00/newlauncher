@@ -19,7 +19,12 @@ const char* appCommandName(AppCommand c) {
 }
 
 void SceneStack::push(Scene* s) {
-    if (s == nullptr || depth_ >= kMaxDepth) return;
+    if (s == nullptr) return;
+    if (depth_ > 0 && entries_[depth_ - 1].popping) {  // erst ausblenden lassen, dann öffnen
+        pushAfterPop_ = s;
+        return;
+    }
+    if (depth_ >= kMaxDepth) return;
     Entry& e = entries_[depth_++];
     e.scene = s;
     e.popping = false;

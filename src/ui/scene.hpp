@@ -53,7 +53,7 @@ inline constexpr float kOverlayFadeMs = 200.0f;
 // Besitzt keine Szenen; feste Tiefe 4.
 class SceneStack {
 public:
-    void push(Scene* s);
+    void push(Scene* s);  // blendet die oberste Szene gerade aus, folgt s erst danach
     // topRequests (optional) erhält die Anforderung der obersten Szene, z. B. das Spiel zu ToggleFavorite.
     AppCommand update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests* topRequests = nullptr);
     void draw(const UiContext& ctx, gfx::DrawList& dl);

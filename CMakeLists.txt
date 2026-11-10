@@ -98,6 +98,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/log.cpp
         src/platform/video.cpp
         src/launch/chainloader.cpp
+        src/launch/channel.cpp
+        src/platform/nand_titles.cpp
         src/platform/wii_input.cpp
         src/platform/crash.cpp
         src/platform/storage.cpp

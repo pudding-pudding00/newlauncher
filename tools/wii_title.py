@@ -16,6 +16,8 @@ IMET_NAMES = 0x5C
 IMET_NAME_UNITS = 42
 IMET_LANGUAGES = 10
 
+BOOT_IOS = 0x000000010000003A  # IOS58, wie libogc-Homebrew
+
 TEST_CHANNEL_ID = 0x000100014E4C5443  # 00010001-"NLTC"
 TEST_CHANNEL_NAMES = {1: "NL Testkanal", 2: "NL Testkanal"}
 
@@ -25,6 +27,7 @@ def tmd_bytes(title_id: int, contents: list[bytes], boot_index: int) -> bytes:
     out = bytearray(TMD_HEADER + 36 * len(contents))
     struct.pack_into(">I", out, 0, SIG_RSA2048)
     out[0x140:0x140 + 26] = b"Root-CA00000001-CP00000004"
+    struct.pack_into(">Q", out, 0x184, BOOT_IOS)  # ES_Launch lädt erst dieses IOS, dann den Boot-Content
     struct.pack_into(">Q", out, 0x18C, title_id)
     struct.pack_into(">I", out, 0x194, 1)  # title_type
     struct.pack_into(">H", out, 0x1DE, len(contents))

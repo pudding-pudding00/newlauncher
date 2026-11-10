@@ -18,6 +18,9 @@ def deploy(dol: Path | None, sd_dir: Path, dist_dir: Path, fixtures_dir: Path | 
     """Kopiert dist/ (und optional die Fixture-Bibliothek) auf die SD und installiert `dol` als Launcher;
     dol=None lässt boot.dol unverändert. Die Test-DOL argv_echo kommt nach apps/argv_echo/, falls gebaut,
     und mit wii_root (Dolphin-NAND) zusätzlich als Boot-Content des Testkanals."""
+    if wii_root is not None:
+        # Abgebrochener Kanalstart: ES hätte den Titel aus launch.sys beim nächsten Boot erneut gestartet.
+        (wii_root / "sys/launch.sys").unlink(missing_ok=True)
     shutil.copytree(dist_dir, sd_dir, dirs_exist_ok=True)
     if fixtures_dir is not None:
         shutil.copytree(fixtures_dir, sd_dir, dirs_exist_ok=True)

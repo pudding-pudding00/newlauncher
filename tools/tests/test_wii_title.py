@@ -12,6 +12,11 @@ from wii_title import (TEST_CHANNEL_ID, TEST_CHANNEL_NAMES, imet_banner, install
 
 
 class WiiTitleTest(unittest.TestCase):
+    def test_tmd_names_a_bootable_ios(self):
+        # ES_Launch bootet erst ins IOS aus 0x184; IOS 0 gibt es nicht, Dolphin bliebe dort hängen.
+        tmd = tmd_bytes(TEST_CHANNEL_ID, [b"x"], boot_index=0)
+        self.assertEqual(struct.unpack_from(">Q", tmd, 0x184)[0], 0x000000010000003A)
+
     def test_tmd_offsets(self):
         contents = [b"banner" * 10, b"\x00\x00\x01\x00" * 64]
         tmd = tmd_bytes(TEST_CHANNEL_ID, contents, boot_index=1)

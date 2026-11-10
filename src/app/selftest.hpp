@@ -6,10 +6,12 @@
 
 #include "core/library_store.hpp"
 #include "ui/debug_overlay.hpp"
+#include "ui/details_scene.hpp"
 #include "ui/input.hpp"
 #include "ui/keyboard.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/scene.hpp"
+#include "ui/vc_map_scene.hpp"
 
 namespace nl::app {
 
@@ -22,6 +24,8 @@ struct SelftestView {
     const ui::UiContext& ctx;
     const ui::Keyboard& keyboard;
     const ui::Scene* dialog;  // Fehlerdialog beim Start (M3)
+    const ui::DetailsScene* details;  // Detailansicht (M4: Startmethode)
+    const ui::VcMapScene* vcMap;      // VC-Zuordnungsdialog (M4)
 };
 
 ui::RawInput selftestInput(int frame, const SelftestView& v);

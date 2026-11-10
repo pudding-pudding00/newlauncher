@@ -136,6 +136,16 @@ class DolphinToolsTest(unittest.TestCase):
         deploy(self.dol, self.tmp / "sd2", dist, argv_echo=self.tmp / "fehlt.dol", wii_root=self.tmp / "Wii2")
         self.assertFalse((self.tmp / "Wii2").exists())
 
+    def test_deploy_removes_stale_launch_file(self):
+        # Ein abgebrochener Kanalstart hinterlässt /sys/launch.sys; Dolphin startete den Titel sonst beim nächsten Boot.
+        dist = self.tmp / "dist"
+        dist.mkdir()
+        nand = self.tmp / "Wii"
+        (nand / "sys").mkdir(parents=True)
+        (nand / "sys/launch.sys").write_bytes(b"alt")
+        deploy(self.dol, self.tmp / "sd", dist, argv_echo=self.tmp / "fehlt.dol", wii_root=nand)
+        self.assertFalse((nand / "sys/launch.sys").exists())
+
     def test_smoke_installs_test_channel(self):
         self._fake_dolphin("raise SystemExit(0)\n")
         with mock.patch("dolphin_smoke.deploy", wraps=deploy) as d:

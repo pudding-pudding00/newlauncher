@@ -50,6 +50,7 @@ add_library(nl_core STATIC
     src/ui/jump_bar.cpp
     src/ui/keyboard.cpp
     src/ui/details_scene.cpp
+    src/ui/vc_map_scene.cpp
     src/ui/dialog_scene.cpp
     src/ui/launch_text.cpp
 )

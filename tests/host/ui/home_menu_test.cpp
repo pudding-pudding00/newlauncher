@@ -61,7 +61,7 @@ TEST_CASE_FIXTURE(Fixture, "Right bis zum Ende, Left bis zum Anfang, kein Umlauf
 }
 
 TEST_CASE_FIXTURE(Fixture, "Confirm auf den Kacheln") {
-    const AppCommand expected[4] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::None,
+    const AppCommand expected[4] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::OpenVcMap,
                                     AppCommand::PowerOff};
     for (int i = 0; i < 4; ++i) {
         HomeMenu m;
@@ -69,8 +69,18 @@ TEST_CASE_FIXTURE(Fixture, "Confirm auf den Kacheln") {
         for (int k = 0; k < i; ++k) step(m, action(Action::Right));
         const SceneRequests r = step(m, action(Action::Confirm));
         CHECK(r.command == expected[i]);
-        CHECK_FALSE(r.pop);
+        CHECK(r.pop == (i == 2));
     }
+}
+
+TEST_CASE_FIXTURE(Fixture, "Einstellungen öffnet den VC-Dialog") {
+    HomeMenu m;
+    m.onEnter();
+    step(m, action(Action::Right));
+    step(m, action(Action::Right));
+    const SceneRequests r = step(m, action(Action::Confirm));
+    CHECK(r.command == AppCommand::OpenVcMap);
+    CHECK(r.pop);  // HOME-Overlay schließt, der Dialog kommt als Vollbildszene
 }
 
 TEST_CASE_FIXTURE(Fixture, "Home schließt; Back schließt") {

@@ -12,10 +12,9 @@ using gfx::Rect;
 
 constexpr float kHeaderH = 64.0f, kFooterH = 56.0f;
 constexpr float kTileH = 150.0f, kTileGap = 20.0f, kMaxTileW = 150.0f;
-constexpr int kSettingsTile = 2;
 
 const char* const kLabels[HomeMenu::kTileCount] = {kStrHomebrewChannel, kStrWiiMenu, kStrSettings, kStrPowerOff};
-const AppCommand kCommands[HomeMenu::kTileCount] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::None,
+const AppCommand kCommands[HomeMenu::kTileCount] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::OpenVcMap,
                                                     AppCommand::PowerOff};
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
@@ -58,8 +57,9 @@ void HomeMenu::update(const UiContext& ctx, const InputFrame& in, float, SceneRe
         out.pop = true;
         return;
     }
-    if (in.pressed(Action::Confirm) && !pointerOffTiles && focus_ != kSettingsTile) {
+    if (in.pressed(Action::Confirm) && !pointerOffTiles) {
         out.command = kCommands[focus_];
+        out.pop = out.command == AppCommand::OpenVcMap;  // Dialog ersetzt das Overlay
     }
 }
 
@@ -76,10 +76,9 @@ void HomeMenu::draw(const UiContext& ctx, gfx::DrawList& dl) {
     for (int i = 0; i < kTileCount; ++i) {
         const Rect r = tileRect(ctx, i);
         const bool focused = i == focus_;
-        const bool inactive = i == kSettingsTile;
         if (focused) gfx::roundRect(dl, s, Rect{r.x - 3, r.y - 3, r.w + 6, r.h + 6}, 17, t.accent);
         gfx::roundRect(dl, s, r, 14, focused ? t.tileFocus : t.tile);
-        gfx::circle(dl, s, r.x + r.w / 2, r.y + 52, 26, inactive ? t.bg : t.accentSoft);
+        gfx::circle(dl, s, r.x + r.w / 2, r.y + 52, 26, t.accentSoft);
 
         gfx::Line lines[2];
         const std::string_view text(kLabels[i]);
@@ -89,7 +88,7 @@ void HomeMenu::draw(const UiContext& ctx, gfx::DrawList& dl) {
             const std::string_view line = text.substr(lines[k].start, lines[k].length);
             const float w = gfx::measureText(label, line);
             const float x = w < r.w - 16 ? r.x + (r.w - w) / 2 : r.x + 8;
-            gfx::drawTextEllipsis(dl, label, x, baseline, r.w - 16, line, inactive ? t.textMuted : t.text);
+            gfx::drawTextEllipsis(dl, label, x, baseline, r.w - 16, line, t.text);
             baseline += label.lineHeight;
         }
     }

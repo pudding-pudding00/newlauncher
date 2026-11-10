@@ -45,7 +45,7 @@ python tools/dolphin_smoke.py
 
 Selbsttest in Dolphin (geskriptete Eingaben, keine Allokation im Leerlauf, absichtlicher Absturz am Ende):
 ```bash
-python tools/dolphin_smoke.py --dol build/wii/nl_selftest.dol --marker "NL_LIBRARY games=12" --marker NL_FAV_SAVED --marker "NL_SEARCH mario=5" --marker "NL_OVERRIDE_SAVED n64/Super Mario 64 (Europe) (En,Fr,De).z64 not64" --marker "NL_PREFLIGHT_FAIL Unsupported GM8P01" --marker "NL_VC_CHANNEL 000100014E4C5443 NL Testkanal" --marker "NL_VCMAP_SAVED n=2" --marker "NL_SELFTEST_COVERS" --marker "NL_ALLOC_IDLE 0" --marker NL_SELFTEST_OK --marker "NL_CRASH id=7" --marker "NL_LANG en" --marker NL_CONFIG_SAVED
+python tools/dolphin_smoke.py --dol build/wii/nl_selftest.dol --marker "NL_LIBRARY games=12" --marker NL_FAV_SAVED --marker "NL_SEARCH mario=5" --marker "NL_OVERRIDE_SAVED n64/Super Mario 64 (Europe) (En,Fr,De).z64 not64" --marker "NL_PREFLIGHT_FAIL Unsupported GM8P01" --marker "NL_VC_CHANNEL 000100014E4C5443 NL Testkanal" --marker "NL_VCMAP_SAVED n=2" --marker "NL_SELFTEST_COVERS" --marker "NL_ALLOC_IDLE 0" --marker NL_SELFTEST_OK --marker NL_SELFTEST_LOG_SAVED --marker "NL_CRASH id=7" --marker "NL_LANG en" --marker NL_CONFIG_SAVED
 ```
 
 Klänge und Musik in Dolphin (UI-Klänge melden sich mit `[debug] log_sounds = 1` als `NL_SOUND`; die Fixtures legen `tone.ogg` und die kaputte `header_only.ogg` in den Musikordner; beim Spielstart stoppt der Ton vor dem Chainload):
@@ -130,7 +130,7 @@ Wii/GC-Cover lädt der Launcher selbst: HOME-Menü → Einstellungen → „Fehl
 
 Der Launcher wandelt jedes PNG beim ersten Anzeigen in eine CMPR-Textur unter `<lib>/newlauncher/cache/covers/` um. Wer ein Cover in `covers_src` austauscht, löscht danach `cache/covers` (oder nur die passende `.tex`), sonst bleibt die alte Textur.
 
-Nur für Tests: `[debug] cover_url` ersetzt die GameTDB-Adresse, `[debug] fetch_covers = 1` löst „Fehlende Cover laden“ nach `NL_READY` aus, `[debug] log_sounds = 1` meldet jeden gespielten UI-Klang als `NL_SOUND`.
+Nur für Tests: `[debug] perf = 1` schreibt die `NL_PERF`-Messzeilen (siehe [Auf der Wii testen](#auf-der-wii-testen)), `[debug] cover_url` ersetzt die GameTDB-Adresse, `[debug] fetch_covers = 1` löst „Fehlende Cover laden“ nach `NL_READY` aus, `[debug] log_sounds = 1` meldet jeden gespielten UI-Klang als `NL_SOUND`.
 
 ## Emulatoren
 
@@ -225,6 +225,40 @@ Aktionen am Ende der Liste: „Bibliothek neu scannen“, „Fehlende Cover lade
 
 Der Launcher spielt alle `.ogg`-Dateien (Ogg Vorbis, mono oder stereo) aus `sd:/newlauncher/music/` in zufälliger Reihenfolge; nach jeder Runde wird neu gemischt, ohne dass ein Stück direkt zweimal läuft. Ist der Ordner leer oder fehlt er, bleibt es still. Nicht lesbare Dateien werden übersprungen; scheitern alle Stücke einer Runde nacheinander, schaltet sich die Musik für die Sitzung ab (`NL_MUSIC_OFF`). Vor jedem Spielstart, Kanalstart und beim Verlassen stoppt der Ton.
 
+## Auf der Wii testen
+
+Die Abnahme auf echter Hardware folgt der Checkliste [docs/hardware-acceptance.md](docs/hardware-acceptance.md). Auf der Wii ist `SYS_Report` stumm; alle Marker landen nur in `sd:/newlauncher/log.txt` (die letzten 16 KB, geschrieben bei `NL_READY`, vor jedem Spielstart und beim Beenden).
+
+Release-DOL auf die SD-Karte (Laufwerk `E:`), Messung an:
+```bash
+python tools/wii_deploy.py E: --perf on
+```
+Kopiert `boot.dol` und `meta.xml` nach `apps/newlauncher/`. Unter `newlauncher/` wird nichts überschrieben; `--perf on|off` setzt bzw. entfernt nur `[debug] perf` in `config.ini`. Eine Karte ohne `apps/`-Ordner lehnt das Skript ab, außer mit `--init`.
+
+Selbsttest-DOL auf eine eigene, leere SD-Karte:
+```bash
+python tools/wii_deploy.py F: --selftest
+```
+Die Selbsttest-DOL spielt ein festes Eingabeskript gegen die Fixture-Bibliothek und schreibt dabei Favoriten, Verlauf, Einstellungen und VC-Zuordnungen. Auf einer echten Karte überschriebe sie diese Daten; deshalb verweigert das Skript jede Karte mit `wbfs/`, `games/`, `roms/` oder `newlauncher/`. Am Ende sichert sie `log.txt` (`NL_SELFTEST_LOG_SAVED`) und stürzt absichtlich ab, um den Absturzbildschirm zu zeigen.
+
+Ohne Kartenwechsel per WLAN an den offenen Homebrew Channel (`wiiload` aus devkitPro):
+```bash
+python tools/wii_deploy.py --wiiload 192.168.0.42
+```
+
+Auswertung der Messung (mehrere Logs werden zusammengeführt, z. B. Release- und Selbsttest-Karte); gibt eine Markdown-Tabelle aus, Exit 1 bei einem verfehlten Budget:
+```bash
+python tools/check_perf.py E:\newlauncher\log.txt F:\newlauncher\log.txt
+```
+
+Mit `[debug] perf = 1` schreibt der Launcher:
+
+| Marker | Bedeutung |
+|---|---|
+| `NL_PERF boot first_frame_ms=<n> ready_ms=<n> usb_wait_ms=<n> hz=<50\|60>` | einmal nach `NL_READY`: Zeit bis zum ersten Bild und bis bedienbar, davon USB-Wartezeit |
+| `NL_PERF frames n=<n> slow=<n> max_ms=<x.y> busy=<0\|1>` | alle 300 Frames: Frames über 1,5 Bildperioden; `busy=1`, wenn Scan, Cover-Download oder Cover-Umwandlung lief |
+| `NL_PERF summary ready_ms=… hz=… frames=… slow=… max_ms=… cover_n=… cover_p50=… cover_p95=… cover_max=… mem1_free=… mem2_free=… heap_free=…` | vor jedem Log-Schreiben beim Spielstart und Beenden: alle Budget-Werte der Sitzung; Cover-Latenz vom ersten sichtbaren Wunsch bis zur fertigen Textur (ohne PNG-Umwandlung) |
+
 ## Log-Marker (Dolphin-Log, OSREPORT)
 
 | Marker | Bedeutung |
@@ -235,6 +269,8 @@ Der Launcher spielt alle `.ogg`-Dateien (Ogg Vorbis, mono oder stereo) aus `sd:/
 | `NL_CMD <name>` | Befehl aus dem HOME-Menü, dem Zahnrad oder den Einstellungen (`exit_hbc`, `wii_menu`, `open_vc_map`, `fetch_covers`, `power_off`, `cycle_theme`, `settings_changed`, `save_settings`, `rescan`) |
 | `NL_ALLOC_IDLE <n>` | Selbsttest: Allokationen in 120 Leerlauf-Frames |
 | `NL_SELFTEST_OK` | Selbsttest bestanden |
+| `NL_SELFTEST_LOG_SAVED` | Selbsttest: `log.txt` vor dem absichtlichen Absturz geschrieben |
+| `NL_PERF boot\|frames\|summary …` | Messzeilen mit `[debug] perf = 1`, siehe [Auf der Wii testen](#auf-der-wii-testen) |
 | `NL_PANIC <ausdruck> <datei>:<zeile>` | verletztes `NL_ASSERT` |
 | `NL_CRASH id=<n> pc=… lr=…` | CPU-Ausnahme, Absturzbildschirm aktiv |
 | `NL_CONFIG ok\|default` | `config.ini` gelesen bzw. mit Standardwerten angelegt |

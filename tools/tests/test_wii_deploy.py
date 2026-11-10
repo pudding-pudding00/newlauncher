@@ -138,6 +138,40 @@ class DeployTest(unittest.TestCase):
         self.assertTrue(args[0][0].lower().endswith("wiiload.exe"))
         self.assertEqual(kwargs["env"]["WIILOAD"], "tcp:1.2.3.4")
 
+    def test_release_refuses_full_card_before_copy(self):
+        (self.sd / "apps/newlauncher").mkdir(parents=True)
+        (self.sd / "apps/newlauncher/boot.dol").write_bytes(b"OLD")
+        with mock.patch("wii_deploy.shutil.disk_usage", return_value=mock.Mock(free=2)):
+            with self.assertRaises(DeployError) as ctx:
+                deploy_release(self.sd, self.dol, init=False)
+        self.assertIn("Platz", str(ctx.exception))
+        self.assertEqual(files(self.sd), {"apps/newlauncher/boot.dol"})
+        self.assertEqual((self.sd / "apps/newlauncher/boot.dol").read_bytes(), b"OLD")
+
+    def test_release_keeps_old_dol_when_copy_fails(self):
+        (self.sd / "apps/newlauncher").mkdir(parents=True)
+        (self.sd / "apps/newlauncher/boot.dol").write_bytes(b"OLD")
+        real = __import__("shutil").copy2
+
+        def failing(src, dst, *a, **kw):
+            if Path(src) == self.dol:
+                Path(dst).write_bytes(b"")  # wie ENOSPC mitten im Schreiben
+                raise OSError(28, "No space left on device")
+            return real(src, dst, *a, **kw)
+        with mock.patch("wii_deploy.shutil.copy2", side_effect=failing):
+            with self.assertRaises(OSError):
+                deploy_release(self.sd, self.dol, init=False)
+        self.assertEqual((self.sd / "apps/newlauncher/boot.dol").read_bytes(), b"OLD")
+        self.assertEqual(files(self.sd), {"apps/newlauncher/boot.dol"})
+
+    def test_cli_wiiload_refuses_selftest(self):
+        selftest_dol = self.tmp / "nl_selftest.dol"
+        selftest_dol.write_bytes(b"DOL")
+        with mock.patch("wii_deploy.subprocess.run") as run, mock.patch("wii_deploy.SELFTEST_DOL", selftest_dol):
+            self.assertEqual(main(["--wiiload", "1.2.3.4", "--selftest"]), 2)
+            self.assertEqual(main(["--wiiload", "1.2.3.4", "--dol", str(selftest_dol)]), 2)
+        run.assert_not_called()
+
     def test_cli_error_exit_2(self):
         self.assertEqual(main([str(self.sd), "--dol", str(self.dol)]), 2)  # kein apps/, kein --init
         self.assertEqual(main([str(self.sd), "--init", "--dol", str(self.dol), "--perf", "on"]), 0)

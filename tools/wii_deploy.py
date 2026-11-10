@@ -92,6 +92,27 @@ def set_ini_value(text: str, section: str, key: str, value: str | None) -> str:
     return "".join(lines)
 
 
+def _need_bytes(paths) -> int:
+    return sum(p.stat().st_size for p in paths if p.is_file())
+
+
+def _check_space(sd: Path, need: int) -> None:
+    free = shutil.disk_usage(sd).free
+    if free < need + 64 * 1024:
+        raise DeployError(f"Zu wenig Platz auf {sd}: {free // 1024} KiB frei, {need // 1024 + 64} KiB nötig")
+
+
+def _copy_atomic(src: Path, dst: Path) -> None:
+    """Kopiert über eine .tmp-Datei: bricht die Kopie ab (Karte voll), bleibt die alte Datei heil."""
+    tmp = dst.with_name(dst.name + ".tmp")
+    try:
+        shutil.copy2(src, tmp)
+        os.replace(tmp, dst)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _copy_missing(src: Path, dst: Path) -> None:
     """Kopiert Dateien aus src, die unter dst fehlen; vorhandene bleiben unberührt."""
     if not src.is_dir():
@@ -111,12 +132,14 @@ def deploy_release(sd: Path, dol: Path, init: bool) -> None:
         raise DeployError(f"{sd} hat keinen apps/-Ordner (Homebrew-Karte?). Mit --init trotzdem anlegen.")
     if not dol.is_file():
         raise DeployError(f"DOL nicht gefunden: {dol} (python tools/build_wii.py)")
+    dist_files = [DIST_DIR / "apps/newlauncher" / n for n in ("meta.xml", "icon.png")]
+    _check_space(sd, _need_bytes([dol, ARGV_ECHO_DOL, *dist_files, *(DIST_DIR / "newlauncher").rglob("*")]))
     app = sd / "apps/newlauncher"
     app.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(dol, app / "boot.dol")
-    for name in ("meta.xml", "icon.png"):
-        if (DIST_DIR / "apps/newlauncher" / name).is_file():
-            shutil.copy2(DIST_DIR / "apps/newlauncher" / name, app / name)
+    _copy_atomic(dol, app / "boot.dol")
+    for src in dist_files:
+        if src.is_file():
+            _copy_atomic(src, app / src.name)
     _copy_missing(DIST_DIR / "newlauncher", sd / "newlauncher")
     if ARGV_ECHO_DOL.is_file():
         (sd / "apps/argv_echo").mkdir(parents=True, exist_ok=True)
@@ -142,6 +165,7 @@ def deploy_selftest(sd: Path, dol: Path) -> None:
                           "leere SD-Karte, weil sie Favoriten, Verlauf und Einstellungen schreibt.")
     if not dol.is_file():
         raise DeployError(f"DOL nicht gefunden: {dol} (python tools/build_wii.py)")
+    _check_space(sd, _need_bytes([dol, ARGV_ECHO_DOL, *FIXTURES_DIR.rglob("*"), *(DIST_DIR / "newlauncher").rglob("*")]))
     shutil.copytree(FIXTURES_DIR, sd, dirs_exist_ok=True)
     _copy_missing(DIST_DIR / "newlauncher", sd / "newlauncher")
     app = sd / "apps/nl_selftest"
@@ -177,6 +201,10 @@ def main(argv: list[str] | None = None) -> int:
     dol = args.dol or (SELFTEST_DOL if args.selftest else RELEASE_DOL)
     try:
         if args.wiiload:
+            # Die Selbsttest-DOL schreibt Favoriten, Verlauf und Einstellungen auf die Karte in der Wii; per
+            # wiiload lässt sich nicht prüfen, ob das eine leere Karte ist.
+            if args.selftest or dol.name == SELFTEST_DOL.name:
+                raise DeployError("Selbsttest nicht per wiiload: erst eine leere Karte mit --selftest einrichten")
             if not dol.is_file():
                 raise DeployError(f"DOL nicht gefunden: {dol}")
             if not WIILOAD_EXE.is_file():

@@ -45,8 +45,15 @@ python tools/dolphin_smoke.py
 
 Selbsttest in Dolphin (geskriptete Eingaben, keine Allokation im Leerlauf, absichtlicher Absturz am Ende):
 ```bash
-python tools/dolphin_smoke.py --dol build/wii/nl_selftest.dol --marker "NL_LIBRARY games=12" --marker NL_FAV_SAVED --marker "NL_SEARCH mario=5" --marker "NL_ALLOC_IDLE 0" --marker NL_SELFTEST_OK --marker "NL_CRASH id=7"
+python tools/dolphin_smoke.py --dol build/wii/nl_selftest.dol --marker "NL_LIBRARY games=12" --marker NL_FAV_SAVED --marker "NL_SEARCH mario=5" --marker "NL_PREFLIGHT_FAIL Unsupported n64/" --marker "NL_ALLOC_IDLE 0" --marker NL_SELFTEST_OK --marker "NL_CRASH id=7"
 ```
+
+Chainload-Test in Dolphin (startet über `[debug] autostart` ein NES-Spiel der Fixtures; die Test-DOL `argv_echo` meldet die übergebenen Argumente):
+```bash
+python tools/dolphin_smoke.py --autostart "nes/Zelda (Europe) (Rev 1).nes" --marker "NL_LAUNCH nes/Zelda (Europe) (Rev 1).nes" --marker "NL_ARGV argc=3" --marker "NL_ARGV 0 sd:/apps/argv_echo/boot.dol" --marker "NL_ARGV 1 sd:/roms/nes/" --marker "NL_ARGV 2 Zelda (Europe) (Rev 1).nes"
+```
+
+Die CI baut `newlauncher.dol`, `nl_selftest.dol` und `argv_echo.dol` und lädt sie als Artefakte hoch.
 
 Schriften neu reduzieren (nur bei Schriftwechsel, braucht `pip install fonttools`):
 ```bash
@@ -65,6 +72,7 @@ python tools/make_fixtures.py tests/fixtures/sd
 ```
 sd:/apps/newlauncher/        boot.dol, meta.xml
 sd:/newlauncher/config.ini   Einstellungen (wird beim ersten Start mit Standardwerten angelegt)
+sd:/newlauncher/emulators.ini   Emulator-Pfade und Argumente (wird beim ersten Start angelegt)
 sd:/newlauncher/favorites.ini, history.ini, log.txt
 <lib>:/newlauncher/cache/index.bin   Spiele-Index (vom Launcher geschrieben)
 <lib>:/newlauncher/cache/meta.bin    Metadaten (PC-Skript, ab M5)
@@ -72,6 +80,25 @@ sd:/newlauncher/favorites.ini, history.ini, log.txt
 <lib>:/games/Titel [ID6]/game.iso        GameCube
 <lib>:/roms/nes|snes|gb|gbc|gba|n64/     ROMs
 ```
+
+## Emulatoren
+
+NES, SNES, GB, GBC und GBA starten über Emulator-DOLs von der SD. Der Launcher lädt die DOL, übergibt die ROM als `argv` und springt per Chainloader hinein. `sd:/newlauncher/emulators.ini` legt je Konsole die DOL und das Argument-Schema fest. Fehlt die Datei, wird sie mit diesen Standardwerten angelegt:
+
+| Konsole | DOL | `args` |
+|---|---|---|
+| `nes` | `sd:/apps/fceugx/boot.dol` | `{dir}\|{file}` |
+| `snes` | `sd:/apps/snes9xgx/boot.dol` | `{dir}\|{file}` |
+| `gb`, `gbc`, `gba` | `sd:/apps/vbagx/boot.dol` | `{dir}\|{file}` |
+
+`args` ist eine durch `|` getrennte Liste; jeder Eintrag wird ein `argv`-Element hinter `argv[0]` (immer der DOL-Pfad). Platzhalter:
+- `{dir}`: Ordner der ROM mit abschließendem `/`
+- `{file}`: Dateiname
+- `{path}`: vollständiger Pfad
+
+Fehlende Einträge fallen auf den Standard zurück. N64 (Not64/Wii64) folgt mit M4. Bis dahin zeigt „Starten“ bei N64, GameCube und Wii einen Hinweis.
+
+Vor dem Start prüft der Launcher, ob die DOL existiert und gültig ist und ob die ROM vorhanden ist. Fehlt etwas, erscheint ein Dialog, und der Launcher läuft weiter.
 
 ## Bedienung
 
@@ -89,7 +116,7 @@ sd:/newlauncher/favorites.ini, history.ini, log.txt
 
 - **A–Z:** Taste „Suche / A–Z“ öffnet die Sprungleiste; ein Buchstabe springt zum ersten Titel (ohne Treffer zum nächsten Buchstaben), „Suche“ öffnet die Bildschirmtastatur.
 - **Suche:** filtert live über alle Konsolen, ohne Rücksicht auf Groß/klein, Akzente und No-Intro-Tags; B beendet den Suchmodus.
-- **Details:** A auf einem Spiel; „Starten“ folgt mit M3, Favorit per Knopf oder Taste 1.
+- **Details:** A auf einem Spiel; „Starten“ startet den Emulator (siehe [Emulatoren](#emulatoren)), Favorit per Knopf oder Taste 1.
 
 Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel von 19 bis 7 Uhr); das Zahnrad unten rechts schaltet sie für die laufende Sitzung um (Hell → Dunkel → Automatisch), Einstellungen folgen mit M6.
 
@@ -112,6 +139,12 @@ Die Darstellung kommt aus `config.ini` (Standard: Hell, „Automatisch“ dunkel
 | `NL_INDEX_SAVED` | `index.bin` geschrieben |
 | `NL_FAV_SAVED <schlüssel>` | Favoriten gespeichert |
 | `NL_SEARCH mario=<n>` | Selbsttest: Treffer der Suche „MARIO“ |
+| `NL_EMULATORS ok\|default` | `emulators.ini` gelesen bzw. Standardwerte genutzt |
+| `NL_PREFLIGHT_FAIL <code> <schlüssel>` | Start abgelehnt (z. B. `Unsupported`, `NotFound`), Dialog offen |
+| `NL_HISTORY_SAVED` | Verlauf vor dem Start gespeichert |
+| `NL_LAUNCH <schlüssel>` | Chainload beginnt |
+| `NL_AUTOSTART <schlüssel>` | Testmodus: `[debug] autostart` in `config.ini` startet das Spiel nach `NL_READY` |
+| `NL_ARGV argc=<n>`, `NL_ARGV <i> <wert>` | Test-DOL `argv_echo`: empfangene Argumente |
 | `NL_WARN <text>` | nicht kritischer Fehler (z. B. kaputter Cache verworfen) |
 
 ## Schriften

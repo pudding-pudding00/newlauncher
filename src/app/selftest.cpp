@@ -39,7 +39,7 @@ using B = ui::RawInput::Button;
 // Fixture-Leiste: 0 Favoriten, 1 Zuletzt, 2 Wii, 3 GC, 4 GBA, 5 N64, 6 SNES, 7 GB, 8 NES.
 constexpr int kTypeStart = 182;          // Suche: "MARIO" per Zeiger tippen, je Taste 3 Frames
 constexpr const char* kTyped = "MARIO";
-constexpr int kIdleStart = 250, kIdleEnd = 370;
+constexpr int kIdleStart = 310, kIdleEnd = 430;
 
 ui::RawInput press(u32 bits) {
     ui::RawInput r;
@@ -83,6 +83,11 @@ ui::RawInput selftestInput(int frame, const SelftestView& v) {
         case 216: return press(B::B);
         case 220: return press(B::A);
         case 236: return press(B::B);
+        // M3: N64-Spiel starten → Preflight scheitert (kein Emulator), Dialog schließen, Details schließen
+        case 244: return press(B::A);
+        case 252: return press(B::A);
+        case 272: return press(B::A);
+        case 290: return press(B::B);
         default: break;
     }
     if (frame >= 104 && frame <= 114 && isEven(frame)) return press(B::DRight);
@@ -133,6 +138,13 @@ void selftestAfterFrame(int frame, const SelftestView& v) {
             break;
         case 222: NL_ASSERT(v.scenes.depth() == 2); break;  // Detailansicht
         case 240: NL_ASSERT(v.scenes.depth() == 1); break;
+        case 248: NL_ASSERT(v.scenes.depth() == 2); break;  // Detailansicht, Fokus auf „Starten"
+        case 256:
+            NL_ASSERT(v.scenes.depth() == 3);
+            NL_ASSERT(v.scenes.top() == v.dialog);  // NL_PREFLIGHT_FAIL Unsupported, Dialog offen
+            break;
+        case 284: NL_ASSERT(v.scenes.depth() == 2); break;
+        case 300: NL_ASSERT(v.scenes.depth() == 1); break;
         case kIdleStart:
             NL_ASSERT(!v.scanRunning);
             g_allocs = 0;

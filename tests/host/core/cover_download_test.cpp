@@ -69,6 +69,8 @@ struct CountingFs final : FileSystem {
     Result<std::vector<u8>> readAll(std::string_view f, std::size_t m) override { return inner.readAll(f, m); }
     Result<void> writeAtomic(std::string_view f, std::span<const u8> d) override { return inner.writeAtomic(f, d); }
     Result<void> makeDirs(std::string_view d) override { return inner.makeDirs(d); }
+    Result<void> removeFile(std::string_view f) override { return inner.removeFile(f); }
+    Result<void> renameFile(std::string_view a, std::string_view b) override { return inner.renameFile(a, b); }
 };
 }  // namespace
 

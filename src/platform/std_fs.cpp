@@ -92,6 +92,20 @@ Result<void> StdFileSystem::writeAtomic(std::string_view file, std::span<const u
     return Result<void>::ok();
 }
 
+Result<void> StdFileSystem::removeFile(std::string_view file) {
+    const std::string path = osPath(file);
+    struct stat st{};
+    if (stat(path.c_str(), &st) != 0) return Result<void>::ok();  // schon weg
+    if (std::remove(path.c_str()) != 0) return Result<void>::err(ioError("löschen", path));
+    return Result<void>::ok();
+}
+
+Result<void> StdFileSystem::renameFile(std::string_view from, std::string_view to) {
+    const std::string a = osPath(from), b = osPath(to);
+    if (std::rename(a.c_str(), b.c_str()) != 0) return Result<void>::err(ioError("umbenennen", b));
+    return Result<void>::ok();
+}
+
 Result<void> StdFileSystem::makeDirs(std::string_view dir) {
     const std::string path = osPath(dir);
     const std::size_t start = path.find(":/");

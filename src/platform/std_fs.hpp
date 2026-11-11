@@ -12,6 +12,8 @@ public:
     Result<std::vector<u8>> readAll(std::string_view file, std::size_t maxBytes) override;
     Result<void> writeAtomic(std::string_view file, std::span<const u8> data) override;
     Result<void> makeDirs(std::string_view dir) override;
+    Result<void> removeFile(std::string_view file) override;
+    Result<void> renameFile(std::string_view from, std::string_view to) override;
 };
 
 }  // namespace nl::platform

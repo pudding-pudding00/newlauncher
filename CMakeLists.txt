@@ -49,6 +49,7 @@ add_library(nl_core STATIC
     src/core/zip_reader.cpp
     src/core/emu_catalog.cpp
     src/core/emu_install.cpp
+    src/core/nin_cfg.cpp
     src/core/cover_download.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
@@ -133,6 +134,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/net_worker.cpp
         src/platform/emu_worker.cpp
         src/platform/sd_space.cpp
+        src/platform/system.cpp
         src/platform/audio.cpp
         src/platform/music.cpp
         src/app/cover_service.cpp

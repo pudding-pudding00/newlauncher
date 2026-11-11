@@ -51,6 +51,11 @@ int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, cha
         case LaunchFailure::Unsupported: msg = fill(tr(Str::Unsupported), e.context); break;
         case LaunchFailure::NoMemory: msg = e.context; break;
         case LaunchFailure::NoN64Path: msg = tr(Str::NoN64Path); break;
+        case LaunchFailure::NinMissing: msg = fill(tr(Str::NinMissing), e.context); break;
+        case LaunchFailure::NinUnknown: msg = fill(tr(Str::NinUnknown), e.context); break;
+        case LaunchFailure::NinTooOld: msg = fill(tr(Str::NinTooOld), e.context); break;
+        case LaunchFailure::NinPathTooLong: msg = fill(tr(Str::NinPathTooLong), e.context); break;
+        case LaunchFailure::AhbProt: msg = tr(Str::AhbProt); break;
     }
     return static_cast<int>(copyEllipsized(text, textCap, msg));
 }

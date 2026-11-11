@@ -11,12 +11,16 @@
 #include "core/fs.hpp"
 #include "core/game.hpp"
 #include "core/n64_choice.hpp"
+#include "core/nin_cfg.hpp"
 #include "core/result.hpp"
 
 namespace nl {
 
 // Warum ein Start scheitert; bestimmt den Dialogtext (nicht die Dateiendung).
-enum class LaunchFailure : u8 { Unsupported, EmuMissing, EmuInvalid, RomMissing, ArgsTooLong, NoMemory, NoN64Path };
+enum class LaunchFailure : u8 {
+    Unsupported, EmuMissing, EmuInvalid, RomMissing, ArgsTooLong, NoMemory, NoN64Path,
+    NinMissing, NinUnknown, NinTooOld, NinPathTooLong, AhbProt,  // M8: GameCube über Nintendont
+};
 const char* launchFailureName(LaunchFailure f);  // Log-Marker NL_PREFLIGHT_FAIL
 
 struct LaunchError {
@@ -44,11 +48,15 @@ struct LaunchTarget {
     LaunchPlan dol;                // Kind::Dol
     u64 titleId = 0;               // Kind::Channel
     std::optional<N64Method> n64;  // gewählter Weg bei N64-Spielen
+    std::optional<NinVersion> nintendont;  // GC: erkannte Version (Marker NL_NIN)
 };
 
 // Wie preflightEmulator, N64 zusätzlich über die Auto-Wahl (n64 == nullptr zählt als „kein Weg“).
 // Kein Weg → NoN64Path mit Konsolenname; VC → Kanalziel ohne Dateizugriff; Not64/Wii64 → DOL-Prüfung.
+// GC (Plan M8), in dieser Reihenfolge: !ahbprotOff → AhbProt; DOL fehlt → NinMissing; DOL ungültig →
+// EmuInvalid; keine Version → NinUnknown; zu alt → NinTooOld (Kontext gefundene Version); Spiel fehlt →
+// RomMissing; Pfad > 254 → NinPathTooLong; sonst args = {DOL, NIN_CFG}. Andere Konsolen ignorieren ahbprotOff.
 Result<LaunchTarget, LaunchError> preflightGame(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus,
-                                                const N64Inputs* n64);
+                                                const N64Inputs* n64, bool ahbprotOff);
 
 }  // namespace nl

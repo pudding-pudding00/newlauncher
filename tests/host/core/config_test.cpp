@@ -182,3 +182,9 @@ TEST_CASE("configToIniText: schreibt [emulators] repo") {
     const std::string text = configToIniText(c, "[general]\nlanguage = auto\n");
     CHECK(configFromIni(IniDoc::parse(text)).emulatorRepo == "http://example.org/hbb");
 }
+
+TEST_CASE("configFromIni: [debug] ignore_ahbprot") {
+    CHECK_FALSE(configFromIni(IniDoc::parse("")).debugIgnoreAhbprot);
+    CHECK(configFromIni(IniDoc::parse("[debug]\nignore_ahbprot = 1\n")).debugIgnoreAhbprot);
+    CHECK_FALSE(configFromIni(IniDoc::parse("[debug]\nignore_ahbprot = 2\n")).debugIgnoreAhbprot);
+}

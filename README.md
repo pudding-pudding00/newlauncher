@@ -72,6 +72,12 @@ python tools/dolphin_smoke.py --autostart "n64/Super Mario 64 (Europe) (En,Fr,De
 python tools/dolphin_smoke.py --autostart "n64/Mario Kart 64 (Europe).z64" --marker "NL_N64 n64/Mario Kart 64 (Europe).z64 vc" --marker "NL_LAUNCH_VC 000100014E4C5443" --marker "NL_ARGV argc="
 ```
 
+GameCube-Start in Dolphin (die Fixtures tragen `argv_echo` als Nintendont ein; sie enthält die Versionsangabe 6.509 und dekodiert den `NIN_CFG`-Block):
+
+```bash
+python tools/dolphin_smoke.py --autostart GM8P01 --marker "NL_NIN ver=6.509 path=/games/Metroid Prime [GM8P01]/game.iso usb=0" --marker "NL_ARGV 0 sd:/apps/argv_echo/boot.dol" --marker "NL_ARGV_NINCFG ver=10 cfg=0x00000088 vid=0x00000000 lang=-1 pads=4 mc=2 id=GM8P path=/games/Metroid Prime [GM8P01]/game.iso"
+```
+
 Cover in Dolphin: das Fixture-PNG wird auf der Wii nach CMPR umgewandelt und im Cache abgelegt; `--cover-server` startet zusätzlich einen lokalen HTTP-Server (127.0.0.1, freier Port) mit zwei Test-Covern und löst über `[debug] cover_url` und `fetch_covers` „Fehlende Cover laden“ aus:
 ```bash
 python tools/dolphin_smoke.py --marker "NL_COVER_CONVERTED nes/Super Mario Bros. (World)" --marker "NL_COVERS ready="
@@ -212,6 +218,23 @@ Kanäle zeigt der Dialog mit ihrem Bannernamen, ist der nicht lesbar, mit der Ti
 
 In Dolphin legen `deploy_dolphin.py` und `dolphin_smoke.py` einen Testkanal „NL Testkanal“ (`000100014E4C5443`) im Dev-NAND `../wii_tools/dolphin-user/Wii/` an. Sein Boot-Content ist die Test-DOL `argv_echo`. Die Fixtures ordnen ihm „Mario Kart 64“ zu.
 
+## GameCube
+
+GameCube-Spiele startet der Launcher über **Nintendont** (ab Version 6.493).
+- Nintendont liegt unter `sd:/apps/nintendont/boot.dol`; ein anderer Ort lässt sich in `emulators.ini` unter `[nintendont] dol = …` eintragen.
+- Spiele liegen auf SD oder USB als `games/<Titel> [ID6]/game.iso`, die zweite Disc als `disc2.iso` im selben Ordner.
+- Der Launcher prüft vor dem Start, dass die DOL lesbar ist und ihre Versionsangabe (`$$Version:x.y`) mindestens 6.493 ist. Ältere Versionen meldet er mit gefundener Version.
+- Er übergibt Nintendont den Spielpfad als `NIN_CFG` (Version 10) in `argv[1]`. Nintendont startet das Spiel direkt.
+  - Memory-Card-Emulation ist an (251 Blöcke).
+  - Bis zu 4 Controller.
+  - Videomodus und Sprache sind automatisch.
+  - Alles andere folgt den Standardwerten von Nintendont.
+- Pfade unter dem Bibliotheksgerät dürfen höchstens 254 Zeichen lang sein.
+
+**Start nur aus dem HBC-Eintrag, nicht per wiiload.** Nintendont braucht direkten Hardwarezugriff (AHBPROT aus). Der HBC gewährt ihn nur Apps mit `<ahb_access/>` in `meta.xml`, die er selbst startet. Ohne ihn zeigt der Launcher „Kein Hardwarezugriff“. Dolphin meldet AHBPROT als aus, dort braucht es nichts.
+
+Nur zur Diagnose auf echter Hardware: `[debug] ignore_ahbprot = 1` überspringt die Prüfung. Nintendont startet dann trotzdem nicht.
+
 ## Bedienung
 
 | Aktion | Wiimote | Nunchuk | GameCube-Controller |
@@ -316,6 +339,9 @@ Mit `[debug] perf = 1` schreibt der Launcher:
 | `NL_N64 <schlüssel> <vc\|not64\|wii64>` | gewählter N64-Weg beim Start |
 | `NL_LAUNCH_VC <titleid>` | Kanalstart beginnt |
 | `NL_HISTORY_SAVED` | Verlauf vor dem Start gespeichert |
+| `NL_AHBPROT on\|off` | Hardwarezugriff beim Start; `on` heißt gesperrt (z. B. per wiiload gestartet), GameCube-Start nicht möglich |
+| `NL_NIN ver=<x.y> path=<pfad> usb=<0\|1>` | GameCube-Start über Nintendont: erkannte Version, Spielpfad im `NIN_CFG`, Gerät |
+| `NL_ARGV_NINCFG …` | Test-DOL `argv_echo`: dekodierter `NIN_CFG`-Block aus `argv[1]` |
 | `NL_LAUNCH <schlüssel>` | Chainload beginnt |
 | `NL_AUTOSTART <schlüssel>` | Testmodus: `[debug] autostart` in `config.ini` startet das Spiel nach `NL_READY` |
 | `NL_ARGV argc=<n>`, `NL_ARGV <i> <wert>` | Test-DOL `argv_echo`: empfangene Argumente |

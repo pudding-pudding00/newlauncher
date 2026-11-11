@@ -57,7 +57,17 @@
     X(WhyNotMapped, "nicht zugeordnet", "not mapped") \
     X(WhyNotInstalled, "Kanal nicht installiert", "channel not installed") \
     X(WhyDolMissing, "DOL fehlt", "DOL missing") \
-    X(OverrideIgnored, "Gewählter Weg nicht verfügbar – automatisch gewählt.", "Chosen method unavailable – picked automatically.") \
+    X(NinMissing, "Nintendont fehlt.\nNicht gefunden: %s\nInstallieren: Einstellungen → Emulatoren", \
+      "Nintendont missing.\nNot found: %s\nInstall: Settings → Emulators") \
+    X(NinUnknown, "Nintendont nicht erkannt.\n%s enthält keine Versionsangabe.", \
+      "Nintendont not recognized.\n%s contains no version string.") \
+    X(NinTooOld, "Nintendont zu alt.\nGefunden %s, nötig 6.493 oder neuer.\nAktualisieren: Einstellungen → Emulatoren", \
+      "Nintendont too old.\nFound %s, need 6.493 or newer.\nUpdate: Settings → Emulators") \
+    X(NinPathTooLong, "Pfad zu lang.\nNintendont erlaubt höchstens 254 Zeichen: %s", \
+      "Path too long.\nNintendont allows at most 254 characters: %s") \
+    X(AhbProt, "Kein Hardwarezugriff.\nBitte den Launcher über den Homebrew Channel starten.", \
+      "No hardware access.\nPlease start the launcher from the Homebrew Channel.") \
+    X(OverrideIgnored,"Gewählter Weg nicht verfügbar – automatisch gewählt.", "Chosen method unavailable – picked automatically.") \
     X(VcMapTitle, "VC-Injects zuordnen", "Map VC injects") \
     X(VcNone, "—", "—") \
     X(VcSuggest, "Vorschlag: %s (A übernimmt)", "Suggestion: %s (A accepts)") \

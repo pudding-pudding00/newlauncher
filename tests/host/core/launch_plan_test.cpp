@@ -143,7 +143,7 @@ TEST_CASE("preflightGame: N64 über Not64 baut argv mit {path}") {
     fs.addFile(kSm64, {});
     N64Inputs in;
     in.not64Dol = true;
-    auto r = preflightGame(fs, n64Game(), "sd:", emus(), &in);
+    auto r = preflightGame(fs, n64Game(), "sd:", emus(), &in, true);
     REQUIRE(r.isOk());
     CHECK(r.value().kind == LaunchTarget::Kind::Dol);
     CHECK(r.value().n64 == N64Method::Not64);
@@ -158,7 +158,7 @@ TEST_CASE("preflightGame: N64 über VC liefert Kanalziel") {
     N64Inputs in;
     in.mappedTitle = kVcId;
     in.installedTitles = installed;
-    auto r = preflightGame(fs, n64Game(), "sd:", emus(), &in);
+    auto r = preflightGame(fs, n64Game(), "sd:", emus(), &in, true);
     REQUIRE(r.isOk());
     CHECK(r.value().kind == LaunchTarget::Kind::Channel);
     CHECK(r.value().titleId == kVcId);
@@ -168,11 +168,11 @@ TEST_CASE("preflightGame: N64 über VC liefert Kanalziel") {
 TEST_CASE("preflightGame: N64 ohne Weg → NoN64Path") {
     test::MemFileSystem fs;
     N64Inputs in;
-    auto r = preflightGame(fs, n64Game(), "sd:", emus(), &in);
+    auto r = preflightGame(fs, n64Game(), "sd:", emus(), &in, true);
     REQUIRE_FALSE(r.isOk());
     CHECK(r.error().kind == LaunchFailure::NoN64Path);
     CHECK(r.error().context == consoleInfo(Console::N64).name);
-    auto none = preflightGame(fs, n64Game(), "sd:", emus(), nullptr);
+    auto none = preflightGame(fs, n64Game(), "sd:", emus(), nullptr, true);
     REQUIRE_FALSE(none.isOk());
     CHECK(none.error().kind == LaunchFailure::NoN64Path);
     CHECK(std::string(launchFailureName(LaunchFailure::NoN64Path)) == "NoN64Path");
@@ -180,15 +180,146 @@ TEST_CASE("preflightGame: N64 ohne Weg → NoN64Path") {
 
 TEST_CASE("preflightGame: NES unverändert wie preflightEmulator") {
     auto fs = fsWith(goodDol());
-    auto r = preflightGame(fs, nesGame(), "sd:", emus(), nullptr);
+    auto r = preflightGame(fs, nesGame(), "sd:", emus(), nullptr, true);
     REQUIRE(r.isOk());
     CHECK(r.value().kind == LaunchTarget::Kind::Dol);
     CHECK_FALSE(r.value().n64.has_value());
     CHECK(r.value().dol.dolPath == kDol);
     REQUIRE(r.value().dol.args.size() == 3);
-    auto gc = preflightGame(fs, nesGame("games/x/game.iso", Console::Gc), "sd:", emus(), nullptr);
-    REQUIRE_FALSE(gc.isOk());
-    CHECK(gc.error().kind == LaunchFailure::Unsupported);
+    auto wii = preflightGame(fs, nesGame("games/x/game.iso", Console::Wii), "sd:", emus(), nullptr, true);
+    REQUIRE_FALSE(wii.isOk());
+    CHECK(wii.error().kind == LaunchFailure::Unsupported);
+}
+
+TEST_CASE("preflightGame: NES ignoriert ahbprotOff") {
+    auto fs = fsWith(goodDol());
+    CHECK(preflightGame(fs, nesGame(), "sd:", emus(), nullptr, false).isOk());
+}
+
+// --- M8: GameCube über Nintendont ---
+namespace {
+constexpr const char* kNin = "sd:/apps/nintendont/boot.dol";
+constexpr const char* kGcRel = "games/Metroid Prime [GM8P01]/game.iso";
+
+Game gcGame(const char* path = kGcRel) { return Game{Console::Gc, "GM8P01", "Metroid Prime", 0, 0, nullptr, path, 0, 0}; }
+
+std::vector<u8> ninDol(std::string_view tag = "$$Version:6.509") {
+    auto img = goodDol();
+    for (std::size_t i = 0; i < tag.size(); ++i) img[0x140 + i] = static_cast<u8>(tag[i]);
+    return img;
+}
+
+test::MemFileSystem gcFs(std::string_view root = "sd:", std::string_view tag = "$$Version:6.509", const char* rel = kGcRel) {
+    test::MemFileSystem fs;
+    fs.addFile(kNin, ninDol(tag));
+    fs.addFile(std::string(root) + "/" + rel, std::vector<u8>(64, 0));
+    return fs;
+}
+
+std::string blobPath(const std::string& blob) {
+    std::string s;
+    for (std::size_t i = 0x014; i < 0x113 && blob[i] != 0; ++i) s.push_back(blob[i]);
+    return s;
+}
+
+LaunchError gcErr(test::MemFileSystem& fs, const Game& g, bool ahbprotOff = true, std::string_view root = "sd:") {
+    auto r = preflightGame(fs, g, root, emus(), nullptr, ahbprotOff);
+    REQUIRE_FALSE(r.isOk());
+    return r.error();
+}
+}  // namespace
+
+TEST_CASE("preflightGame: GC startet mit NIN_CFG als argv[1]") {
+    auto fs = gcFs();
+    auto r = preflightGame(fs, gcGame(), "sd:", emus(), nullptr, true);
+    REQUIRE(r.isOk());
+    const LaunchTarget& t = r.value();
+    CHECK(t.kind == LaunchTarget::Kind::Dol);
+    CHECK(t.dol.dolPath == kNin);
+    REQUIRE(t.dol.args.size() == 2);
+    CHECK(t.dol.args[0] == kNin);
+    REQUIRE(t.dol.args[1].size() == 548);
+    CHECK(blobPath(t.dol.args[1]) == "/games/Metroid Prime [GM8P01]/game.iso");
+    CHECK(static_cast<u8>(t.dol.args[1][0x00A]) == 0x00);
+    CHECK_FALSE(t.dol.argvBlock.empty());
+    REQUIRE(t.nintendont.has_value());
+    CHECK(*t.nintendont == NinVersion{6, 509});
+}
+
+TEST_CASE("preflightGame: GC von USB setzt USB-Bit") {
+    auto fs = gcFs("usb:");
+    auto r = preflightGame(fs, gcGame(), "usb:", emus(), nullptr, true);
+    REQUIRE(r.isOk());
+    CHECK(static_cast<u8>(r.value().dol.args[1][0x00A]) == 0x04);
+    CHECK(blobPath(r.value().dol.args[1]) == "/games/Metroid Prime [GM8P01]/game.iso");
+}
+
+TEST_CASE("preflightGame: AHBPROT wird vor allem anderen geprüft") {
+    test::MemFileSystem fs;  // nicht einmal die DOL
+    const LaunchError e = gcErr(fs, gcGame(), false);
+    CHECK(e.kind == LaunchFailure::AhbProt);
+    CHECK(std::string(launchFailureName(LaunchFailure::AhbProt)) == "AhbProt");
+}
+
+TEST_CASE("preflightGame: GC-Fehler in der Reihenfolge des Plans") {
+    SUBCASE("DOL fehlt") {
+        test::MemFileSystem fs;
+        const LaunchError e = gcErr(fs, gcGame());
+        CHECK(e.kind == LaunchFailure::NinMissing);
+        CHECK(e.context == kNin);
+    }
+    SUBCASE("DOL ungültig") {
+        test::MemFileSystem fs;
+        fs.addFile(kNin, std::vector<u8>(0x400, 0xAB));
+        const LaunchError e = gcErr(fs, gcGame());
+        CHECK(e.kind == LaunchFailure::EmuInvalid);
+        CHECK(e.context == kNin);
+    }
+    SUBCASE("keine Version") {
+        auto fs = gcFs("sd:", "");
+        const LaunchError e = gcErr(fs, gcGame());
+        CHECK(e.kind == LaunchFailure::NinUnknown);
+        CHECK(e.context == kNin);
+    }
+    SUBCASE("zu alt") {
+        auto fs = gcFs("sd:", "$$Version:6.480");
+        const LaunchError e = gcErr(fs, gcGame());
+        CHECK(e.kind == LaunchFailure::NinTooOld);
+        CHECK(e.context == "6.480");
+    }
+    SUBCASE("Spieldatei fehlt") {
+        test::MemFileSystem fs;
+        fs.addFile(kNin, ninDol());
+        const LaunchError e = gcErr(fs, gcGame());
+        CHECK(e.kind == LaunchFailure::RomMissing);
+        CHECK(e.context == std::string("sd:/") + kGcRel);
+    }
+    SUBCASE("Pfad zu lang") {
+        const std::string rel = "games/" + std::string(240, 'x') + " [GM8P01]/game.iso";  // > 254 mit "/"
+        auto fs = gcFs("sd:", "$$Version:6.509", rel.c_str());
+        const LaunchError e = gcErr(fs, gcGame(rel.c_str()));
+        CHECK(e.kind == LaunchFailure::NinPathTooLong);
+        CHECK(e.context == "/" + rel);
+    }
+    CHECK(std::string(launchFailureName(LaunchFailure::NinMissing)) == "NinMissing");
+    CHECK(std::string(launchFailureName(LaunchFailure::NinUnknown)) == "NinUnknown");
+    CHECK(std::string(launchFailureName(LaunchFailure::NinTooOld)) == "NinTooOld");
+    CHECK(std::string(launchFailureName(LaunchFailure::NinPathTooLong)) == "NinPathTooLong");
+}
+
+TEST_CASE("preflightGame: argvBlock passt für einen 254-Byte-Pfad") {
+    const std::string rel = std::string(253 - 9, 'y') + "/game.iso";  // "/" + rel == 254 Byte
+    REQUIRE(rel.size() + 1 == 254);
+    auto fs = gcFs("sd:", "$$Version:6.509", rel.c_str());
+    auto r = preflightGame(fs, gcGame(rel.c_str()), "sd:", emus(), nullptr, true);
+    REQUIRE(r.isOk());
+    CHECK(blobPath(r.value().dol.args[1]) == "/" + rel);
+}
+
+TEST_CASE("EmulatorTable::nintendont: Standard und aus der ini") {
+    CHECK(emus().nintendont().dol == kNin);
+    auto t = EmulatorTable::fromIni(IniDoc::parse("[nintendont]\ndol = sd:/apps/argv_echo/boot.dol\n"));
+    CHECK(t.nintendont().dol == "sd:/apps/argv_echo/boot.dol");
 }
 
 TEST_CASE("fileSize") {

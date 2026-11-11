@@ -70,3 +70,27 @@ TEST_CASE("launchErrorText: NoN64Path") {
     const Texts t = render(LaunchFailure::NoN64Path, "Nintendo 64");
     CHECK(std::string(t.text) == tr(Str::NoN64Path));
 }
+
+TEST_CASE("launchErrorText: Nintendont-Fehler in DE und EN") {
+    const Lang saved = language();
+    for (Lang l : {Lang::De, Lang::En}) {
+        setLanguage(l);
+        const std::string old = render(LaunchFailure::NinTooOld, "6.480").text;
+        CHECK(old.find("6.480") != std::string::npos);
+        CHECK(old.find("6.493") != std::string::npos);
+        CHECK(std::string(render(LaunchFailure::NinMissing, "sd:/apps/nintendont/boot.dol").text).find("sd:/apps/nintendont/boot.dol") !=
+              std::string::npos);
+        CHECK(std::string(render(LaunchFailure::NinUnknown, "sd:/x.dol").text).find("sd:/x.dol") != std::string::npos);
+        CHECK(std::string(render(LaunchFailure::NinPathTooLong, "/games/a").text).find("/games/a") != std::string::npos);
+        const std::string ahb = render(LaunchFailure::AhbProt, "").text;
+        CHECK(ahb.find("Homebrew Channel") != std::string::npos);
+        CHECK(ahb.find("%s") == std::string::npos);
+    }
+    setLanguage(Lang::De);
+    CHECK(std::string(render(LaunchFailure::NinTooOld, "6.480").text) ==
+          "Nintendont zu alt.\nGefunden 6.480, nötig 6.493 oder neuer.\nAktualisieren: Einstellungen → Emulatoren");
+    // Spec §5.4: Preflight verweist auf die Aktualisierung
+    CHECK(std::string(render(LaunchFailure::NinMissing, "sd:/apps/nintendont/boot.dol").text).find("Einstellungen → Emulatoren") !=
+          std::string::npos);
+    setLanguage(saved);
+}

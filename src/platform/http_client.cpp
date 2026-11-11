@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #ifdef NL_TLS
+#include <malloc.h>
 #include <wiitls/wiitls.h>
 #endif
 
@@ -25,6 +26,7 @@ constexpr s32 kPollIn = 0x0001, kPollOut = 0x0008;
 
 // Nur vom Haupt-Thread vor dem ersten Auftrag geschrieben (submit ordnet über den Mutex), danach nur gelesen.
 std::string g_tlsCaPath;
+bool g_perf = false;  // [debug] perf: NL_PERF tls je Handshake
 
 void emit(const HttpLog& log, std::string line) {
     if (log) log(std::move(line));
@@ -168,13 +170,13 @@ public:
 
     bool open(const Url& url, const HttpLog& log) {
         loadTestCa(log);
-        int st = connect(url);
+        int st = connect(url, log);
         if (st != WTLS_OK && tlsClockSuspect(st, wtls_last_verify_flags()) && !g_clockSynced &&
             g_sntpAttempts < kMaxSntpAttempts && !isCancelled(cancel_)) {
             ++g_sntpAttempts;
             g_clockSynced = wtls_time_sync_sntp(nullptr, kSntpMs) == WTLS_OK;
             emit(log, g_clockSynced ? "NL_TLS_TIMESYNC ok" : "NL_TLS_TIMESYNC fail");
-            if (g_clockSynced) st = connect(url);
+            if (g_clockSynced) st = connect(url, log);
         }
         if (st != WTLS_OK) {
             error_ = tlsError(st, wtls_last_verify_flags());
@@ -210,13 +212,24 @@ public:
     }
 
 private:
-    int connect(const Url& url) {
+    int connect(const Url& url, const HttpLog& log) {
         close();
         wtls_options opt{};
         opt.connect_timeout_ms = kTlsConnectMs;
         opt.handshake_timeout_ms = kTlsHandshakeMs;
         opt.io_timeout_ms = kTlsIoMs;
-        return wtls_connect(&conn_, url.host.c_str(), url.port, &opt);
+        // Spec v2 4.6: Heap, den die Verbindung nach dem Handshake hält (uordblks-Differenz; der Haupt-Thread kann
+        // dazwischen allozieren, die Zahl ist ein Richtwert), und Dauer von DNS + TCP + Handshake.
+        const int heapBefore = g_perf ? mallinfo().uordblks : 0;
+        const u64 start = gettime();
+        const int st = wtls_connect(&conn_, url.host.c_str(), url.port, &opt);
+        if (g_perf && st == WTLS_OK) {
+            char line[64];
+            std::snprintf(line, sizeof line, "NL_PERF tls heap=%d ms=%u", mallinfo().uordblks - heapBefore,
+                          static_cast<unsigned>(elapsedMs(start)));
+            emit(log, line);
+        }
+        return st;
     }
 
     // WANT_READ/WANT_WRITE: auf den Socket warten; sonst Fehler übernehmen.
@@ -321,6 +334,7 @@ struct FileSink {
 }  // namespace
 
 void setTlsCaPath(std::string path) { g_tlsCaPath = std::move(path); }
+void setNetPerf(bool on) { g_perf = on; }
 
 HttpResult httpGet(const Url& url, u32 maxBody, std::vector<u8>& body, const volatile bool* cancel,
                    const HttpLog& log) {

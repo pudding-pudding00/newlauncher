@@ -429,6 +429,7 @@ int main(int, char**) {
     settings.setActiveLibrary(libRoot == "usb:" ? nl::Config::LibraryDevice::Usb : nl::Config::LibraryDevice::Sd);
     homeMenu.setSettings(&settings);
     nl::platform::setTlsCaPath(config.debugTlsCa);  // vor dem ersten submit; geladen beim ersten HTTPS-Auftrag
+    nl::platform::setNetPerf(config.debugPerf);
     nl::platform::NetService netService;  // ein Netz-Thread für Cover und Emulatoren (M11); lebt länger als die Worker
     nl::platform::NetWorker net(netService);
     mainScene.setFavoriteKeys(&store);

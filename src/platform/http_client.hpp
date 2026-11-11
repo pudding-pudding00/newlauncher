@@ -42,6 +42,9 @@ protected:
 // Pfad einer zusätzlichen Test-CA ([debug] tls_ca, "sd:/…"); leer = nur das eingebaute Mozilla-Bundle. Vom
 // Haupt-Thread vor dem ersten NetService::submit setzen; geladen wird beim ersten HTTPS-Auftrag (Log NL_TLS_CA).
 void setTlsCaPath(std::string path);
+// [debug] perf (Spec v2 4.6): je erfolgreichem TLS-Handshake "NL_PERF tls heap=<Bytes> ms=<Dauer>". Wie setTlsCaPath
+// vor dem ersten submit setzen.
+void setNetPerf(bool on);
 
 // Ok nur bei Status 200 mit vollständigem Body (höchstens maxBody Bytes); 404 → NotFound; alles andere Failed.
 // http:// über Klartext, https:// über TLS (ohne NL_TLS: Failed/TlsMissing, kein Rückfall auf HTTP). Klartext:

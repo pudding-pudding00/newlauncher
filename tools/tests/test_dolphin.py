@@ -10,7 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from deploy_dolphin import deploy  # noqa: E402
+from deploy_dolphin import FIXTURES_DIR, deploy  # noqa: E402
 from deploy_dolphin import main as deploy_main  # noqa: E402
 from dolphin import (dolphin_command, log_path, reset_log, wait_for_markers,  # noqa: E402
                      write_dev_config)
@@ -204,6 +204,55 @@ class DolphinToolsTest(unittest.TestCase):
         self.assertEqual(text.count("[debug]"), 1)
         self.assertTrue(text.endswith("[debug]\nautostart = nes/a.nes\ncover_url = http://127.0.0.1:7\n"
                                       "fetch_covers = 1\n"))
+
+    def test_write_emu_server_files_list_matches_zip(self):
+        import zipfile
+        from dolphin_smoke import EMU_SERVER_TIMESTAMP, write_emu_server_files
+        root = self.tmp / "srv"
+        dol = self.tmp / "echo.dol"
+        dol.write_bytes(b"D" * 1000)
+        write_emu_server_files(root, dol)
+        zpath = root / "hbb/fceugx/fceugx.zip"
+        with zipfile.ZipFile(zpath) as z:
+            names = sorted(z.namelist())
+            unzipped = sum(i.file_size for i in z.infolist())
+            self.assertEqual(z.read("apps/fceugx/boot.dol"), b"D" * 1000)
+        self.assertEqual(names, ["apps/fceugx/boot.dol", "apps/fceugx/meta.xml", "fceugx/fceugx.cfg"])
+        lines = (root / "hbb/listv036.txt").read_bytes().decode("utf-8").split("\r\n")  # OSC-Liste nutzt CRLF
+        head = next(line for line in lines if line.startswith("fceugx "))
+        f = head.split()
+        self.assertEqual(f[1], str(EMU_SERVER_TIMESTAMP))
+        self.assertEqual(int(f[3]), unzipped)
+        self.assertEqual(int(f[5]), zpath.stat().st_size)
+        self.assertEqual(f[4], "dol")
+        block = lines[lines.index(head):]
+        self.assertGreaterEqual(len(block), 7)
+
+    def test_smoke_emu_server_sets_debug_and_sync_emulators_ini(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        sync_apps = self.user / "SDSync/apps/fceugx"
+        sync_apps.mkdir(parents=True)
+        (sync_apps / "boot.dol").write_bytes(b"alt")
+        fixture_ini = FIXTURES_DIR / "newlauncher/emulators.ini"
+        before = fixture_ini.read_bytes()
+        seen = {}
+
+        def fake_start(root):
+            seen["zip"] = (Path(root) / "hbb/fceugx/fceugx.zip").is_file()
+            return mock.Mock(), 4321
+
+        with mock.patch("dolphin_smoke.start_cover_server", side_effect=fake_start):
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--timeout", "2", "--emu-server"])
+        self.assertTrue(seen["zip"])
+        text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertTrue(text.endswith("[debug]\nemu_repo = http://127.0.0.1:4321/hbb\nemu_install = fceugx\n"))
+        self.assertFalse(sync_apps.exists())
+        ini = (self.user / "SDSync/newlauncher/emulators.ini").read_text(encoding="utf-8")
+        nes = ini.split("[nes]")[1].split("[")[0]
+        self.assertIn("dol = sd:/apps/fceugx/boot.dol", nes)
+        self.assertIn("dol = sd:/apps/argv_echo/boot.dol", ini.split("[snes]")[1])
+        self.assertEqual(fixture_ini.read_bytes(), before)
 
     def test_cover_server_serves_files(self):
         import urllib.request

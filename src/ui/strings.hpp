@@ -89,7 +89,30 @@
     X(CoverRegion, "Cover-Region", "Cover region") \
     X(Rescan, "Bibliothek neu scannen", "Rescan library") \
     X(SettingsHelp, "◀▶ Ändern · A Auswählen · B Zurück", "◀▶ Change · A Select · B Back") \
-    X(Rescanning, "Bibliothek wird neu durchsucht …", "Rescanning library …")     X(Emulators, "Emulatoren", "Emulators")     X(EmuCheckUpdates, "Nach Updates suchen", "Check for updates")     X(EmuUpdateAll, "Alle aktualisieren", "Update all")     X(EmuNotInstalled, "nicht installiert", "not installed")     X(EmuCurrent, "aktuell", "up to date")     X(EmuUpdateAvailable, "Update verfügbar", "update available")     X(EmuUnknownVersion, "Version unbekannt", "unknown version")     X(EmuNotInRepo, "nicht im Repository", "not in repository")     X(EmuListLoading, "Suche nach Updates …", "Checking for updates …")     X(EmuListFailed, "Liste konnte nicht geladen werden (WLAN?)", "Could not load the list (Wi-Fi?)")     X(EmuListHint, "Liste noch nicht geladen – erst nach Updates suchen.", "List not loaded yet – check for updates first.")     X(EmuStepDownload, "Lade %s …", "Downloading %s …")     X(EmuStepVerify, "Prüfe %s …", "Verifying %s …")     X(EmuStepExtract, "Entpacke %s …", "Extracting %s …")     X(EmuStepMove, "Installiere %s …", "Installing %s …")     X(EmuErrNoSpace, "Zu wenig Platz auf der SD-Karte", "Not enough space on the SD card")     X(EmuErrDownload, "Download fehlgeschlagen", "Download failed")     X(EmuErrBadSize, "Download unvollständig", "Download incomplete")     X(EmuErrBadZip, "Paket beschädigt", "Package damaged")     X(EmuErrWrite, "Schreiben auf die SD-Karte fehlgeschlagen", "Writing to the SD card failed")     X(EmuErrCancelled, "Abgebrochen", "Cancelled")     X(EmuHelp, "A Installieren/Aktualisieren · B Zurück", "A Install/Update · B Back")     X(EmuBusyHelp, "B Abbrechen", "B Cancel")
+    X(Rescanning, "Bibliothek wird neu durchsucht …", "Rescanning library …") \
+    X(Emulators, "Emulatoren", "Emulators") \
+    X(EmuCheckUpdates, "Nach Updates suchen", "Check for updates") \
+    X(EmuUpdateAll, "Alle aktualisieren", "Update all") \
+    X(EmuNotInstalled, "nicht installiert", "not installed") \
+    X(EmuCurrent, "aktuell", "up to date") \
+    X(EmuUpdateAvailable, "Update verfügbar", "update available") \
+    X(EmuUnknownVersion, "Version unbekannt", "unknown version") \
+    X(EmuNotInRepo, "nicht im Repository", "not in repository") \
+    X(EmuListLoading, "Suche nach Updates …", "Checking for updates …") \
+    X(EmuListFailed, "Liste konnte nicht geladen werden (WLAN?)", "Could not load the list (Wi-Fi?)") \
+    X(EmuListHint, "Liste noch nicht geladen – erst nach Updates suchen.", "List not loaded yet – check for updates first.") \
+    X(EmuStepDownload, "Lade %s …", "Downloading %s …") \
+    X(EmuStepVerify, "Prüfe %s …", "Verifying %s …") \
+    X(EmuStepExtract, "Entpacke %s …", "Extracting %s …") \
+    X(EmuStepMove, "Installiere %s …", "Installing %s …") \
+    X(EmuErrNoSpace, "Zu wenig Platz auf der SD-Karte", "Not enough space on the SD card") \
+    X(EmuErrDownload, "Download fehlgeschlagen", "Download failed") \
+    X(EmuErrBadSize, "Download unvollständig", "Download incomplete") \
+    X(EmuErrBadZip, "Paket beschädigt", "Package damaged") \
+    X(EmuErrWrite, "Schreiben auf die SD-Karte fehlgeschlagen", "Writing to the SD card failed") \
+    X(EmuErrCancelled, "Abgebrochen", "Cancelled") \
+    X(EmuHelp, "A Installieren/Aktualisieren · B Zurück", "A Install/Update · B Back") \
+    X(EmuBusyHelp, "B Abbrechen", "B Cancel")
 // clang-format on
 
 namespace nl::ui {

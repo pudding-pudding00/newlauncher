@@ -162,6 +162,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/system.cpp
         src/platform/audio.cpp
         src/platform/music.cpp
+        src/platform/wii_disc.cpp
         src/app/cover_service.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp

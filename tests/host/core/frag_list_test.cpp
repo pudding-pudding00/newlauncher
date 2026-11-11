@@ -119,3 +119,12 @@ TEST_CASE("frag_list: crc") {
     l.entries[1].count = 37;
     CHECK(a != fragListCrc(serializeFragList(l)));
 }
+
+TEST_CASE("frag_list: crc wie fat_frag.py") {
+    // Dieselben Fragmente wie in tools/tests/test_fat_frag.py: ISO 1436 Byte, Cluster 10, 11, 20.
+    auto r = buildIsoFragList(FilePart{3 * 512 - 100, {{0, 3182, 2}, {2, 3192, 1}}});
+    REQUIRE(r.isOk());
+    CHECK(r.value().size == 3);
+    CHECK(r.value().entries.size() == 2);
+    CHECK(fragListCrc(serializeFragList(r.value())) == 0x6dabbf0au);
+}

@@ -15,6 +15,7 @@ import zipfile
 from pathlib import Path
 
 from deploy_dolphin import ARGV_ECHO_DOL, DEFAULT_DOL, DIST_DIR, FIXTURES_DIR, deploy
+from fat_frag import NotFat32Error, expected_frag_line
 from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_path, reset_log,
                      sd_sync_dir, wait_for_markers, write_dev_config)
 from pngfile import solid_png
@@ -106,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="lokalen Cover-Server starten und „Fehlende Cover laden“ nach NL_READY auslösen")
     parser.add_argument("--emu-server", action="store_true",
                         help="lokales OSC-Test-Repository starten und fceugx nach NL_READY installieren")
+    parser.add_argument("--expect-frag", metavar="REL_PATH",
+                        help="NL_FRAG-Zeile für diese ISO (relativ zur SD) aus Load/WiiSD.raw berechnen und im Log verlangen")
     args = parser.parse_args(argv)
     markers = args.markers or DEFAULT_MARKERS
 
@@ -190,11 +193,27 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             proc.kill()
             proc.wait()
 
+    if not missing and args.expect_frag:
+        missing = _check_frag(user_dir, args.expect_frag)
     if not missing:
         print("SMOKE OK")
         return 0
     print(f"SMOKE FEHLGESCHLAGEN: fehlende Marker nach {args.timeout:g} s: {', '.join(missing)}")
     return 1
+
+
+def _check_frag(user_dir: Path, rel_path: str) -> list[str]:
+    """Erwartete NL_FRAG-Zeile aus dem SD-Image; fehlt sie im Log, wird sie als fehlender Marker gemeldet."""
+    try:
+        line = expected_frag_line(user_dir / "Load/WiiSD.raw", rel_path)
+    except NotFat32Error:
+        print("SMOKE HINWEIS: SD-Image nicht FAT32, Abgleich übersprungen")
+        return []
+    except (OSError, ValueError) as e:
+        print(f"SMOKE FEHLER: Abgleich NL_FRAG nicht möglich: {e}")
+        return ["NL_FRAG (Abgleich)"]
+    log = log_path(user_dir).read_text(encoding="utf-8", errors="replace")
+    return [] if line in log else [line]
 
 
 if __name__ == "__main__":

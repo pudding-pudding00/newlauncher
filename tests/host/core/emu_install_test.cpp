@@ -190,6 +190,52 @@ TEST_CASE("installEmulator: Einträge anderer Emulatoren bleiben erhalten") {
     CHECK(inst.at("vbagx").timestamp == 5u);
 }
 
+TEST_CASE("installEmulator: Paket ohne die Katalog-DOL → BadZip, alte Version bleibt") {
+    // Review M10: sonst meldet die Zeile „aktuell“, gestartet wird aber weiter die alte boot.dol.
+    Harness h;
+    h.fs.addFile("sd:/apps/fceugx/boot.dol", bytes("ALTES-DOL"));
+    h.zip = test::buildZip({test::storedEntry("apps/fceugx/boot.elf", "ELF"),
+                            test::storedEntry("apps/fceugx/meta.xml", "<app>neu</app>")});
+    const auto r = h.run();
+    CHECK(r.error == EmuInstallError::BadZip);
+    CHECK(r.detail.find("apps/fceugx/boot.dol") != std::string::npos);
+    CHECK(text(h.fs.file("sd:/apps/fceugx/boot.dol")) == "ALTES-DOL");
+    CHECK(h.fs.file(std::string(kInstalledEmusPath)) == nullptr);
+    CHECK(h.fs.renames.empty());
+    CHECK(h.tmpEmpty());
+}
+
+TEST_CASE("installEmulator: Apps/ in anderer Schreibweise wird wie apps/ ersetzt") {
+    // FAT unterscheidet keine Groß-/Kleinschreibung: „Apps/fceugx/boot.dol“ ist dieselbe Datei.
+    Harness h;
+    h.fs.addFile("sd:/apps/fceugx/boot.dol", bytes("ALTES-DOL"));
+    h.zip = test::buildZip({test::storedEntry("Apps/fceugx/boot.dol", "NEUES-DOL")});
+    CHECK(h.run().error == EmuInstallError::None);
+    CHECK(text(h.fs.file("sd:/apps/fceugx/boot.dol")) == "NEUES-DOL");
+}
+
+TEST_CASE("installEmulator: Abbruch während des Downloads → Cancelled statt Download") {
+    Harness h;
+    h.downloadFails = true;  // httpGet liefert bei Abbruch Failed
+    h.cancelAfterDownload = true;
+    CHECK(h.run().error == EmuInstallError::Cancelled);
+    CHECK(h.tmpEmpty());
+}
+
+TEST_CASE("recoverEmuInstall: Stromausfall zwischen den Umbenennungen") {
+    MemFileSystem fs;
+    // boot.dol → boot.dol.old geschehen, staged → boot.dol nicht: alte DOL zurückholen.
+    fs.addFile("sd:/apps/fceugx/boot.dol.old", bytes("ALTES-DOL"));
+    // Beide da: die neue DOL ist schon an ihrem Platz, .old ist ein Rest.
+    fs.addFile("sd:/apps/snes9xgx/boot.dol", bytes("NEU"));
+    fs.addFile("sd:/apps/snes9xgx/boot.dol.old", bytes("ALT"));
+    recoverEmuInstall(fs);
+    CHECK(text(fs.file("sd:/apps/fceugx/boot.dol")) == "ALTES-DOL");
+    CHECK(fs.file("sd:/apps/fceugx/boot.dol.old") == nullptr);
+    CHECK(text(fs.file("sd:/apps/snes9xgx/boot.dol")) == "NEU");
+    CHECK(fs.file("sd:/apps/snes9xgx/boot.dol.old") == nullptr);
+}
+
 TEST_CASE("clearEmuTmp: löscht alle Dateien rekursiv") {
     MemFileSystem fs;
     fs.addFile("sd:/newlauncher/tmp/a.zip", bytes("x"));

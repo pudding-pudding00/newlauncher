@@ -206,7 +206,10 @@ int main(int, char**) {
         }
     };
     const nl::EmulatorTable emulators = loadEmulators(fs, sdOk);
-    if (sdOk) nl::clearEmuTmp(fs);  // Reste einer abgebrochenen Emulator-Installation (Spec 6.9)
+    if (sdOk) {  // Reste einer abgebrochenen Emulator-Installation (Spec 6.9)
+        nl::recoverEmuInstall(fs);
+        nl::clearEmuTmp(fs);
+    }
 
     // 2. Video, Renderer, Atlas, Theme aus der Konfiguration
     nl::platform::Video video;

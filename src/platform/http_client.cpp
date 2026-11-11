@@ -105,6 +105,8 @@ HttpOutcome request(const Url& url, HttpParser& parser, const volatile bool* can
     u8 buf[4096];
     HttpParser::State state = HttpParser::State::Headers;
     while (state == HttpParser::State::Headers || state == HttpParser::State::Body) {
+        // Auch bei durchgehend ankommenden Daten (kein EAGAIN, z. B. schnelles LAN) muss B sofort greifen.
+        if (isCancelled(cancel)) return HttpOutcome::Failed;
         const s32 r = net_recv(sock.fd, buf, sizeof buf, 0);
         if (r > 0) {
             state = parser.feed(std::span<const u8>(buf, static_cast<std::size_t>(r)));

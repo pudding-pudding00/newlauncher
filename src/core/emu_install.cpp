@@ -36,6 +36,22 @@ bool isBootDol(std::string_view rel) {
     return (slash == std::string_view::npos ? rel : rel.substr(slash + 1)) == "boot.dol";
 }
 
+char lower(char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; }
+
+bool equalsNoCase(std::string_view a, std::string_view b) {
+    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) { return lower(x) == lower(y); });
+}
+
+// FAT unterscheidet keine Groß-/Kleinschreibung: „Apps/x“ landet in apps/ und wird wie apps/ behandelt.
+bool underApps(std::string_view rel) { return rel.size() > 5 && equalsNoCase(rel.substr(0, 5), "apps/"); }
+
+// Die DOL, die der Launcher startet, relativ zu sd:/ (Katalog; sonst apps/<name>/boot.dol).
+std::string catalogDol(const OscApp& app) {
+    for (const EmuInfo& e : emulatorCatalog())
+        if (e.oscName == app.name && e.dol.rfind("sd:/", 0) == 0) return std::string(e.dol.substr(4));
+    return "apps/" + app.name + "/boot.dol";
+}
+
 bool exists(FileSystem& fs, const std::string& path) {
     const std::string dir = parentDir(path);
     auto entries = fs.list(dir);
@@ -95,6 +111,17 @@ std::string_view emuInstallErrorName(EmuInstallError e) {
 
 void clearEmuTmp(FileSystem& fs) { clearDir(fs, std::string(kEmuTmpDir), 0); }
 
+void recoverEmuInstall(FileSystem& fs) {
+    for (const EmuInfo& e : emulatorCatalog()) {
+        const std::string dol(e.dol), old = dol + ".old";
+        if (!exists(fs, old)) continue;
+        if (exists(fs, dol))
+            (void)fs.removeFile(old);
+        else
+            (void)fs.renameFile(old, dol);
+    }
+}
+
 EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_view repo, const OscApp& app) {
     Session s{fs, io, app};
     clearEmuTmp(fs);
@@ -109,9 +136,9 @@ EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_v
     if (!fs.makeDirs(tmp).isOk()) return s.fail(EmuInstallError::Write, tmp);
     const std::string zip = tmp + "/" + app.name + ".zip";
     s.progress(EmuStep::Download, 0, app.zipSize);
-    if (!io.download || io.download(oscZipUrl(repo, app.name), zip, app.zipSize) != HttpOutcome::Ok)
-        return s.fail(EmuInstallError::Download, oscZipUrl(repo, app.name));
-    if (s.cancelled()) return s.fail(EmuInstallError::Cancelled, "download");
+    const bool downloaded = io.download && io.download(oscZipUrl(repo, app.name), zip, app.zipSize) == HttpOutcome::Ok;
+    if (s.cancelled()) return s.fail(EmuInstallError::Cancelled, "download");  // vor Download: B zeigt „Abgebrochen“
+    if (!downloaded) return s.fail(EmuInstallError::Download, oscZipUrl(repo, app.name));
 
     // 3. Prüfen
     s.progress(EmuStep::Verify, 0, 1);
@@ -127,8 +154,15 @@ EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_v
     auto dir = readZipDirectory(fs, zip, *got);
     if (!dir.isOk()) return s.fail(EmuInstallError::BadZip, dir.error().context);
     std::vector<const ZipEntry*> files;
-    for (const ZipEntry& e : dir.value())
-        if (!e.isDir) files.push_back(&e);
+    bool hasDol = false;
+    const std::string dol = catalogDol(app);
+    for (const ZipEntry& e : dir.value()) {
+        if (e.isDir) continue;
+        files.push_back(&e);
+        hasDol = hasDol || equalsNoCase(e.name, dol);
+    }
+    // Ohne die DOL, die der Launcher startet, wäre „installiert“ gelogen (alte DOL liefe weiter).
+    if (!hasDol) return s.fail(EmuInstallError::BadZip, "fehlt: " + dol);
 
     // 4. Entpacken
     const std::string stage = tmp + "/" + app.name;
@@ -153,9 +187,10 @@ EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_v
     for (const ZipEntry* e : files) {
         s.progress(EmuStep::Move, done++, static_cast<u32>(files.size()));
         const std::string staged = stage + "/" + e->name;
-        const std::string dest = "sd:/" + e->name;
+        const bool apps = underApps(e->name);
+        const std::string dest = "sd:/" + (apps ? "apps/" + e->name.substr(5) : e->name);
         if (!fs.makeDirs(parentDir(dest)).isOk()) return s.fail(EmuInstallError::Write, dest);
-        if (e->name.rfind("apps/", 0) == 0) {
+        if (apps) {
             if (!replaceFile(fs, staged, dest).isOk()) return s.fail(EmuInstallError::Write, dest);
         } else if (!exists(fs, dest)) {
             if (!fs.renameFile(staged, dest).isOk()) return s.fail(EmuInstallError::Write, dest);

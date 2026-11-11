@@ -83,14 +83,22 @@ class InstallEmulatorTest(unittest.TestCase):
     def tearDown(self):
         self._tmp.cleanup()
 
-    def _zip(self, entries: dict[str, bytes]) -> Path:
+    def _zip(self, entries: dict[str, bytes], method: int = zipfile.ZIP_DEFLATED, flags: int = 0) -> Path:
         path = self.tmp / "fceugx.zip"
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
             for name, data in entries.items():
                 info = zipfile.ZipInfo("x")
                 info.filename = name  # Rohname: ZipInfo(name) ersetzt unter Windows "\" und streicht "c:"
-                info.compress_type = zipfile.ZIP_DEFLATED
+                info.compress_type = method
                 z.writestr(info, data)
+        if flags:  # writestr setzt flag_bits zurück: Bit 0 („verschlüsselt“) in lokalem und zentralem Kopf setzen
+            raw = bytearray(path.read_bytes())
+            for sig, off in ((b"PK\x03\x04", 6), (b"PK\x01\x02", 8)):
+                pos = raw.find(sig)
+                while pos >= 0:
+                    raw[pos + off] |= flags
+                    pos = raw.find(sig, pos + 4)
+            path.write_bytes(bytes(raw))
         self.app = self.app._replace(zip_size=path.stat().st_size, unzipped_size=sum(map(len, entries.values())))
         return path
 
@@ -139,6 +147,25 @@ class InstallEmulatorTest(unittest.TestCase):
             install_emulator(self.sd, z, self.app)
         self.assertEqual((self.sd / "apps/fceugx/boot.dol").read_bytes(), b"alt")
         self.assertEqual(self._files(), {"apps/fceugx/boot.dol"})
+
+    def test_same_rules_as_wii_method_encryption_and_dol(self):
+        # Review M10: die Wii nimmt nur Methode 0/8 ohne Verschlüsselung und verlangt die Katalog-DOL.
+        cases = {"bzip2": ({"apps/fceugx/boot.dol": b"neu"}, zipfile.ZIP_BZIP2, 0),
+                 "verschlüsselt": ({"apps/fceugx/boot.dol": b"neu"}, zipfile.ZIP_DEFLATED, 1),
+                 "ohne DOL": ({"apps/fceugx/boot.elf": b"elf"}, zipfile.ZIP_DEFLATED, 0)}
+        for label, (entries, method, flags) in cases.items():
+            with self.subTest(label):
+                z = self._zip(entries, method, flags)
+                with self.assertRaises(EmuInstallError):
+                    install_emulator(self.sd, z, self.app)
+                self.assertEqual(self._files(), set())
+
+    def test_apps_prefix_case_insensitive(self):
+        (self.sd / "apps/fceugx").mkdir(parents=True)
+        (self.sd / "apps/fceugx/boot.dol").write_bytes(b"alt")
+        z = self._zip({"Apps/fceugx/boot.dol": b"neu"})
+        self.assertEqual(install_emulator(self.sd, z, self.app), 1)
+        self.assertEqual((self.sd / "apps/fceugx/boot.dol").read_bytes(), b"neu")
 
     def test_wrong_zip_size_rejected(self):
         z = self._zip({"apps/fceugx/boot.dol": b"neu"})

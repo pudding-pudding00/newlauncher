@@ -40,4 +40,9 @@ EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_v
 // Löscht alle Dateien unter kEmuTmpDir (rekursiv); leere Ordner bleiben stehen.
 void clearEmuTmp(FileSystem& fs);
 
+// Beim Start vor clearEmuTmp: Fehlt die DOL eines Katalog-Emulators, liegt aber <dol>.old daneben (Strom weg
+// zwischen den beiden Umbenennungen in installEmulator), kommt die alte DOL zurück. Liegen beide da, ist .old
+// ein Rest und wird gelöscht.
+void recoverEmuInstall(FileSystem& fs);
+
 }  // namespace nl

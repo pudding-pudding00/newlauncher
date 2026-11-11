@@ -81,6 +81,24 @@ TEST_CASE("zip: unbekannte Methode, verschlüsselt, zu groß") {
     CHECK(!dirOf(fs, buildZip({e})).isOk());
 }
 
+TEST_CASE("zip: gelogene Größen werden vor jeder Allokation abgelehnt") {
+    // Review M10: ohne diese Prüfungen reserviert extractZipEntry bzw. inflateRaw die behauptete Größe, und
+    // ein fehlgeschlagenes new beendet den Launcher (-fno-exceptions).
+    MemFileSystem fs;
+    auto stored = storedEntry("a.dol", "hallo");
+    stored.size = 1024 * 1024;
+    stored.centralCompSize = 1024 * 1024;  // Daten reichen angeblich über das Verzeichnis hinaus
+    auto dir = dirOf(fs, buildZip({stored}));
+    REQUIRE(!dir.isOk());
+    CHECK(dir.error().context.find("a.dol") != std::string::npos);
+
+    MemFileSystem fs2;  // 37 Byte Deflate können nie 1 MiB ergeben (höchstens ~1032:1)
+    auto bomb = deflatedEntry("b.dol", {kFixedData, sizeof kFixedData}, 1024 * 1024, kFixedCrc);
+    CHECK(!dirOf(fs2, buildZip({bomb})).isOk());
+
+    CHECK(kMaxZipEntryBytes <= 16u * 1024 * 1024);  // Heap der Wii: ~60 MB, davon 16 MiB Cover-Cache
+}
+
 TEST_CASE("zip: unsicherer Name lehnt das ganze Archiv ab") {
     MemFileSystem fs;
     auto entries = goodEntries();

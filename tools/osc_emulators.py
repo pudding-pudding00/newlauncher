@@ -29,6 +29,11 @@ class EmuInfo(NamedTuple):
     name: str
     label: str
 
+    @property
+    def dol(self) -> str:
+        """Die DOL, die der Launcher startet (relativ zur Karte), wie im C++-Katalog."""
+        return f"apps/{self.name}/boot.dol"
+
 
 # Reihenfolge und Namen wie emulatorCatalog() in src/core/emu_catalog.cpp (Test vergleicht).
 CATALOG = (EmuInfo("fceugx", "FCE Ultra GX (NES)"),
@@ -120,6 +125,29 @@ def is_safe_zip_path(name: str) -> bool:
     return all(seg not in ("", ".", "..") for seg in name.rstrip("/").split("/"))
 
 
+def _dest_name(name: str) -> str:
+    """FAT kennt keine Groß-/Kleinschreibung: „Apps/x“ ist apps/x und wird ersetzt wie apps/."""
+    return "apps/" + name[5:] if name[:5].lower() == "apps/" else name
+
+
+def _check_entries(z: zipfile.ZipFile, app: OscApp) -> None:
+    """Gleiche Regeln wie readZipDirectory/installEmulator auf der Wii."""
+    dol = next((i.dol for i in CATALOG if i.name == app.name), f"apps/{app.name}/boot.dol")
+    has_dol = False
+    for info in z.infolist():
+        # orig_filename: zipfile ersetzt unter Windows "\" und streicht Laufwerke; die Wii sieht
+        # den Rohnamen, also prüfen wir den.
+        if not is_safe_zip_path(info.orig_filename) or info.orig_filename != info.filename:
+            raise EmuInstallError(f"{app.name}: unsicherer Pfad im ZIP: {info.orig_filename}")
+        if info.flag_bits & 1:
+            raise EmuInstallError(f"{app.name}: verschlüsselt: {info.filename}")
+        if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+            raise EmuInstallError(f"{app.name}: Methode {info.compress_type}: {info.filename}")
+        has_dol = has_dol or (not info.is_dir() and info.filename.lower() == dol.lower())
+    if not has_dol:
+        raise EmuInstallError(f"{app.name}: fehlt: {dol}")
+
+
 def _replace(staged: Path, dest: Path) -> None:
     """dest → dest.old, staged → dest; schlägt der zweite Schritt fehl, kommt .old zurück."""
     if not dest.exists():
@@ -147,23 +175,19 @@ def install_emulator(sd: Path, zip_path: Path, app: OscApp) -> int:
         try:
             with zipfile.ZipFile(zip_path) as z:
                 infos = [i for i in z.infolist() if not i.is_dir()]
-                for info in z.infolist():
-                    # orig_filename: zipfile ersetzt unter Windows "\" und streicht Laufwerke; die Wii sieht
-                    # den Rohnamen, also prüfen wir den.
-                    if not is_safe_zip_path(info.orig_filename) or info.orig_filename != info.filename:
-                        raise EmuInstallError(f"{app.name}: unsicherer Pfad im ZIP: {info.orig_filename}")
+                _check_entries(z, app)
                 for info in infos:
                     target = stage / info.filename
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(z.read(info))  # prüft die CRC
-        except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError) as e:
+        except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError, NotImplementedError, RuntimeError) as e:
             raise EmuInstallError(f"{app.name}: Paket beschädigt: {e}") from e
 
         names = sorted((i.filename for i in infos), key=lambda n: n.rsplit("/", 1)[-1] == "boot.dol")
         for name in names:
-            dest = sd / name
+            dest = sd / _dest_name(name)
             dest.parent.mkdir(parents=True, exist_ok=True)
-            if name.startswith("apps/"):
+            if _dest_name(name).startswith("apps/"):
                 _replace(stage / name, dest)
             elif not dest.exists():
                 os.replace(stage / name, dest)

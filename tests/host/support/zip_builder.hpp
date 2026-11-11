@@ -19,6 +19,7 @@ struct TestZipEntry {
     u32 crc = 0;
     u16 method = 0;
     u16 flags = 0;
+    u32 centralCompSize = 0;  // != 0: diese Größe im zentralen Verzeichnis statt data.size() (gelogen)
 };
 
 inline TestZipEntry storedEntry(std::string name, std::string_view text) {
@@ -69,7 +70,7 @@ inline std::vector<u8> buildZip(const std::vector<TestZipEntry>& entries, std::s
         le16(central, e.method);
         le32(central, 0);
         le32(central, e.crc);
-        le32(central, static_cast<u32>(e.data.size()));
+        le32(central, e.centralCompSize ? e.centralCompSize : static_cast<u32>(e.data.size()));
         le32(central, e.size);
         le16(central, static_cast<u32>(e.name.size()));
         le16(central, 0);

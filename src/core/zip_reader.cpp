@@ -93,6 +93,10 @@ Result<std::vector<ZipEntry>> readZipDirectory(FileSystem& fs, std::string_view 
         if (e.size > kMaxZipEntryBytes || e.compSize > kMaxZipEntryBytes) return R::err(bad("zu groß: " + e.name));
         if (e.method == 0 && e.compSize != e.size) return R::err(bad("Größe ungültig: " + e.name));
         if (e.localOffset >= cdOffset) return R::err(bad("Offset ungültig: " + e.name));
+        if (u64{e.localOffset} + kLocalSize + e.compSize > cdOffset) return R::err(bad("Größe ungültig: " + e.name));
+        // Deflate schafft höchstens ~1032:1 (258 Byte je 2-Bit-Code); mehr ist gelogen.
+        if (e.method == 8 && u64{e.size} > u64{e.compSize} * 1032 + 1024)
+            return R::err(bad("Größe ungültig: " + e.name));
         out.push_back(std::move(e));
         p += kCentralSize + nameLen + extraLen + commentLen;
     }

@@ -107,6 +107,7 @@ DownloadSummary NetWorker::run(const volatile bool& cancel) {
         log(format("NL_NET_FAIL %s", code));
         for (const CoverJob& job : jobs_) log(format("NL_COVER_DL %s failed", job.id6.c_str()));
         sum.failed = total_;
+        sum.lastError = NetError::Other;
         done_ = total_;
         return sum;
     }
@@ -114,8 +115,11 @@ DownloadSummary NetWorker::run(const volatile bool& cancel) {
 
     CoverDownloadIo io;
     const HttpLog httpLog = [this](std::string line) { log(std::move(line)); };
-    io.get = [&cancel, &httpLog](const Url& url, std::vector<u8>& body) {
-        return httpGet(url, kMaxCoverDownloadBytes, body, &cancel, httpLog).outcome;
+    NetError lastError = NetError::None;
+    io.get = [&cancel, &httpLog, &lastError](const Url& url, std::vector<u8>& body) {
+        const HttpResult r = httpGet(url, kMaxCoverDownloadBytes, body, &cancel, httpLog);
+        if (r.outcome == HttpOutcome::Failed) lastError = r.error;
+        return r.outcome;
     };
     io.save = [this](const std::string& stem, std::span<const u8> png) {
         const std::string path = coverSrcPath(root_, stem);
@@ -127,6 +131,7 @@ DownloadSummary NetWorker::run(const volatile bool& cancel) {
     io.finished = [this](const std::string& stem) { finished(stem); };
     io.jobDone = [this] { done_ = done_ + 1; };
     sum = runCoverDownloads(jobs_, regions_, base_, io);
+    if (sum.failed > 0) sum.lastError = lastError;
     return sum;
 }
 

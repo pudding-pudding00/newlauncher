@@ -69,6 +69,18 @@ TEST_CASE("setLanguage schaltet tr um") {
     CHECK(std::string(tr(Str::Settings)) == "Einstellungen");
 }
 
+TEST_CASE("coversSummaryText nennt bei Fehlern die Netzursache (Spec v2 4.4)") {
+    LangGuard g;
+    setLanguage(Lang::De);
+    const std::string clean = coversSummaryText(3, 1, 0, NetError::None);
+    CHECK(clean == "3 geladen, 1 nicht gefunden, 0 fehlgeschlagen");
+    const std::string clock = coversSummaryText(0, 0, 5, NetError::Clock);
+    CHECK(clock.find("5 fehlgeschlagen") != std::string::npos);
+    CHECK(clock.find(tr(Str::NetErrClock)) != std::string::npos);
+    // Ohne Fehlschlag keine Ursache, auch wenn eine gemeldet wurde (z. B. 404 vorher, dann Erfolg).
+    CHECK(coversSummaryText(2, 0, 0, NetError::Timeout) == "2 geladen, 0 nicht gefunden, 0 fehlgeschlagen");
+}
+
 TEST_CASE("resolveLanguage") {
     CHECK(resolveLanguage(Config::Language::Auto, true) == Lang::De);
     CHECK(resolveLanguage(Config::Language::Auto, false) == Lang::En);

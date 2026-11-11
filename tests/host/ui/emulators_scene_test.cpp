@@ -147,6 +147,17 @@ TEST_CASE_FIXTURE(Fixture, "Zeiger wählt Zeile") {
     CHECK(s.focus() == 3);
 }
 
+TEST_CASE_FIXTURE(Fixture, "Liste fehlgeschlagen: Info nennt die Netzursache (Spec v2 4.4)") {
+    s.setListState(EmulatorsScene::ListState::Failed, NetError::Clock);
+    CHECK(s.infoText().find(tr(Str::NetErrClock)) != std::string::npos);
+    s.setListState(EmulatorsScene::ListState::Failed, NetError::TlsMissing);
+    CHECK(s.infoText().find(tr(Str::NetErrTlsMissing)) != std::string::npos);
+    s.setListState(EmulatorsScene::ListState::Failed);  // Ursache unbekannt: allgemeiner Text
+    CHECK(s.infoText() == tr(Str::EmuListFailed));
+    s.setListState(EmulatorsScene::ListState::Loading, NetError::Clock);
+    CHECK(s.infoText() == tr(Str::EmuListLoading));
+}
+
 TEST_CASE_FIXTURE(Fixture, "Fehler und Statustexte werden gezeichnet") {
     s.setListState(EmulatorsScene::ListState::Failed);
     s.setError("fceugx", EmuInstallError::NoSpace);

@@ -1,5 +1,7 @@
 #include "ui/strings.hpp"
 
+#include <cstdio>
+
 namespace nl::ui {
 
 namespace {
@@ -51,6 +53,18 @@ Str netErrorText(NetError e) {
         case NetError::Other: break;
     }
     return Str::NetErrOther;
+}
+
+std::string coversSummaryText(u32 ok, u32 missing, u32 failed, NetError lastError) {
+    char buf[128];
+    std::snprintf(buf, sizeof buf, tr(Str::CoversSummary), static_cast<unsigned>(ok), static_cast<unsigned>(missing),
+                  static_cast<unsigned>(failed));
+    std::string text = buf;
+    if (failed > 0 && lastError != NetError::None) {
+        text += '\n';
+        text += tr(netErrorText(lastError));
+    }
+    return text;
 }
 
 void setLanguage(Lang l) { gLang = l; }

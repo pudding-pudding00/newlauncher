@@ -126,11 +126,15 @@ bool EmuWorker::network() {
 void EmuWorker::runList(const volatile bool& cancel) {
     const auto url = parseUrl(oscListUrl(repo_));
     std::vector<u8> body;
-    if (!url || !network() || httpGet(*url, kMaxOscListBytes, body, &cancel, logFn()).outcome != HttpOutcome::Ok) {
+    listError_ = static_cast<u8>(NetError::Other);
+    const auto fail = [this](NetError e) {
+        listError_ = static_cast<u8>(e);
         listFailed_ = true;
         log("NL_EMU_LIST fail");
-        return;
-    }
+    };
+    if (!url || !network()) return fail(NetError::Other);
+    const HttpResult r = httpGet(*url, kMaxOscListBytes, body, &cancel, logFn());
+    if (r.outcome != HttpOutcome::Ok) return fail(r.outcome == HttpOutcome::NotFound ? NetError::Http : r.error);
     auto apps = parseOscList(std::string_view(reinterpret_cast<const char*>(body.data()), body.size()));
     if (apps.empty()) {
         listFailed_ = true;

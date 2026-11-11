@@ -170,12 +170,16 @@ public:
 
     bool open(const Url& url, const HttpLog& log) {
         loadTestCa(log);
+        // Der Handshake selbst ist nicht unterbrechbar: vor jedem connect auf Abbruch prüfen, sonst addieren sich beim
+        // Beenden bis zu zwei volle Handshakes plus SNTP (~40 s statt höchstens 18 s).
+        if (isCancelled(cancel_)) return failOpen();
         int st = connect(url, log);
         if (st != WTLS_OK && tlsClockSuspect(st, wtls_last_verify_flags()) && !g_clockSynced &&
             g_sntpAttempts < kMaxSntpAttempts && !isCancelled(cancel_)) {
             ++g_sntpAttempts;
             g_clockSynced = wtls_time_sync_sntp(nullptr, kSntpMs) == WTLS_OK;
             emit(log, g_clockSynced ? "NL_TLS_TIMESYNC ok" : "NL_TLS_TIMESYNC fail");
+            if (isCancelled(cancel_)) return failOpen();
             if (g_clockSynced) st = connect(url, log);
         }
         if (st != WTLS_OK) {
@@ -248,6 +252,12 @@ private:
     s32 fail(NetError e) {
         error_ = e;
         return -1;
+    }
+
+    bool failOpen() {
+        close();
+        error_ = NetError::Other;  // Abbruch, wie bei PlainTransport
+        return false;
     }
 
     const volatile bool* cancel_;

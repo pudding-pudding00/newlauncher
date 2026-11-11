@@ -3,6 +3,8 @@
 // X(Id, "deutsch", "english"); Texte mit Formatzeichen haben in beiden Sprachen dieselbe Folge
 // (strings_test prüft das). Die aktive Sprache ist globaler UI-Zustand, gesetzt von main.
 
+#include <string>
+
 #include "core/config.hpp"
 #include "core/net_error.hpp"
 #include "core/types.hpp"
@@ -172,5 +174,7 @@ const char* langKey(Lang l);           // "de" / "en"
 const char* weekdayName(int weekday0Mon);  // 0 = Montag
 const char* monthName(int month1);         // 1 = Januar
 Str netErrorText(NetError e);              // Klartext je Netzfehler (M11)
+// Text des Cover-Dialogs; bei failed > 0 und bekannter Ursache folgt der Klartext dazu in einer zweiten Zeile.
+std::string coversSummaryText(u32 ok, u32 missing, u32 failed, NetError lastError);
 
 }  // namespace nl::ui

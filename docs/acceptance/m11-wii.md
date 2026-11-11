@@ -78,8 +78,13 @@ EINPROGRESS 119, EALREADY 120, EISCONN 127). libogc übersetzt die IOS-Codes vor
   ```
   Die Zeile „TLS“ kommt in die Tabelle unten. Spec v2 4.6 nennt Zielwerte, kein hartes Budget: eine
   Überschreitung ergibt WARN und wird unter Befunde notiert.
-- **W6:** Ein laufender TLS-Handshake lässt sich nicht unterbrechen. Im schlimmsten Fall dauert der
-  Ausstieg bis zu 18 s (8 s Verbindung + 10 s Handshake). Länger ist FAIL.
+- **W6:** Ein laufender TLS-Handshake lässt sich nicht unterbrechen. Vor jedem Verbindungsaufbau und
+  nach dem SNTP-Abgleich prüft der Launcher auf Abbruch. Im schlimmsten Fall dauert der Ausstieg deshalb
+  bis zu 21 s: 8 s Verbindung, 10 s Handshake und 3 s SNTP. Dazu kommt eine DNS-Abfrage ohne eigenes
+  Zeitlimit. Länger ist FAIL.
+- **W3/W7:** Die Ursache steht auch auf dem Bildschirm. Bei der Emulatorliste ersetzt sie den Infotext,
+  im Cover-Dialog steht sie als zweite Zeile (z. B. „Uhrzeit der Wii falsch …“, „Server nicht
+  gefunden (DNS)“).
 - **W7:** Erwartete Log-Zeilen: `NL_NET_FAIL dns`, `connect` oder `timeout`. Kein Rückfall auf HTTP.
 
 ## Messwerte (W4)

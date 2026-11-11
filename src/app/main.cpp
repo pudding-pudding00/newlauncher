@@ -643,10 +643,8 @@ int main(int, char**) {
                           static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
             if (perf) perf->pause();  // der Flush gehört zur Messung, nicht zum Launcher
-            char text[128];
-            std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::CoversSummary), static_cast<unsigned>(sum->ok),
-                          static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
-            dialog.open(nl::ui::tr(nl::ui::Str::CoversLoaded), text);
+            const std::string text = nl::ui::coversSummaryText(sum->ok, sum->missing, sum->failed, sum->lastError);
+            dialog.open(nl::ui::tr(nl::ui::Str::CoversLoaded), text.c_str());
             scenes.push(&dialog);
         }
     };
@@ -712,7 +710,8 @@ int main(int, char**) {
                 emuScene.setListState(nl::ui::EmulatorsScene::ListState::Loaded);
             } else {
                 emuScene.setListState(emu.listFailed() ? nl::ui::EmulatorsScene::ListState::Failed
-                                                       : nl::ui::EmulatorsScene::ListState::NotLoaded);
+                                                       : nl::ui::EmulatorsScene::ListState::NotLoaded,
+                                      emu.listError());
             }
             refreshEmuRows();
             if (!emuDebugPending.empty()) {

@@ -36,6 +36,7 @@ public:
 
     std::optional<std::vector<OscApp>> takeList();  // nach FetchList; leer = noch nichts oder fehlgeschlagen
     bool listFailed() const { return listFailed_; }
+    NetError listError() const { return static_cast<NetError>(listError_); }  // Ursache bei listFailed
     std::vector<std::pair<std::string, EmuInstallResult>> takeResults();
     std::vector<std::string> takeLogLines();
 
@@ -65,6 +66,7 @@ private:
     volatile u8 step_ = 0;
     volatile u32 done_ = 0, total_ = 0, appIndex_ = 0, appCount_ = 0;
     volatile bool running_ = false, listFailed_ = false;
+    volatile u8 listError_ = static_cast<u8>(NetError::Other);
     std::optional<std::vector<OscApp>> list_;
     std::vector<std::pair<std::string, EmuInstallResult>> results_;
     std::vector<std::string> logLines_;

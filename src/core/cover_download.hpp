@@ -11,6 +11,7 @@
 #include "core/fs.hpp"
 #include "core/game.hpp"
 #include "core/http.hpp"
+#include "core/net_error.hpp"
 #include "core/types.hpp"
 
 namespace nl {
@@ -45,6 +46,7 @@ bool isPng(std::span<const u8> data);
 
 struct DownloadSummary {
     u32 ok = 0, missing = 0, failed = 0;
+    NetError lastError = NetError::None;  // Ursache des letzten Fehlschlags (setzt der Worker; Spec v2 4.4)
 };
 
 // Nach so vielen Fehlern in Folge gelten Netz oder Server als tot: die übrigen Aufträge werden nicht versucht.

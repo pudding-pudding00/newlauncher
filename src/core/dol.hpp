@@ -31,4 +31,7 @@ struct DolHeader {
 // head enthält mindestens die ersten kDolHeaderBytes der Datei; fileSize ist die ganze Dateigröße.
 Result<DolHeader> parseDol(std::span<const u8> head, u64 fileSize);
 
+// Eine DOL, die schon im Speicher liegt (eingebetteter Game-Booter, M9): 0 < Größe ≤ maxBytes, dann parseDol.
+Result<DolHeader> checkDolImage(std::span<const u8> dol, u32 maxBytes);
+
 }  // namespace nl

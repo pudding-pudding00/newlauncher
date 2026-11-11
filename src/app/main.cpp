@@ -36,6 +36,7 @@
 #include "gfx/renderer.hpp"
 #include "launch/chainloader.hpp"
 #include "launch/channel.hpp"
+#include "launch/wii_boot.hpp"
 #include "platform/crash.hpp"
 #include "platform/emu_worker.hpp"
 #include "platform/audio.hpp"
@@ -495,14 +496,11 @@ int main(int, char**) {
                     return;
                 }
                 target.value().wii = std::move(plan.value());
-                // Start über cIOS 249 und den Game-Booter folgt in M9 Task 6.
-                target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(
-                    {nl::LaunchFailure::Unsupported, nl::consoleInfo(game.console).name});
             } else {
                 target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(plan.error());
             }
         }
-        if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Dol && !launchAllowed) {
+        if (target.isOk() && target.value().kind != nl::LaunchTarget::Kind::Channel && !launchAllowed) {
             target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(
                 {nl::LaunchFailure::NoMemory, nl::ui::tr(nl::ui::Str::NoMemory)});
         }
@@ -539,6 +537,22 @@ int main(int, char**) {
             nl::log::line("NL_ERROR Kanalstart: %s", r.error().context.c_str());
             SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
             return;
+        }
+
+        if (target.value().kind == nl::LaunchTarget::Kind::Wii) {
+            auto booter = nl::launch::prepareWiiBoot(*target.value().wii, game.title != nullptr ? game.title : "");
+            if (!booter.isOk()) {
+                nl::log::line("NL_WARN Game-Booter nicht geladen: %s", booter.error().context.c_str());
+                showError({nl::LaunchFailure::EmuInvalid, "game_booter"});
+                return;
+            }
+            stopAudio();
+            logPerfSummary();
+            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            input.shutdown();
+            nl::platform::unmountAll();
+            nl::platform::shutdownVideo();
+            nl::launch::bootWiiGame(booter.value());
         }
 
         const nl::LaunchPlan& plan = target.value().dol;

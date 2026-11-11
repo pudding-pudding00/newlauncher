@@ -147,6 +147,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/video.cpp
         src/launch/chainloader.cpp
         src/launch/channel.cpp
+        src/launch/wii_boot.cpp
         src/platform/nand_titles.cpp
         src/platform/wii_input.cpp
         src/platform/crash.cpp
@@ -170,9 +171,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
 
     function(nl_wii_target name)
         add_executable(${name} ${ARGN})
-        target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS} ${PNG_STATIC_INCLUDE_DIRS})
+        target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS} ${PNG_STATIC_INCLUDE_DIRS} boot/include)
         target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
-        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} fat wiiuse bte asnd vorbisidec ogg)
+        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} nl_game_booter_blob fat wiiuse bte asnd vorbisidec ogg)
         target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}")
         nl_apply_flags(${name})
         ogc_create_dol(${name})

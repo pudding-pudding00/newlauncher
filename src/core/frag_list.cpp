@@ -8,6 +8,7 @@ namespace nl {
 namespace {
 
 constexpr u64 kSector = 512;
+constexpr u64 kWbfsSplitSize = 4ull * 1024 * 1024 * 1024 - 32 * 1024;  // Standard-Teilgröße (wbfs_file, WiiFlow)
 
 // Hängt einen Eintrag an und verschmilzt ihn mit dem vorigen, wenn Offset und LBA lückenlos folgen.
 bool append(FragList& l, FragEntry e) {
@@ -57,6 +58,7 @@ Result<FragList, FragError> buildIsoFragList(const FilePart& iso) {
     const u64 sectors = (iso.size + kSector - 1) / kSector;
     auto r = mapRange(l, iso, 0, 0, sectors);
     if (!r.isOk()) return R::err(r.error());
+    if (l.entries.empty()) return R::err(FragError::OutOfFile);  // leere Datei: nichts zu starten
     finish(l);
     return R::ok(std::move(l));
 }
@@ -80,7 +82,11 @@ Result<FragList, FragError> buildWbfsFragList(const WbfsLayout& layout, std::spa
             const FilePart& part = parts[idx];
             const u64 room = split && idx + 1 < parts.size() ? splitSize - local : left;  // bis zur Teilgrenze
             const u64 n = std::min(left, room);
-            if (local + n > part.size) return R::err(FragError::OutOfFile);
+            if (local + n > part.size) {
+                // Letzter vorhandener Teil randvoll: es fehlt der nächste (.wbf1 …), die Datei ist nicht kaputt.
+                const bool full = part.size == (split ? splitSize : kWbfsSplitSize);
+                return R::err(idx + 1 == parts.size() && full ? FragError::PartMissing : FragError::OutOfFile);
+            }
             auto r = mapRange(l, part, static_cast<u32>(disc / kSector), local / kSector, n / kSector);
             if (!r.isOk()) return R::err(r.error());
             file += n;
@@ -88,6 +94,7 @@ Result<FragList, FragError> buildWbfsFragList(const WbfsLayout& layout, std::spa
             left -= n;
         }
     }
+    if (l.entries.empty()) return R::err(FragError::WbfsInvalid);  // keine belegten Blöcke
     finish(l);
     return R::ok(std::move(l));
 }

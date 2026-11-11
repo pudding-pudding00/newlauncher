@@ -128,3 +128,23 @@ TEST_CASE("frag_list: crc wie fat_frag.py") {
     CHECK(r.value().entries.size() == 2);
     CHECK(fragListCrc(serializeFragList(r.value())) == 0x6dabbf0au);
 }
+
+TEST_CASE("frag_list: Hauptdatei voll, .wbf1 fehlt") {
+    const u64 split = 4 * GiB - 32 * KiB;  // Teilgröße von WiiFlow/USB Loader GX
+    WbfsLayout w{u32(MiB), std::vector<u16>{5000}};  // ≈ 4,9 GiB: liegt im fehlenden zweiten Teil
+    FilePart f{split, {{0, 100000, u32(split / 512)}}};
+    auto r = buildWbfsFragList(w, std::span<const FilePart>(&f, 1));
+    REQUIRE_FALSE(r.isOk());
+    CHECK(r.error() == FragError::PartMissing);
+}
+
+TEST_CASE("frag_list: leere Liste ist ein Fehler") {
+    auto iso = buildIsoFragList(FilePart{0, {}});
+    REQUIRE_FALSE(iso.isOk());
+    CHECK(iso.error() == FragError::OutOfFile);
+    WbfsLayout w{u32(2 * MiB), {0, 0}};  // kein Block belegt
+    FilePart f{4 * MiB, {{0, 100, 8192}}};
+    auto wbfs = buildWbfsFragList(w, std::span<const FilePart>(&f, 1));
+    REQUIRE_FALSE(wbfs.isOk());
+    CHECK(wbfs.error() == FragError::WbfsInvalid);
+}

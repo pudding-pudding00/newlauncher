@@ -141,12 +141,19 @@ Result<FragList, LaunchError> computeWiiFrags(FileSystem& fs, const Game& g, std
     } else {
         list = buildIsoFragList(parts.front().file);
     }
-    if (!list.isOk()) return R::err(fromFragError(list.error(), main));
+    if (!list.isOk()) {
+        // Fehlt ein Teil, nennt der Dialog den ersten fehlenden (.wbf1 …), nicht die Hauptdatei.
+        std::string context = main;
+        if (list.error() == FragError::PartMissing && wbfs && parts.size() <= 9) {
+            context = main.substr(0, main.size() - 1) + static_cast<char>('0' + parts.size());
+        }
+        return R::err(fromFragError(list.error(), context));
+    }
 
     const bool ok = verifyPart(fs, dev, parts.front()) && verifyPart(fs, dev, parts.back());
     if (!ok) {
         log::line("NL_FRAG_VERIFY fail %s", main.c_str());
-        return R::err({LaunchFailure::WiiFileBroken, "verify"});
+        return R::err({LaunchFailure::WiiFileBroken, main});
     }
     log::line("NL_FRAG_VERIFY ok");
     return R::ok(std::move(list.value()));
@@ -159,7 +166,9 @@ CiosStatus readCiosStatus() {
     AlignedBuf tmdBuf = alignedAlloc(size);
     if (tmdBuf && ES_GetStoredTMD(kCiosTitle, reinterpret_cast<signed_blob*>(tmdBuf.get()), size) >= 0) {
         auto tmd = parseTmd(std::span<const u8>(tmdBuf.get(), size));
-        const std::optional<u32> cid = tmd.isOk() ? contentIdForIndex(tmd.value(), tmd.value().bootIndex) : std::nullopt;
+        // Wie WiiFlow (IOS_GetInfo, TMD+0x1E4): d2x legt ios_info_t an den Anfang des ersten Content-Eintrags.
+        std::optional<u32> cid;
+        if (tmd.isOk() && !tmd.value().contents.empty()) cid = tmd.value().contents.front().id;
         // nand_titles hält ISFS für die ganze Sitzung offen; ISFS_Initialize ist dann ein No-Op.
         if (cid && ISFS_Initialize() >= 0) {
             char path[64];

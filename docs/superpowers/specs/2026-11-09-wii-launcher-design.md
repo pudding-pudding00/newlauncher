@@ -499,6 +499,12 @@ Ziel: Eine frische Karte mit nur dem Launcher kann alle Emulatoren selbst holen 
 - **Inflate:** eigener kleiner Inflater in `core/` (RFC 1951), host-getestet gegen mit zlib erzeugte Fixtures; keine zusätzliche Bibliothek.
 - **PC-Weg:** `tools/wii_deploy.py --emulators` lädt dieselben Pakete aus derselben Quelle und entpackt sie nach denselben Regeln auf die Karte (vor dem Download wird gefragt, welche).
 - **Hinweis Nintendont:** Die OSC-Version kann älter sein als die von M8 vorausgesetzte; der M8-Preflight meldet eine zu alte Version mit Verweis auf die Aktualisierung.
+- **HTTPS (sobald das Modul `wii_tls` fertig ist, Plan-Task 9):** Bis dahin nur `http://` – die Pakete sind dann nur über Größe und CRC32 geschützt, nicht gegen Manipulation unterwegs. Mit `wii_tls` gilt:
+  - `parseUrl` akzeptiert `https://` (Standardport 443); `httpGet`/`httpDownload` wählen den Transport nach Schema, die Aufrufer (Cover, Emulatoren) bleiben unverändert.
+  - Zertifikate werden geprüft (CA-Bündel aus `wii_tls`); ein TLS-Fehler ist ein Fehlschlag, **nie** ein stiller Rückfall auf `http://`.
+  - Standard-Quelle wird die HTTPS-Adresse des Open Shop Channel; `[emulators] repo` nimmt dann `http://` und `https://`.
+  - Nintendont kann zusätzlich direkt aus den offiziellen GitHub-Releases bezogen werden (nur über HTTPS erreichbar) – damit entfällt das Problem der veralteten OSC-Version.
+  - Ohne `wii_tls` im Build bleibt alles wie oben (HTTP); der Build darf nicht davon abhängen.
 
 ---
 

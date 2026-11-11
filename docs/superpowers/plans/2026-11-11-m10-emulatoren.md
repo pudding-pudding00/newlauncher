@@ -250,3 +250,20 @@
 - [ ] **Step 1: Failing tests** (ohne Netz, `urlopen` gemockt): Listen-Parsing wie Task 3; Installation auf Temp-Karte mit gleicher Erwartung wie Task 4 (Ersetzen/Behalten/unsichere Pfade/CRC-Fehler über `zipfile.BadZipFile`); `--yes` fehlt und Eingabe „n“ → nichts geladen; `emulators_installed.ini`-Format identisch zum C++-Format (gleiche Beispieldatei).
 - [ ] **Step 2:** FAIL. **Step 3:** implementieren. **Step 4:** Tool-Tests OK.
 - [ ] **Step 5: Commit** `feat(tools): Emulatoren per wii_deploy installieren`
+
+### Task 9: HTTPS über `wii_tls` (wartet auf das Modul)
+
+**Start erst, wenn `wii_tls` fertig ist** (eigener Chat des Nutzers). Bis dahin ist M10 mit Task 1–8 vollständig; Task 9 wird als eigener PR nachgezogen.
+
+**Files:**
+- Modify: `src/core/http.hpp/.cpp` (`Url::tls`, `parseUrl` für `https://`), `tests/host/core/http_test.cpp`, `src/platform/http_client.cpp` (Transport-Auswahl), `src/core/config.cpp` (`[emulators] repo` nimmt `https://`), `src/core/emu_catalog.*` (optionale Nintendont-GitHub-Quelle), `CMakeLists.txt` (`wii_tls` einbinden, Schalter `NL_TLS`), `tools/wii_deploy.py` (Standardquelle HTTPS)
+
+**Interfaces:**
+- Consumes: die öffentliche API von `wii_tls` (Verbindung über einen Socket aufbauen, Zertifikat prüfen, lesen/schreiben, schließen) – genaue Namen beim Start aus dessen Header übernehmen und hier als Ruling festhalten.
+- Produces: `struct Url { …; bool tls = false; }`; `parseUrl("https://h/x")` → `tls = true`, Port 443. `request()` in `http_client.cpp` liest/schreibt über eine kleine Transport-Schnittstelle (`send`/`recv`/`close`), einmal Klartext-Socket, einmal `wii_tls`. Ohne `NL_TLS` liefert eine `https`-URL `HttpOutcome::Failed` mit Marker `NL_TLS_MISSING`.
+
+- [ ] **Step 1: Failing tests:** `parseUrl` für `https://` (Port 443, eigener Port, `tls`-Flag); Config: `repo = https://…` wird übernommen, `ftp://` fällt auf den Standard zurück; `oscZipUrl` mit HTTPS-Basis.
+- [ ] **Step 2:** FAIL. **Step 3:** implementieren; Zertifikatsfehler → Failed, kein Rückfall auf HTTP.
+- [ ] **Step 4:** Host-Suite grün; Wii-Build mit und ohne `NL_TLS` warnungsfrei; Dolphin-Smoke gegen einen lokalen HTTPS-Server mit Test-CA (`--emu-server --tls`).
+- [ ] **Step 5:** Standard-Repo auf die HTTPS-Adresse des OSC umstellen (vorher prüfen, dass sie dieselbe `listv036.txt` liefert); Nintendont-Quelle GitHub-Releases ergänzen und auf echter Wii abnehmen.
+- [ ] **Step 6: Commit** `feat(net): HTTPS über wii_tls`

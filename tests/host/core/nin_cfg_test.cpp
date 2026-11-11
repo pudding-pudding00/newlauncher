@@ -125,6 +125,32 @@ TEST_CASE("nin_cfg: $$Version: ohne Zahl") {
     CHECK_FALSE(findNintendontVersion(c, kNinDol).has_value());
 }
 
+TEST_CASE("nin_cfg: misslungener Treffer, Suche geht weiter") {
+    // Ein nacktes Suchmuster vor dem Build-String darf die Erkennung nicht verhindern (Review M8).
+    auto same = fsWithTag(4096, 10, "$$Version:");
+    {
+        std::vector<u8> img(4096, 0xA5);
+        const std::string_view first = "$$Version:", real = "$$Version:6.509";
+        std::copy(first.begin(), first.end(), img.begin() + 10);
+        std::copy(real.begin(), real.end(), img.begin() + 900);
+        same = test::MemFileSystem{};
+        same.addFile(kNinDol, std::move(img));
+    }
+    auto v = findNintendontVersion(same, kNinDol);
+    REQUIRE(v.has_value());
+    CHECK(*v == NinVersion{6, 509});
+
+    std::vector<u8> img(200000, 0xA5);  // echter Tag erst im übernächsten Block
+    const std::string_view bad = "$$Version:x", real = "$$Version:6.510";
+    std::copy(bad.begin(), bad.end(), img.begin() + 10);
+    std::copy(real.begin(), real.end(), img.begin() + 150000);
+    test::MemFileSystem far;
+    far.addFile(kNinDol, std::move(img));
+    auto w = findNintendontVersion(far, kNinDol);
+    REQUIRE(w.has_value());
+    CHECK(*w == NinVersion{6, 510});
+}
+
 TEST_CASE("nin_cfg: Vergleich") {
     CHECK(NinVersion{6, 492} < kMinNintendont);
     CHECK(NinVersion{6, 493} >= kMinNintendont);

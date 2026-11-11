@@ -87,6 +87,10 @@ TEST_CASE("launchErrorText: Nintendont-Fehler in DE und EN") {
         CHECK(ahb.find("%s") == std::string::npos);
     }
     setLanguage(Lang::De);
-    CHECK(std::string(render(LaunchFailure::NinTooOld, "6.480").text) == "Nintendont zu alt.\nGefunden 6.480, nötig 6.493 oder neuer.");
+    CHECK(std::string(render(LaunchFailure::NinTooOld, "6.480").text) ==
+          "Nintendont zu alt.\nGefunden 6.480, nötig 6.493 oder neuer.\nAktualisieren: Einstellungen → Emulatoren");
+    // Spec §5.4: Preflight verweist auf die Aktualisierung
+    CHECK(std::string(render(LaunchFailure::NinMissing, "sd:/apps/nintendont/boot.dol").text).find("Einstellungen → Emulatoren") !=
+          std::string::npos);
     setLanguage(saved);
 }

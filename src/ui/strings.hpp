@@ -57,10 +57,12 @@
     X(WhyNotMapped, "nicht zugeordnet", "not mapped") \
     X(WhyNotInstalled, "Kanal nicht installiert", "channel not installed") \
     X(WhyDolMissing, "DOL fehlt", "DOL missing") \
-    X(NinMissing, "Nintendont fehlt.\nNicht gefunden: %s", "Nintendont missing.\nNot found: %s") \
+    X(NinMissing, "Nintendont fehlt.\nNicht gefunden: %s\nInstallieren: Einstellungen → Emulatoren", \
+      "Nintendont missing.\nNot found: %s\nInstall: Settings → Emulators") \
     X(NinUnknown, "Nintendont nicht erkannt.\n%s enthält keine Versionsangabe.", \
       "Nintendont not recognized.\n%s contains no version string.") \
-    X(NinTooOld, "Nintendont zu alt.\nGefunden %s, nötig 6.493 oder neuer.", "Nintendont too old.\nFound %s, need 6.493 or newer.") \
+    X(NinTooOld, "Nintendont zu alt.\nGefunden %s, nötig 6.493 oder neuer.\nAktualisieren: Einstellungen → Emulatoren", \
+      "Nintendont too old.\nFound %s, need 6.493 or newer.\nUpdate: Settings → Emulators") \
     X(NinPathTooLong, "Pfad zu lang.\nNintendont erlaubt höchstens 254 Zeichen: %s", \
       "Path too long.\nNintendont allows at most 254 characters: %s") \
     X(AhbProt, "Kein Hardwarezugriff.\nBitte den Launcher über den Homebrew Channel starten.", \

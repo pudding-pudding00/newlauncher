@@ -68,8 +68,8 @@ std::optional<NinVersion> findNintendontVersion(FileSystem& fs, std::string_view
         auto got = fs.read(dolPath, offset, buf);
         if (!got.isOk() || got.value() == 0) return std::nullopt;
         const std::string_view block(reinterpret_cast<const char*>(buf.data()), got.value());
-        const std::size_t at = block.find(kVersionTag);
-        if (at != std::string_view::npos) {
+        // Jeden Treffer prüfen: ein nacktes "$$Version:" ohne Zahl (Suchmuster im Code) beendet die Suche nicht.
+        for (std::size_t at = block.find(kVersionTag); at != std::string_view::npos; at = block.find(kVersionTag, at + 1)) {
             // Die Zahl kann hinter dem Block liegen: gezielt nachlesen.
             std::array<u8, kNumberBytes> num{};
             auto n = fs.read(dolPath, offset + at + kVersionTag.size(), num);
@@ -77,9 +77,7 @@ std::optional<NinVersion> findNintendontVersion(FileSystem& fs, std::string_view
             const std::string_view s(reinterpret_cast<const char*>(num.data()), n.value());
             std::size_t pos = 0;
             NinVersion v;
-            if (!readNumber(s, pos, v.major) || pos >= s.size() || s[pos++] != '.' || !readNumber(s, pos, v.minor))
-                return std::nullopt;
-            return v;
+            if (readNumber(s, pos, v.major) && pos < s.size() && s[pos++] == '.' && readNumber(s, pos, v.minor)) return v;
         }
         if (got.value() < kScanBlock) return std::nullopt;
     }

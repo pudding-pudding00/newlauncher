@@ -253,6 +253,8 @@
 
 ### Task 9: HTTPS über `wii_tls` (wartet auf das Modul)
 
+> **Geht in M11 auf** (`docs/superpowers/plans/2026-11-11-m11-lizenz-tls.md`, Task 4–8). `wii_tls` wird dort vendort statt als Submodul eingebunden; dieser Task wird nicht mehr einzeln umgesetzt.
+
 **Start erst, wenn `wii_tls` fertig ist** (eigener Chat des Nutzers). Bis dahin ist M10 mit Task 1–8 vollständig; Task 9 wird als eigener PR nachgezogen.
 
 **Files:**

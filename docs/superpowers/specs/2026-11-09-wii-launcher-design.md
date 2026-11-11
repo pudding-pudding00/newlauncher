@@ -21,6 +21,8 @@ Er zeigt Spiele nach Konsolengeneration sortiert und startet sie je nach Konsole
 
 ### 1.1 Rahmenbedingungen
 
+> **v2:** 1.1 und 1.2 sind durch `2026-11-11-v2-universell-design.md` Abschnitt 2 ersetzt (universeller Einsatz, neue Nicht-Ziele). Der Text hier beschreibt v1.
+
 - **Zweck:** eigener Gebrauch. Feste Annahmen (eine Ordnerstruktur, ein cIOS-Setup) sind erlaubt.
 - **Plattform:** nur originale Wii.
 - **Testhardware:** vorerst nur Dolphin; die echte Wii folgt später (ab Meilenstein M7).
@@ -63,7 +65,7 @@ Er zeigt Spiele nach Konsolengeneration sortiert und startet sie je nach Konsole
 | UI-Sprache | Deutsch + Englisch, Standard folgt Wii-Systemsprache |
 | Look | Layout „A – Klassisch Wii“, Spielinfo in unterer Leiste, Hell- und Dunkelmodus |
 | Datenablage | Konfiguration auf SD; Index-Cache, Metadaten und Cover beim Bibliotheksgerät |
-| Lizenz | GPLv3 (wegen portiertem Boot-Code) |
+| Lizenz | GPLv3 oder später; GPLv2-only-Teile werden ersetzt (v2-Spec 3) |
 
 ---
 
@@ -579,10 +581,13 @@ Jeder Meilenstein bekommt einen eigenen Implementierungsplan.
 | **M8** | Nintendont-Backend | Wii |
 | **M9** | Wii nativ: `boot/`-Port (cIOS, Disc-Emulation, Apploader, Patches) | Wii |
 | **M10** | Emulator-Verwaltung (6.9): Katalog, Listenparser, ZIP/Inflate, Installation auf der Wii, Einstellungsszene, `wii_deploy.py --emulators`. Wird vor M8 umgesetzt, weil vollständig in Dolphin testbar | Host + Dolphin |
+| **M11–M19** | v2: Lizenz + TLS, Bibliothek universell, System-Erkennung, Spieloptionen, Cheats, Dateisysteme, Komfort, Banner, Disc/EmuNAND/vWii – siehe `2026-11-11-v2-universell-design.md` Abschnitt 14 | siehe dort |
 
 ---
 
 ## 10. Risiken und frühe Verifikationen
+
+Risiken für v2 (M11–M19) stehen in `2026-11-11-v2-universell-design.md`, Abschnitt 15.
 
 | Risiko | Prüfung in | Rückfallebene |
 |---|---|---|
@@ -590,7 +595,7 @@ Jeder Meilenstein bekommt einen eigenen Implementierungsplan.
 | Bannernamen aus dem NAND unter HBC-Rechten nicht lesbar | M4 | Anzeige der Title-ID, Name manuell in `n64_vc.ini` als Kommentar |
 | Dolphin-SD-Sync oder Chainload verhält sich anders als erwartet | M0 / M3 | SD-Image statt Sync-Ordner; Chainload-Test nur auf Hardware |
 | Genaue Dolphin-Logger-Einstellungen für `OSReport`-Ausgabe in Datei | M0 | Ausgabe stattdessen in Datei auf der virtuellen SD, Skript liest diese |
-| GameTDB-Cover nur per HTTPS erreichbar | M5 | Cover-Download zusätzlich in `prepare_covers.py` für Wii/GC |
+| GameTDB-Cover nur per HTTPS erreichbar | M5 | Cover-Download zusätzlich in `prepare_covers.py` für Wii/GC; mit M11 (HTTPS über `wii_tls`) erledigt |
 | Performance-Budgets in Dolphin nicht messbar | M7 | Debug-Overlay ab M1, Messung auf Hardware |
 | Open-Shop-Channel-Endpunkt per HTTP fällt weg oder ändert das Listenformat | M10 | URL in `config.ini` umstellbar; Emulatoren weiter per PC-Skript oder von Hand kopieren; TLS später nachrüstbar |
 | `NIN_CFG`-Version passt nicht zur installierten Nintendont-Version | M8 | Version beim Preflight aus Nintendont-Binary lesen, unterstützte Versionen festlegen |

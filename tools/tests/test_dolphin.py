@@ -241,10 +241,13 @@ class DolphinToolsTest(unittest.TestCase):
             seen["zip"] = (Path(root) / "hbb/fceugx/fceugx.zip").is_file()
             return mock.Mock(), 4321
 
-        with mock.patch("dolphin_smoke.start_cover_server", side_effect=fake_start):
+        echo = self.tmp / "argv_echo.dol"  # die CI baut im Host-Job keine Wii-DOLs
+        echo.write_bytes(b"E" * 64)
+        with mock.patch("dolphin_smoke.start_cover_server", side_effect=fake_start), \
+                mock.patch("dolphin_smoke.ARGV_ECHO_DOL", echo):
             smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
                         "--timeout", "2", "--emu-server"])
-        self.assertTrue(seen["zip"])
+        self.assertTrue(seen.get("zip"))
         text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
         self.assertTrue(text.endswith("[debug]\nemu_repo = http://127.0.0.1:4321/hbb\nemu_install = fceugx\n"))
         self.assertFalse(sync_apps.exists())

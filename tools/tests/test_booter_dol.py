@@ -11,6 +11,10 @@ DOL = Path(__file__).resolve().parents[2] / "build" / "wii" / "game_booter.dol"
 BASE = 0x80A80000
 END = 0x81800000  # Ende MEM1 (24 MiB, gecacht)
 MAX_SIZE = 10 * 1024 * 1024
+CODEHANDLER_FINGERPRINTS = {
+    "codehandler": "7c3243a67c3a02a67c7343a67c7b02a6",
+    "codehandleronly": "4bffff487c892378409e04c83529ffff",
+}
 
 
 def dol_sections(data: bytes):
@@ -43,6 +47,14 @@ class BooterDolTest(unittest.TestCase):
 
     def test_size(self):
         self.assertLessEqual(len(self.data), MAX_SIZE)
+
+    def test_no_codehandler_blob(self):
+        # M11 Task 2: der Ocarina-Codehandler (Binärblob ohne Quelle) ist nicht mehr im Booter.
+        # Fingerabdrücke: je 16 Byte Maschinencode aus codehandler.h (0x2b4) und codehandleronly.h (0x244).
+        for name, fp in CODEHANDLER_FINGERPRINTS.items():
+            with self.subTest(blob=name):
+                self.assertEqual(self.data.count(bytes.fromhex(fp)), 0)
+        self.assertEqual(self.data.count(b"codehandler"), 0)
 
 
 class DolParserTest(unittest.TestCase):

@@ -29,8 +29,10 @@
 #include "gecko.h"
 #include "memory.h"
 #include "patchcode.h"
+#if NL_BOOTER_CHEATS // newlauncher: Codehandler-Blob nur mit Cheats (M11, boot/UPSTREAM.md)
 #include "codehandler.h"
 #include "codehandleronly.h"
+#endif
 #include "multidol.h"
 
 #define FSTDIRTYPE 1
@@ -145,6 +147,7 @@ void app_pokevalues()
 void load_handler()
 {
 	memset((void*)0x80001800, 0, 0x1800);
+#if NL_BOOTER_CHEATS
 	if(debuggerselect == 0x01)
 	{
 		gprintf("Ocarina: Debugger selected.\n");
@@ -181,6 +184,7 @@ void load_handler()
 		ICInvalidateRange((void*)0x80001800, codehandleronly_size);
 	}
 
+#endif
 	// Load multidol handler
 	memcpy((void*)0x80001000, multidol, multidol_size);
 	DCFlushRange((void*)0x80001000, multidol_size);

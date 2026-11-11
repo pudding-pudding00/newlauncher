@@ -42,7 +42,7 @@
 #include "nl/lz77_bridge.h"
 #include "utils.h"
 #include "videopatch.h"
-#include "video_tinyload.h"
+#include "nl/progress.h" // newlauncher: eigener Balken statt video_tinyload.h (M11)
 #include "apploader.h"
 #include "memory.h"
 

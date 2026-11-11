@@ -124,7 +124,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         ${CMAKE_CURRENT_SOURCE_DIR}/boot/source/*.S)
     enable_language(ASM)
     # Eigener Code im Booter (M11): LZ77 aus core/ über eine C-Brücke, ohne Exceptions/RTTI wie nl_core.
-    set(NL_BOOTER_NL_SOURCES boot/nl/exception_close.cpp boot/nl/lz77_bridge.cpp src/core/lz77.cpp src/core/assert.cpp)
+    set(NL_BOOTER_NL_SOURCES boot/nl/exception_close.cpp boot/nl/lz77_bridge.cpp boot/nl/progress.c
+        src/core/lz77.cpp src/core/assert.cpp)
     add_executable(nl_game_booter ${NL_GAME_BOOTER_SOURCES} ${NL_BOOTER_NL_SOURCES})
     set_source_files_properties(boot/nl/lz77_bridge.cpp src/core/lz77.cpp src/core/assert.cpp
         TARGET_DIRECTORY nl_game_booter PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-fno-rtti")
@@ -132,7 +133,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     target_include_directories(nl_game_booter PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/boot/source ${CMAKE_CURRENT_SOURCE_DIR}/boot/include
         ${CMAKE_CURRENT_SOURCE_DIR}/boot ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_compile_definitions(nl_game_booter PRIVATE HAVE_CONFIG_H NL_VERSION="${PROJECT_VERSION}")
+    # NL_BOOTER_CHEATS=0: der Ocarina-Codehandler (Blob ohne Quelle) bleibt aus dem Build (M11, Spec v2 3.2).
+    target_compile_definitions(nl_game_booter PRIVATE HAVE_CONFIG_H NL_VERSION="${PROJECT_VERSION}" NL_BOOTER_CHEATS=0)
     target_compile_options(nl_game_booter PRIVATE $<$<COMPILE_LANGUAGE:C>:-std=gnu17> -O1 -Wall -Wextra -Wno-shift-negative-value
         -Wno-array-bounds -Wno-stringop-overflow -Wno-stringop-overread)
     target_link_options(nl_game_booter PRIVATE -Wl,--section-start,.init=0x80A80000)
@@ -141,6 +143,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         COMPILE_OPTIONS -Wa,-mno-regnames)
     ogc_create_dol(nl_game_booter)
     dkp_add_embedded_binary_library(nl_game_booter_blob nl_game_booter)
+
+    # Test-DOL für den Fortschrittsbalken des Booters (M11): prüft Pixel, meldet NL_PROGRESS ok.
+    add_executable(progress_probe tests/wii/progress_probe.c boot/nl/progress.c)
+    target_include_directories(progress_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/boot)
+    target_compile_options(progress_probe PRIVATE -Wall -Wextra)
+    ogc_create_dol(progress_probe)
 
     # Test-DOL für den Chainloader: gibt argc/argv über SYS_Report aus.
     add_executable(argv_echo tests/wii/argv_echo.c)

@@ -22,8 +22,8 @@ wendet die Standard-Patches an und springt ins Spiel.
 | `apploader.c/h`, `disc.c/h`, `wdvd.c/h`, `fst.c/h` | Apploader, Disc-Zugriff über `/dev/di` des cIOS, Fragmentliste an das cIOS |
 | `patchcode.c/h`, `videopatch.c/h`, `kirbypatch.c/h`, `patchhook.S`, `codehandler*.h`, `multidol.c/h`, `wip.c/h` | Spiel-Patches (Video, Sprache, Hooks; Cheats und WIP werden vom Launcher nicht genutzt) |
 | `cios.c/h` | IOS-Informationen (`CurrentIOS` kommt aus `the_CFG`) |
-| `ChannelHandler.cpp/hpp`, `lz77.c/h`, `fs.c/h` | Kanalstart (`TYPE_CHANNEL`). Nicht genutzt, aber `main.cpp` verzweigt dorthin; Entfernen hätte `main.cpp` stärker verändert, als das Behalten kostet. |
-| `video_tinyload.c/h`, `gecko.c/h`, `memory.h`, `utils.h`, `types.h`, `frag.h`, `Config.hpp` | Hilfen und Typen |
+| `ChannelHandler.cpp/hpp`, `fs.c/h` (LZ77 seit M11 über `nl/lz77_bridge`) | Kanalstart (`TYPE_CHANNEL`). Nicht genutzt, aber `main.cpp` verzweigt dorthin; Entfernen hätte `main.cpp` stärker verändert, als das Behalten kostet. |
+| `gecko.c/h`, `memory.h`, `utils.h`, `types.h`, `frag.h`, `Config.hpp` | Hilfen und Typen |
 
 Weggelassen: nur `Makefile` (ersetzt durch das CMake-Ziel `nl_game_booter` in `CMakeLists.txt`).
 
@@ -32,6 +32,7 @@ Neu in newlauncher:
 - `include/booter_cfg.h`: Übergabeformat, gemeinsam für Launcher und Booter (siehe unten)
 - `include/booter_defines.h`: Ersatz für WiiFlows `source/defines.h`
 - `nl/exception_close.cpp`: Ersatz für `__exception_closeall()` aus altem libogc
+- `nl/progress.c/h`, `nl/lz77_bridge.*`: Ersatz für GPLv2-only-Dateien (M11, siehe „Lizenzen“)
 
 ## Änderungen
 
@@ -89,16 +90,32 @@ Geprüft wird die Größe im Booter nur in `frag_get` (`offset + count > size` �
 
 ## Lizenzen
 
-- GPLv3 oder später: `Config.hpp`, `main.cpp`
+Entscheidung (M11, Spec v2 3): newlauncher steht unter **GPLv3 oder später**. Der Booter enthält deshalb keine Datei
+mehr, die nur unter GPLv2 („ohne oder später“) steht, und keinen Binärblob ohne Quelle.
+
+- GPLv3 oder später: `Config.hpp`, `main.cpp` sowie die übrigen Dateien ohne eigenen Kopf (Teil von WiiFlow Lite)
 - GPLv2 oder später: `fst.c/h`, `patchcode.c/h`
-- zlib-artig („Altered source versions must be plainly marked“): `ChannelHandler.cpp` (dude, 2010), unverändert
-- **GPLv2 ohne „oder später“**:
-  - `video_tinyload.c/h`: „GNU GPL, version 2“, aus HBC-Stub/TinyLoad
-  - `lz77.c/h`: „GNU General Public License (v2)“
-- ohne Kopf: übrige Dateien (Teil von WiiFlow Lite, GPLv3)
+- zlib-artig („Altered source versions must be plainly marked“): `ChannelHandler.cpp` (dude, 2010); der Dateikopf
+  vermerkt die Änderung
+- eigener Code von newlauncher (GPLv3 oder später): `nl/*`, `src/core/lz77.*`
 
-**Offen:** GPLv2-only und GPLv3 sind streng genommen nicht kombinierbar. WiiFlow Lite verteilt dieselbe Kombination seit Jahren.
-Vor einer öffentlichen Veröffentlichung des Booters muss das geklärt sein. Mögliche Wege:
+### Ersetzt (M11)
 
-- `lz77` entfällt mit dem Kanalstart
-- `video_tinyload` (≈ 100 Zeilen Videomodus-Setup) wird ersetzt
+| Upstream-Datei | Lizenz upstream | Ersatz | Wie ersetzt |
+|---|---|---|---|
+| `lz77.c/h` | GPLv2 only | `src/core/lz77.*` + `nl/lz77_bridge.*` | Neu geschrieben nach der Formatbeschreibung im M11-Plan, ohne die alte Datei zu öffnen; Host-Tests mit Proben eines eigenen Python-Encoders (`tools/gen_lz77_samples.py`) |
+| `video_tinyload.c/h` | GPLv2 only | `nl/progress.c/h` | Neu geschrieben nach der Funktionsbeschreibung im M11-Plan, ohne die alte Datei zu öffnen; gleiche Funktionsnamen; Prüfung per `tests/wii/progress_probe.c` in Dolphin |
+
+Angepasst sind nur die Includes in `main.cpp`, `apploader.c`, `disc.c` und `ChannelHandler.cpp`.
+
+### Codehandler-Blob
+
+`codehandler.h` und `codehandleronly.h` sind Binärdaten (raw2c) ohne nachvollziehbare Quelle. Sie bleiben im Quellbaum,
+werden aber nicht mehr gebaut:
+
+- CMake setzt `NL_BOOTER_CHEATS=0`.
+- `fst.c` bindet die beiden Header und den Kopierteil von `load_handler()` nur bei `NL_BOOTER_CHEATS` ein.
+- `main.cpp` setzt `hooktype = 0`, damit kein Spiel auf einen Hook ohne Codehandler springt.
+- `tools/tests/test_booter_dol.py` prüft, dass keine Bytes der Blobs im DOL stehen.
+
+M15 baut den Codehandler aus belegter GPL-Quelle neu oder lässt Wii-Cheats aus (Spec v2 3.2).

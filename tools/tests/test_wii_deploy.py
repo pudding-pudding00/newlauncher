@@ -178,6 +178,73 @@ class DeployTest(unittest.TestCase):
         self.assertIn("perf = 1", (self.sd / "newlauncher/config.ini").read_text(encoding="utf-8"))
 
 
+class EmulatorsCliTest(unittest.TestCase):
+    """--emulators ohne Netz: urlopen liefert Liste und ZIP aus dem Speicher."""
+
+    def setUp(self):
+        import io
+        import zipfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.sd = Path(self._tmp.name) / "sd"
+        (self.sd / "apps").mkdir(parents=True)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("apps/fceugx/boot.dol", b"FCE")
+            z.writestr("apps/fceugx/meta.xml", b"<app/>")
+        self.zip = buf.getvalue()
+        self.list = (f"Homebrew 1 v0.3.9e\r\n=Emulators=\r\n"
+                     f"fceugx 1793664000 8367 9 dol {len(self.zip)} 0 0 wwwwngcs . .\r\n"
+                     "FCE Ultra GX\r\nTantric\r\n4.0.4\r\n9\r\nNES\r\nA port.\r\n").encode()
+        self.urls: list[str] = []
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def _urlopen(self, url, timeout=None):
+        import io
+        self.urls.append(url)
+        if url == "http://repo.test/hbb/listv036.txt":
+            return io.BytesIO(self.list)
+        if url == "http://repo.test/hbb/fceugx/fceugx.zip":
+            return io.BytesIO(self.zip)
+        raise OSError(f"404 {url}")
+
+    def _main(self, *args, answer="j"):
+        with mock.patch("osc_emulators.urlopen", self._urlopen), mock.patch("builtins.input", return_value=answer):
+            return main([str(self.sd), "--emulators", *args, "--repo", "http://repo.test/hbb/"])
+
+    def test_answer_n_downloads_no_zip(self):
+        self.assertEqual(self._main("fceugx", answer="n"), 1)
+        self.assertEqual(self.urls, ["http://repo.test/hbb/listv036.txt"])
+        self.assertEqual(files(self.sd), set())
+
+    def test_yes_installs_and_second_run_skips_current(self):
+        self.assertEqual(self._main("fceugx", "--yes"), 0)
+        self.assertEqual((self.sd / "apps/fceugx/boot.dol").read_bytes(), b"FCE")
+        self.assertIn("[fceugx]\ntimestamp = 1793664000\nversion = 4.0.4\n",
+                      (self.sd / "newlauncher/emulators_installed.ini").read_text(encoding="utf-8"))
+        self.urls.clear()
+        self.assertEqual(self._main("fceugx", "--yes"), 0)  # aktuell: kein ZIP-Download
+        self.assertEqual(self.urls, ["http://repo.test/hbb/listv036.txt"])
+
+    def test_without_names_takes_catalog_entries_in_list(self):
+        self.assertEqual(self._main("--yes"), 0)  # nur fceugx steht in der Liste: der Rest wird gemeldet
+        self.assertIn("http://repo.test/hbb/fceugx/fceugx.zip", self.urls)
+
+    def test_unknown_name_and_bad_combinations_exit_2(self):
+        self.assertEqual(self._main("zsnes", "--yes"), 2)
+        self.assertEqual(self.urls, [])
+        with mock.patch("osc_emulators.urlopen", self._urlopen):
+            self.assertEqual(main([str(self.sd), "--emulators", "--selftest"]), 2)
+            self.assertEqual(main(["--emulators", "--yes"]), 2)  # Laufwerk fehlt
+        self.assertEqual(self.urls, [])
+
+    def test_wrong_zip_size_fails_and_keeps_card(self):
+        self.zip += b"x"
+        self.assertEqual(self._main("fceugx", "--yes"), 2)
+        self.assertEqual(files(self.sd), set())
+
+
 class ConsoleEncodingTest(unittest.TestCase):
     def test_cli_on_cp1252_console(self):
         # Windows-Konsole: stdout ist cp1252, die Meldungen enthalten „→“.

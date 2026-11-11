@@ -171,6 +171,15 @@ repo = http://hbb1.oscwii.org/hbb
 
 Der Launcher lädt das ZIP nach `sd:/newlauncher/tmp/`, prüft Größe und CRC, entpackt dort und verschiebt erst danach: Dateien unter `apps/` werden ersetzt, alle anderen (z. B. Emulator-Einstellungen) nur angelegt, wenn sie fehlen; `boot.dol` kommt zuletzt. Stand und Version merkt sich `sd:/newlauncher/emulators_installed.ini`. Reicht der Platz auf der SD nicht für ZIP plus entpackten Inhalt, startet der Download nicht. Bisher nur über HTTP; HTTPS folgt mit dem TLS-Modul (Spec 6.9).
 
+Am PC geht dasselbe direkt auf die Karte, mit denselben Regeln und derselben `emulators_installed.ini`:
+
+```bash
+python tools/wii_deploy.py E: --emulators                 # alle aus dem Katalog, mit Rückfrage
+python tools/wii_deploy.py E: --emulators fceugx not64 --yes
+```
+
+Ohne Namen nimmt das Tool alle sechs Emulatoren; aktuelle überspringt es. Ohne `--yes` zeigt es zuerst die Pakete mit Version und Größe und lädt erst nach `j`. `--repo URL` setzt eine andere Quelle. Exit-Code 0 = fertig, 1 = abgelehnt, 2 = Fehler (unbekannter Name, Netz, Paket kaputt; die Karte bleibt dann unverändert).
+
 ### N64
 
 Ein N64-Spiel startet auf einem von drei Wegen. Ohne eigene Wahl nimmt der Launcher den ersten verfügbaren:

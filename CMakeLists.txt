@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(cmake/NlFlags.cmake)
+include(cmake/NlAboutEntries.cmake)
 
 # Plattformfreier Kern (Spec 4.1): ohne libogc, auf dem Host getestet, auf der Wii mitgelinkt.
 add_library(nl_core STATIC
@@ -70,6 +71,7 @@ add_library(nl_core STATIC
     src/ui/home_menu.cpp
     src/ui/settings_scene.cpp
     src/ui/emulators_scene.cpp
+    src/ui/about_scene.cpp
     src/ui/debug_overlay.cpp
     src/ui/pointer_cursor.cpp
     src/ui/startup_scene.cpp
@@ -81,6 +83,9 @@ add_library(nl_core STATIC
     src/ui/launch_text.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# Komponentenliste der Seite „Über“ aus THIRD_PARTY.md (Spec v2 3.4), nicht doppelt gepflegt.
+nl_generate_about_entries(${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY.md ${CMAKE_CURRENT_BINARY_DIR}/generated/about_entries.inc)
+target_include_directories(nl_core PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 nl_apply_flags(nl_core)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")

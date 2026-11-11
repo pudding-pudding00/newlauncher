@@ -194,3 +194,8 @@ TEST_CASE("configFromIni: [debug] wii_dry_run") {
     CHECK(configFromIni(IniDoc::parse("[debug]\nwii_dry_run = 1\n")).debugWiiDryRun);
     CHECK_FALSE(configFromIni(IniDoc::parse("[debug]\nwii_dry_run = 2\n")).debugWiiDryRun);
 }
+
+TEST_CASE("configFromIni: [debug] open_scene (M11)") {
+    CHECK(configFromIni(IniDoc::parse("")).debugOpenScene.empty());
+    CHECK(configFromIni(IniDoc::parse("[debug]\nopen_scene = about\n")).debugOpenScene == "about");
+}

@@ -25,6 +25,10 @@ jobs:
           test -f "$DEVKITPRO/portlibs/ppc/lib/libvorbisidec.a" || dkp-pacman -S --noconfirm --needed ppc-libvorbisidec ppc-libogg
       - name: DOL bauen
         run: cmake --preset wii && cmake --build --preset wii
+      - name: Lizenzeinträge prüfen (Spec v2 3.4)
+        run: |
+          command -v python3 || (apt-get update && apt-get install -y --no-install-recommends python3)
+          python3 tools/check_licenses.py build/wii
       - uses: actions/upload-artifact@v4
         with:
           name: newlauncher-dol

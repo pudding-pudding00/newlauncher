@@ -5,7 +5,7 @@
     python tools/wii_deploy.py --wiiload 192.168.0.42 [--dol PATH]
     python tools/wii_deploy.py E: --emulators [NAME ...] [--repo URL] [--yes]
 
-Release: kopiert boot.dol und meta.xml nach apps/newlauncher/. Daten des Nutzers unter newlauncher/
+Release: kopiert boot.dol, meta.xml, LICENSE.txt und THIRD_PARTY.txt nach apps/newlauncher/. Daten des Nutzers unter newlauncher/
 (config.ini, emulators.ini, Favoriten, Verlauf, cache/ …) werden nie überschrieben, nur fehlende
 Dateien aus dist/newlauncher/ angelegt. Der Launcher schreibt eine fehlende config.ini und
 emulators.ini beim ersten Start selbst mit Standardwerten.
@@ -28,6 +28,7 @@ import sys
 from pathlib import Path
 
 from deploy_dolphin import ARGV_ECHO_DOL, DIST_DIR, FIXTURES_DIR, REPO_ROOT
+from notices import REPO_ROOT as NOTICES_ROOT, write_notices
 from osc_emulators import DEFAULT_REPO, EmuInstallError, deploy_emulators
 
 RELEASE_DOL = REPO_ROOT / "build/wii/newlauncher.dol"
@@ -139,13 +140,15 @@ def deploy_release(sd: Path, dol: Path, init: bool) -> None:
     if not dol.is_file():
         raise DeployError(f"DOL nicht gefunden: {dol} (python tools/build_wii.py)")
     dist_files = [DIST_DIR / "apps/newlauncher" / n for n in ("meta.xml", "icon.png")]
-    _check_space(sd, _need_bytes([dol, ARGV_ECHO_DOL, *dist_files, *(DIST_DIR / "newlauncher").rglob("*")]))
+    _check_space(sd, _need_bytes([dol, ARGV_ECHO_DOL, *dist_files, *(DIST_DIR / "newlauncher").rglob("*")])
+                 + 256 * 1024)  # LICENSE.txt + THIRD_PARTY.txt
     app = sd / "apps/newlauncher"
     app.mkdir(parents=True, exist_ok=True)
     _copy_atomic(dol, app / "boot.dol")
     for src in dist_files:
         if src.is_file():
             _copy_atomic(src, app / src.name)
+    write_notices(NOTICES_ROOT, app)  # Spec v2 3.4: Lizenz und Drittanbieter-Hinweise neben boot.dol
     _copy_missing(DIST_DIR / "newlauncher", sd / "newlauncher")
     if ARGV_ECHO_DOL.is_file():
         (sd / "apps/argv_echo").mkdir(parents=True, exist_ok=True)

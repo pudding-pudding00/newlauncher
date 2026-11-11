@@ -72,6 +72,8 @@ class DeployTest(unittest.TestCase):
         self.assertEqual((self.sd / "newlauncher/favorites.ini").read_bytes(), b"x")
         self.assertEqual((self.sd / "apps/newlauncher/boot.dol").read_bytes(), b"DOL")
         self.assertTrue((self.sd / "apps/newlauncher/meta.xml").is_file())
+        self.assertIn("GNU GENERAL PUBLIC LICENSE", (self.sd / "apps/newlauncher/LICENSE.txt").read_text(encoding="utf-8"))
+        self.assertIn("Apache License", (self.sd / "apps/newlauncher/THIRD_PARTY.txt").read_text(encoding="utf-8"))
 
     def test_release_creates_missing_config(self):
         deploy_release(self.sd, self.dol, init=True)

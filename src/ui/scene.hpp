@@ -40,6 +40,7 @@ enum class AppCommand : u8 {
     EmuInstall,       // Ziele: EmulatorsScene::takeTargets()
     EmuInstallAll,
     EmuCancel,
+    OpenAbout,        // Seite „Über“ öffnen (M11, Spec v2 3.4)
 };
 const char* appCommandName(AppCommand c);
 

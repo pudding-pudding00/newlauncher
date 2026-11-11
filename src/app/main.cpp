@@ -56,6 +56,7 @@
 #include "ui/details_scene.hpp"
 #include "ui/dialog_scene.hpp"
 #include "ui/emulators_scene.hpp"
+#include "ui/about_scene.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/jump_bar.hpp"
 #include "ui/keyboard.hpp"
@@ -433,6 +434,12 @@ int main(int, char**) {
     nl::ui::VcMapScene vcMapScene;
     nl::platform::EmuWorker emu;
     nl::ui::EmulatorsScene emuScene;
+    nl::ui::AboutScene aboutScene;
+#if defined(NL_TLS) && NL_TLS  // ab M11 Task 4 vom CMake-Schalter gesetzt
+    aboutScene.setBuildInfo(NL_VERSION, true);
+#else
+    aboutScene.setBuildInfo(NL_VERSION, false);
+#endif
     std::vector<nl::OscApp> emuList;  // zuletzt geladene OSC-Liste; leer bis „Nach Updates suchen“
     const std::string emuRepo = config.debugEmuRepo.empty() ? config.emulatorRepo : config.debugEmuRepo;
     nl::ui::SceneStack scenes;
@@ -920,6 +927,11 @@ int main(int, char**) {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 startEmuInstall(emuScene.takeTargets());
                 break;
+            case nl::ui::AppCommand::OpenAbout:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                scenes.push(&aboutScene);
+                nl::log::line("NL_SCENE about");
+                break;
             case nl::ui::AppCommand::EmuCancel:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 emu.cancel();
@@ -969,6 +981,10 @@ int main(int, char**) {
                 runPendingAutostart();
             }
             if (config.debugFetchCovers) fetchCovers();  // nur für Tests
+            if (config.debugOpenScene == "about") {   // nur für Tests (M11)
+                scenes.push(&aboutScene);
+                nl::log::line("NL_SCENE about");
+            }
         }
         if (readyReported && !coversReported && covers.idle()) {
             nl::log::line("NL_COVERS ready=%u", static_cast<unsigned>(covers.readyCount()));

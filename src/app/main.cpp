@@ -42,6 +42,7 @@
 #include "platform/audio.hpp"
 #include "platform/log.hpp"
 #include "platform/music.hpp"
+#include "platform/net_service.hpp"
 #include "platform/net_worker.hpp"
 #include "platform/nand_titles.hpp"
 #include "platform/scan_worker.hpp"
@@ -421,7 +422,8 @@ int main(int, char**) {
     settings.setConfig(&config);
     settings.setActiveLibrary(libRoot == "usb:" ? nl::Config::LibraryDevice::Usb : nl::Config::LibraryDevice::Sd);
     homeMenu.setSettings(&settings);
-    nl::platform::NetWorker net;
+    nl::platform::NetService netService;  // ein Netz-Thread für Cover und Emulatoren (M11); lebt länger als die Worker
+    nl::platform::NetWorker net(netService);
     mainScene.setFavoriteKeys(&store);
     nl::ui::JumpBar jumpBar(mainScene);
     mainScene.setJumpBar(&jumpBar);
@@ -432,7 +434,7 @@ int main(int, char**) {
     details.setCovers(&covers);
     nl::ui::DialogScene dialog;
     nl::ui::VcMapScene vcMapScene;
-    nl::platform::EmuWorker emu;
+    nl::platform::EmuWorker emu(netService);
     nl::ui::EmulatorsScene emuScene;
     nl::ui::AboutScene aboutScene;
 #if defined(NL_TLS) && NL_TLS  // ab M11 Task 4 vom CMake-Schalter gesetzt
@@ -529,6 +531,7 @@ int main(int, char**) {
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
         net.join();
         emu.join();
+        netService.shutdown();  // wtls_shutdown im Netz-Thread, dann Thread beendet
         covers.shutdown();
 
         if (target.value().kind == nl::LaunchTarget::Kind::Channel) {
@@ -583,7 +586,7 @@ int main(int, char**) {
     int coverToastFrames = 0;
     auto fetchCovers = [&]() {
         nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
-        if (net.running() || emu.running()) return;  // gemeinsamer Netzaufbau: nie parallel
+        if (net.running()) return;  // Emulator-Aufträge warten in derselben Warteschlange (NetService)
         std::vector<const nl::Game*> games;
         games.reserve(store.games().size());
         for (const nl::Game& g : store.games()) games.push_back(&g);
@@ -640,7 +643,7 @@ int main(int, char**) {
         }
     };
 
-    // Emulator-Verwaltung (Spec 6.9). EmuWorker und NetWorker teilen den Netzaufbau und laufen nie gleichzeitig.
+    // Emulator-Verwaltung (Spec 6.9). EmuWorker und NetWorker reihen ihre Aufträge in den NetService ein.
     enum class EmuJob : u8 { None, List, Install };
     EmuJob emuJob = EmuJob::None;
     std::string emuDebugPending = config.debugEmuInstall;  // Komma-Liste; nach dem Laden der Liste installieren
@@ -651,7 +654,7 @@ int main(int, char**) {
                                      [&](std::string_view dol) { return nl::fileSize(fs, dol).has_value(); }, emuList));
     };
     auto startEmuList = [&]() {
-        if (emu.running() || net.running()) return;
+        if (emu.running()) return;
         if (!emu.startFetchList(emuRepo)) {
             nl::log::line("NL_WARN Emulator-Thread startet nicht");
             return;
@@ -660,7 +663,7 @@ int main(int, char**) {
         emuScene.setListState(nl::ui::EmulatorsScene::ListState::Loading);
     };
     auto startEmuInstall = [&](std::vector<nl::OscApp> apps) {
-        if (apps.empty() || !sdOk || emu.running() || net.running()) return;
+        if (apps.empty() || !sdOk || emu.running()) return;
         if (!emu.startInstall(fs, emuRepo, std::move(apps))) {
             nl::log::line("NL_WARN Emulator-Thread startet nicht");
             return;
@@ -899,6 +902,7 @@ int main(int, char**) {
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
                 net.join();
                 emu.join();
+                netService.shutdown();
                 covers.shutdown();
                 stopAudio();
                 logPerfSummary();
@@ -999,6 +1003,7 @@ int main(int, char**) {
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
     net.join();
     emu.join();
+    netService.shutdown();
     covers.shutdown();
     stopAudio();
     logPerfSummary();

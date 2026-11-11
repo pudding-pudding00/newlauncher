@@ -3,9 +3,6 @@
 #include <cstdio>
 #include <span>
 
-#include <network.h>
-#include <unistd.h>
-
 #include "core/cover_paths.hpp"
 #include "core/http.hpp"
 #include "platform/http_client.hpp"
@@ -13,9 +10,6 @@
 namespace nl::platform {
 
 namespace {
-constexpr u32 kStackBytes = 64 * 1024;
-constexpr u8 kPriority = 40;  // wie Scan und Cover-Thread: unter dem Haupt-Thread
-
 std::string parentDir(const std::string& path) {
     const std::size_t slash = path.rfind('/');
     return slash == std::string::npos ? std::string() : path.substr(0, slash);
@@ -28,7 +22,7 @@ std::string format(const char* fmt, const char* a, const char* b = "", const cha
 }
 }  // namespace
 
-NetWorker::NetWorker() { LWP_MutexInit(&mutex_, false); }
+NetWorker::NetWorker(NetService& service) : service_(service) { LWP_MutexInit(&mutex_, false); }
 
 NetWorker::~NetWorker() {
     join();
@@ -46,23 +40,27 @@ bool NetWorker::start(FileSystem& fs, std::string libRoot, std::vector<CoverJob>
     base_ = std::move(baseUrl);
     done_ = 0;
     total_ = static_cast<u32>(jobs_.size());
-    cancel_ = false;
     summary_.reset();
     running_ = true;
-    if (LWP_CreateThread(&thread_, &NetWorker::entry, this, nullptr, kStackBytes, kPriority) != 0) {
+    jobId_ = service_.submit([this](const volatile bool& cancel) {
+        const DownloadSummary s = run(cancel);
+        LWP_MutexLock(mutex_);
+        summary_ = s;
         running_ = false;
-        thread_ = LWP_THREAD_NULL;
+        LWP_MutexUnlock(mutex_);
+    });
+    if (jobId_ == 0) {
+        running_ = false;
         return false;
     }
     return true;
 }
 
 void NetWorker::join() {
-    cancel_ = true;  // restliche Aufträge auslassen
-    if (thread_ != LWP_THREAD_NULL) {
-        LWP_JoinThread(thread_, nullptr);
-        thread_ = LWP_THREAD_NULL;
-    }
+    if (jobId_ == 0) return;
+    service_.cancelAndWait(jobId_);  // wartend → entfernt, laufend → restliche Spiele auslassen
+    jobId_ = 0;
+    running_ = false;
 }
 
 std::optional<DownloadSummary> NetWorker::take() {
@@ -101,22 +99,11 @@ void NetWorker::finished(const std::string& stem) {
     LWP_MutexUnlock(mutex_);
 }
 
-void* NetWorker::entry(void* arg) {
-    auto* self = static_cast<NetWorker*>(arg);
-    const DownloadSummary s = self->run();
-    LWP_MutexLock(self->mutex_);
-    self->summary_ = s;
-    self->running_ = false;
-    LWP_MutexUnlock(self->mutex_);
-    return nullptr;
-}
-
-DownloadSummary NetWorker::run() {
+DownloadSummary NetWorker::run(const volatile bool& cancel) {
     DownloadSummary sum;
-    s32 r = 0;
-    if (!ensureNetwork(r)) {
+    if (!service_.networkUp()) {
         char code[16];
-        std::snprintf(code, sizeof code, "%d", static_cast<int>(r));
+        std::snprintf(code, sizeof code, "%d", static_cast<int>(service_.lastNetCode()));
         log(format("NL_NET_FAIL %s", code));
         for (const CoverJob& job : jobs_) log(format("NL_COVER_DL %s failed", job.id6.c_str()));
         sum.failed = total_;
@@ -126,15 +113,15 @@ DownloadSummary NetWorker::run() {
     log("NL_NET ok");
 
     CoverDownloadIo io;
-    io.get = [this](const Url& url, std::vector<u8>& body) {
-        return httpGet(url, kMaxCoverDownloadBytes, body, &cancel_);
+    io.get = [&cancel](const Url& url, std::vector<u8>& body) {
+        return httpGet(url, kMaxCoverDownloadBytes, body, &cancel);
     };
     io.save = [this](const std::string& stem, std::span<const u8> png) {
         const std::string path = coverSrcPath(root_, stem);
         static_cast<void>(fs_->makeDirs(parentDir(path)));
         return fs_->writeAtomic(path, png).isOk();
     };
-    io.cancelled = [this] { return cancel_; };
+    io.cancelled = [&cancel] { return cancel; };
     io.log = [this](std::string line) { log(std::move(line)); };
     io.finished = [this](const std::string& stem) { finished(stem); };
     io.jobDone = [this] { done_ = done_ + 1; };

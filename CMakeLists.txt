@@ -26,6 +26,7 @@ add_library(nl_core STATIC
     src/core/ini.cpp
     src/core/config.cpp
     src/core/net_error.cpp
+    src/core/job_queue.cpp
     src/core/settings_model.cpp
     src/core/ui_sound.cpp
     src/core/synth.cpp
@@ -200,6 +201,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/png_decode.cpp
         src/platform/cover_worker.cpp
         src/platform/http_client.cpp
+        src/platform/net_service.cpp
         src/platform/net_worker.cpp
         src/platform/emu_worker.cpp
         src/platform/sd_space.cpp

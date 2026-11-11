@@ -117,8 +117,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"SMOKE FEHLER: {name} nicht gefunden: {path}")
             return 2
 
-    server = None
-    server_dir = None
+    servers = []      # Cover- und Emulator-Server dürfen gemeinsam laufen (M11: eine Netz-Warteschlange)
+    server_dirs = []
     debug_lines = []
     if args.autostart:
         debug_lines.append(f"autostart = {args.autostart}")
@@ -129,25 +129,27 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         debug_lines.append(f"{key.strip()} = {value.strip()}")
     if args.cover_server:
-        server_dir = tempfile.TemporaryDirectory(prefix="nl_covers_")
-        write_cover_server_files(Path(server_dir.name))
-        server, port = start_cover_server(Path(server_dir.name))
+        server_dirs.append(tempfile.TemporaryDirectory(prefix="nl_covers_"))
+        write_cover_server_files(Path(server_dirs[-1].name))
+        server, port = start_cover_server(Path(server_dirs[-1].name))
+        servers.append(server)
         debug_lines += [f"cover_url = http://127.0.0.1:{port}", "fetch_covers = 1"]
     if args.emu_server:
         if not ARGV_ECHO_DOL.is_file():
             print(f"SMOKE FEHLER: argv_echo.dol nicht gebaut: {ARGV_ECHO_DOL}")
             return 2
-        server_dir = tempfile.TemporaryDirectory(prefix="nl_emus_")
-        write_emu_server_files(Path(server_dir.name), ARGV_ECHO_DOL)
-        server, port = start_cover_server(Path(server_dir.name))
+        server_dirs.append(tempfile.TemporaryDirectory(prefix="nl_emus_"))
+        write_emu_server_files(Path(server_dirs[-1].name), ARGV_ECHO_DOL)
+        server, port = start_cover_server(Path(server_dirs[-1].name))
+        servers.append(server)
         debug_lines += [f"emu_repo = http://127.0.0.1:{port}/hbb", f"emu_install = {EMU_SERVER_APP}"]
     try:
         return _run(args, markers, debug_lines)
     finally:
-        if server is not None:
+        for server in servers:
             server.shutdown()
             server.server_close()
-        if server_dir is not None:
+        for server_dir in server_dirs:
             server_dir.cleanup()
 
 

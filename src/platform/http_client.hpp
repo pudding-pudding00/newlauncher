@@ -1,5 +1,5 @@
 #pragma once
-// HTTP-GET über die IOS-Sockets (Spec 6.4). Nur im Netz-Thread aufrufen; net_init muss gelaufen sein.
+// HTTP-GET über die IOS-Sockets (Spec 6.4). Nur im Netz-Thread (NetService) aufrufen; dort läuft net_init.
 
 #include <string>
 #include <vector>
@@ -19,8 +19,5 @@ HttpOutcome httpGet(const Url& url, u32 maxBody, std::vector<u8>& body, const vo
 // Body-Bytes mit (für die Fortschrittsanzeige). Bei jedem Ergebnis außer Ok wird destFile gelöscht.
 HttpOutcome httpDownload(const Url& url, const std::string& destFile, u32 maxBody, const volatile bool* cancel,
                          volatile u32* received);
-
-// net_init einmal pro Sitzung (drei Versuche); false mit code bei Fehlschlag. Nur aus einem Netz-Thread zur Zeit.
-bool ensureNetwork(s32& code);
 
 }  // namespace nl::platform

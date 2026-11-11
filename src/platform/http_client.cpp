@@ -83,8 +83,6 @@ struct Socket {
     }
 };
 
-bool g_netReady = false;
-
 // Verbinden, Anfrage senden, Antwort in den Parser füttern. Ok/NotFound/Failed nach Status.
 HttpOutcome request(const Url& url, HttpParser& parser, const volatile bool* cancel) {
     in_addr ip{};
@@ -167,19 +165,6 @@ HttpOutcome httpDownload(const Url& url, const std::string& destFile, u32 maxBod
     if (std::fclose(sink.f) != 0) r = HttpOutcome::Failed;
     if (r != HttpOutcome::Ok) std::remove(destFile.c_str());
     return r;
-}
-
-bool ensureNetwork(s32& code) {
-    if (g_netReady) return true;
-    s32 r = -1;
-    for (int i = 0; i < 3 && r < 0; ++i) {
-        r = net_init();
-        if (r < 0) usleep(500 * 1000);
-    }
-    code = r;
-    if (r < 0) return false;
-    g_netReady = true;
-    return true;
 }
 
 }  // namespace nl::platform

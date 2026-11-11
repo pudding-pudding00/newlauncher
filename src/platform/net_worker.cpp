@@ -113,8 +113,9 @@ DownloadSummary NetWorker::run(const volatile bool& cancel) {
     log("NL_NET ok");
 
     CoverDownloadIo io;
-    io.get = [&cancel](const Url& url, std::vector<u8>& body) {
-        return httpGet(url, kMaxCoverDownloadBytes, body, &cancel);
+    const HttpLog httpLog = [this](std::string line) { log(std::move(line)); };
+    io.get = [&cancel, &httpLog](const Url& url, std::vector<u8>& body) {
+        return httpGet(url, kMaxCoverDownloadBytes, body, &cancel, httpLog).outcome;
     };
     io.save = [this](const std::string& stem, std::span<const u8> png) {
         const std::string path = coverSrcPath(root_, stem);

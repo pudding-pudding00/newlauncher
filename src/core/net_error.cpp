@@ -22,4 +22,21 @@ bool tlsClockSuspect(int status, u32 verifyFlags) {
     return status == wtls_status::kCert && (verifyFlags & (kX509BadCertExpired | kX509BadCertFuture)) != 0;
 }
 
+const char* netErrorName(NetError e) {
+    switch (e) {
+        case NetError::None: return "none";
+        case NetError::Dns: return "dns";
+        case NetError::Connect: return "connect";
+        case NetError::Timeout: return "timeout";
+        case NetError::Cert: return "cert";
+        case NetError::Clock: return "clock";
+        case NetError::Handshake: return "handshake";
+        case NetError::NoMem: return "nomem";
+        case NetError::TlsMissing: return "tls_missing";
+        case NetError::Http: return "http";
+        case NetError::Other: return "other";
+    }
+    return "other";
+}
+
 }  // namespace nl

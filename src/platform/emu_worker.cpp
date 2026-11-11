@@ -111,6 +111,10 @@ void EmuWorker::log(std::string line) {
     LWP_MutexUnlock(mutex_);
 }
 
+HttpLog EmuWorker::logFn() {
+    return [this](std::string line) { log(std::move(line)); };
+}
+
 bool EmuWorker::network() {
     if (service_.networkUp()) return true;
     char buf[32];
@@ -122,7 +126,7 @@ bool EmuWorker::network() {
 void EmuWorker::runList(const volatile bool& cancel) {
     const auto url = parseUrl(oscListUrl(repo_));
     std::vector<u8> body;
-    if (!url || !network() || httpGet(*url, kMaxOscListBytes, body, &cancel) != HttpOutcome::Ok) {
+    if (!url || !network() || httpGet(*url, kMaxOscListBytes, body, &cancel, logFn()).outcome != HttpOutcome::Ok) {
         listFailed_ = true;
         log("NL_EMU_LIST fail");
         return;
@@ -145,7 +149,7 @@ void EmuWorker::runInstall(const volatile bool& cancel) {
     io.download = [this, net, &cancel](const std::string& url, const std::string& dest, u32 maxBytes) {
         const auto u = parseUrl(url);
         if (!net || !u) return HttpOutcome::Failed;
-        return httpDownload(*u, dest, maxBytes, &cancel, &done_);
+        return httpDownload(*u, dest, maxBytes, &cancel, &done_, logFn()).outcome;
     };
     io.freeBytes = [] { return sdFreeBytes(); };
     io.cancelled = [&cancel] { return cancel; };

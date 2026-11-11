@@ -3,6 +3,8 @@
 #include <doctest/doctest.h>
 
 #include <cstring>
+#include <set>
+#include <string_view>
 
 #include "ui/strings.hpp"
 using namespace nl;
@@ -47,4 +49,18 @@ TEST_CASE("netErrorText: jeder NetError hat DE- und EN-Text") {
     ui::setLanguage(ui::Lang::De);
     // Die Uhr-Meldung nennt die Ursache, damit niemand ein „Zertifikat ungültig“ für einen Angriff hält.
     CHECK(ui::netErrorText(NetError::Clock) != ui::netErrorText(NetError::Cert));
+}
+
+TEST_CASE("netErrorName: kurze Log-Namen für NL_NET_FAIL (M11 Task 7)") {
+    CHECK(std::string_view(nl::netErrorName(nl::NetError::Cert)) == "cert");
+    CHECK(std::string_view(nl::netErrorName(nl::NetError::Clock)) == "clock");
+    CHECK(std::string_view(nl::netErrorName(nl::NetError::TlsMissing)) == "tls_missing");
+    CHECK(std::string_view(nl::netErrorName(nl::NetError::Dns)) == "dns");
+    std::set<std::string_view> seen;
+    for (int i = 0; i <= static_cast<int>(nl::NetError::Other); ++i) {
+        const std::string_view n = nl::netErrorName(static_cast<nl::NetError>(i));
+        CHECK_FALSE(n.empty());
+        for (char c : n) CHECK(((c >= 'a' && c <= 'z') || c == '_'));
+        CHECK(seen.insert(n).second);  // eindeutig
+    }
 }

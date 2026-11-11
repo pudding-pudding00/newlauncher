@@ -12,6 +12,7 @@
 #include <ogc/mutex.h>
 
 #include "core/emu_catalog.hpp"
+#include "platform/http_client.hpp"
 #include "core/emu_install.hpp"
 #include "core/fs.hpp"
 #include "platform/net_service.hpp"
@@ -52,6 +53,7 @@ private:
     void runList(const volatile bool& cancel);
     void runInstall(const volatile bool& cancel);
     void log(std::string line);
+    HttpLog logFn();  // log() als HttpLog für httpGet/httpDownload
 
     NetService& service_;
     u32 jobId_ = 0;

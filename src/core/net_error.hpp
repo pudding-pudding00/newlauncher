@@ -20,6 +20,8 @@ inline constexpr u32 kX509BadCertExpired = 0x01;
 inline constexpr u32 kX509BadCertFuture = 0x0200;
 
 NetError netErrorFromTls(int status);
+// Kurzer ASCII-Name für Log-Marker (NL_NET_FAIL <name>), z. B. "cert"; nie leer.
+const char* netErrorName(NetError e);
 // Liegt der Fehler vermutlich an der Wii-Uhr? WTLS_ERR_CLOCK, oder ein Zertifikatsfehler mit EXPIRED/FUTURE.
 bool tlsClockSuspect(int status, u32 verifyFlags);
 

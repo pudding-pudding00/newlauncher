@@ -38,12 +38,15 @@ void     wtls_plat_set_unix_time_offset(int64_t delta_s);
 bool wtls_plat_parse_ipv4(const char *s, uint32_t *ipv4_be);
 
 /* IOS socket result classification. Used by plat_ogc.c; lives in
- * plat_common.c so the host tests cover it. The IOS errno values are
- * provisional until the Task 4 hardware spike confirms them. */
-#define WTLS_IOS_EAGAIN       6
-#define WTLS_IOS_EALREADY     7
-#define WTLS_IOS_EINPROGRESS 26
-#define WTLS_IOS_EISCONN     30
+ * plat_common.c so the host tests cover it. libogc's net_* functions pass the
+ * IOS result through _net_convert_error, so callers see negated newlib errno
+ * values, not raw IOS numbers (newlauncher M11: Dolphin reported -127 =
+ * -EISCONN for the second connect). Literal values so host builds, whose
+ * errno.h differs, classify the same way. */
+#define WTLS_IOS_EAGAIN       11  /* newlib EAGAIN */
+#define WTLS_IOS_EALREADY    120  /* newlib EALREADY */
+#define WTLS_IOS_EINPROGRESS 119  /* newlib EINPROGRESS */
+#define WTLS_IOS_EISCONN     127  /* newlib EISCONN */
 #define WTLS_IPC_ENOMEM    (-22) /* libogc IPC heap exhausted: transient */
 #define WTLS_IPC_RETRIES      5  /* short in-call retries before handing back WANT_* */
 #define WTLS_PLAT_RETRY   (-1000) /* internal: pause briefly and repeat the call */

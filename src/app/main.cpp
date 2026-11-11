@@ -42,6 +42,7 @@
 #include "platform/audio.hpp"
 #include "platform/log.hpp"
 #include "platform/music.hpp"
+#include "platform/http_client.hpp"
 #include "platform/net_service.hpp"
 #include "platform/net_worker.hpp"
 #include "platform/nand_titles.hpp"
@@ -422,6 +423,7 @@ int main(int, char**) {
     settings.setConfig(&config);
     settings.setActiveLibrary(libRoot == "usb:" ? nl::Config::LibraryDevice::Usb : nl::Config::LibraryDevice::Sd);
     homeMenu.setSettings(&settings);
+    nl::platform::setTlsCaPath(config.debugTlsCa);  // vor dem ersten submit; geladen beim ersten HTTPS-Auftrag
     nl::platform::NetService netService;  // ein Netz-Thread für Cover und Emulatoren (M11); lebt länger als die Worker
     nl::platform::NetWorker net(netService);
     mainScene.setFavoriteKeys(&store);

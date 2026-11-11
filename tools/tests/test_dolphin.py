@@ -178,7 +178,7 @@ class DolphinToolsTest(unittest.TestCase):
         self._fake_dolphin("raise SystemExit(0)\n")
         seen = {}
 
-        def fake_start(root):
+        def fake_start(root, ssl_context=None):
             root = Path(root)
             seen["en"] = (root / "EN/RMCP01.png").read_bytes()[:8]
             seen["us"] = (root / "US/GM8P01.png").read_bytes()[:8]
@@ -194,6 +194,70 @@ class DolphinToolsTest(unittest.TestCase):
         self.assertEqual(seen["count"], 2)
         text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
         self.assertTrue(text.endswith("[debug]\ncover_url = http://127.0.0.1:12345\nfetch_covers = 1\n"))
+
+    def test_smoke_tls_requires_a_server(self):
+        with mock.patch("sys.stderr"), self.assertRaises(SystemExit) as cm:
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--timeout", "2", "--tls"])
+        self.assertEqual(cm.exception.code, 2)
+
+    def _fake_make_ca(self, seen):
+        def make(root):
+            root = Path(root)
+            root.mkdir(parents=True, exist_ok=True)
+            paths = {"ca": root / "ca.pem", "cert": root / "server.pem", "key": root / "server.key"}
+            for p in paths.values():
+                p.write_bytes(b"-----BEGIN CERTIFICATE-----\n" + str(root).encode() + b"\n")
+            seen.append(paths["ca"].read_bytes())
+            return paths
+        return make
+
+    def test_smoke_tls_uses_https_localhost_and_test_ca(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        seen_ca, seen_ctx, sd_ca = [], [], []
+
+        def fake_start(root, ssl_context=None):
+            seen_ctx.append(ssl_context)
+            return mock.Mock(), 4443
+
+        def fake_popen(*a, **k):  # die SD-Kopie der CA existiert, solange Dolphin läuft
+            sd_ca.append((self.user / "SDSync/newlauncher/test_ca.pem").read_bytes())
+            raise OSError("kein Dolphin im Test")
+
+        with mock.patch("dolphin_smoke.start_cover_server", side_effect=fake_start), \
+                mock.patch("dolphin_smoke.make_test_ca", side_effect=self._fake_make_ca(seen_ca)), \
+                mock.patch("dolphin_smoke.ssl_server_context", return_value="CTX"), \
+                mock.patch("dolphin_smoke.subprocess.Popen", side_effect=fake_popen):
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--timeout", "2", "--cover-server", "--tls"])
+        self.assertEqual(seen_ctx, ["CTX"])
+        text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertIn("cover_url = https://localhost:4443\n", text)
+        self.assertIn("tls_ca = sd:/newlauncher/test_ca.pem\n", text)
+        self.assertNotIn("http://", text.partition("[debug]")[2])
+        self.assertEqual(len(seen_ca), 1)
+        self.assertEqual(sd_ca, [seen_ca[0]])
+        self.assertFalse((self.user / "SDSync/newlauncher/test_ca.pem").exists())  # danach gelöscht
+
+    def test_smoke_tls_wrong_ca_copies_a_foreign_ca(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        seen_ca, sd_ca = [], []
+
+        def fake_popen(*a, **k):
+            sd_ca.append((self.user / "SDSync/newlauncher/test_ca.pem").read_bytes())
+            raise OSError("kein Dolphin im Test")
+
+        with mock.patch("dolphin_smoke.start_cover_server", return_value=(mock.Mock(), 4443)), \
+                mock.patch("dolphin_smoke.make_test_ca", side_effect=self._fake_make_ca(seen_ca)), \
+                mock.patch("dolphin_smoke.ssl_server_context", return_value="CTX"), \
+                mock.patch("dolphin_smoke.subprocess.Popen", side_effect=fake_popen), \
+                mock.patch("dolphin_smoke.ARGV_ECHO_DOL", self.dol):
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--timeout", "2", "--emu-server", "--tls-wrong-ca"])
+        text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertIn("emu_repo = https://localhost:4443/hbb\n", text)
+        self.assertEqual(len(seen_ca), 2)  # Server-CA und eine fremde CA
+        self.assertEqual(sd_ca, [seen_ca[1]])
 
     def test_smoke_cover_server_and_autostart_share_one_debug_section(self):
         self._fake_dolphin("raise SystemExit(0)\n")
@@ -237,7 +301,7 @@ class DolphinToolsTest(unittest.TestCase):
         before = fixture_ini.read_bytes()
         seen = {}
 
-        def fake_start(root):
+        def fake_start(root, ssl_context=None):
             seen["zip"] = (Path(root) / "hbb/fceugx/fceugx.zip").is_file()
             return mock.Mock(), 4321
 

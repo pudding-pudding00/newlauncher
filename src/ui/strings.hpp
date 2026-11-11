@@ -130,7 +130,15 @@
     X(EmuErrWrite, "Schreiben auf die SD-Karte fehlgeschlagen", "Writing to the SD card failed") \
     X(EmuErrCancelled, "Abgebrochen", "Cancelled") \
     X(EmuHelp, "A Installieren/Aktualisieren · B Zurück", "A Install/Update · B Back") \
-    X(EmuBusyHelp, "B Abbrechen", "B Cancel")     X(About, "Über", "About")     X(AboutHttps, "HTTPS: %s", "HTTPS: %s")     X(AboutGpl, "Freie Software unter der GNU GPL v3 oder später, ohne jede Gewährleistung.",       "Free software under the GNU GPL v3 or later, without any warranty.")     X(AboutSource, "Quelltext: Git-Tag des Releases. Lizenztexte: apps/newlauncher/THIRD_PARTY.txt",       "Source: the release's Git tag. License texts: apps/newlauncher/THIRD_PARTY.txt")     X(AboutComponents, "Enthaltene Komponenten", "Included components")     X(AboutHelp, "▲▼ Blättern · B Zurück", "▲▼ Scroll · B Back")
+    X(EmuBusyHelp, "B Abbrechen", "B Cancel") \
+    X(About, "Über", "About") \
+    X(AboutHttps, "HTTPS: %s", "HTTPS: %s") \
+    X(AboutGpl, "Freie Software unter der GNU GPL v3 oder später, ohne jede Gewährleistung.", \
+      "Free software under the GNU GPL v3 or later, without any warranty.") \
+    X(AboutSource, "Quelltext: Git-Tag des Releases. Lizenztexte: apps/newlauncher/THIRD_PARTY.txt", \
+      "Source: the release's Git tag. License texts: apps/newlauncher/THIRD_PARTY.txt") \
+    X(AboutComponents, "Enthaltene Komponenten", "Included components") \
+    X(AboutHelp, "▲▼ Blättern · B Zurück", "▲▼ Scroll · B Back")
 // clang-format on
 
 namespace nl::ui {

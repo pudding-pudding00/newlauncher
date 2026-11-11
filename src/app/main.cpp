@@ -46,6 +46,7 @@
 #include "platform/scan_worker.hpp"
 #include "platform/std_fs.hpp"
 #include "platform/storage.hpp"
+#include "platform/system.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_input.hpp"
 #include "ui/settings_scene.hpp"
@@ -196,6 +197,8 @@ int main(int, char**) {
     const bool systemGerman = CONF_GetLanguage() == CONF_LANG_GERMAN;
     nl::ui::setLanguage(nl::ui::resolveLanguage(config.language, systemGerman));
     nl::log::line("NL_LANG %s", nl::ui::langKey(nl::ui::language()));
+    const bool ahbprotOff = nl::platform::ahbprotDisabled();
+    nl::log::line("NL_AHBPROT %s", ahbprotOff ? "off" : "on");
     auto saveConfig = [&]() {
         std::string text = nl::configToIniText(config, configText);
         if (sdOk && writeText(fs, kConfigPath, text)) {
@@ -452,7 +455,7 @@ int main(int, char**) {
             audio.play(nl::UiSound::Error);
         };
         const nl::N64Inputs inputs = n64Inputs(game);
-        auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs, /*ahbprotOff=*/true);  // M8 Task 3 setzt den echten Wert
+        auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs, ahbprotOff || config.debugIgnoreAhbprot);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Dol && !launchAllowed) {
             target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(
                 {nl::LaunchFailure::NoMemory, nl::ui::tr(nl::ui::Str::NoMemory)});
@@ -463,6 +466,11 @@ int main(int, char**) {
             return;
         }
         if (target.value().n64) nl::log::line("NL_N64 %s %s", key.c_str(), nl::n64MethodKey(*target.value().n64));
+        if (const auto& nin = target.value().nintendont) {
+            const std::string& cfg = target.value().dol.args[1];  // NIN_CFG: GamePath ab 0x14, NUL-terminiert
+            nl::log::line("NL_NIN ver=%s path=%s usb=%d", nl::formatNinVersion(*nin).c_str(), cfg.c_str() + 0x14,
+                          (static_cast<unsigned char>(cfg[0x0A]) & 0x04) != 0 ? 1 : 0);
+        }
         store.recordPlayed(key, static_cast<u32>(std::time(nullptr)));
         if (sdOk && writeText(fs, kHistoryPath, store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
         else nl::log::line("NL_WARN history.ini nicht gespeichert");

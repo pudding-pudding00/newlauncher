@@ -23,7 +23,7 @@ int stepClock(int minute, int dir) { return ((minute + dir * 30) % kDay + kDay) 
 
 bool isAction(SettingRow r) {
     return r == SettingRow::Rescan || r == SettingRow::FetchCovers || r == SettingRow::VcMap ||
-           r == SettingRow::Emulators;
+           r == SettingRow::Emulators || r == SettingRow::About;
 }
 
 void stepSetting(Config& c, SettingRow r, int dir) {
@@ -48,6 +48,7 @@ void stepSetting(Config& c, SettingRow r, int dir) {
         case SettingRow::FetchCovers:
         case SettingRow::VcMap:
         case SettingRow::Emulators:
+        case SettingRow::About:
         case SettingRow::Count: break;
     }
 }

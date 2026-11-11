@@ -42,6 +42,8 @@
 #include "platform/audio.hpp"
 #include "platform/log.hpp"
 #include "platform/music.hpp"
+#include "platform/http_client.hpp"
+#include "platform/net_service.hpp"
 #include "platform/net_worker.hpp"
 #include "platform/nand_titles.hpp"
 #include "platform/scan_worker.hpp"
@@ -56,6 +58,7 @@
 #include "ui/details_scene.hpp"
 #include "ui/dialog_scene.hpp"
 #include "ui/emulators_scene.hpp"
+#include "ui/about_scene.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/jump_bar.hpp"
 #include "ui/keyboard.hpp"
@@ -76,6 +79,11 @@ namespace {
 constexpr float kFrameMs = 1000.0f / 60.0f;
 constexpr const char* kConfigDir = "sd:/newlauncher";
 constexpr const char* kConfigPath = "sd:/newlauncher/config.ini";
+#ifdef NL_TLS
+constexpr bool kHasTls = true;  // Standardquellen über HTTPS (M11)
+#else
+constexpr bool kHasTls = false;
+#endif
 constexpr const char* kFavoritesPath = "sd:/newlauncher/favorites.ini";
 constexpr const char* kHistoryPath = "sd:/newlauncher/history.ini";
 constexpr const char* kEmulatorsPath = "sd:/newlauncher/emulators.ini";
@@ -118,7 +126,7 @@ bool writeText(nl::FileSystem& fs, const char* path, const std::string& text) {
 
 // text erhält den gelesenen bzw. neu geschriebenen Inhalt (Grundlage für configToIniText).
 nl::Config loadConfig(nl::FileSystem& fs, bool sdOk, std::string& text) {
-    text = nl::defaultConfigText();
+    text = nl::defaultConfigText(kHasTls);
     if (!sdOk) {
         nl::log::line("NL_CONFIG default (keine SD)");
         return nl::Config{};
@@ -128,10 +136,10 @@ nl::Config loadConfig(nl::FileSystem& fs, bool sdOk, std::string& text) {
         const auto& b = data.value();
         nl::log::line("NL_CONFIG ok");
         text.assign(reinterpret_cast<const char*>(b.data()), b.size());
-        return nl::configFromIni(nl::IniDoc::parse(text));
+        return nl::configFromIni(nl::IniDoc::parse(text), kHasTls);
     }
     static_cast<void>(fs.makeDirs(kConfigDir));
-    writeText(fs, kConfigPath, nl::defaultConfigText());
+    writeText(fs, kConfigPath, nl::defaultConfigText(kHasTls));
     nl::log::line("NL_CONFIG default");
     return nl::Config{};
 }
@@ -420,7 +428,10 @@ int main(int, char**) {
     settings.setConfig(&config);
     settings.setActiveLibrary(libRoot == "usb:" ? nl::Config::LibraryDevice::Usb : nl::Config::LibraryDevice::Sd);
     homeMenu.setSettings(&settings);
-    nl::platform::NetWorker net;
+    nl::platform::setTlsCaPath(config.debugTlsCa);  // vor dem ersten submit; geladen beim ersten HTTPS-Auftrag
+    nl::platform::setNetPerf(config.debugPerf);
+    nl::platform::NetService netService;  // ein Netz-Thread für Cover und Emulatoren (M11); lebt länger als die Worker
+    nl::platform::NetWorker net(netService);
     mainScene.setFavoriteKeys(&store);
     nl::ui::JumpBar jumpBar(mainScene);
     mainScene.setJumpBar(&jumpBar);
@@ -431,8 +442,14 @@ int main(int, char**) {
     details.setCovers(&covers);
     nl::ui::DialogScene dialog;
     nl::ui::VcMapScene vcMapScene;
-    nl::platform::EmuWorker emu;
+    nl::platform::EmuWorker emu(netService);
     nl::ui::EmulatorsScene emuScene;
+    nl::ui::AboutScene aboutScene;
+#if defined(NL_TLS) && NL_TLS  // ab M11 Task 4 vom CMake-Schalter gesetzt
+    aboutScene.setBuildInfo(NL_VERSION, true);
+#else
+    aboutScene.setBuildInfo(NL_VERSION, false);
+#endif
     std::vector<nl::OscApp> emuList;  // zuletzt geladene OSC-Liste; leer bis „Nach Updates suchen“
     const std::string emuRepo = config.debugEmuRepo.empty() ? config.emulatorRepo : config.debugEmuRepo;
     nl::ui::SceneStack scenes;
@@ -522,6 +539,7 @@ int main(int, char**) {
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
         net.join();
         emu.join();
+        netService.shutdown();  // wtls_shutdown im Netz-Thread, dann Thread beendet
         covers.shutdown();
 
         if (target.value().kind == nl::LaunchTarget::Kind::Channel) {
@@ -576,7 +594,7 @@ int main(int, char**) {
     int coverToastFrames = 0;
     auto fetchCovers = [&]() {
         nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
-        if (net.running() || emu.running()) return;  // gemeinsamer Netzaufbau: nie parallel
+        if (net.running()) return;  // Emulator-Aufträge warten in derselben Warteschlange (NetService)
         std::vector<const nl::Game*> games;
         games.reserve(store.games().size());
         for (const nl::Game& g : store.games()) games.push_back(&g);
@@ -593,7 +611,7 @@ int main(int, char**) {
         for (std::string_view r : nl::coverRegions(config.coverRegion, nl::platform::systemCoverRegion()))
             regions.emplace_back(r);
         const std::string base =
-            config.debugCoverUrl.empty() ? std::string(nl::kGametdbCoverBase) : config.debugCoverUrl;
+            config.debugCoverUrl.empty() ? config.coverBase : config.debugCoverUrl;
         if (!net.start(fs, libRoot, std::move(jobs), std::move(regions), base)) {
             nl::log::line("NL_WARN Netz-Thread startet nicht");
             return;
@@ -625,15 +643,13 @@ int main(int, char**) {
                           static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
             if (sdOk) nl::log::flushLogFile(fs, kLogPath);
             if (perf) perf->pause();  // der Flush gehört zur Messung, nicht zum Launcher
-            char text[128];
-            std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::CoversSummary), static_cast<unsigned>(sum->ok),
-                          static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
-            dialog.open(nl::ui::tr(nl::ui::Str::CoversLoaded), text);
+            const std::string text = nl::ui::coversSummaryText(sum->ok, sum->missing, sum->failed, sum->lastError);
+            dialog.open(nl::ui::tr(nl::ui::Str::CoversLoaded), text.c_str());
             scenes.push(&dialog);
         }
     };
 
-    // Emulator-Verwaltung (Spec 6.9). EmuWorker und NetWorker teilen den Netzaufbau und laufen nie gleichzeitig.
+    // Emulator-Verwaltung (Spec 6.9). EmuWorker und NetWorker reihen ihre Aufträge in den NetService ein.
     enum class EmuJob : u8 { None, List, Install };
     EmuJob emuJob = EmuJob::None;
     std::string emuDebugPending = config.debugEmuInstall;  // Komma-Liste; nach dem Laden der Liste installieren
@@ -644,7 +660,7 @@ int main(int, char**) {
                                      [&](std::string_view dol) { return nl::fileSize(fs, dol).has_value(); }, emuList));
     };
     auto startEmuList = [&]() {
-        if (emu.running() || net.running()) return;
+        if (emu.running()) return;
         if (!emu.startFetchList(emuRepo)) {
             nl::log::line("NL_WARN Emulator-Thread startet nicht");
             return;
@@ -653,7 +669,7 @@ int main(int, char**) {
         emuScene.setListState(nl::ui::EmulatorsScene::ListState::Loading);
     };
     auto startEmuInstall = [&](std::vector<nl::OscApp> apps) {
-        if (apps.empty() || !sdOk || emu.running() || net.running()) return;
+        if (apps.empty() || !sdOk || emu.running()) return;
         if (!emu.startInstall(fs, emuRepo, std::move(apps))) {
             nl::log::line("NL_WARN Emulator-Thread startet nicht");
             return;
@@ -694,7 +710,8 @@ int main(int, char**) {
                 emuScene.setListState(nl::ui::EmulatorsScene::ListState::Loaded);
             } else {
                 emuScene.setListState(emu.listFailed() ? nl::ui::EmulatorsScene::ListState::Failed
-                                                       : nl::ui::EmulatorsScene::ListState::NotLoaded);
+                                                       : nl::ui::EmulatorsScene::ListState::NotLoaded,
+                                      emu.listError());
             }
             refreshEmuRows();
             if (!emuDebugPending.empty()) {
@@ -892,6 +909,7 @@ int main(int, char**) {
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
                 net.join();
                 emu.join();
+                netService.shutdown();
                 covers.shutdown();
                 stopAudio();
                 logPerfSummary();
@@ -919,6 +937,11 @@ int main(int, char**) {
             case nl::ui::AppCommand::EmuInstallAll:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 startEmuInstall(emuScene.takeTargets());
+                break;
+            case nl::ui::AppCommand::OpenAbout:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                scenes.push(&aboutScene);
+                nl::log::line("NL_SCENE about");
                 break;
             case nl::ui::AppCommand::EmuCancel:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
@@ -969,6 +992,10 @@ int main(int, char**) {
                 runPendingAutostart();
             }
             if (config.debugFetchCovers) fetchCovers();  // nur für Tests
+            if (config.debugOpenScene == "about") {   // nur für Tests (M11)
+                scenes.push(&aboutScene);
+                nl::log::line("NL_SCENE about");
+            }
         }
         if (readyReported && !coversReported && covers.idle()) {
             nl::log::line("NL_COVERS ready=%u", static_cast<unsigned>(covers.readyCount()));
@@ -983,6 +1010,7 @@ int main(int, char**) {
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
     net.join();
     emu.join();
+    netService.shutdown();
     covers.shutdown();
     stopAudio();
     logPerfSummary();

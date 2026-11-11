@@ -29,6 +29,7 @@ GOOD = "\n".join([
     "NL_PERF frames n=300 slow=0 max_ms=17.0 busy=1",
     "NL_PERF frames n=300 slow=0 max_ms=16.9 busy=0",
     "NL_ALLOC_IDLE 0",
+    "NL_PERF tls heap=98304 ms=1200",
     summary(),
 ])
 
@@ -53,7 +54,7 @@ class CheckPerfTest(unittest.TestCase):
     def test_pass_all(self):
         checks = by_name(evaluate(parse_log(GOOD)))
         self.assertEqual({c.status for c in checks.values()}, {"PASS"})
-        self.assertEqual(set(checks), {"Start", "Bildrate", "Cover", "Blockierung", "Allokationen", "Splash"})
+        self.assertEqual(set(checks), {"Start", "Bildrate", "Cover", "Blockierung", "Allokationen", "Splash", "TLS"})
         code, out = self.run_cli(GOOD)
         self.assertEqual(code, 0)
         self.assertIn("| Start |", out)
@@ -153,6 +154,39 @@ class CheckPerfTest(unittest.TestCase):
         self.assertIn("50 fps", checks["Bildrate"].budget)
         checks = by_name(evaluate(parse_log(summary())))
         self.assertIn("60 fps", checks["Bildrate"].budget)
+
+
+    def test_tls_worst_handshake_reported(self):
+        # Spec v2 4.6: je Verbindung <= 160 KiB Heap, Handshake <= 3 s; gewertet wird der schlechteste Wert.
+        log = summary() + "\nNL_PERF tls heap=100000 ms=900\nNL_PERF tls heap=150000 ms=2500\n"
+        tls = by_name(evaluate(parse_log(log)))["TLS"]
+        self.assertEqual(tls.status, "PASS")
+        self.assertIn("n=2", tls.value)
+        self.assertIn("150000", tls.value)
+        self.assertIn("2500", tls.value)
+        self.assertIn("163840", tls.budget)
+        self.assertIn("3000", tls.budget)
+
+    def test_tls_over_target_warns_not_fails(self):
+        # Spec v2 4.6 nennt Zielwerte: Abweichung wird dokumentiert (WARN), nicht als FAIL gewertet.
+        for line in ("NL_PERF tls heap=200000 ms=900", "NL_PERF tls heap=1000 ms=4000"):
+            tls = by_name(evaluate(parse_log(summary() + "\n" + line)))["TLS"]
+            self.assertEqual(tls.status, "WARN", line)
+        code, _ = self.run_cli(GOOD + "\nNL_PERF tls heap=200000 ms=900")
+        self.assertEqual(code, 0)
+
+    def test_tls_negative_heap_ignored(self):
+        # uordblks-Differenz: der Haupt-Thread gibt parallel frei, negative Werte sind keine Messung.
+        log = summary() + "\nNL_PERF tls heap=-400000 ms=900\nNL_PERF tls heap=36536 ms=800\n"
+        tls = by_name(evaluate(parse_log(log)))["TLS"]
+        self.assertEqual(tls.status, "PASS")
+        self.assertIn("max heap=36536 B", tls.value)
+        only_negative = by_name(evaluate(parse_log(summary() + "\nNL_PERF tls heap=-5 ms=900")))["TLS"]
+        self.assertIn("heap nicht messbar", only_negative.value)
+        self.assertEqual(only_negative.status, "PASS")
+
+    def test_tls_missing_is_na(self):
+        self.assertEqual(by_name(evaluate(parse_log(summary())))["TLS"].status, "N/A")
 
 
 if __name__ == "__main__":

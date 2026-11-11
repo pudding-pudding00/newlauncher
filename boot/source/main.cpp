@@ -23,7 +23,7 @@
 
 #include "Config.hpp"
 #include "ChannelHandler.hpp"
-#include "video_tinyload.h"
+#include "nl/progress.h" // newlauncher: eigener Balken statt video_tinyload.h (M11)
 #include "apploader.h"
 #include "patchcode.h"
 #include "memory.h"
@@ -62,7 +62,11 @@ int main()
 
 	configbytes[0] = normalCFG.configbytes[0];// game language 0 - 9 or 0xCD = not patched
 	configbytes[1] = normalCFG.configbytes[1];// not used
+#if NL_BOOTER_CHEATS
 	hooktype = normalCFG.hooktype;
+#else
+	hooktype = 0; // newlauncher: ohne Codehandler (M11) keine Hooks, siehe boot/UPSTREAM.md
+#endif
 	debuggerselect = normalCFG.debugger;
 	CurrentIOS = normalCFG.IOS;
 	set_wip_list(normalCFG.wip_list, normalCFG.wip_count);

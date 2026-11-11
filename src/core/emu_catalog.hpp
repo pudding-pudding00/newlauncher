@@ -14,7 +14,10 @@
 
 namespace nl {
 
-inline constexpr std::string_view kDefaultEmuRepo = "http://hbb1.oscwii.org/hbb";
+// Open Shop Channel: HTTPS mit TLS-Build, sonst HTTP (M11 Task 8: Liste über beide Schemata identisch, 2026-11-11).
+inline constexpr std::string_view kDefaultEmuRepoHttps = "https://hbb1.oscwii.org/hbb";
+inline constexpr std::string_view kDefaultEmuRepoHttp = "http://hbb1.oscwii.org/hbb";
+constexpr std::string_view defaultEmuRepo(bool tls) { return tls ? kDefaultEmuRepoHttps : kDefaultEmuRepoHttp; }
 inline constexpr std::string_view kInstalledEmusPath = "sd:/newlauncher/emulators_installed.ini";
 
 struct OscApp {

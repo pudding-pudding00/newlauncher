@@ -1,0 +1,4 @@
+commit=2112b5b0dcbee4e680fd99e7c9392746269efc8c
+date=2026-11-11T13:55:04+00:00
+source=https://github.com/pudding-pudding00/wii_tls.git
+removed=tests,bench,examples,docs,build-*

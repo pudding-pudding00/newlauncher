@@ -3,7 +3,10 @@
 // X(Id, "deutsch", "english"); Texte mit Formatzeichen haben in beiden Sprachen dieselbe Folge
 // (strings_test prüft das). Die aktive Sprache ist globaler UI-Zustand, gesetzt von main.
 
+#include <string>
+
 #include "core/config.hpp"
+#include "core/net_error.hpp"
 #include "core/types.hpp"
 
 // clang-format off
@@ -130,7 +133,26 @@
     X(EmuErrWrite, "Schreiben auf die SD-Karte fehlgeschlagen", "Writing to the SD card failed") \
     X(EmuErrCancelled, "Abgebrochen", "Cancelled") \
     X(EmuHelp, "A Installieren/Aktualisieren · B Zurück", "A Install/Update · B Back") \
-    X(EmuBusyHelp, "B Abbrechen", "B Cancel")
+    X(EmuBusyHelp, "B Abbrechen", "B Cancel") \
+    X(About, "Über", "About") \
+    X(AboutHttps, "HTTPS: %s", "HTTPS: %s") \
+    X(AboutGpl, "Freie Software unter der GNU GPL v3 oder später, ohne jede Gewährleistung.", \
+      "Free software under the GNU GPL v3 or later, without any warranty.") \
+    X(AboutSource, "Quelltext: Git-Tag des Releases. Lizenztexte: apps/newlauncher/THIRD_PARTY.txt", \
+      "Source: the release's Git tag. License texts: apps/newlauncher/THIRD_PARTY.txt") \
+    X(AboutComponents, "Enthaltene Komponenten", "Included components") \
+    X(AboutHelp, "▲▼ Blättern · B Zurück", "▲▼ Scroll · B Back") \
+    X(NetErrNone, "Kein Fehler", "No error") \
+    X(NetErrDns, "Server nicht gefunden (DNS)", "Server not found (DNS)") \
+    X(NetErrConnect, "Verbindung zum Server fehlgeschlagen", "Could not connect to the server") \
+    X(NetErrTimeout, "Zeitüberschreitung", "Timed out") \
+    X(NetErrCert, "Zertifikat des Servers ungültig", "Server certificate invalid") \
+    X(NetErrClock, "Uhrzeit der Wii falsch – Zertifikat nicht prüfbar", "Wii clock is wrong – cannot check the certificate") \
+    X(NetErrHandshake, "Sichere Verbindung fehlgeschlagen", "Secure connection failed") \
+    X(NetErrNoMem, "Zu wenig Speicher für die Verbindung", "Not enough memory for the connection") \
+    X(NetErrTlsMissing, "HTTPS ist in diesem Build nicht enthalten", "HTTPS is not included in this build") \
+    X(NetErrHttp, "Server meldet einen Fehler", "Server returned an error") \
+    X(NetErrOther, "Netzwerkfehler", "Network error")
 // clang-format on
 
 namespace nl::ui {
@@ -151,5 +173,8 @@ Lang resolveLanguage(Config::Language setting, bool systemGerman);
 const char* langKey(Lang l);           // "de" / "en"
 const char* weekdayName(int weekday0Mon);  // 0 = Montag
 const char* monthName(int month1);         // 1 = Januar
+Str netErrorText(NetError e);              // Klartext je Netzfehler (M11)
+// Text des Cover-Dialogs; bei failed > 0 und bekannter Ursache folgt der Klartext dazu in einer zweiten Zeile.
+std::string coversSummaryText(u32 ok, u32 missing, u32 failed, NetError lastError);
 
 }  // namespace nl::ui

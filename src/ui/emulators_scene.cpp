@@ -67,6 +67,18 @@ std::vector<OscApp> EmulatorsScene::takeTargets() {
     return out;
 }
 
+std::string EmulatorsScene::infoText() const {
+    switch (list_) {
+        case ListState::Loading: return tr(Str::EmuListLoading);
+        case ListState::NotLoaded: return tr(Str::EmuListHint);
+        case ListState::Failed:
+            // Bekannte Ursache statt des allgemeinen „(WLAN?)“-Texts (Spec v2 4.4).
+            return listCause_ == NetError::Other ? tr(Str::EmuListFailed) : tr(netErrorText(listCause_));
+        case ListState::Loaded: break;
+    }
+    return {};
+}
+
 std::string EmulatorsScene::statusText(int row) const {
     if (row < 0 || row >= static_cast<int>(rows_.size())) return {};
     const EmuRow& r = rows_[static_cast<std::size_t>(row)];
@@ -189,12 +201,8 @@ void EmulatorsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
             std::snprintf(buf, sizeof buf, "  %u %%", static_cast<unsigned>(pct > 100 ? 100 : pct));
             info += buf;
         }
-    } else if (list_ == ListState::Loading) {
-        info = tr(Str::EmuListLoading);
-    } else if (list_ == ListState::Failed) {
-        info = tr(Str::EmuListFailed);
-    } else if (list_ == ListState::NotLoaded) {
-        info = tr(Str::EmuListHint);
+    } else {
+        info = infoText();
     }
     const float infoBase = rowRect(ctx, kRowCount).y + kInfoH / 2 + (small.ascent - small.descent) / 2;
     if (!info.empty())

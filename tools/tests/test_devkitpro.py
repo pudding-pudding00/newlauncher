@@ -12,7 +12,8 @@ class DevkitProTest(unittest.TestCase):
         cmd, env = wii_build_invocation(Path(r"C:\x\repo"), "win32")
         self.assertEqual(cmd[0], DEVKITPRO_BASH)
         self.assertEqual(cmd[1], "-lc")
-        self.assertIn("cmake --preset wii && cmake --build --preset wii", cmd[2])
+        self.assertTrue(cmd[2].startswith("cmake --preset wii -DNL_TLS=ON"), cmd[2])
+        self.assertTrue(cmd[2].endswith(" && cmake --build --preset wii"), cmd[2])
         self.assertEqual(env, {"CHERE_INVOKING": "1"})
 
     def test_windows_invocation_never_embeds_repo_path(self):
@@ -25,8 +26,22 @@ class DevkitProTest(unittest.TestCase):
 
     def test_linux_invocation_runs_cmake_directly(self):
         cmd, env = wii_build_invocation(Path("/src/repo"), "linux")
-        self.assertEqual(cmd, ["sh", "-c", "cmake --preset wii && cmake --build --preset wii"])
+        self.assertEqual(cmd, ["sh", "-c", "cmake --preset wii -DNL_TLS=ON && cmake --build --preset wii"])
         self.assertEqual(env, {})
+
+    def test_no_tls_switches_option_off(self):
+        # Der Wert steht immer explizit im Befehl: CMake merkt sich Optionen im Cache, ein Build
+        # ohne -DNL_TLS=ON nach einem --no-tls-Build bliebe sonst stillschweigend ohne HTTPS.
+        cmd, _ = wii_build_invocation(Path("/src/repo"), "linux", tls=False)
+        self.assertIn("-DNL_TLS=OFF", cmd[2])
+        self.assertNotIn("-DNL_TLS=ON", cmd[2])
+
+    def test_windows_tls_uses_local_mbedtls_source(self):
+        # MSYS-tar kann die Symlinks im Mbed-TLS-Archiv nicht anlegen (tools/mbedtls_src.py).
+        cmd, _ = wii_build_invocation(Path(r"C:\x\repo"), "win32")
+        self.assertIn("-DFETCHCONTENT_SOURCE_DIR_MBEDTLS=$(pwd -P)/build/mbedtls/mbedtls-4.1.1", cmd[2])
+        cmd, _ = wii_build_invocation(Path(r"C:\x\repo"), "win32", tls=False)
+        self.assertNotIn("FETCHCONTENT", cmd[2])
 
 
 if __name__ == "__main__":

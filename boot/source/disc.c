@@ -11,7 +11,7 @@
 #include "cios.h"
 #include "types.h"
 #include "wdvd.h"
-#include "video_tinyload.h"
+#include "nl/progress.h" // newlauncher: eigener Balken statt video_tinyload.h (M11)
 
 /* Constants */
 #define PART_INFO_OFFSET	0x10000

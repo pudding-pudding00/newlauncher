@@ -22,10 +22,13 @@ START_BUDGET_MS = 2000
 COVER_P95_BUDGET_MS = 100
 COVER_MAX_WARN_MS = 250
 SPLASH_TARGET_MS = 500
+TLS_HEAP_TARGET_BYTES = 160 * 1024  # Spec v2 4.6: Zielwerte je TLS-Verbindung
+TLS_HANDSHAKE_TARGET_MS = 3000
 
 _PAIR = re.compile(r"(\w+)=(-?\d+(?:\.\d+)?)")
 _MARKER = re.compile(r"NL_PERF (boot|frames|summary) (.*)$")
 _ALLOC = re.compile(r"NL_ALLOC_IDLE (\d+)")
+_TLS = re.compile(r"NL_PERF tls (.*)$")
 
 
 @dataclass
@@ -34,6 +37,7 @@ class PerfLog:
     windows: list[dict] = field(default_factory=list)
     summary: dict | None = None
     alloc_idle: int | None = None
+    tls: list[dict] = field(default_factory=list)  # je erfolgreichem Handshake: heap (Bytes), ms
 
 
 @dataclass
@@ -64,6 +68,8 @@ def parse_log(text: str) -> PerfLog:
                 log.summary = values  # die letzte zählt
         elif m := _ALLOC.search(line):
             log.alloc_idle = int(m.group(1))
+        elif m := _TLS.search(line):
+            log.tls.append(_pairs(m.group(1)))
     return log
 
 
@@ -130,6 +136,20 @@ def evaluate(log: PerfLog) -> list[Check]:
         checks.append(Check("Splash", f"{ms} ms", splash_budget, "PASS" if ms <= SPLASH_TARGET_MS else "WARN"))
     else:
         checks.append(Check("Splash", "NL_PERF boot fehlt im Log (Ringpuffer)", splash_budget, "N/A"))
+
+    # Spec v2 4.6 nennt Zielwerte; eine Abweichung wird dokumentiert: höchstens WARN.
+    tls_budget = f"Heap ≤ {TLS_HEAP_TARGET_BYTES} B, Handshake ≤ {TLS_HANDSHAKE_TARGET_MS} ms (Ziel)"
+    if log.tls:
+        # heap ist die uordblks-Differenz um den Handshake; gibt der Haupt-Thread parallel frei, wird sie negativ und
+        # ist keine Messung. Aussagekräftig nur bei ruhender Oberfläche (docs/acceptance/m11-wii.md, W4).
+        heaps = [t["heap"] for t in log.tls if t.get("heap", -1) >= 0]
+        ms = max(t.get("ms", 0) for t in log.tls)
+        heap_text = f"max heap={max(heaps)} B" if heaps else "heap nicht messbar"
+        ok = (not heaps or max(heaps) <= TLS_HEAP_TARGET_BYTES) and ms <= TLS_HANDSHAKE_TARGET_MS
+        checks.append(Check("TLS", f"n={len(log.tls)} {heap_text}, max handshake={ms} ms", tls_budget,
+                            "PASS" if ok else "WARN"))
+    else:
+        checks.append(Check("TLS", "kein NL_PERF tls (keine HTTPS-Verbindung oder perf aus)", tls_budget, "N/A"))
     return checks
 
 

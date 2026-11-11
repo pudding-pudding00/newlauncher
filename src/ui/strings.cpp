@@ -1,5 +1,7 @@
 #include "ui/strings.hpp"
 
+#include <cstdio>
+
 namespace nl::ui {
 
 namespace {
@@ -34,6 +36,35 @@ const char* tr(Str s) {
     const auto i = static_cast<std::size_t>(s);
     if (i >= kCount) return "";
     return gLang == Lang::En ? kEn[i] : kDe[i];
+}
+
+Str netErrorText(NetError e) {
+    switch (e) {
+        case NetError::None: return Str::NetErrNone;
+        case NetError::Dns: return Str::NetErrDns;
+        case NetError::Connect: return Str::NetErrConnect;
+        case NetError::Timeout: return Str::NetErrTimeout;
+        case NetError::Cert: return Str::NetErrCert;
+        case NetError::Clock: return Str::NetErrClock;
+        case NetError::Handshake: return Str::NetErrHandshake;
+        case NetError::NoMem: return Str::NetErrNoMem;
+        case NetError::TlsMissing: return Str::NetErrTlsMissing;
+        case NetError::Http: return Str::NetErrHttp;
+        case NetError::Other: break;
+    }
+    return Str::NetErrOther;
+}
+
+std::string coversSummaryText(u32 ok, u32 missing, u32 failed, NetError lastError) {
+    char buf[128];
+    std::snprintf(buf, sizeof buf, tr(Str::CoversSummary), static_cast<unsigned>(ok), static_cast<unsigned>(missing),
+                  static_cast<unsigned>(failed));
+    std::string text = buf;
+    if (failed > 0 && lastError != NetError::None) {
+        text += '\n';
+        text += tr(netErrorText(lastError));
+    }
+    return text;
 }
 
 void setLanguage(Lang l) { gLang = l; }

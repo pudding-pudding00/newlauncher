@@ -12,7 +12,7 @@
 #include "wip.h"
 #include "gecko.h"
 #include "memory.h"
-#include "video_tinyload.h"
+#include "nl/progress.h" // newlauncher: eigener Balken statt video_tinyload.h (M11)
 #include "kirbypatch.h"
 
 /* Apploader function pointers */

@@ -24,6 +24,8 @@
  * Channel Launcher Class
  *
  * for WiiXplorer 2010
+ *
+ * Geändert für newlauncher (2026-11-11): LZ77 über nl/lz77_bridge.h statt lz77.h (M11).
  ***************************************************************************/
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,10 +39,10 @@
 #include "cios.h"
 #include "fs.h"
 #include "fst.h"
-#include "lz77.h"
+#include "nl/lz77_bridge.h"
 #include "utils.h"
 #include "videopatch.h"
-#include "video_tinyload.h"
+#include "nl/progress.h" // newlauncher: eigener Balken statt video_tinyload.h (M11)
 #include "apploader.h"
 #include "memory.h"
 

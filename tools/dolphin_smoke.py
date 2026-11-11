@@ -6,6 +6,7 @@ Exit-Codes: 0 = OK, 1 = Marker fehlt, 2 = Voraussetzung fehlt.
 import argparse
 import functools
 import http.server
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,7 @@ from fat_frag import NotFat32Error, expected_frag_line
 from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_path, reset_log,
                      sd_sync_dir, wait_for_markers, write_dev_config)
 from pngfile import solid_png
+from test_ca import make as make_test_ca
 
 DEFAULT_MARKERS = ["NL_READY"]
 
@@ -81,10 +83,23 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
-def start_cover_server(root: Path) -> tuple[http.server.ThreadingHTTPServer, int]:
-    """Startet einen HTTP-Server für root auf 127.0.0.1 und einem freien Port, in einem Thread."""
+# Pfad der Test-CA auf der virtuellen SD ([debug] tls_ca); wird nach dem Lauf gelöscht.
+SD_TEST_CA = "newlauncher/test_ca.pem"
+
+
+def ssl_server_context(cert: Path, key: Path) -> ssl.SSLContext:
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(str(cert), str(key))
+    return ctx
+
+
+def start_cover_server(root: Path, ssl_context: ssl.SSLContext | None = None
+                       ) -> tuple[http.server.ThreadingHTTPServer, int]:
+    """Startet einen HTTP(S)-Server für root auf 127.0.0.1 und einem freien Port, in einem Thread."""
     handler = functools.partial(_QuietHandler, directory=str(root))
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    if ssl_context is not None:
+        server.socket = ssl_context.wrap_socket(server.socket, server_side=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, server.server_address[1]
 
@@ -109,7 +124,14 @@ def main(argv: list[str] | None = None) -> int:
                         help="lokales OSC-Test-Repository starten und fceugx nach NL_READY installieren")
     parser.add_argument("--expect-frag", metavar="REL_PATH",
                         help="NL_FRAG-Zeile für diese ISO (relativ zur SD) aus Load/WiiSD.raw berechnen und im Log verlangen")
+    parser.add_argument("--tls", action="store_true",
+                        help="Server per HTTPS auf localhost mit einer Test-CA (braucht --cover-server/--emu-server)")
+    parser.add_argument("--tls-wrong-ca", action="store_true",
+                        help="wie --tls, aber der Launcher bekommt eine fremde CA (Gegenprobe: Zertifikatsfehler)")
     args = parser.parse_args(argv)
+    tls = args.tls or args.tls_wrong_ca
+    if tls and not (args.cover_server or args.emu_server):
+        parser.error("--tls/--tls-wrong-ca braucht --cover-server oder --emu-server")
     markers = args.markers or DEFAULT_MARKERS
 
     for name, path in (("Dolphin", args.dolphin), ("DOL", args.dol)):
@@ -117,8 +139,28 @@ def main(argv: list[str] | None = None) -> int:
             print(f"SMOKE FEHLER: {name} nicht gefunden: {path}")
             return 2
 
-    server = None
-    server_dir = None
+    servers = []      # Cover- und Emulator-Server dürfen gemeinsam laufen (M11: eine Netz-Warteschlange)
+    server_dirs = []
+    ssl_context = None
+    args.sd_ca = None
+    scheme_host = "http://127.0.0.1"
+    if tls:
+        try:
+            server_dirs.append(tempfile.TemporaryDirectory(prefix="nl_ca_"))
+            ca_root = Path(server_dirs[-1].name)
+            server_ca = make_test_ca(ca_root / "server")
+            ssl_context = ssl_server_context(server_ca["cert"], server_ca["key"])
+            # Gegenprobe: eine CA, die das Serverzertifikat nicht unterschrieben hat.
+            args.sd_ca = make_test_ca(ca_root / "fremd")["ca"] if args.tls_wrong_ca else server_ca["ca"]
+        except Exception as e:  # noqa: BLE001 - openssl fehlt oder scheitert: Voraussetzung
+            for d in server_dirs:
+                d.cleanup()
+            print(f"SMOKE FEHLER: Test-CA nicht erzeugt: {e}")
+            return 2
+        scheme_host = "https://localhost"
+        debug_lines_tls = [f"tls_ca = sd:/{SD_TEST_CA}"]
+    else:
+        debug_lines_tls = []
     debug_lines = []
     if args.autostart:
         debug_lines.append(f"autostart = {args.autostart}")
@@ -129,25 +171,28 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         debug_lines.append(f"{key.strip()} = {value.strip()}")
     if args.cover_server:
-        server_dir = tempfile.TemporaryDirectory(prefix="nl_covers_")
-        write_cover_server_files(Path(server_dir.name))
-        server, port = start_cover_server(Path(server_dir.name))
-        debug_lines += [f"cover_url = http://127.0.0.1:{port}", "fetch_covers = 1"]
+        server_dirs.append(tempfile.TemporaryDirectory(prefix="nl_covers_"))
+        write_cover_server_files(Path(server_dirs[-1].name))
+        server, port = start_cover_server(Path(server_dirs[-1].name), ssl_context)
+        servers.append(server)
+        debug_lines += [f"cover_url = {scheme_host}:{port}", "fetch_covers = 1"]
     if args.emu_server:
         if not ARGV_ECHO_DOL.is_file():
             print(f"SMOKE FEHLER: argv_echo.dol nicht gebaut: {ARGV_ECHO_DOL}")
             return 2
-        server_dir = tempfile.TemporaryDirectory(prefix="nl_emus_")
-        write_emu_server_files(Path(server_dir.name), ARGV_ECHO_DOL)
-        server, port = start_cover_server(Path(server_dir.name))
-        debug_lines += [f"emu_repo = http://127.0.0.1:{port}/hbb", f"emu_install = {EMU_SERVER_APP}"]
+        server_dirs.append(tempfile.TemporaryDirectory(prefix="nl_emus_"))
+        write_emu_server_files(Path(server_dirs[-1].name), ARGV_ECHO_DOL)
+        server, port = start_cover_server(Path(server_dirs[-1].name), ssl_context)
+        servers.append(server)
+        debug_lines += [f"emu_repo = {scheme_host}:{port}/hbb", f"emu_install = {EMU_SERVER_APP}"]
+    debug_lines += debug_lines_tls
     try:
         return _run(args, markers, debug_lines)
     finally:
-        if server is not None:
+        for server in servers:
             server.shutdown()
             server.server_close()
-        if server_dir is not None:
+        for server_dir in server_dirs:
             server_dir.cleanup()
 
 
@@ -169,6 +214,8 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             shutil.rmtree(sd / f"apps/{EMU_SERVER_APP}", ignore_errors=True)
             (sd / "newlauncher/emulators_installed.ini").unlink(missing_ok=True)
             set_ini_value(sd / "newlauncher/emulators.ini", "nes", "dol", f"sd:/apps/{EMU_SERVER_APP}/boot.dol")
+        if getattr(args, "sd_ca", None) is not None:
+            shutil.copyfile(args.sd_ca, sd / SD_TEST_CA)
         if debug_lines:
             with (sd / "newlauncher/config.ini").open("a", encoding="utf-8", newline="\n") as f:
                 f.write("[debug]\n" + "".join(line + "\n" for line in debug_lines))
@@ -177,6 +224,13 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
         print(f"SMOKE FEHLER: Dev-Ordner nicht vorbereitet (läuft Dolphin noch?): {e}")
         return 2
 
+    try:
+        return _run_dolphin(args, markers, user_dir)
+    finally:
+        (sd_sync_dir(user_dir) / SD_TEST_CA).unlink(missing_ok=True)  # Test-CA nicht auf der SD lassen
+
+
+def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -> int:
     try:
         proc = subprocess.Popen(dolphin_command(args.dolphin, user_dir, args.dol.resolve()))
     except OSError as e:

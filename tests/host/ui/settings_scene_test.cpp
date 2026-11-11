@@ -108,6 +108,22 @@ TEST_CASE_FIXTURE(Fixture, "A auf Emulatoren öffnet die Emulator-Verwaltung") {
     CHECK(r.command == AppCommand::OpenEmulators);
 }
 
+TEST_CASE_FIXTURE(Fixture, "A auf Über öffnet die Über-Seite (M11)") {
+    focusRow(SettingRow::About);
+    const SceneRequests r = press(Action::Confirm);
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::OpenAbout);
+    CHECK(std::string(appCommandName(AppCommand::OpenAbout)) == "open_about");
+}
+
+TEST_CASE_FIXTURE(Fixture, "Karte mit allen Zeilen passt in 480 Zeilen") {
+    ctx.height = 480.0f;
+    const gfx::Rect first = s.rowRect(ctx, 0);
+    const gfx::Rect last = s.rowRect(ctx, SettingsScene::kCount - 1);
+    CHECK(first.y >= 0.0f);
+    CHECK(last.y + last.h + 24.0f + 16.0f <= 480.0f + 0.5f);
+}
+
 TEST_CASE_FIXTURE(Fixture, "A auf Fehlende Cover laden") {
     focusRow(SettingRow::FetchCovers);
     const SceneRequests r = press(Action::Confirm);

@@ -313,7 +313,7 @@ sounds = 1
 [covers]
 region = auto
 [emulators]
-repo = http://hbb1.oscwii.org/hbb
+repo = https://hbb1.oscwii.org/hbb
 ```
 
 `emulators.ini` – `args` ist eine durch `|` getrennte Liste; jeder Eintrag wird ein `argv`-Element. `argv[0]` ist immer der DOL-Pfad. Platzhalter: `{dir}` (Ordner mit abschließendem `/`), `{file}` (Dateiname), `{path}` (vollständiger Pfad).
@@ -475,7 +475,7 @@ Ist ein Override gesetzt, aber nicht verfügbar, wird mit Schritt 2 weitergemach
 
 Ziel: Eine frische Karte mit nur dem Launcher kann alle Emulatoren selbst holen und später aktualisieren.
 
-- **Quelle:** Open-Shop-Channel-Repository über HTTP (kein TLS auf der Wii nötig). Basis-URL aus `config.ini` `[emulators] repo`, Standard `http://hbb1.oscwii.org/hbb`; `[debug] emu_repo` ersetzt sie im Smoke-Test.
+- **Quelle:** Open-Shop-Channel-Repository über HTTPS (wii_tls, M11), im Build ohne TLS über HTTP. Basis-URL aus `config.ini` `[emulators] repo`, Standard `https://hbb1.oscwii.org/hbb` (ab M11; Build ohne TLS: `http://…`); `[debug] emu_repo` ersetzt sie im Smoke-Test.
   - Liste: `<repo>/listv036.txt`. Pro App sieben Zeilen; die erste enthält Name, Zeitstempel (Unix), Icon-Größe, Entpackt-Größe, Typ, ZIP-Größe und weitere Felder, dann Anzeigename, Autor, Version, Größe, Kurz- und Langbeschreibung.
   - Paket: `<repo>/<name>/<name>.zip`, Pfade relativ zur SD-Wurzel (`apps/<name>/boot.dol` …).
 - **Katalog (fest im Code):**

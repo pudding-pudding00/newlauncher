@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 
+# devkitPro unter Windows: CMake läuft in MSYS2, der GCC ist nativ und schreibt Abhängigkeiten als C:/….
+# In Unterordnern (third_party/wii_tls, Mbed TLS) macht CMake daraus „_deps/…/C:/…“ und make bricht beim
+# zweiten Build ab. CMakes eigener Abhängigkeits-Scanner hat das Problem nicht (nur dort nötig).
+if(DEFINED ENV{MSYSTEM})  # vor project(): CMAKE_HOST_SYSTEM_NAME gibt es noch nicht
+    set(CMAKE_DEPENDS_USE_COMPILER FALSE)
+endif()
+
 project(newlauncher VERSION 0.0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -7,6 +14,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(cmake/NlFlags.cmake)
+include(cmake/NlAboutEntries.cmake)
 
 # Plattformfreier Kern (Spec 4.1): ohne libogc, auf dem Host getestet, auf der Wii mitgelinkt.
 add_library(nl_core STATIC
@@ -17,6 +25,8 @@ add_library(nl_core STATIC
     src/core/crash_report.cpp
     src/core/ini.cpp
     src/core/config.cpp
+    src/core/net_error.cpp
+    src/core/job_queue.cpp
     src/core/settings_model.cpp
     src/core/ui_sound.cpp
     src/core/synth.cpp
@@ -55,6 +65,7 @@ add_library(nl_core STATIC
     src/core/frag_list.cpp
     src/core/ios_info.cpp
     src/core/cover_download.cpp
+    src/core/lz77.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp
@@ -69,6 +80,7 @@ add_library(nl_core STATIC
     src/ui/home_menu.cpp
     src/ui/settings_scene.cpp
     src/ui/emulators_scene.cpp
+    src/ui/about_scene.cpp
     src/ui/debug_overlay.cpp
     src/ui/pointer_cursor.cpp
     src/ui/startup_scene.cpp
@@ -80,6 +92,9 @@ add_library(nl_core STATIC
     src/ui/launch_text.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# Komponentenliste der Seite „Über“ aus THIRD_PARTY.md (Spec v2 3.4), nicht doppelt gepflegt.
+nl_generate_about_entries(${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY.md ${CMAKE_CURRENT_BINARY_DIR}/generated/about_entries.inc)
+target_include_directories(nl_core PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 nl_apply_flags(nl_core)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
@@ -88,6 +103,22 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     pkg_check_modules(FREETYPE REQUIRED freetype2)
     # libpng für die Cover (pacman -S ppc-libpng); FreeType bringt sie meist schon mit.
     pkg_check_modules(PNG REQUIRED libpng)
+
+    # HTTPS über wii_tls (M11, Spec v2 4.1): vendort nach third_party/wii_tls (tools/vendor_wii_tls.py), holt
+    # Mbed TLS 4.1.1 per FetchContent mit festem SHA256. Ohne NL_TLS baut der Launcher wie bisher nur HTTP.
+    option(NL_TLS "HTTPS über wii_tls" ON)
+    if(NL_TLS)
+        set(WTLS_PLATFORM ogc CACHE STRING "" FORCE)
+        set(WTLS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(WTLS_BUILD_HWTEST OFF CACHE BOOL "" FORCE)
+        set(WTLS_BUILD_BENCH OFF CACHE BOOL "" FORCE)
+        set(WTLS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        # Mbed TLS 4.1.1 ruft cmake_minimum_required mit einer Version < 3.10 auf, neuere CMake-Versionen
+        # warnen dafür. Die Mindest-Policy-Version hebt nur den Upstream-Code an; danach wieder aus.
+        set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
+        add_subdirectory(third_party/wii_tls EXCLUDE_FROM_ALL)
+        unset(CMAKE_POLICY_VERSION_MINIMUM)
+    endif()
 
     # Schriften (Spec 3.7), per tools/subset_fonts.py auf Latin-1 + „…" reduziert.
     dkp_add_embedded_binary_library(nl_fonts
@@ -122,11 +153,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         ${CMAKE_CURRENT_SOURCE_DIR}/boot/source/*.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/boot/source/*.S)
     enable_language(ASM)
-    add_executable(nl_game_booter ${NL_GAME_BOOTER_SOURCES} boot/nl/exception_close.cpp)
+    # Eigener Code im Booter (M11): LZ77 aus core/ über eine C-Brücke, ohne Exceptions/RTTI wie nl_core.
+    set(NL_BOOTER_NL_SOURCES boot/nl/exception_close.cpp boot/nl/lz77_bridge.cpp boot/nl/progress.c
+        src/core/lz77.cpp src/core/assert.cpp)
+    add_executable(nl_game_booter ${NL_GAME_BOOTER_SOURCES} ${NL_BOOTER_NL_SOURCES})
+    set_source_files_properties(boot/nl/lz77_bridge.cpp src/core/lz77.cpp src/core/assert.cpp
+        TARGET_DIRECTORY nl_game_booter PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-fno-rtti")
     set_target_properties(nl_game_booter PROPERTIES OUTPUT_NAME game_booter)
     target_include_directories(nl_game_booter PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/boot/source ${CMAKE_CURRENT_SOURCE_DIR}/boot/include)
-    target_compile_definitions(nl_game_booter PRIVATE HAVE_CONFIG_H NL_VERSION="${PROJECT_VERSION}")
+        ${CMAKE_CURRENT_SOURCE_DIR}/boot/source ${CMAKE_CURRENT_SOURCE_DIR}/boot/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/boot ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    # NL_BOOTER_CHEATS=0: der Ocarina-Codehandler (Blob ohne Quelle) bleibt aus dem Build (M11, Spec v2 3.2).
+    target_compile_definitions(nl_game_booter PRIVATE HAVE_CONFIG_H NL_VERSION="${PROJECT_VERSION}" NL_BOOTER_CHEATS=0)
     target_compile_options(nl_game_booter PRIVATE $<$<COMPILE_LANGUAGE:C>:-std=gnu17> -O1 -Wall -Wextra -Wno-shift-negative-value
         -Wno-array-bounds -Wno-stringop-overflow -Wno-stringop-overread)
     target_link_options(nl_game_booter PRIVATE -Wl,--section-start,.init=0x80A80000)
@@ -135,6 +173,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         COMPILE_OPTIONS -Wa,-mno-regnames)
     ogc_create_dol(nl_game_booter)
     dkp_add_embedded_binary_library(nl_game_booter_blob nl_game_booter)
+
+    # Test-DOL für den Fortschrittsbalken des Booters (M11): prüft Pixel, meldet NL_PROGRESS ok.
+    add_executable(progress_probe tests/wii/progress_probe.c boot/nl/progress.c)
+    target_include_directories(progress_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/boot)
+    target_compile_options(progress_probe PRIVATE -Wall -Wextra)
+    ogc_create_dol(progress_probe)
 
     # Test-DOL für den Chainloader: gibt argc/argv über SYS_Report aus.
     add_executable(argv_echo tests/wii/argv_echo.c)
@@ -157,6 +201,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/png_decode.cpp
         src/platform/cover_worker.cpp
         src/platform/http_client.cpp
+        src/platform/net_service.cpp
         src/platform/net_worker.cpp
         src/platform/emu_worker.cpp
         src/platform/sd_space.cpp
@@ -175,6 +220,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
         target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} nl_game_booter_blob fat wiiuse bte asnd vorbisidec ogg)
         target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}")
+        if(NL_TLS)
+            target_link_libraries(${name} PRIVATE wiitls)
+            target_compile_definitions(${name} PRIVATE NL_TLS=1)
+        endif()
         nl_apply_flags(${name})
         ogc_create_dol(${name})
     endfunction()

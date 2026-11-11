@@ -8,12 +8,7 @@
 
 namespace nl::platform {
 
-namespace {
-constexpr u32 kStackBytes = 64 * 1024;
-constexpr u8 kPriority = 40;  // wie NetWorker: unter dem Haupt-Thread
-}  // namespace
-
-EmuWorker::EmuWorker() { LWP_MutexInit(&mutex_, false); }
+EmuWorker::EmuWorker(NetService& service) : service_(service) { LWP_MutexInit(&mutex_, false); }
 
 EmuWorker::~EmuWorker() {
     join();
@@ -26,11 +21,16 @@ bool EmuWorker::launch(Job job) {
     total_ = 0;
     appIndex_ = 0;
     step_ = static_cast<u8>(EmuStep::Download);
-    cancel_ = false;
     running_ = true;
-    if (LWP_CreateThread(&thread_, &EmuWorker::entry, this, nullptr, kStackBytes, kPriority) != 0) {
+    jobId_ = service_.submit([this](const volatile bool& cancel) {
+        if (job_ == Job::List)
+            runList(cancel);
+        else
+            runInstall(cancel);
         running_ = false;
-        thread_ = LWP_THREAD_NULL;
+    });
+    if (jobId_ == 0) {
+        running_ = false;
         return false;
     }
     return true;
@@ -58,12 +58,20 @@ bool EmuWorker::startInstall(FileSystem& fs, std::string repo, std::vector<OscAp
     return launch(Job::Install);
 }
 
-void EmuWorker::join() {
-    cancel_ = true;
-    if (thread_ != LWP_THREAD_NULL) {
-        LWP_JoinThread(thread_, nullptr);
-        thread_ = LWP_THREAD_NULL;
+void EmuWorker::cancel() {
+    if (jobId_ == 0) return;
+    service_.cancel(jobId_);
+    if (!service_.active(jobId_)) {  // wartete noch und ist jetzt entfernt: kein Lauf, der running_ zurücksetzt
+        jobId_ = 0;
+        running_ = false;
     }
+}
+
+void EmuWorker::join() {
+    if (jobId_ == 0) return;
+    service_.cancelAndWait(jobId_);
+    jobId_ = 0;
+    running_ = false;
 }
 
 std::optional<std::vector<OscApp>> EmuWorker::takeList() {
@@ -103,33 +111,30 @@ void EmuWorker::log(std::string line) {
     LWP_MutexUnlock(mutex_);
 }
 
-void* EmuWorker::entry(void* arg) {
-    auto* self = static_cast<EmuWorker*>(arg);
-    if (self->job_ == Job::List)
-        self->runList();
-    else
-        self->runInstall();
-    self->running_ = false;
-    return nullptr;
+HttpLog EmuWorker::logFn() {
+    return [this](std::string line) { log(std::move(line)); };
 }
 
 bool EmuWorker::network() {
-    s32 code = 0;
-    if (ensureNetwork(code)) return true;
+    if (service_.networkUp()) return true;
     char buf[32];
-    std::snprintf(buf, sizeof buf, "NL_NET_FAIL %d", static_cast<int>(code));
+    std::snprintf(buf, sizeof buf, "NL_NET_FAIL %d", static_cast<int>(service_.lastNetCode()));
     log(buf);
     return false;
 }
 
-void EmuWorker::runList() {
+void EmuWorker::runList(const volatile bool& cancel) {
     const auto url = parseUrl(oscListUrl(repo_));
     std::vector<u8> body;
-    if (!url || !network() || httpGet(*url, kMaxOscListBytes, body, &cancel_) != HttpOutcome::Ok) {
+    listError_ = static_cast<u8>(NetError::Other);
+    const auto fail = [this](NetError e) {
+        listError_ = static_cast<u8>(e);
         listFailed_ = true;
         log("NL_EMU_LIST fail");
-        return;
-    }
+    };
+    if (!url || !network()) return fail(NetError::Other);
+    const HttpResult r = httpGet(*url, kMaxOscListBytes, body, &cancel, logFn());
+    if (r.outcome != HttpOutcome::Ok) return fail(r.outcome == HttpOutcome::NotFound ? NetError::Http : r.error);
     auto apps = parseOscList(std::string_view(reinterpret_cast<const char*>(body.data()), body.size()));
     if (apps.empty()) {
         listFailed_ = true;
@@ -142,16 +147,16 @@ void EmuWorker::runList() {
     LWP_MutexUnlock(mutex_);
 }
 
-void EmuWorker::runInstall() {
+void EmuWorker::runInstall(const volatile bool& cancel) {
     const bool net = network();
     EmuInstallIo io;
-    io.download = [this, net](const std::string& url, const std::string& dest, u32 maxBytes) {
+    io.download = [this, net, &cancel](const std::string& url, const std::string& dest, u32 maxBytes) {
         const auto u = parseUrl(url);
         if (!net || !u) return HttpOutcome::Failed;
-        return httpDownload(*u, dest, maxBytes, &cancel_, &done_);
+        return httpDownload(*u, dest, maxBytes, &cancel, &done_, logFn()).outcome;
     };
     io.freeBytes = [] { return sdFreeBytes(); };
-    io.cancelled = [this] { return cancel_; };
+    io.cancelled = [&cancel] { return cancel; };
     io.log = [this](std::string line) { log(std::move(line)); };
     io.progress = [this](EmuStep s, u32 done, u32 total) {
         step_ = static_cast<u8>(s);
@@ -164,7 +169,7 @@ void EmuWorker::runInstall() {
         current_ = apps_[i].name;
         LWP_MutexUnlock(mutex_);
         EmuInstallResult r;
-        if (cancel_)
+        if (cancel)
             r = EmuInstallResult{EmuInstallError::Cancelled, "queue"};
         else
             r = installEmulator(*fs_, io, repo_, apps_[i]);

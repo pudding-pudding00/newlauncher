@@ -15,7 +15,10 @@
 
 namespace nl {
 
-inline constexpr std::string_view kGametdbCoverBase = "http://art.gametdb.com/wii/cover";
+// GameTDB: HTTPS mit TLS-Build, sonst HTTP (M11 Task 8: 200 image/png über HTTPS geprüft, 2026-11-11).
+inline constexpr std::string_view kGametdbCoverBaseHttps = "https://art.gametdb.com/wii/cover";
+inline constexpr std::string_view kGametdbCoverBaseHttp = "http://art.gametdb.com/wii/cover";
+constexpr std::string_view defaultCoverBase(bool tls) { return tls ? kGametdbCoverBaseHttps : kGametdbCoverBaseHttp; }
 inline constexpr u32 kMaxCoverDownloadBytes = 2u * 1024 * 1024;
 
 // Feste Region zuerst, sonst die Systemregion; danach EN, US, JA ohne Doppelte.

@@ -1,6 +1,7 @@
 #include "core/config.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <vector>
 
 #include "core/emu_catalog.hpp"
@@ -36,7 +37,21 @@ int parseClock(std::string_view hhmm, int fallback) {
     return h * 60 + mm;
 }
 
-Config configFromIni(const IniDoc& ini) {
+namespace {
+// Offizielle Quelle (http- oder https-Form, Groß-/Kleinschreibung egal) → Standard des Builds; sonst unverändert.
+std::string sourceForBuild(std::string_view value, std::string_view http, std::string_view https,
+                           std::string_view buildDefault) {
+    const auto same = [](std::string_view a, std::string_view b) {
+        return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
+                   return std::tolower(static_cast<unsigned char>(x)) == std::tolower(static_cast<unsigned char>(y));
+               });
+    };
+    if (!parseUrl(value) || same(value, http) || same(value, https)) return std::string(buildDefault);
+    return std::string(value);
+}
+}  // namespace
+
+Config configFromIni(const IniDoc& ini, bool tls) {
     Config c;
     const std::string_view lang = ini.get("general", "language");
     if (lang == "de") c.language = Config::Language::De;
@@ -60,9 +75,9 @@ Config configFromIni(const IniDoc& ini) {
         if (region == allowed) c.coverRegion = std::string(region);
     }
     const std::string_view repo = trim(ini.get("emulators", "repo"));
-    c.emulatorRepo = parseUrl(repo) ? std::string(repo) : std::string(kDefaultEmuRepo);
+    c.emulatorRepo = sourceForBuild(repo, kDefaultEmuRepoHttp, kDefaultEmuRepoHttps, defaultEmuRepo(tls));
     const std::string_view coverBase = trim(ini.get("covers", "base"));
-    c.coverBase = parseUrl(coverBase) ? std::string(coverBase) : std::string(kGametdbCoverBase);
+    c.coverBase = sourceForBuild(coverBase, kGametdbCoverBaseHttp, kGametdbCoverBaseHttps, defaultCoverBase(tls));
     c.debugEmuRepo = std::string(trim(ini.get("debug", "emu_repo")));
     c.debugEmuInstall = std::string(trim(ini.get("debug", "emu_install")));
     c.debugAutostart = std::string(ini.get("debug", "autostart"));  // nur für Tests (Spec 9)
@@ -191,7 +206,7 @@ std::string configToIniText(const Config& c, std::string_view previousText) {
     return result;
 }
 
-std::string defaultConfigText() {
+std::string defaultConfigText(bool tls) {
     return "[general]\n"
            "language = auto\n"
            "library = usb\n"
@@ -207,7 +222,8 @@ std::string defaultConfigText() {
            "[covers]\n"
            "region = auto\n"
            "[emulators]\n"
-           "repo = http://hbb1.oscwii.org/hbb\n";
+           "repo = " +
+           std::string(defaultEmuRepo(tls)) + "\n";
 }
 
 }  // namespace nl

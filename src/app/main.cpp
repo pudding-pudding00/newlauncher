@@ -79,6 +79,11 @@ namespace {
 constexpr float kFrameMs = 1000.0f / 60.0f;
 constexpr const char* kConfigDir = "sd:/newlauncher";
 constexpr const char* kConfigPath = "sd:/newlauncher/config.ini";
+#ifdef NL_TLS
+constexpr bool kHasTls = true;  // Standardquellen über HTTPS (M11)
+#else
+constexpr bool kHasTls = false;
+#endif
 constexpr const char* kFavoritesPath = "sd:/newlauncher/favorites.ini";
 constexpr const char* kHistoryPath = "sd:/newlauncher/history.ini";
 constexpr const char* kEmulatorsPath = "sd:/newlauncher/emulators.ini";
@@ -121,7 +126,7 @@ bool writeText(nl::FileSystem& fs, const char* path, const std::string& text) {
 
 // text erhält den gelesenen bzw. neu geschriebenen Inhalt (Grundlage für configToIniText).
 nl::Config loadConfig(nl::FileSystem& fs, bool sdOk, std::string& text) {
-    text = nl::defaultConfigText();
+    text = nl::defaultConfigText(kHasTls);
     if (!sdOk) {
         nl::log::line("NL_CONFIG default (keine SD)");
         return nl::Config{};
@@ -131,10 +136,10 @@ nl::Config loadConfig(nl::FileSystem& fs, bool sdOk, std::string& text) {
         const auto& b = data.value();
         nl::log::line("NL_CONFIG ok");
         text.assign(reinterpret_cast<const char*>(b.data()), b.size());
-        return nl::configFromIni(nl::IniDoc::parse(text));
+        return nl::configFromIni(nl::IniDoc::parse(text), kHasTls);
     }
     static_cast<void>(fs.makeDirs(kConfigDir));
-    writeText(fs, kConfigPath, nl::defaultConfigText());
+    writeText(fs, kConfigPath, nl::defaultConfigText(kHasTls));
     nl::log::line("NL_CONFIG default");
     return nl::Config{};
 }

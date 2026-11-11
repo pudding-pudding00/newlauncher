@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Callable, NamedTuple
 from urllib.request import urlopen
 
-DEFAULT_REPO = "http://hbb1.oscwii.org/hbb"
+DEFAULT_REPO = "https://hbb1.oscwii.org/hbb"  # M11: Liste über HTTPS identisch (2026-11-11)
 INSTALLED_INI = "newlauncher/emulators_installed.ini"
 STAGE_DIR = "newlauncher/tmp"
 _INI_HEADER = "; von newlauncher geschrieben (Spec 6.9)\n"

@@ -163,15 +163,15 @@ TEST_CASE("configFromIni: [debug] perf") {
 }
 
 TEST_CASE("configFromIni: [emulators] repo, fehlt oder weder http:// noch https:// → Standard") {
-    CHECK(configFromIni(IniDoc::parse("")).emulatorRepo == "http://hbb1.oscwii.org/hbb");
+    CHECK(configFromIni(IniDoc::parse("")).emulatorRepo == "https://hbb1.oscwii.org/hbb");
     CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = http://example.org/hbb\n")).emulatorRepo ==
           "http://example.org/hbb");
     CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = https://x/hbb\n")).emulatorRepo == "https://x/hbb");
     CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = ftp://x/hbb\n")).emulatorRepo ==
-          "http://hbb1.oscwii.org/hbb");
+          "https://hbb1.oscwii.org/hbb");
     CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = https://\n")).emulatorRepo ==
-          "http://hbb1.oscwii.org/hbb");
-    CHECK(defaultConfigText().find("[emulators]\nrepo = http://hbb1.oscwii.org/hbb\n") != std::string::npos);
+          "https://hbb1.oscwii.org/hbb");
+    CHECK(defaultConfigText().find("[emulators]\nrepo = https://hbb1.oscwii.org/hbb\n") != std::string::npos);
 }
 
 TEST_CASE("configFromIni: [debug] emu_repo und emu_install") {
@@ -202,15 +202,44 @@ TEST_CASE("configFromIni: [debug] wii_dry_run") {
 TEST_CASE("configFromIni: [debug] tls_ca und [covers] base (M11)") {
     const Config d = configFromIni(IniDoc::parse(""));
     CHECK(d.debugTlsCa.empty());
-    CHECK(d.coverBase == kGametdbCoverBase);
+    CHECK(d.coverBase == defaultCoverBase(true));
     const Config c = configFromIni(IniDoc::parse(
         "[debug]\ntls_ca = sd:/apps/newlauncher/test-ca.pem\n[covers]\nbase = https://covers.example/wii/cover\n"));
     CHECK(c.debugTlsCa == "sd:/apps/newlauncher/test-ca.pem");
     CHECK(c.coverBase == "https://covers.example/wii/cover");
-    CHECK(configFromIni(IniDoc::parse("[covers]\nbase = ftp://x/\n")).coverBase == kGametdbCoverBase);
+    CHECK(configFromIni(IniDoc::parse("[covers]\nbase = ftp://x/\n")).coverBase == defaultCoverBase(true));
 }
 
 TEST_CASE("configFromIni: [debug] open_scene (M11)") {
     CHECK(configFromIni(IniDoc::parse("")).debugOpenScene.empty());
     CHECK(configFromIni(IniDoc::parse("[debug]\nopen_scene = about\n")).debugOpenScene == "about");
 }
+
+TEST_CASE("Standardquellen: HTTPS mit TLS, HTTP ohne (M11 Task 8)") {
+    const Config on = configFromIni(IniDoc::parse(""), true);
+    CHECK(on.emulatorRepo == "https://hbb1.oscwii.org/hbb");
+    CHECK(on.coverBase == "https://art.gametdb.com/wii/cover");
+    const Config off = configFromIni(IniDoc::parse(""), false);
+    CHECK(off.emulatorRepo == "http://hbb1.oscwii.org/hbb");
+    CHECK(off.coverBase == "http://art.gametdb.com/wii/cover");
+    CHECK(defaultConfigText(true).find("repo = https://hbb1.oscwii.org/hbb\n") != std::string::npos);
+    CHECK(defaultConfigText(false).find("repo = http://hbb1.oscwii.org/hbb\n") != std::string::npos);
+    CHECK(defaultEmuRepo(true) == "https://hbb1.oscwii.org/hbb");
+    CHECK(defaultCoverBase(false) == "http://art.gametdb.com/wii/cover");
+}
+
+TEST_CASE("Standardquellen: alte Standard-URL in config.ini folgt dem Build (M11 Task 8)") {
+    // M10 schrieb "repo = http://hbb1.oscwii.org/hbb" aus; ein TLS-Build nimmt dafür HTTPS, ein Build ohne TLS HTTP.
+    CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = http://hbb1.oscwii.org/hbb\n"), true).emulatorRepo ==
+          "https://hbb1.oscwii.org/hbb");
+    CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = https://hbb1.oscwii.org/hbb\n"), false).emulatorRepo ==
+          "http://hbb1.oscwii.org/hbb");
+    CHECK(configFromIni(IniDoc::parse("[covers]\nbase = http://art.gametdb.com/wii/cover\n"), true).coverBase ==
+          "https://art.gametdb.com/wii/cover");
+    // Fremde Quellen bleiben, wie sie sind – auch http:// mit TLS-Build (kein stilles Umschreiben).
+    CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = http://example.org/hbb\n"), true).emulatorRepo ==
+          "http://example.org/hbb");
+    CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = https://example.org/hbb\n"), false).emulatorRepo ==
+          "https://example.org/hbb");
+}
+

@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "core/cover_download.hpp"
+#include "core/emu_catalog.hpp"
 #include "core/ini.hpp"
 #include "core/theme.hpp"
 
@@ -23,8 +24,8 @@ struct Config {
     int musicVolume = 60;
     bool sounds = true;
     std::string coverRegion = "auto";
-    std::string emulatorRepo = "http://hbb1.oscwii.org/hbb";  // [emulators] repo (Spec 6.9), http:// oder https://
-    std::string coverBase = std::string(kGametdbCoverBase);   // [covers] base (M11): Cover-Quelle, http:// oder https://
+    std::string emulatorRepo = std::string(defaultEmuRepo(true));  // [emulators] repo (Spec 6.9), http:// oder https://
+    std::string coverBase = std::string(defaultCoverBase(true));   // [covers] base (M11): Cover-Quelle, http:// oder https://
     std::string debugAutostart;  // [debug] autostart: Spielschlüssel, der nach NL_READY startet
     std::string debugCoverUrl;   // [debug] cover_url: ersetzt die GameTDB-Basis (Smoke-Test)
     bool debugFetchCovers = false;  // [debug] fetch_covers = 1: „Fehlende Cover laden“ nach NL_READY
@@ -38,8 +39,10 @@ struct Config {
     std::string debugEmuInstall;    // [debug] emu_install: Komma-Liste, nach NL_READY installieren (Smoke-Test)
 };
 
-Config configFromIni(const IniDoc& ini);
-std::string defaultConfigText();
+// tls: Build mit HTTPS (NL_TLS). Bestimmt die Standardquellen; die offiziellen Quellen in http- oder https-Form
+// folgen dem Build (M10 schrieb die HTTP-Form aus), fremde Quellen bleiben unverändert.
+Config configFromIni(const IniDoc& ini, bool tls = true);
+std::string defaultConfigText(bool tls = true);
 int parseClock(std::string_view hhmm, int fallback);  // "19:00" → 1140
 std::string formatClock(int minuteOfDay);              // 1140 → "19:00"
 

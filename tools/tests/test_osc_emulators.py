@@ -174,5 +174,12 @@ class InstallEmulatorTest(unittest.TestCase):
         self.assertEqual(self._files(), set())
 
 
+class DefaultRepoTest(unittest.TestCase):
+    def test_default_repo_is_https(self):
+        # M11 Task 8: OSC liefert die Liste über HTTPS identisch (sha256 am 2026-11-11 verglichen).
+        import osc_emulators
+        self.assertEqual(osc_emulators.DEFAULT_REPO, "https://hbb1.oscwii.org/hbb")
+
+
 if __name__ == "__main__":
     unittest.main()

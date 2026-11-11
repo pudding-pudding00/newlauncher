@@ -49,6 +49,7 @@ add_library(nl_core STATIC
     src/core/zip_reader.cpp
     src/core/emu_catalog.cpp
     src/core/emu_install.cpp
+    src/core/nin_cfg.cpp
     src/core/cover_download.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp

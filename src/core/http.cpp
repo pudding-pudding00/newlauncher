@@ -50,12 +50,19 @@ std::optional<u32> parseHex(std::string_view s) {
 }  // namespace
 
 std::optional<Url> parseUrl(std::string_view url) {
-    constexpr std::string_view kScheme = "http://";
-    if (url.substr(0, kScheme.size()) != kScheme) return std::nullopt;
-    url.remove_prefix(kScheme.size());
+    const auto sep = url.find("://");
+    if (sep == std::string_view::npos) return std::nullopt;
+    Url out;
+    const std::string_view scheme = url.substr(0, sep);
+    if (iequals(scheme, "https")) {
+        out.tls = true;
+        out.port = 443;
+    } else if (!iequals(scheme, "http")) {
+        return std::nullopt;
+    }
+    url.remove_prefix(sep + 3);
     const auto slash = url.find('/');
     std::string_view hostPort = url.substr(0, slash);
-    Url out;
     out.path = slash == std::string_view::npos ? "/" : std::string(url.substr(slash));
     if (const auto colon = hostPort.find(':'); colon != std::string_view::npos) {
         const auto port = parseDec(hostPort.substr(colon + 1));
@@ -70,7 +77,7 @@ std::optional<Url> parseUrl(std::string_view url) {
 
 std::string buildGetRequest(const Url& url) {
     std::string r = "GET " + url.path + " HTTP/1.1\r\nHost: " + url.host;
-    if (url.port != 80) r += ":" + std::to_string(url.port);
+    if (url.port != (url.tls ? 443 : 80)) r += ":" + std::to_string(url.port);
     r += "\r\nUser-Agent: newlauncher\r\nConnection: close\r\n\r\n";
     return r;
 }

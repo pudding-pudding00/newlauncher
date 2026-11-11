@@ -36,6 +36,23 @@ const char* tr(Str s) {
     return gLang == Lang::En ? kEn[i] : kDe[i];
 }
 
+Str netErrorText(NetError e) {
+    switch (e) {
+        case NetError::None: return Str::NetErrNone;
+        case NetError::Dns: return Str::NetErrDns;
+        case NetError::Connect: return Str::NetErrConnect;
+        case NetError::Timeout: return Str::NetErrTimeout;
+        case NetError::Cert: return Str::NetErrCert;
+        case NetError::Clock: return Str::NetErrClock;
+        case NetError::Handshake: return Str::NetErrHandshake;
+        case NetError::NoMem: return Str::NetErrNoMem;
+        case NetError::TlsMissing: return Str::NetErrTlsMissing;
+        case NetError::Http: return Str::NetErrHttp;
+        case NetError::Other: break;
+    }
+    return Str::NetErrOther;
+}
+
 void setLanguage(Lang l) { gLang = l; }
 Lang language() { return gLang; }
 

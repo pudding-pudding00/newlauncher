@@ -1,4 +1,5 @@
 #include "core/config.hpp"
+#include "core/cover_download.hpp"
 #include <doctest/doctest.h>
 using namespace nl;
 
@@ -161,11 +162,14 @@ TEST_CASE("configFromIni: [debug] perf") {
     CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nperf = 1\n")).debugPerf);
 }
 
-TEST_CASE("configFromIni: [emulators] repo, fehlt oder kein http:// → Standard") {
+TEST_CASE("configFromIni: [emulators] repo, fehlt oder weder http:// noch https:// → Standard") {
     CHECK(configFromIni(IniDoc::parse("")).emulatorRepo == "http://hbb1.oscwii.org/hbb");
     CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = http://example.org/hbb\n")).emulatorRepo ==
           "http://example.org/hbb");
-    CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = https://x/hbb\n")).emulatorRepo ==
+    CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = https://x/hbb\n")).emulatorRepo == "https://x/hbb");
+    CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = ftp://x/hbb\n")).emulatorRepo ==
+          "http://hbb1.oscwii.org/hbb");
+    CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = https://\n")).emulatorRepo ==
           "http://hbb1.oscwii.org/hbb");
     CHECK(defaultConfigText().find("[emulators]\nrepo = http://hbb1.oscwii.org/hbb\n") != std::string::npos);
 }
@@ -193,6 +197,17 @@ TEST_CASE("configFromIni: [debug] wii_dry_run") {
     CHECK_FALSE(configFromIni(IniDoc::parse("")).debugWiiDryRun);
     CHECK(configFromIni(IniDoc::parse("[debug]\nwii_dry_run = 1\n")).debugWiiDryRun);
     CHECK_FALSE(configFromIni(IniDoc::parse("[debug]\nwii_dry_run = 2\n")).debugWiiDryRun);
+}
+
+TEST_CASE("configFromIni: [debug] tls_ca und [covers] base (M11)") {
+    const Config d = configFromIni(IniDoc::parse(""));
+    CHECK(d.debugTlsCa.empty());
+    CHECK(d.coverBase == kGametdbCoverBase);
+    const Config c = configFromIni(IniDoc::parse(
+        "[debug]\ntls_ca = sd:/apps/newlauncher/test-ca.pem\n[covers]\nbase = https://covers.example/wii/cover\n"));
+    CHECK(c.debugTlsCa == "sd:/apps/newlauncher/test-ca.pem");
+    CHECK(c.coverBase == "https://covers.example/wii/cover");
+    CHECK(configFromIni(IniDoc::parse("[covers]\nbase = ftp://x/\n")).coverBase == kGametdbCoverBase);
 }
 
 TEST_CASE("configFromIni: [debug] open_scene (M11)") {

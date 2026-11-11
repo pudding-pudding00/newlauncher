@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "core/emu_catalog.hpp"
+#include "core/http.hpp"
 
 namespace nl {
 
@@ -59,7 +60,9 @@ Config configFromIni(const IniDoc& ini) {
         if (region == allowed) c.coverRegion = std::string(region);
     }
     const std::string_view repo = trim(ini.get("emulators", "repo"));
-    c.emulatorRepo = repo.rfind("http://", 0) == 0 && repo.size() > 7 ? std::string(repo) : std::string(kDefaultEmuRepo);
+    c.emulatorRepo = parseUrl(repo) ? std::string(repo) : std::string(kDefaultEmuRepo);
+    const std::string_view coverBase = trim(ini.get("covers", "base"));
+    c.coverBase = parseUrl(coverBase) ? std::string(coverBase) : std::string(kGametdbCoverBase);
     c.debugEmuRepo = std::string(trim(ini.get("debug", "emu_repo")));
     c.debugEmuInstall = std::string(trim(ini.get("debug", "emu_install")));
     c.debugAutostart = std::string(ini.get("debug", "autostart"));  // nur für Tests (Spec 9)
@@ -70,6 +73,7 @@ Config configFromIni(const IniDoc& ini) {
     c.debugIgnoreAhbprot = parseIntIn(ini.get("debug", "ignore_ahbprot"), 0, 1, 0) == 1;
     c.debugWiiDryRun = parseIntIn(ini.get("debug", "wii_dry_run"), 0, 1, 0) == 1;
     c.debugOpenScene = std::string(trim(ini.get("debug", "open_scene")));
+    c.debugTlsCa = std::string(trim(ini.get("debug", "tls_ca")));
     return c;
 }
 

@@ -25,6 +25,7 @@ add_library(nl_core STATIC
     src/core/crash_report.cpp
     src/core/ini.cpp
     src/core/config.cpp
+    src/core/net_error.cpp
     src/core/settings_model.cpp
     src/core/ui_sound.cpp
     src/core/synth.cpp

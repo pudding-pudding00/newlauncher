@@ -1,5 +1,5 @@
 #pragma once
-// Minimales HTTP/1.1 für den Cover-Download (Spec 6.4): GET-Anfrage bauen, Antwort schrittweise parsen.
+// Minimales HTTP/1.1 für Cover und Emulatoren (Spec 6.4, über TLS ab M11): GET-Anfrage bauen, Antwort schrittweise parsen.
 
 #include <functional>
 #include <optional>
@@ -19,9 +19,11 @@ struct Url {
     std::string host;
     u16 port = 80;
     std::string path;
+    bool tls = false;  // https:// (M11)
 };
 
-std::optional<Url> parseUrl(std::string_view url);  // nur http://, Port optional
+// http:// (Port 80) und https:// (Port 443), Schema ohne Groß-/Kleinschreibung, Port 1..65535 optional.
+std::optional<Url> parseUrl(std::string_view url);
 std::string buildGetRequest(const Url& url);
 
 class HttpParser {

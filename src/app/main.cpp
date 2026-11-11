@@ -600,7 +600,7 @@ int main(int, char**) {
         for (std::string_view r : nl::coverRegions(config.coverRegion, nl::platform::systemCoverRegion()))
             regions.emplace_back(r);
         const std::string base =
-            config.debugCoverUrl.empty() ? std::string(nl::kGametdbCoverBase) : config.debugCoverUrl;
+            config.debugCoverUrl.empty() ? config.coverBase : config.debugCoverUrl;
         if (!net.start(fs, libRoot, std::move(jobs), std::move(regions), base)) {
             nl::log::line("NL_WARN Netz-Thread startet nicht");
             return;

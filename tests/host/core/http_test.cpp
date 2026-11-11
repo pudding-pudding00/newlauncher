@@ -22,10 +22,41 @@ TEST_CASE("parseUrl") {
     u = parseUrl("http://host");
     REQUIRE(u.has_value());
     CHECK(u->path == "/");
-    CHECK_FALSE(parseUrl("https://a").has_value());
+    CHECK_FALSE(u->tls);
     CHECK_FALSE(parseUrl("http://").has_value());
     CHECK_FALSE(parseUrl("http://h:99999/").has_value());
     CHECK_FALSE(parseUrl("http://h:abc/").has_value());
+}
+
+TEST_CASE("parseUrl: https:// (M11, Spec v2 4.2)") {
+    auto u = parseUrl("https://h/x");
+    REQUIRE(u.has_value());
+    CHECK(u->tls);
+    CHECK(u->host == "h");
+    CHECK(u->port == 443);
+    CHECK(u->path == "/x");
+    u = parseUrl("https://h:8443/x");
+    REQUIRE(u.has_value());
+    CHECK(u->tls);
+    CHECK(u->port == 8443);
+    u = parseUrl("HTTPS://H/x");  // Schema ohne Groß-/Kleinschreibung, Host unverändert
+    REQUIRE(u.has_value());
+    CHECK(u->tls);
+    CHECK(u->host == "H");
+    u = parseUrl("HTTP://h/");
+    REQUIRE(u.has_value());
+    CHECK_FALSE(u->tls);
+    CHECK_FALSE(parseUrl("https://").has_value());
+    CHECK_FALSE(parseUrl("https:/x").has_value());
+    CHECK_FALSE(parseUrl("https://h:0/").has_value());
+    CHECK_FALSE(parseUrl("https://h:70000/").has_value());
+    CHECK_FALSE(parseUrl("ftp://h/").has_value());
+}
+
+TEST_CASE("buildGetRequest: Standardport je Schema ohne Angabe im Host") {
+    CHECK(buildGetRequest(*parseUrl("https://h/x")).find("Host: h\r\n") != std::string::npos);
+    CHECK(buildGetRequest(*parseUrl("https://h:8443/x")).find("Host: h:8443\r\n") != std::string::npos);
+    CHECK(buildGetRequest(*parseUrl("https://h:80/x")).find("Host: h:80\r\n") != std::string::npos);
 }
 
 TEST_CASE("buildGetRequest") {

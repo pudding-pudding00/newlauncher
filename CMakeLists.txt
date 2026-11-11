@@ -53,6 +53,7 @@ add_library(nl_core STATIC
     src/core/fat_chain.cpp
     src/core/wbfs_map.cpp
     src/core/frag_list.cpp
+    src/core/ios_info.cpp
     src/core/cover_download.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp

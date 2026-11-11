@@ -455,7 +455,12 @@ int main(int, char**) {
             audio.play(nl::UiSound::Error);
         };
         const nl::N64Inputs inputs = n64Inputs(game);
-        auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs, ahbprotOff || config.debugIgnoreAhbprot);
+#ifdef NL_SELFTEST
+        const bool hwAccess = false;  // Der Selbsttest chainloadet nie: der GC-Start endet im Dialog „Kein Hardwarezugriff“
+#else
+        const bool hwAccess = ahbprotOff || config.debugIgnoreAhbprot;
+#endif
+        auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs, hwAccess);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Dol && !launchAllowed) {
             target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(
                 {nl::LaunchFailure::NoMemory, nl::ui::tr(nl::ui::Str::NoMemory)});

@@ -29,7 +29,9 @@ CONFIG_INI = (
 # Alle GX-Konsolen starten die Test-DOL argv_echo; sie meldet die übergebenen argv im Dolphin-Log.
 EMULATORS_INI = "".join(
     f"[{c}]\ndol = sd:/apps/argv_echo/boot.dol\nargs = {{dir}}|{{file}}\n" for c in ["nes", "snes", "gb", "gbc", "gba"]
-) + "[n64_not64]\ndol = sd:/apps/argv_echo/boot.dol\nargs = {path}\n"  # [n64_wii64] bleibt Standard: DOL fehlt
+) + "[n64_not64]\ndol = sd:/apps/argv_echo/boot.dol\nargs = {path}\n" + (  # [n64_wii64] bleibt Standard: DOL fehlt
+    "[nintendont]\ndol = sd:/apps/argv_echo/boot.dol\n"  # argv_echo trägt die Versionsangabe 6.509
+)
 
 # Mario Kart 64 läuft über den Testkanal aus tools/wii_title.py (VC-Weg), Super Mario 64 über Not64.
 N64_VC_INI = "[map]\nn64/Mario Kart 64 (Europe).z64 = 000100014E4C5443\n"

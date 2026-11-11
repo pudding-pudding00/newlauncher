@@ -198,7 +198,7 @@ void selftestAfterFrame(int frame, const SelftestView& v) {
         case 260: NL_ASSERT(v.scenes.depth() == 2); break;  // Details „Metroid Prime", Fokus auf „Starten"
         case 276:
             NL_ASSERT(v.scenes.depth() == 3);
-            NL_ASSERT(v.scenes.top() == v.dialog);  // NL_PREFLIGHT_FAIL Unsupported gc/…, Dialog offen
+            NL_ASSERT(v.scenes.top() == v.dialog);  // NL_PREFLIGHT_FAIL AhbProt (Selbsttest erzwingt es), Dialog offen
             break;
         case 304: NL_ASSERT(v.scenes.depth() == 2); break;
         case 310: NL_ASSERT(v.scenes.depth() == 1); break;

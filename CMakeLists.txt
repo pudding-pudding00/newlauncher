@@ -130,6 +130,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/cover_worker.cpp
         src/platform/http_client.cpp
         src/platform/net_worker.cpp
+        src/platform/emu_worker.cpp
+        src/platform/sd_space.cpp
         src/platform/audio.cpp
         src/platform/music.cpp
         src/app/cover_service.cpp

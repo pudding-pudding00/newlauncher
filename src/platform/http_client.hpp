@@ -1,6 +1,7 @@
 #pragma once
 // HTTP-GET über die IOS-Sockets (Spec 6.4). Nur im Netz-Thread aufrufen; net_init muss gelaufen sein.
 
+#include <string>
 #include <vector>
 
 #include "core/http.hpp"
@@ -13,5 +14,13 @@ namespace nl::platform {
 // cancel (optional) wird beim Warten etwa alle 100 ms geprüft; gesetzt → Failed. Die DNS-Abfrage selbst ist nicht
 // unterbrechbar.
 HttpOutcome httpGet(const Url& url, u32 maxBody, std::vector<u8>& body, const volatile bool* cancel = nullptr);
+
+// Wie httpGet, schreibt den Body aber per fopen/fwrite (64-KB-Puffer) nach destFile ("sd:/…"). received zählt die
+// Body-Bytes mit (für die Fortschrittsanzeige). Bei jedem Ergebnis außer Ok wird destFile gelöscht.
+HttpOutcome httpDownload(const Url& url, const std::string& destFile, u32 maxBody, const volatile bool* cancel,
+                         volatile u32* received);
+
+// net_init einmal pro Sitzung (drei Versuche); false mit code bei Fehlschlag. Nur aus einem Netz-Thread zur Zeit.
+bool ensureNetwork(s32& code);
 
 }  // namespace nl::platform

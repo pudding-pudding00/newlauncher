@@ -107,7 +107,10 @@ bool HttpParser::parseHead() {
 }
 
 bool HttpParser::append(const u8* p, std::size_t n) {
-    if (body_.size() + n > maxBody_) return false;
+    if (u64{received_} + n > maxBody_) return false;
+    received_ += u32(n);
+    if (n == 0) return true;
+    if (sink_) return sink_(std::span<const u8>(p, n));
     body_.insert(body_.end(), p, p + n);
     return true;
 }
@@ -139,9 +142,9 @@ HttpParser::State HttpParser::feed(std::span<const u8> data) {
 
 HttpParser::State HttpParser::feedBody(const u8* p, std::size_t n) {
     if (!chunked_) {
-        if (length_) n = std::min<std::size_t>(n, *length_ - body_.size());
+        if (length_) n = std::min<std::size_t>(n, *length_ - received_);
         if (!append(p, n)) return fail();
-        if (length_ && body_.size() == *length_) state_ = State::Done;
+        if (length_ && received_ == *length_) state_ = State::Done;
         return state_;
     }
     while (n > 0 && state_ == State::Body) {
@@ -164,7 +167,7 @@ HttpParser::State HttpParser::feedBody(const u8* p, std::size_t n) {
                 const auto size = parseHex(line);
                 if (!size) return fail();
                 if (*size == 0) chunk_ = Chunk::Trailer;
-                else if (body_.size() + *size > maxBody_) return fail();
+                else if (u64{received_} + *size > maxBody_) return fail();
                 else chunkLeft_ = *size, chunk_ = Chunk::Data;
             }
             line_.clear();

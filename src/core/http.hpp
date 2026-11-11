@@ -1,6 +1,7 @@
 #pragma once
 // Minimales HTTP/1.1 für den Cover-Download (Spec 6.4): GET-Anfrage bauen, Antwort schrittweise parsen.
 
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -33,6 +34,9 @@ public:
     State finish();  // Verbindung geschlossen
     int status() const { return status_; }
     std::span<const u8> body() const { return body_; }
+    // Body-Bytes gehen an die Senke statt in body(); false von der Senke → Error. maxBody gilt weiter.
+    void setSink(std::function<bool(std::span<const u8>)> sink) { sink_ = std::move(sink); }
+    u32 received() const { return received_; }  // Body-Bytes bisher (mit und ohne Senke)
     State state() const { return state_; }
 
 private:
@@ -50,6 +54,8 @@ private:
     bool chunked_ = false;
     std::optional<u32> length_;
     std::vector<u8> body_;
+    std::function<bool(std::span<const u8>)> sink_;
+    u32 received_ = 0;
     Chunk chunk_ = Chunk::Size;
     std::string line_;
     u32 chunkLeft_ = 0;

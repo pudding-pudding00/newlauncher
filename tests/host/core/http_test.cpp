@@ -96,3 +96,41 @@ TEST_CASE("HttpParser Müll → Error") {
     HttpParser r(1024);
     CHECK(r.feed(bytes("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nzz\r\n")) == HttpParser::State::Error);
 }
+
+TEST_CASE("HttpParser mit Senke: Content-Length geht an die Senke, body() bleibt leer") {
+    HttpParser p(100);
+    std::string sunk;
+    p.setSink([&](std::span<const u8> b) { sunk += text(b); return true; });
+    CHECK(p.feed(bytes("HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nhello")) == HttpParser::State::Body);
+    CHECK(p.feed(bytes("world")) == HttpParser::State::Done);
+    CHECK(sunk == "helloworld");
+    CHECK(p.body().empty());
+    CHECK(p.received() == 10u);
+}
+
+TEST_CASE("HttpParser mit Senke: chunked") {
+    HttpParser p(100);
+    std::string sunk;
+    p.setSink([&](std::span<const u8> b) { sunk += text(b); return true; });
+    CHECK(p.feed(bytes("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n3\r\nabc\r\n0\r\n\r\n")) ==
+          HttpParser::State::Done);
+    CHECK(sunk == "helloabc");
+    CHECK(p.body().empty());
+}
+
+TEST_CASE("HttpParser mit Senke: Senke meldet false → Error") {
+    HttpParser p(100);
+    p.setSink([](std::span<const u8>) { return false; });
+    CHECK(p.feed(bytes("HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nabc")) == HttpParser::State::Error);
+}
+
+TEST_CASE("HttpParser mit Senke: maxBody gilt weiter") {
+    HttpParser p(4);
+    std::string sunk;
+    p.setSink([&](std::span<const u8> b) { sunk += text(b); return true; });
+    CHECK(p.feed(bytes("HTTP/1.1 200 OK\r\n\r\nabc")) == HttpParser::State::Body);
+    CHECK(p.feed(bytes("de")) == HttpParser::State::Error);
+    HttpParser q(4);
+    q.setSink([](std::span<const u8>) { return true; });
+    CHECK(q.feed(bytes("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n9\r\n")) == HttpParser::State::Error);
+}

@@ -55,6 +55,7 @@ Er zeigt Spiele nach Konsolengeneration sortiert und startet sie je nach Konsole
 | N64-Startweg | Auto-Wahl pro Spiel (VC-Inject → Not64 → Wii64), pro Spiel überschreibbar |
 | VC-Injects | Auf echtem NAND installiert, Verknüpfung per Mapping-Datei + Namensvorschlag |
 | Cover | Wii/GC: Download auf der Wii (GameTDB); Retro: PC-Skript (libretro-thumbnails) |
+| Emulatoren | Installation und Update auf der Wii aus dem Open Shop Channel (HTTP), manuell ausgelöst; derselbe Weg am PC über `wii_deploy.py --emulators` |
 | Metadaten | PC-Skript erzeugt kompakte `meta.bin` (GameTDB + libretro-Datenbanken) |
 | Eingabe | Wiimote (Pointer + Steuerkreuz), Nunchuk-Stick, GameCube-Controller |
 | Komfort v1 | Favoriten, Zuletzt gespielt, A–Z-Sprung + Suche, UI-Sounds + Musik, Detailansicht |
@@ -118,7 +119,7 @@ Overlay über der abgedunkelten aktuellen Szene, Ein-/Ausblend-Animation.
 | UI-Sounds | an/aus | an |
 | Bibliotheksgerät | USB, SD | USB |
 | Cover-Region | Automatisch, EN, DE, FR, US, JA | Automatisch |
-| Aktionen | „Bibliothek neu scannen“, „Fehlende Cover laden“, „VC-Injects zuordnen“ | – |
+| Aktionen | „Bibliothek neu scannen“, „Fehlende Cover laden“, „VC-Injects zuordnen“, „Emulatoren“ (6.9) | – |
 
 ### 3.5 Suche und A–Z-Sprung
 
@@ -188,7 +189,7 @@ Stick-Navigation hat Totzone und Wiederholrate mit Beschleunigung (erste Wiederh
 
 | Modul | Verantwortung | Plattform |
 |---|---|---|
-| `core/` | Datenmodell (Spiel, Konsole, Generation), Konsolentabelle, INI-Parser, Scanner-Logik gegen `FileSystem`-Interface, Index-Cache-Serialisierung (Big-Endian), Metadaten-Leser, N64-Auto-Wahl, VC-Mapping + Namensabgleich, Favoriten/Verlauf, Suche, No-Intro-Titelbereinigung, Texte DE/EN, Theme-Tokens, CMPR-Encoder, `Result<T, Error>` | plattformfrei, host-getestet |
+| `core/` | Datenmodell (Spiel, Konsole, Generation), Konsolentabelle, INI-Parser, Scanner-Logik gegen `FileSystem`-Interface, Index-Cache-Serialisierung (Big-Endian), Metadaten-Leser, N64-Auto-Wahl, VC-Mapping + Namensabgleich, Favoriten/Verlauf, Suche, No-Intro-Titelbereinigung, Texte DE/EN, Theme-Tokens, CMPR-Encoder, Emulator-Katalog, OSC-Listenparser, ZIP-Leser mit Inflate und CRC32, Installationsplan, `Result<T, Error>` | plattformfrei, host-getestet |
 | `platform/` | Video-Init, Eingabe (WPAD/PAD → Aktionen), SD/USB-Mount (libfat), `FileSystem`-Implementierung, Threads (LWP), Audio (ASND, Tremor), HTTP-Client, Uhrzeit, Systemeinstellungen, NAND-Titelliste und Bannernamen | Wii |
 | `gfx/` | GX-Initialisierung, Sprite-Batcher, Texturverwaltung, Cover-LRU in MEM2, Glyph-Atlas, Projektion inkl. 16:9 | Wii |
 | `ui/` | Szenen (Hauptbildschirm, Details, HOME, Einstellungen, Suche, Dialog), Fokus-/Pointer-Navigation, Animationen (Easing), Debug-Overlay | Wii; Navigationslogik host-testbar |
@@ -218,7 +219,7 @@ Stick-Navigation hat Totzone und Wiederholrate mit Beschleunigung (erste Wiederh
 | Scan | Hintergrund-Scan der Bibliothek, liefert Deltas an die UI |
 | Cover | Lädt `.tex`-Dateien, konvertiert neue PNGs zu `.tex` |
 | Audio | Musik-Dekodierung (Tremor) |
-| Netz | Cover-Download, nur bei Bedarf gestartet |
+| Netz | Cover-Download und Emulator-Verwaltung (Liste, ZIP-Download, Entpacken), nur bei Bedarf gestartet; immer nur ein Auftrag zugleich |
 
 Kommunikation über Message-Queues; die UI-Datenstrukturen gehören ausschließlich dem Haupt-Thread.
 
@@ -246,6 +247,8 @@ sd:/newlauncher/favorites.ini    Favoriten
 sd:/newlauncher/history.ini      Verlauf (letzte 20 Starts)
 sd:/newlauncher/music/*.ogg      Hintergrundmusik
 sd:/newlauncher/log.txt          Log
+sd:/newlauncher/emulators_installed.ini   installierte Emulator-Versionen (6.9)
+sd:/newlauncher/tmp/             Download- und Entpack-Zwischenablage (wird nach jeder Installation geleert)
 
 <lib>:/newlauncher/cache/index.bin       Spiele-Index
 <lib>:/newlauncher/cache/meta.bin        Metadaten (vom PC-Skript)
@@ -307,6 +310,8 @@ music_volume = 60
 sounds = 1
 [covers]
 region = auto
+[emulators]
+repo = http://hbb1.oscwii.org/hbb
 ```
 
 `emulators.ini` – `args` ist eine durch `|` getrennte Liste; jeder Eintrag wird ein `argv`-Element. `argv[0]` ist immer der DOL-Pfad. Platzhalter: `{dir}` (Ordner mit abschließendem `/`), `{file}` (Dateiname), `{path}` (vollständiger Pfad).
@@ -464,6 +469,43 @@ Ist ein Override gesetzt, aber nicht verfügbar, wird mit Schritt 2 weitergemach
 - **Ausschalten:** `SYS_ResetSystem(SYS_POWEROFF, …)`.
 - **Einstellungen:** öffnet die Einstellungsszene.
 
+### 6.9 Emulator-Verwaltung
+
+Ziel: Eine frische Karte mit nur dem Launcher kann alle Emulatoren selbst holen und später aktualisieren.
+
+- **Quelle:** Open-Shop-Channel-Repository über HTTP (kein TLS auf der Wii nötig). Basis-URL aus `config.ini` `[emulators] repo`, Standard `http://hbb1.oscwii.org/hbb`; `[debug] emu_repo` ersetzt sie im Smoke-Test.
+  - Liste: `<repo>/listv036.txt`. Pro App sieben Zeilen; die erste enthält Name, Zeitstempel (Unix), Icon-Größe, Entpackt-Größe, Typ, ZIP-Größe und weitere Felder, dann Anzeigename, Autor, Version, Größe, Kurz- und Langbeschreibung.
+  - Paket: `<repo>/<name>/<name>.zip`, Pfade relativ zur SD-Wurzel (`apps/<name>/boot.dol` …).
+- **Katalog (fest im Code):**
+
+  | OSC-Name | `emulators.ini`-Abschnitte | DOL |
+  |---|---|---|
+  | `fceugx` | `nes` | `sd:/apps/fceugx/boot.dol` |
+  | `snes9xgx` | `snes` | `sd:/apps/snes9xgx/boot.dol` |
+  | `vbagx` | `gb`, `gbc`, `gba` | `sd:/apps/vbagx/boot.dol` |
+  | `not64` | `n64_not64` | `sd:/apps/not64/boot.dol` |
+  | `wii64` | `n64_wii64` | `sd:/apps/wii64/boot.dol` |
+  | `Nintendont` | `nintendont` (M8) | `sd:/apps/Nintendont/boot.dol` |
+
+- **Status je Emulator:** „nicht installiert“, „installiert“ (Version bekannt, aktuell), „Update verfügbar“ (Zeitstempel der Liste neuer als der installierte), „installiert, Version unbekannt“ (DOL vorhanden, kein Eintrag in `emulators_installed.ini`, z. B. am PC kopiert). Ein Update für „Version unbekannt“ ist erlaubt und erzeugt den Eintrag.
+- **`emulators_installed.ini`:** ein Abschnitt pro OSC-Name mit `timestamp` (aus der Liste) und `version` (Text aus der Liste, darf leer sein). Wird nur nach erfolgreicher Installation geschrieben.
+- **Oberfläche:** Einstellungen → „Emulatoren“ öffnet eine Liste (Name, installierte Version, verfügbare Version, Status). Aktionen: „Nach Updates suchen“ (lädt die Liste), „Installieren“/„Aktualisieren“ für die markierte Zeile, „Alle aktualisieren“. Kein Netzzugriff beim Start des Launchers; die Liste wird nur auf Aktion geladen. Während der Arbeit zeigt die Szene Fortschritt (Schritt, Bytes) und bleibt bedienbar; B bricht nach dem laufenden Schritt ab. Fehler erscheinen pro Emulator in der Liste und als Dialog.
+- **Installation (Netz-Thread):**
+  1. Freien Platz auf der SD prüfen: ZIP-Größe + Summe der entpackten Größen + 1 MiB Reserve, sonst Fehler „Zu wenig Platz“.
+  2. ZIP nach `sd:/newlauncher/tmp/<name>.zip` streamen; Größe muss der Listenangabe entsprechen.
+  3. Zentrales Verzeichnis lesen. Einträge mit absoluten Pfaden, `..`, Laufwerksbuchstaben oder anderen Methoden als 0 (stored) und 8 (deflate) machen das ganze Paket ungültig. Jeder Eintrag wird entpackt und gegen CRC32 und Größe geprüft, zuerst nach `sd:/newlauncher/tmp/<name>/`.
+  4. Erst wenn alle Einträge gültig sind, wird verschoben: Dateien unter `apps/` werden ersetzt, alle anderen nur angelegt, wenn sie fehlen (Saves, Einstellungen und Speicherkarten der Emulatoren bleiben). `apps/<x>/boot.dol` wird jeweils zuletzt ersetzt, damit ein Abbruch keine halbe App mit neuer DOL hinterlässt.
+  5. `emulators_installed.ini` schreiben, `tmp/` leeren, Index der Emulator-Verfügbarkeit neu laden (N64-Auto-Wahl, Preflight).
+- **Inflate:** eigener kleiner Inflater in `core/` (RFC 1951), host-getestet gegen mit zlib erzeugte Fixtures; keine zusätzliche Bibliothek.
+- **PC-Weg:** `tools/wii_deploy.py --emulators` lädt dieselben Pakete aus derselben Quelle und entpackt sie nach denselben Regeln auf die Karte (vor dem Download wird gefragt, welche).
+- **Hinweis Nintendont:** Die OSC-Version kann älter sein als die von M8 vorausgesetzte; der M8-Preflight meldet eine zu alte Version mit Verweis auf die Aktualisierung.
+- **HTTPS (sobald das Modul `wii_tls` fertig ist, Plan-Task 9):** Bis dahin nur `http://` – die Pakete sind dann nur über Größe und CRC32 geschützt, nicht gegen Manipulation unterwegs. Mit `wii_tls` gilt:
+  - `parseUrl` akzeptiert `https://` (Standardport 443); `httpGet`/`httpDownload` wählen den Transport nach Schema, die Aufrufer (Cover, Emulatoren) bleiben unverändert.
+  - Zertifikate werden geprüft (CA-Bündel aus `wii_tls`); ein TLS-Fehler ist ein Fehlschlag, **nie** ein stiller Rückfall auf `http://`.
+  - Standard-Quelle wird die HTTPS-Adresse des Open Shop Channel; `[emulators] repo` nimmt dann `http://` und `https://`.
+  - Nintendont kann zusätzlich direkt aus den offiziellen GitHub-Releases bezogen werden (nur über HTTPS erreichbar) – damit entfällt das Problem der veralteten OSC-Version.
+  - Ohne `wii_tls` im Build bleibt alles wie oben (HTTP); der Build darf nicht davon abhängen.
+
 ---
 
 ## 7. Performance-Budgets (Abnahmekriterien, gemessen auf echter Wii in M7)
@@ -536,6 +578,7 @@ Jeder Meilenstein bekommt einen eigenen Implementierungsplan.
 | **M7** | Hardware-Abnahme: M0–M6 auf echter Wii mit USB-Platte, Performance-Budgets messen | Wii |
 | **M8** | Nintendont-Backend | Wii |
 | **M9** | Wii nativ: `boot/`-Port (cIOS, Disc-Emulation, Apploader, Patches) | Wii |
+| **M10** | Emulator-Verwaltung (6.9): Katalog, Listenparser, ZIP/Inflate, Installation auf der Wii, Einstellungsszene, `wii_deploy.py --emulators`. Wird vor M8 umgesetzt, weil vollständig in Dolphin testbar | Host + Dolphin |
 
 ---
 
@@ -549,4 +592,5 @@ Jeder Meilenstein bekommt einen eigenen Implementierungsplan.
 | Genaue Dolphin-Logger-Einstellungen für `OSReport`-Ausgabe in Datei | M0 | Ausgabe stattdessen in Datei auf der virtuellen SD, Skript liest diese |
 | GameTDB-Cover nur per HTTPS erreichbar | M5 | Cover-Download zusätzlich in `prepare_covers.py` für Wii/GC |
 | Performance-Budgets in Dolphin nicht messbar | M7 | Debug-Overlay ab M1, Messung auf Hardware |
+| Open-Shop-Channel-Endpunkt per HTTP fällt weg oder ändert das Listenformat | M10 | URL in `config.ini` umstellbar; Emulatoren weiter per PC-Skript oder von Hand kopieren; TLS später nachrüstbar |
 | `NIN_CFG`-Version passt nicht zur installierten Nintendont-Version | M8 | Version beim Preflight aus Nintendont-Binary lesen, unterstützte Versionen festlegen |

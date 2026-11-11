@@ -22,11 +22,14 @@ struct Config {
     int musicVolume = 60;
     bool sounds = true;
     std::string coverRegion = "auto";
+    std::string emulatorRepo = "http://hbb1.oscwii.org/hbb";  // [emulators] repo (Spec 6.9), nur http://
     std::string debugAutostart;  // [debug] autostart: Spielschlüssel, der nach NL_READY startet
     std::string debugCoverUrl;   // [debug] cover_url: ersetzt die GameTDB-Basis (Smoke-Test)
     bool debugFetchCovers = false;  // [debug] fetch_covers = 1: „Fehlende Cover laden“ nach NL_READY
     bool debugPerf = false;         // [debug] perf = 1: NL_PERF-Zeilen für die Hardware-Messung (M7)
     bool debugLogSounds = false;    // [debug] log_sounds = 1: NL_SOUND <name> je gespieltem Klang (Smoke-Test)
+    std::string debugEmuRepo;       // [debug] emu_repo: ersetzt emulatorRepo (Smoke-Test)
+    std::string debugEmuInstall;    // [debug] emu_install: Komma-Liste, nach NL_READY installieren (Smoke-Test)
 };
 
 Config configFromIni(const IniDoc& ini);

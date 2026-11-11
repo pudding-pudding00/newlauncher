@@ -17,6 +17,8 @@
 #include "app/cover_service.hpp"
 #include "core/config.hpp"
 #include "core/cover_download.hpp"
+#include "core/emu_catalog.hpp"
+#include "core/emu_install.hpp"
 #include "core/emulators.hpp"
 #include "core/index_file.hpp"
 #include "core/launch_layout.hpp"
@@ -35,6 +37,7 @@
 #include "launch/chainloader.hpp"
 #include "launch/channel.hpp"
 #include "platform/crash.hpp"
+#include "platform/emu_worker.hpp"
 #include "platform/audio.hpp"
 #include "platform/log.hpp"
 #include "platform/music.hpp"
@@ -49,6 +52,7 @@
 #include "ui/debug_overlay.hpp"
 #include "ui/details_scene.hpp"
 #include "ui/dialog_scene.hpp"
+#include "ui/emulators_scene.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/jump_bar.hpp"
 #include "ui/keyboard.hpp"
@@ -202,6 +206,10 @@ int main(int, char**) {
         }
     };
     const nl::EmulatorTable emulators = loadEmulators(fs, sdOk);
+    if (sdOk) {  // Reste einer abgebrochenen Emulator-Installation (Spec 6.9)
+        nl::recoverEmuInstall(fs);
+        nl::clearEmuTmp(fs);
+    }
 
     // 2. Video, Renderer, Atlas, Theme aus der Konfiguration
     nl::platform::Video video;
@@ -338,8 +346,13 @@ int main(int, char**) {
     // N64-Startwege (Spec 6.6): Kanäle im NAND und die beiden Emulator-DOLs, einmal pro Sitzung.
     const std::vector<u64> installedTitles = nl::platform::installedTitleIds();
     nl::log::line("NL_NAND channels=%u", static_cast<unsigned>(installedTitles.size()));
-    const bool not64Dol = nl::fileSize(fs, emulators.forN64(nl::N64Method::Not64)->dol).has_value();
-    const bool wii64Dol = nl::fileSize(fs, emulators.forN64(nl::N64Method::Wii64)->dol).has_value();
+    // Nicht const: nach einer Emulator-Installation (Spec 6.9) neu bestimmt.
+    bool not64Dol = false, wii64Dol = false;
+    auto probeN64Dols = [&]() {
+        not64Dol = nl::fileSize(fs, emulators.forN64(nl::N64Method::Not64)->dol).has_value();
+        wii64Dol = nl::fileSize(fs, emulators.forN64(nl::N64Method::Wii64)->dol).has_value();
+    };
+    probeN64Dols();
     auto n64Inputs = [&](const nl::Game& g) {
         nl::N64Inputs in;
         in.override_ = overrides.n64Method(g.key);
@@ -413,6 +426,10 @@ int main(int, char**) {
     details.setCovers(&covers);
     nl::ui::DialogScene dialog;
     nl::ui::VcMapScene vcMapScene;
+    nl::platform::EmuWorker emu;
+    nl::ui::EmulatorsScene emuScene;
+    std::vector<nl::OscApp> emuList;  // zuletzt geladene OSC-Liste; leer bis „Nach Updates suchen“
+    const std::string emuRepo = config.debugEmuRepo.empty() ? config.emulatorRepo : config.debugEmuRepo;
     nl::ui::SceneStack scenes;
     scenes.push(&mainScene);
 
@@ -452,6 +469,7 @@ int main(int, char**) {
         nl::log::line("NL_LAUNCH %s", key.c_str());
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
         net.join();
+        emu.join();
         covers.shutdown();
 
         if (target.value().kind == nl::LaunchTarget::Kind::Channel) {
@@ -490,7 +508,7 @@ int main(int, char**) {
     int coverToastFrames = 0;
     auto fetchCovers = [&]() {
         nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
-        if (net.running()) return;
+        if (net.running() || emu.running()) return;  // gemeinsamer Netzaufbau: nie parallel
         std::vector<const nl::Game*> games;
         games.reserve(store.games().size());
         for (const nl::Game& g : store.games()) games.push_back(&g);
@@ -547,6 +565,105 @@ int main(int, char**) {
         }
     };
 
+    // Emulator-Verwaltung (Spec 6.9). EmuWorker und NetWorker teilen den Netzaufbau und laufen nie gleichzeitig.
+    enum class EmuJob : u8 { None, List, Install };
+    EmuJob emuJob = EmuJob::None;
+    std::string emuDebugPending = config.debugEmuInstall;  // Komma-Liste; nach dem Laden der Liste installieren
+    bool autostartPending = false;                         // debug autostart wartet auf diese Installation
+    auto refreshEmuRows = [&]() {
+        const std::string text = sdOk ? readText(fs, std::string(nl::kInstalledEmusPath).c_str()) : std::string();
+        emuScene.setRows(nl::emuRows(nl::parseInstalledEmus(text),
+                                     [&](std::string_view dol) { return nl::fileSize(fs, dol).has_value(); }, emuList));
+    };
+    auto startEmuList = [&]() {
+        if (emu.running() || net.running()) return;
+        if (!emu.startFetchList(emuRepo)) {
+            nl::log::line("NL_WARN Emulator-Thread startet nicht");
+            return;
+        }
+        emuJob = EmuJob::List;
+        emuScene.setListState(nl::ui::EmulatorsScene::ListState::Loading);
+    };
+    auto startEmuInstall = [&](std::vector<nl::OscApp> apps) {
+        if (apps.empty() || !sdOk || emu.running() || net.running()) return;
+        if (!emu.startInstall(fs, emuRepo, std::move(apps))) {
+            nl::log::line("NL_WARN Emulator-Thread startet nicht");
+            return;
+        }
+        emuJob = EmuJob::Install;
+    };
+    // Debug: Apps aus [debug] emu_install, die in der geladenen Liste stehen.
+    auto debugEmuTargets = [&]() {
+        std::vector<nl::OscApp> out;
+        std::string_view rest = emuDebugPending;
+        while (!rest.empty()) {
+            const std::size_t comma = rest.find(',');
+            const std::string_view name = rest.substr(0, comma);
+            rest = comma == std::string_view::npos ? std::string_view{} : rest.substr(comma + 1);
+            for (const nl::OscApp& a : emuList)
+                if (a.name == name) out.push_back(a);
+        }
+        return out;
+    };
+    // Marker, Fortschritt und Ergebnisse des Emulator-Threads übernehmen (Haupt-Thread).
+    auto pumpEmu = [&](auto&& onDebugInstallDone) {
+        for (const std::string& line : emu.takeLogLines()) nl::log::line("%s", line.c_str());
+        for (const auto& [name, r] : emu.takeResults()) emuScene.setError(name, r.error);
+        if (emu.running()) {
+            if (emuJob == EmuJob::Install)
+                emuScene.setBusy(nl::ui::EmuProgress{emu.currentName(), emu.step(), emu.done(), emu.total(),
+                                                     emu.appIndex(), emu.appCount()});
+            return;
+        }
+        if (emuJob == EmuJob::None) return;
+        const EmuJob finished = emuJob;
+        emuJob = EmuJob::None;
+        for (const std::string& line : emu.takeLogLines()) nl::log::line("%s", line.c_str());
+        for (const auto& [name, r] : emu.takeResults()) emuScene.setError(name, r.error);
+        if (finished == EmuJob::List) {
+            if (auto list = emu.takeList()) {
+                emuList = std::move(*list);
+                emuScene.setListState(nl::ui::EmulatorsScene::ListState::Loaded);
+            } else {
+                emuScene.setListState(emu.listFailed() ? nl::ui::EmulatorsScene::ListState::Failed
+                                                       : nl::ui::EmulatorsScene::ListState::NotLoaded);
+            }
+            refreshEmuRows();
+            if (!emuDebugPending.empty()) {
+                std::vector<nl::OscApp> targets = debugEmuTargets();
+                emuDebugPending.clear();
+                nl::log::line("NL_EMU_DEBUG_INSTALL n=%u", static_cast<unsigned>(targets.size()));
+                startEmuInstall(std::move(targets));
+                if (emuJob != EmuJob::Install) onDebugInstallDone();
+            }
+        } else {
+            emuScene.setBusy(std::nullopt);
+            refreshEmuRows();
+            probeN64Dols();
+            nl::log::line("NL_EMU_DONE not64=%d wii64=%d", not64Dol ? 1 : 0, wii64Dol ? 1 : 0);
+            onDebugInstallDone();
+        }
+        if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+        if (perf) perf->pause();
+    };
+
+    // debug autostart (nur für Tests); wartet ggf. auf die Debug-Emulator-Installation.
+    auto runPendingAutostart = [&]() {
+        if (!autostartPending) return;
+        autostartPending = false;
+        const std::string& key = config.debugAutostart;
+        const nl::Game* found = nullptr;
+        for (const nl::Game& g : store.games()) {
+            if (key == g.key) found = &g;
+        }
+        if (found != nullptr) {
+            nl::log::line("NL_AUTOSTART %s", key.c_str());
+            launchGame(*found);
+        } else {
+            nl::log::line("NL_WARN autostart %s fehlt", key.c_str());
+        }
+    };
+
     nl::ui::DebugOverlay debug;
     nl::FrameStats stats;
     bool readyReported = false;
@@ -558,7 +675,7 @@ int main(int, char**) {
         const u64 frameStart = gettime();
         if (perf && prevFrameStart != 0) {
             const float intervalMs = static_cast<float>(ticks_to_microsecs(diff_ticks(prevFrameStart, frameStart))) / 1000.0f;
-            perf->frame(intervalMs, worker.running() || net.running() || covers.converting());
+            perf->frame(intervalMs, worker.running() || net.running() || emu.running() || covers.converting());
             if (perf->windowFull()) {
                 char line[160];
                 perf->takeWindow(line, sizeof line);
@@ -706,6 +823,7 @@ int main(int, char**) {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
                 net.join();
+                emu.join();
                 covers.shutdown();
                 stopAudio();
                 logPerfSummary();
@@ -720,11 +838,30 @@ int main(int, char**) {
             case nl::ui::AppCommand::FetchCovers:
                 fetchCovers();
                 break;
+            case nl::ui::AppCommand::OpenEmulators:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                refreshEmuRows();
+                scenes.push(&emuScene);
+                break;
+            case nl::ui::AppCommand::EmuFetchList:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                startEmuList();
+                break;
+            case nl::ui::AppCommand::EmuInstall:
+            case nl::ui::AppCommand::EmuInstallAll:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                startEmuInstall(emuScene.takeTargets());
+                break;
+            case nl::ui::AppCommand::EmuCancel:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                emu.cancel();
+                break;
             case nl::ui::AppCommand::None:
                 break;
         }
         if (!running) break;
         pumpNet();
+        pumpEmu(runPendingAutostart);
         pumpMusic();
         covers.pump();  // nach update (Wünsche dieses Frames), vor draw; Freigaben erst nach GX_DrawDone des Vorframes
 
@@ -757,17 +894,11 @@ int main(int, char**) {
             if (perf) perf->pause();  // Flush und Musikstart liegen im nächsten Abstand
             readyReported = true;
             if (config.music) startMusic();
-            if (const std::string& key = config.debugAutostart; !key.empty()) {  // nur für Tests
-                const nl::Game* found = nullptr;
-                for (const nl::Game& g : store.games()) {
-                    if (key == g.key) found = &g;
-                }
-                if (found != nullptr) {
-                    nl::log::line("NL_AUTOSTART %s", key.c_str());
-                    launchGame(*found);
-                } else {
-                    nl::log::line("NL_WARN autostart %s fehlt", key.c_str());
-                }
+            autostartPending = !config.debugAutostart.empty();
+            if (!emuDebugPending.empty()) startEmuList();  // nur für Tests; Autostart wartet auf die Installation
+            if (emuJob == EmuJob::None) {
+                emuDebugPending.clear();  // Thread startet nicht: nichts zu warten
+                runPendingAutostart();
             }
             if (config.debugFetchCovers) fetchCovers();  // nur für Tests
         }
@@ -783,6 +914,7 @@ int main(int, char**) {
     }
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
     net.join();
+    emu.join();
     covers.shutdown();
     stopAudio();
     logPerfSummary();

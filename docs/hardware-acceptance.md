@@ -100,6 +100,7 @@ Emulator** starten, ohne dessen Dateiauswahl.
 | L6 | N64-ROM mit Not64 starten | Spiel läuft | |
 | L7 | N64-ROM mit Wii64 starten | Spiel läuft | |
 | L8 | Emulator-DOL umbenennen, ROM starten | Preflight-Dialog nennt den fehlenden Emulator, Launcher bleibt bedienbar | |
+| E1 | Emulatoren auf echter Wii installieren/aktualisieren (WLAN): Einstellungen → Emulatoren → „Nach Updates suchen“, einen fehlenden Emulator installieren, danach „Alle aktualisieren“; einmal mitten im Download B drücken | Liste lädt (`NL_EMU_LIST ok`), Installation meldet `NL_EMU_INSTALL … ok`, Zeile zeigt „aktuell“; Abbruch zeigt „Abgebrochen“, alte Version startet weiter, `sd:/newlauncher/tmp/` ist leer | |
 
 ## N – N64 Virtual Console
 

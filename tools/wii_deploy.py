@@ -3,6 +3,7 @@
     python tools/wii_deploy.py E: [--init] [--perf on|off] [--dol PATH]
     python tools/wii_deploy.py E: --selftest [--dol PATH]
     python tools/wii_deploy.py --wiiload 192.168.0.42 [--dol PATH]
+    python tools/wii_deploy.py E: --emulators [NAME ...] [--repo URL] [--yes]
 
 Release: kopiert boot.dol und meta.xml nach apps/newlauncher/. Daten des Nutzers unter newlauncher/
 (config.ini, emulators.ini, Favoriten, Verlauf, cache/ …) werden nie überschrieben, nur fehlende
@@ -11,6 +12,10 @@ emulators.ini beim ersten Start selbst mit Standardwerten.
 
 Selbsttest: nur auf eine eigene, leere Karte. Die Selbsttest-DOL fährt ein festes Skript über die
 Fixture-Bibliothek und schreibt dabei Favoriten, Verlauf und Einstellungen.
+
+Emulatoren: lädt die Pakete aus dem Open Shop Channel (Spec 6.9) und installiert sie mit denselben
+Regeln wie der Launcher (osc_emulators.py). Ohne Namen alle aus dem Katalog; aktuelle werden
+übersprungen. Ohne --yes erst Liste mit Größen zeigen und nachfragen.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ import sys
 from pathlib import Path
 
 from deploy_dolphin import ARGV_ECHO_DOL, DIST_DIR, FIXTURES_DIR, REPO_ROOT
+from osc_emulators import DEFAULT_REPO, EmuInstallError, deploy_emulators
 
 RELEASE_DOL = REPO_ROOT / "build/wii/newlauncher.dol"
 SELFTEST_DOL = REPO_ROOT / "build/wii/nl_selftest.dol"
@@ -195,11 +201,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--selftest", action="store_true", help="Selbsttest-Karte einrichten (leere Karte)")
     parser.add_argument("--wiiload", metavar="IP", help="DOL per wiiload an die Wii senden statt kopieren")
     parser.add_argument("--dol", type=Path, help="DOL (Standard: Release bzw. Selbsttest aus build/wii)")
+    parser.add_argument("--emulators", nargs="*", metavar="NAME",
+                        help="Emulatoren aus dem Open Shop Channel installieren/aktualisieren (ohne NAME: alle)")
+    parser.add_argument("--repo", default=DEFAULT_REPO, help=f"Paketquelle für --emulators (Standard: {DEFAULT_REPO})")
+    parser.add_argument("--yes", action="store_true", help="--emulators ohne Rückfrage")
     args = parser.parse_args(argv)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(errors="replace")  # Windows-Konsole (cp1252) kennt „→“ nicht
     dol = args.dol or (SELFTEST_DOL if args.selftest else RELEASE_DOL)
     try:
+        if args.emulators is not None:
+            if args.wiiload or args.selftest or args.perf or args.init or args.dol:
+                raise DeployError("--emulators nur allein mit Laufwerk, --repo und --yes")
+            if not args.drive:
+                raise DeployError("Laufwerk fehlt (z. B. E:)")
+            sd = _drive(args.drive)
+            if not (sd / "apps").is_dir():
+                raise DeployError(f"{sd} hat keinen apps/-Ordner: ist das die Homebrew-Karte?")
+            return deploy_emulators(sd, args.emulators, args.repo, args.yes)
         if args.wiiload:
             # Die Selbsttest-DOL schreibt Favoriten, Verlauf und Einstellungen auf die Karte in der Wii; per
             # wiiload lässt sich nicht prüfen, ob das eine leere Karte ist.
@@ -224,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
             set_perf(sd, args.perf == "on")
         print(f"newlauncher nach {sd / 'apps/newlauncher'} kopiert" + (f", perf {args.perf}" if args.perf else ""))
         return 0
-    except (DeployError, OSError, UnicodeDecodeError) as e:
+    except (DeployError, EmuInstallError, OSError, UnicodeDecodeError) as e:
         print(f"DEPLOY FEHLER: {e}")
         return 2
 

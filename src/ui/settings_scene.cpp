@@ -18,6 +18,7 @@ constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 30.0f
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo,  Str::Music,       Str::Volume,
     Str::Sounds,   Str::LibraryDevice, Str::CoverRegion, Str::Rescan, Str::FetchCovers, Str::VcMapTitle,
+    Str::Emulators,
 };
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
@@ -34,6 +35,7 @@ AppCommand actionCommand(SettingRow r) {
         case SettingRow::Rescan: return AppCommand::Rescan;
         case SettingRow::FetchCovers: return AppCommand::FetchCovers;
         case SettingRow::VcMap: return AppCommand::OpenVcMap;
+        case SettingRow::Emulators: return AppCommand::OpenEmulators;
         default: return AppCommand::None;
     }
 }

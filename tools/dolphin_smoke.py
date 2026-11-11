@@ -9,10 +9,12 @@ import http.server
 import subprocess
 import sys
 import tempfile
+import shutil
 import threading
+import zipfile
 from pathlib import Path
 
-from deploy_dolphin import DEFAULT_DOL, DIST_DIR, FIXTURES_DIR, deploy
+from deploy_dolphin import ARGV_ECHO_DOL, DEFAULT_DOL, DIST_DIR, FIXTURES_DIR, deploy
 from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_path, reset_log,
                      sd_sync_dir, wait_for_markers, write_dev_config)
 from pngfile import solid_png
@@ -29,6 +31,48 @@ def write_cover_server_files(root: Path) -> None:
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(solid_png(w, h, color))
+
+
+# Test-Repository im OSC-Format (Spec 6.9): eine App fceugx, deren boot.dol die argv_echo-Test-DOL ist.
+EMU_SERVER_APP = "fceugx"
+EMU_SERVER_TIMESTAMP = 1793664000
+
+
+def write_emu_server_files(root: Path, dol: Path) -> None:
+    """Schreibt hbb/listv036.txt und hbb/fceugx/fceugx.zip; Größen in der Liste passen zum ZIP."""
+    app_dir = root / "hbb" / EMU_SERVER_APP
+    app_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = app_dir / f"{EMU_SERVER_APP}.zip"
+    entries = {f"apps/{EMU_SERVER_APP}/boot.dol": dol.read_bytes(),
+               f"apps/{EMU_SERVER_APP}/meta.xml": b"<app version=\"1\"><name>FCE Ultra GX</name>"
+                                                   b"<version>9.9-test</version></app>\n",
+               f"{EMU_SERVER_APP}/{EMU_SERVER_APP}.cfg": b"; Test-Einstellungen\n"}
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in entries.items():
+            z.writestr(name, data)
+    unzipped = sum(len(d) for d in entries.values())
+    lines = ["Homebrew 2092896 v0.3.9e | - Testliste",
+             "=Emulators=",
+             f"{EMU_SERVER_APP} {EMU_SERVER_TIMESTAMP} 0 {unzipped} dol {zip_path.stat().st_size} 0 0 wwwwngcs "
+             f"/{EMU_SERVER_APP};/apps/{EMU_SERVER_APP}; . .",
+             "FCE Ultra GX", "newlauncher-Test", "9.9-test", str(unzipped), "Nintendo Emulator",
+             "Test-Paket aus dolphin_smoke.py."]
+    (root / "hbb/listv036.txt").write_bytes(("\r\n".join(lines) + "\r\n").encode("utf-8"))
+
+
+def set_ini_value(path: Path, section: str, key: str, value: str) -> None:
+    """Ersetzt key im Abschnitt section (Textform bleibt sonst unverändert)."""
+    out, current, done = [], None, False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current = stripped[1:-1]
+        elif current == section and stripped.partition("=")[0].strip() == key:
+            line, done = f"{key} = {value}", True
+        out.append(line)
+    if not done:
+        raise ValueError(f"[{section}] {key} fehlt in {path}")
+    path.write_text("\n".join(out) + "\n", encoding="utf-8", newline="\n")
 
 
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -60,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="zusätzliche Zeile im [debug]-Abschnitt, z. B. perf=1 (mehrfach angebbar)")
     parser.add_argument("--cover-server", action="store_true",
                         help="lokalen Cover-Server starten und „Fehlende Cover laden“ nach NL_READY auslösen")
+    parser.add_argument("--emu-server", action="store_true",
+                        help="lokales OSC-Test-Repository starten und fceugx nach NL_READY installieren")
     args = parser.parse_args(argv)
     markers = args.markers or DEFAULT_MARKERS
 
@@ -84,6 +130,14 @@ def main(argv: list[str] | None = None) -> int:
         write_cover_server_files(Path(server_dir.name))
         server, port = start_cover_server(Path(server_dir.name))
         debug_lines += [f"cover_url = http://127.0.0.1:{port}", "fetch_covers = 1"]
+    if args.emu_server:
+        if not ARGV_ECHO_DOL.is_file():
+            print(f"SMOKE FEHLER: argv_echo.dol nicht gebaut: {ARGV_ECHO_DOL}")
+            return 2
+        server_dir = tempfile.TemporaryDirectory(prefix="nl_emus_")
+        write_emu_server_files(Path(server_dir.name), ARGV_ECHO_DOL)
+        server, port = start_cover_server(Path(server_dir.name))
+        debug_lines += [f"emu_repo = http://127.0.0.1:{port}/hbb", f"emu_install = {EMU_SERVER_APP}"]
     try:
         return _run(args, markers, debug_lines)
     finally:
@@ -107,6 +161,11 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
         if args.fixtures:
             # Ohne alten Index startet der Launcher mit einem vollständigen Scan der Fixtures.
             (sd / "newlauncher/cache/index.bin").unlink(missing_ok=True)
+        if args.emu_server:
+            # Der Launcher installiert fceugx selbst; NES startet danach über die installierte DOL.
+            shutil.rmtree(sd / f"apps/{EMU_SERVER_APP}", ignore_errors=True)
+            (sd / "newlauncher/emulators_installed.ini").unlink(missing_ok=True)
+            set_ini_value(sd / "newlauncher/emulators.ini", "nes", "dol", f"sd:/apps/{EMU_SERVER_APP}/boot.dol")
         if debug_lines:
             with (sd / "newlauncher/config.ini").open("a", encoding="utf-8", newline="\n") as f:
                 f.write("[debug]\n" + "".join(line + "\n" for line in debug_lines))

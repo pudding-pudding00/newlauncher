@@ -15,7 +15,6 @@ namespace nl::platform {
 namespace {
 constexpr u32 kStackBytes = 64 * 1024;
 constexpr u8 kPriority = 40;  // wie Scan und Cover-Thread: unter dem Haupt-Thread
-constexpr int kNetInitTries = 3;
 
 std::string parentDir(const std::string& path) {
     const std::size_t slash = path.rfind('/');
@@ -27,9 +26,6 @@ std::string format(const char* fmt, const char* a, const char* b = "", const cha
     std::snprintf(buf, sizeof buf, fmt, a, b, c);
     return buf;
 }
-
-// net_init einmal pro Sitzung; spätere Läufe nutzen die bestehende Verbindung.
-bool g_netReady = false;
 }  // namespace
 
 NetWorker::NetWorker() { LWP_MutexInit(&mutex_, false); }
@@ -117,22 +113,15 @@ void* NetWorker::entry(void* arg) {
 
 DownloadSummary NetWorker::run() {
     DownloadSummary sum;
-    if (!g_netReady) {
-        s32 r = -1;
-        for (int i = 0; i < kNetInitTries && r < 0; ++i) {
-            r = net_init();
-            if (r < 0) usleep(500 * 1000);
-        }
-        if (r < 0) {
-            char code[16];
-            std::snprintf(code, sizeof code, "%d", static_cast<int>(r));
-            log(format("NL_NET_FAIL %s", code));
-            for (const CoverJob& job : jobs_) log(format("NL_COVER_DL %s failed", job.id6.c_str()));
-            sum.failed = total_;
-            done_ = total_;
-            return sum;
-        }
-        g_netReady = true;
+    s32 r = 0;
+    if (!ensureNetwork(r)) {
+        char code[16];
+        std::snprintf(code, sizeof code, "%d", static_cast<int>(r));
+        log(format("NL_NET_FAIL %s", code));
+        for (const CoverJob& job : jobs_) log(format("NL_COVER_DL %s failed", job.id6.c_str()));
+        sum.failed = total_;
+        done_ = total_;
+        return sum;
     }
     log("NL_NET ok");
 

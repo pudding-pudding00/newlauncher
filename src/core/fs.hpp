@@ -28,6 +28,9 @@ public:
     virtual Result<std::vector<u8>> readAll(std::string_view file, std::size_t maxBytes) = 0;
     virtual Result<void> writeAtomic(std::string_view file, std::span<const u8> data) = 0;
     virtual Result<void> makeDirs(std::string_view dir) = 0;
+    virtual Result<void> removeFile(std::string_view file) = 0;  // fehlt die Datei → ok
+    // Ziel darf nicht existieren (FAT überschreibt beim Umbenennen nicht); gleiches Gerät.
+    virtual Result<void> renameFile(std::string_view from, std::string_view to) = 0;
 };
 
 // writeAtomic schreibt erst "<datei>.tmp" und benennt dann um. Bricht das zwischen Löschen und

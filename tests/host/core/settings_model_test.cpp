@@ -71,7 +71,7 @@ TEST_CASE("stepSetting: Schalter, Gerät, Region") {
 TEST_CASE("Aktionszeilen ändern nichts") {
     Config c;
     const Config before = c;
-    for (SettingRow r : {SettingRow::Rescan, SettingRow::FetchCovers, SettingRow::VcMap}) {
+    for (SettingRow r : {SettingRow::Rescan, SettingRow::FetchCovers, SettingRow::VcMap, SettingRow::Emulators}) {
         CHECK(isAction(r));
         stepSetting(c, r, +1);
     }

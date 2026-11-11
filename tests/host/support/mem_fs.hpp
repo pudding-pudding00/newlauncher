@@ -72,6 +72,39 @@ public:
         return Result<void>::ok();
     }
 
+    Result<void> removeFile(std::string_view file) override {
+        ++writes;
+        if (failWrites) return Result<void>::err(Error{ErrorCode::IoError, "schreibgeschützt"});
+        files_.erase(std::string(file));
+        return Result<void>::ok();
+    }
+
+    Result<void> renameFile(std::string_view from, std::string_view to) override {
+        ++writes;
+        const int n = renameCount++;
+        if (failWrites || n == failRenameAt) return Result<void>::err(Error{ErrorCode::IoError, "umbenennen"});
+        auto it = files_.find(std::string(from));
+        if (it == files_.end()) return Result<void>::err(Error{ErrorCode::NotFound, std::string(from)});
+        if (files_.count(std::string(to)) != 0) return Result<void>::err(Error{ErrorCode::IoError, "Ziel existiert"});
+        File f = std::move(it->second);
+        files_.erase(it);
+        addFile(std::string(to), std::move(f.data), f.mtime);
+        renames.emplace_back(std::string(from), std::string(to));
+        return Result<void>::ok();
+    }
+
+    // Alle Dateipfade, die mit prefix beginnen.
+    std::vector<std::string> filesUnder(const std::string& prefix) const {
+        std::vector<std::string> out;
+        for (const auto& [path, f] : files_)
+            if (path.rfind(prefix, 0) == 0) out.push_back(path);
+        return out;
+    }
+
+    std::vector<std::pair<std::string, std::string>> renames;  // erfolgreiche Umbenennungen in Reihenfolge
+    int renameCount = 0;
+    int failRenameAt = -1;  // n-ter renameFile-Aufruf (ab 0) schlägt fehl
+
     const File* file(const std::string& path) const {
         auto it = files_.find(path);
         return it == files_.end() ? nullptr : &it->second;

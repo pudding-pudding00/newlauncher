@@ -80,6 +80,11 @@ python tools/dolphin_smoke.py --marker "NL_COVER_CONVERTED nes/Super Mario Bros.
 python tools/dolphin_smoke.py --cover-server --marker "NL_NET ok" --marker "NL_COVER_DL RMCP01 EN ok" --marker "NL_COVER_DL GM8P01 US ok" --marker "NL_COVER_DL RMGP01 missing" --marker "NL_COVER_DL_DONE ok=2 missing=1 failed=0"
 ```
 
+Emulator-Installation in Dolphin: `--emu-server` startet ein lokales Test-Repository im OSC-Format (eine App `fceugx`, deren `boot.dol` die Test-DOL `argv_echo` ist), löscht `apps/fceugx` im SD-Sync-Ordner und stellt `[nes] dol` dort auf `sd:/apps/fceugx/boot.dol`. Über `[debug] emu_repo` und `emu_install` lädt der Launcher nach `NL_READY` die Liste, installiert `fceugx` und startet erst danach das Autostart-Spiel:
+```bash
+python tools/dolphin_smoke.py --emu-server --autostart "nes/Super Mario Bros. (World).nes" --timeout 120 --marker "NL_EMU_LIST ok" --marker "NL_EMU_INSTALL fceugx ok" --marker "ARGV 1"
+```
+
 Die CI baut `newlauncher.dol`, `nl_selftest.dol` und `argv_echo.dol` und lädt sie als Artefakte hoch.
 
 Schriften neu reduzieren (nur bei Schriftwechsel, braucht `pip install fonttools`):
@@ -130,7 +135,7 @@ Wii/GC-Cover lädt der Launcher selbst: HOME-Menü → Einstellungen → „Fehl
 
 Der Launcher wandelt jedes PNG beim ersten Anzeigen in eine CMPR-Textur unter `<lib>/newlauncher/cache/covers/` um. Wer ein Cover in `covers_src` austauscht, löscht danach `cache/covers` (oder nur die passende `.tex`), sonst bleibt die alte Textur.
 
-Nur für Tests: `[debug] perf = 1` schreibt die `NL_PERF`-Messzeilen (siehe [Auf der Wii testen](#auf-der-wii-testen)), `[debug] cover_url` ersetzt die GameTDB-Adresse, `[debug] fetch_covers = 1` löst „Fehlende Cover laden“ nach `NL_READY` aus, `[debug] log_sounds = 1` meldet jeden gespielten UI-Klang als `NL_SOUND`.
+Nur für Tests: `[debug] perf = 1` schreibt die `NL_PERF`-Messzeilen (siehe [Auf der Wii testen](#auf-der-wii-testen)), `[debug] cover_url` ersetzt die GameTDB-Adresse, `[debug] fetch_covers = 1` löst „Fehlende Cover laden“ nach `NL_READY` aus, `[debug] log_sounds = 1` meldet jeden gespielten UI-Klang als `NL_SOUND`, `[debug] emu_repo` ersetzt `[emulators] repo`, `[debug] emu_install = <name>,<name>` lädt nach `NL_READY` die Liste und installiert diese Emulatoren (`[debug] autostart` wartet darauf).
 
 ## Emulatoren
 
@@ -152,6 +157,28 @@ NES, SNES, GB, GBC und GBA starten über Emulator-DOLs von der SD. Der Launcher 
 Fehlende Einträge fallen auf den Standard zurück. GameCube und Wii folgen mit M5; bis dahin zeigt „Starten“ dort einen Hinweis.
 
 Vor dem Start prüft der Launcher, ob die DOL existiert und gültig ist und ob die ROM vorhanden ist. Fehlt etwas, erscheint ein Dialog, und der Launcher läuft weiter.
+
+### Installieren und aktualisieren
+
+HOME-Menü → Einstellungen → „Emulatoren“ zeigt je Emulator (FCE Ultra GX, Snes9x GX, Visual Boy Advance GX, Not64, Wii64, Nintendont) den Stand: nicht installiert, aktuell, Update verfügbar oder Version unbekannt. Beim Öffnen geht nichts ins Netz; erst „Nach Updates suchen“ lädt die Liste des Open Shop Channel. A auf einem Emulator installiert bzw. aktualisiert ihn, „Alle aktualisieren“ nimmt alle mit Update oder unbekannter Version. B bricht einen laufenden Download ab.
+
+Die Quelle steht in `config.ini`:
+
+```ini
+[emulators]
+repo = http://hbb1.oscwii.org/hbb
+```
+
+Der Launcher lädt das ZIP nach `sd:/newlauncher/tmp/`, prüft Größe und CRC, entpackt dort und verschiebt erst danach: Dateien unter `apps/` werden ersetzt, alle anderen (z. B. Emulator-Einstellungen) nur angelegt, wenn sie fehlen; `boot.dol` kommt zuletzt. Stand und Version merkt sich `sd:/newlauncher/emulators_installed.ini`. Reicht der Platz auf der SD nicht für ZIP plus entpackten Inhalt, startet der Download nicht. Bisher nur über HTTP; HTTPS folgt mit dem TLS-Modul (Spec 6.9).
+
+Am PC geht dasselbe direkt auf die Karte, mit denselben Regeln und derselben `emulators_installed.ini`:
+
+```bash
+python tools/wii_deploy.py E: --emulators                 # alle aus dem Katalog, mit Rückfrage
+python tools/wii_deploy.py E: --emulators fceugx not64 --yes
+```
+
+Ohne Namen nimmt das Tool alle sechs Emulatoren; aktuelle überspringt es. Ohne `--yes` zeigt es zuerst die Pakete mit Version und Größe und lädt erst nach `j`. `--repo URL` setzt eine andere Quelle. Exit-Code 0 = fertig, 1 = abgelehnt, 2 = Fehler (unbekannter Name, Netz, Paket kaputt; die Karte bleibt dann unverändert).
 
 ### N64
 
@@ -301,6 +328,11 @@ Mit `[debug] perf = 1` schreibt der Launcher:
 | `NL_COVER_DL <id6> <region> ok`, `NL_COVER_DL <id6> missing\|failed` | Ergebnis je Spiel |
 | `NL_COVER_DL_ABORT failures=3` | drei Fehler in Folge: übrige Spiele werden nicht mehr versucht (`failed`) |
 | `NL_COVER_DL_DONE ok=<n> missing=<n> failed=<n>` | Download fertig, Dialog offen |
+| `NL_EMU_LIST ok n=<n>`, `NL_EMU_LIST fail` | OSC-Liste geladen (Anzahl Apps) bzw. nicht geladen (bei fehlendem Netz vorher `NL_NET_FAIL <code>`) |
+| `NL_EMU_INSTALL <name> ok files=<n>` | Emulator installiert bzw. aktualisiert |
+| `NL_EMU_INSTALL <name> fail <nospace\|download\|badsize\|badzip\|write\|cancelled> <detail>` | Installation fehlgeschlagen; `tmp/` ist aufgeräumt, die alte Version bleibt |
+| `NL_EMU_DEBUG_INSTALL n=<n>` | Testmodus: so viele Apps aus `[debug] emu_install` stehen in der Liste |
+| `NL_EMU_DONE not64=<0\|1> wii64=<0\|1>` | Installationen fertig; N64-DOLs neu geprüft |
 | `NL_LANG <de\|en>` | aktive Sprache (beim Start und nach Änderung) |
 | `NL_CONFIG_SAVED` | Einstellungen in `config.ini` gespeichert |
 | `NL_RESCAN start` | „Bibliothek neu scannen“ gestartet |

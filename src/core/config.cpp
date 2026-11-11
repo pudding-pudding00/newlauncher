@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <vector>
 
+#include "core/emu_catalog.hpp"
+
 namespace nl {
 
 namespace {
@@ -56,6 +58,10 @@ Config configFromIni(const IniDoc& ini) {
     for (std::string_view allowed : {"auto", "EN", "DE", "FR", "US", "JA"}) {
         if (region == allowed) c.coverRegion = std::string(region);
     }
+    const std::string_view repo = trim(ini.get("emulators", "repo"));
+    c.emulatorRepo = repo.rfind("http://", 0) == 0 && repo.size() > 7 ? std::string(repo) : std::string(kDefaultEmuRepo);
+    c.debugEmuRepo = std::string(trim(ini.get("debug", "emu_repo")));
+    c.debugEmuInstall = std::string(trim(ini.get("debug", "emu_install")));
     c.debugAutostart = std::string(ini.get("debug", "autostart"));  // nur für Tests (Spec 9)
     c.debugCoverUrl = std::string(ini.get("debug", "cover_url"));
     c.debugFetchCovers = parseIntIn(ini.get("debug", "fetch_covers"), 0, 1, 0) == 1;
@@ -97,6 +103,7 @@ std::vector<IniValue> configValues(const Config& c) {
         {"audio", "music_volume", std::to_string(std::clamp(c.musicVolume, 0, 100))},
         {"audio", "sounds", c.sounds ? "1" : "0"},
         {"covers", "region", c.coverRegion},
+        {"emulators", "repo", c.emulatorRepo},
     };
 }
 
@@ -191,7 +198,9 @@ std::string defaultConfigText() {
            "music_volume = 60\n"
            "sounds = 1\n"
            "[covers]\n"
-           "region = auto\n";
+           "region = auto\n"
+           "[emulators]\n"
+           "repo = http://hbb1.oscwii.org/hbb\n";
 }
 
 }  // namespace nl

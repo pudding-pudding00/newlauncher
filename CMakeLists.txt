@@ -44,6 +44,11 @@ add_library(nl_core STATIC
     src/core/cover_paths.cpp
     src/core/cover_cache.cpp
     src/core/http.cpp
+    src/core/crc32.cpp
+    src/core/inflate.cpp
+    src/core/zip_reader.cpp
+    src/core/emu_catalog.cpp
+    src/core/emu_install.cpp
     src/core/cover_download.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
@@ -58,6 +63,7 @@ add_library(nl_core STATIC
     src/ui/main_scene.cpp
     src/ui/home_menu.cpp
     src/ui/settings_scene.cpp
+    src/ui/emulators_scene.cpp
     src/ui/debug_overlay.cpp
     src/ui/pointer_cursor.cpp
     src/ui/startup_scene.cpp
@@ -125,6 +131,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/cover_worker.cpp
         src/platform/http_client.cpp
         src/platform/net_worker.cpp
+        src/platform/emu_worker.cpp
+        src/platform/sd_space.cpp
         src/platform/audio.cpp
         src/platform/music.cpp
         src/app/cover_service.cpp

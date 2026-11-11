@@ -160,3 +160,25 @@ TEST_CASE("configFromIni: [debug] perf") {
     CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugPerf);
     CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nperf = 1\n")).debugPerf);
 }
+
+TEST_CASE("configFromIni: [emulators] repo, fehlt oder kein http:// → Standard") {
+    CHECK(configFromIni(IniDoc::parse("")).emulatorRepo == "http://hbb1.oscwii.org/hbb");
+    CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = http://example.org/hbb\n")).emulatorRepo ==
+          "http://example.org/hbb");
+    CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = https://x/hbb\n")).emulatorRepo ==
+          "http://hbb1.oscwii.org/hbb");
+    CHECK(defaultConfigText().find("[emulators]\nrepo = http://hbb1.oscwii.org/hbb\n") != std::string::npos);
+}
+
+TEST_CASE("configFromIni: [debug] emu_repo und emu_install") {
+    const Config c = configFromIni(IniDoc::parse("[debug]\nemu_repo = http://127.0.0.1:8080/hbb\nemu_install = fceugx\n"));
+    CHECK(c.debugEmuRepo == "http://127.0.0.1:8080/hbb");
+    CHECK(c.debugEmuInstall == "fceugx");
+}
+
+TEST_CASE("configToIniText: schreibt [emulators] repo") {
+    Config c;
+    c.emulatorRepo = "http://example.org/hbb";
+    const std::string text = configToIniText(c, "[general]\nlanguage = auto\n");
+    CHECK(configFromIni(IniDoc::parse(text)).emulatorRepo == "http://example.org/hbb");
+}

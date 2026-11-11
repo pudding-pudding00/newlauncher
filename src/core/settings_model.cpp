@@ -22,7 +22,8 @@ int stepClock(int minute, int dir) { return ((minute + dir * 30) % kDay + kDay) 
 }  // namespace
 
 bool isAction(SettingRow r) {
-    return r == SettingRow::Rescan || r == SettingRow::FetchCovers || r == SettingRow::VcMap;
+    return r == SettingRow::Rescan || r == SettingRow::FetchCovers || r == SettingRow::VcMap ||
+           r == SettingRow::Emulators;
 }
 
 void stepSetting(Config& c, SettingRow r, int dir) {
@@ -46,6 +47,7 @@ void stepSetting(Config& c, SettingRow r, int dir) {
         case SettingRow::Rescan:
         case SettingRow::FetchCovers:
         case SettingRow::VcMap:
+        case SettingRow::Emulators:
         case SettingRow::Count: break;
     }
 }

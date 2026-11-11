@@ -1,6 +1,7 @@
 #include "platform/http_client.hpp"
 
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <string>
@@ -81,10 +82,11 @@ struct Socket {
         if (fd >= 0) net_close(fd);
     }
 };
-}  // namespace
 
-HttpOutcome httpGet(const Url& url, u32 maxBody, std::vector<u8>& body, const volatile bool* cancel) {
-    body.clear();
+bool g_netReady = false;
+
+// Verbinden, Anfrage senden, Antwort in den Parser füttern. Ok/NotFound/Failed nach Status.
+HttpOutcome request(const Url& url, HttpParser& parser, const volatile bool* cancel) {
     in_addr ip{};
     if (!resolve(url.host, ip)) return HttpOutcome::Failed;
 
@@ -100,10 +102,11 @@ HttpOutcome httpGet(const Url& url, u32 maxBody, std::vector<u8>& body, const vo
     if (!connectWithTimeout(sock.fd, addr, cancel)) return HttpOutcome::Failed;
     if (!sendAll(sock.fd, buildGetRequest(url), cancel)) return HttpOutcome::Failed;
 
-    HttpParser parser(maxBody);
-    static u8 buf[4096];  // nur der Netz-Thread ruft httpGet auf
+    u8 buf[4096];
     HttpParser::State state = HttpParser::State::Headers;
     while (state == HttpParser::State::Headers || state == HttpParser::State::Body) {
+        // Auch bei durchgehend ankommenden Daten (kein EAGAIN, z. B. schnelles LAN) muss B sofort greifen.
+        if (isCancelled(cancel)) return HttpOutcome::Failed;
         const s32 r = net_recv(sock.fd, buf, sizeof buf, 0);
         if (r > 0) {
             state = parser.feed(std::span<const u8>(buf, static_cast<std::size_t>(r)));
@@ -118,8 +121,65 @@ HttpOutcome httpGet(const Url& url, u32 maxBody, std::vector<u8>& body, const vo
     if (state != HttpParser::State::Done) return HttpOutcome::Failed;
     if (parser.status() == 404) return HttpOutcome::NotFound;
     if (parser.status() != 200) return HttpOutcome::Failed;
-    body.assign(parser.body().begin(), parser.body().end());
     return HttpOutcome::Ok;
+}
+
+struct FileSink {
+    static constexpr std::size_t kBuf = 64 * 1024;
+    std::FILE* f = nullptr;
+    std::vector<u8> buf;
+    bool ok = true;
+    bool flush() {
+        if (!buf.empty() && std::fwrite(buf.data(), 1, buf.size(), f) != buf.size()) ok = false;
+        buf.clear();
+        return ok;
+    }
+    bool put(std::span<const u8> data) {
+        if (buf.size() + data.size() > kBuf && !flush()) return false;
+        buf.insert(buf.end(), data.begin(), data.end());
+        return true;
+    }
+};
+}  // namespace
+
+HttpOutcome httpGet(const Url& url, u32 maxBody, std::vector<u8>& body, const volatile bool* cancel) {
+    body.clear();
+    HttpParser parser(maxBody);
+    const HttpOutcome r = request(url, parser, cancel);
+    if (r == HttpOutcome::Ok) body.assign(parser.body().begin(), parser.body().end());
+    return r;
+}
+
+HttpOutcome httpDownload(const Url& url, const std::string& destFile, u32 maxBody, const volatile bool* cancel,
+                         volatile u32* received) {
+    FileSink sink;
+    sink.f = std::fopen(destFile.c_str(), "wb");
+    if (sink.f == nullptr) return HttpOutcome::Failed;
+    sink.buf.reserve(FileSink::kBuf);
+    HttpParser parser(maxBody);
+    parser.setSink([&](std::span<const u8> data) {
+        if (received != nullptr) *received = *received + static_cast<u32>(data.size());
+        return sink.put(data);
+    });
+    HttpOutcome r = request(url, parser, cancel);
+    // Ein Fehlerstatus (404 o. ä.) liefert eine Fehlerseite in die Senke; die Datei wird unten gelöscht.
+    if (!sink.flush()) r = HttpOutcome::Failed;
+    if (std::fclose(sink.f) != 0) r = HttpOutcome::Failed;
+    if (r != HttpOutcome::Ok) std::remove(destFile.c_str());
+    return r;
+}
+
+bool ensureNetwork(s32& code) {
+    if (g_netReady) return true;
+    s32 r = -1;
+    for (int i = 0; i < 3 && r < 0; ++i) {
+        r = net_init();
+        if (r < 0) usleep(500 * 1000);
+    }
+    code = r;
+    if (r < 0) return false;
+    g_netReady = true;
+    return true;
 }
 
 }  // namespace nl::platform

@@ -101,6 +101,13 @@ TEST_CASE_FIXTURE(Fixture, "A auf VC-Injects zuordnen ohne Änderungen") {
     CHECK(r.command == AppCommand::OpenVcMap);
 }
 
+TEST_CASE_FIXTURE(Fixture, "A auf Emulatoren öffnet die Emulator-Verwaltung") {
+    focusRow(SettingRow::Emulators);
+    const SceneRequests r = press(Action::Confirm);
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::OpenEmulators);
+}
+
 TEST_CASE_FIXTURE(Fixture, "A auf Fehlende Cover laden") {
     focusRow(SettingRow::FetchCovers);
     const SceneRequests r = press(Action::Confirm);

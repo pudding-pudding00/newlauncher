@@ -35,6 +35,11 @@ enum class AppCommand : u8 {
     SettingsChanged,  // Einstellungsszene hat die Live-Config geändert (Sprache/Theme/Audio sofort anwenden)
     SaveSettings,     // config.ini schreiben
     Rescan,           // Bibliothek neu scannen
+    OpenEmulators,    // Emulator-Verwaltung öffnen (Spec 6.9)
+    EmuFetchList,     // OSC-Liste laden
+    EmuInstall,       // Ziele: EmulatorsScene::takeTargets()
+    EmuInstallAll,
+    EmuCancel,
 };
 const char* appCommandName(AppCommand c);
 

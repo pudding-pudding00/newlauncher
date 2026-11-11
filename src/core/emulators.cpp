@@ -50,6 +50,8 @@ EmulatorTable EmulatorTable::fromIni(const IniDoc& doc) {
     for (Console c : kRomConsoles) t.entries_[static_cast<std::size_t>(c)] = readEntry(doc, defaults, consoleInfo(c).key);
     t.not64_ = readEntry(doc, defaults, "n64_not64");
     t.wii64_ = readEntry(doc, defaults, "n64_wii64");
+    t.nintendont_ = readEntry(doc, defaults, "nintendont");
+    t.nintendont_.args.clear();
     return t;
 }
 

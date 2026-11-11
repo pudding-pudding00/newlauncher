@@ -15,29 +15,76 @@ using TargetResult = Result<LaunchTarget, LaunchError>;
 
 PlanResult fail(LaunchFailure kind, std::string context) { return PlanResult::err({kind, std::move(context)}); }
 
-PlanResult planFor(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorEntry& emu) {
-    const std::optional<u64> size = fileSize(fs, emu.dol);
-    if (!size) return fail(LaunchFailure::EmuMissing, emu.dol);
-    if (*size > kMaxDolBytes) return fail(LaunchFailure::EmuInvalid, emu.dol);
+// Prüft die DOL; liefert ihre Größe. missing ist die Fehlerart, wenn sie fehlt.
+Result<u32, LaunchError> checkDol(FileSystem& fs, const std::string& dol, LaunchFailure missing) {
+    using R = Result<u32, LaunchError>;
+    const std::optional<u64> size = fileSize(fs, dol);
+    if (!size) return R::err({missing, dol});
+    if (*size > kMaxDolBytes) return R::err({LaunchFailure::EmuInvalid, dol});
     std::array<u8, kDolHeaderBytes> head{};
-    auto got = fs.read(emu.dol, 0, head);
-    if (!got.isOk()) return fail(LaunchFailure::EmuMissing, emu.dol);
-    if (got.value() < kDolHeaderBytes || !parseDol(head, *size).isOk()) return fail(LaunchFailure::EmuInvalid, emu.dol);
+    auto got = fs.read(dol, 0, head);
+    if (!got.isOk()) return R::err({missing, dol});
+    if (got.value() < kDolHeaderBytes || !parseDol(head, *size).isOk()) return R::err({LaunchFailure::EmuInvalid, dol});
+    return R::ok(static_cast<u32>(*size));
+}
 
-    const std::string rom = joinPath(libRoot, g.path != nullptr ? g.path : "");
+bool exists(FileSystem& fs, const std::string& file) {
     std::array<u8, 1> probe{};
-    if (!fs.read(rom, 0, probe).isOk()) return fail(LaunchFailure::RomMissing, rom);
+    return fs.read(file, 0, probe).isOk();
+}
 
-    LaunchPlan plan;
-    plan.dolPath = emu.dol;
-    plan.dolSize = static_cast<u32>(*size);
-    plan.args = expandArgs(emu.dol, emu.args, rom);
+PlanResult finish(LaunchPlan plan) {
     auto block = packArgvBlock(plan.args, kArgsAddr);
     if (!block.isOk()) return fail(LaunchFailure::ArgsTooLong, block.error().context);
     plan.argvBlock = std::move(block).value();
     return PlanResult::ok(std::move(plan));
 }
 
+PlanResult planFor(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorEntry& emu) {
+    auto size = checkDol(fs, emu.dol, LaunchFailure::EmuMissing);
+    if (!size.isOk()) return PlanResult::err(size.error());
+
+    const std::string rom = joinPath(libRoot, g.path != nullptr ? g.path : "");
+    if (!exists(fs, rom)) return fail(LaunchFailure::RomMissing, rom);
+
+    LaunchPlan plan;
+    plan.dolPath = emu.dol;
+    plan.dolSize = size.value();
+    plan.args = expandArgs(emu.dol, emu.args, rom);
+    return finish(std::move(plan));
+}
+
+TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorEntry& nin, bool ahbprotOff) {
+    auto err = [](LaunchFailure k, std::string c) { return TargetResult::err({k, std::move(c)}); };
+    if (!ahbprotOff) return err(LaunchFailure::AhbProt, "");
+    auto size = checkDol(fs, nin.dol, LaunchFailure::NinMissing);
+    if (!size.isOk()) return TargetResult::err(size.error());
+    const std::optional<NinVersion> ver = findNintendontVersion(fs, nin.dol);
+    if (!ver) return err(LaunchFailure::NinUnknown, nin.dol);
+    if (*ver < kMinNintendont) return err(LaunchFailure::NinTooOld, formatNinVersion(*ver));
+
+    const std::string rel = g.path != nullptr ? g.path : "";
+    const std::string game = joinPath(libRoot, rel);
+    if (!exists(fs, game)) return err(LaunchFailure::RomMissing, game);
+    const std::string gamePath = ninGamePath(rel);
+    const bool usb = libRoot.substr(0, 4) == "usb:";
+    auto cfg = buildNinCfg({gamePath, g.key != nullptr ? g.key : "", usb});
+    if (!cfg.isOk()) {
+        if (cfg.error() == NinCfgError::PathTooLong) return err(LaunchFailure::NinPathTooLong, gamePath);
+        return err(LaunchFailure::Unsupported, consoleInfo(g.console).name);  // Schlüssel ohne ID6 (Scanner liefert immer ID6)
+    }
+
+    LaunchPlan plan;
+    plan.dolPath = nin.dol;
+    plan.dolSize = size.value();
+    plan.args = {nin.dol, std::string(cfg.value().begin(), cfg.value().end())};
+    PlanResult done = finish(std::move(plan));
+    if (!done.isOk()) return TargetResult::err(done.error());
+    LaunchTarget t;
+    t.dol = std::move(done).value();
+    t.nintendont = ver;
+    return TargetResult::ok(std::move(t));
+}
 TargetResult dolTarget(PlanResult plan, std::optional<N64Method> n64) {
     if (!plan.isOk()) return TargetResult::err(plan.error());
     LaunchTarget t;
@@ -68,6 +115,11 @@ const char* launchFailureName(LaunchFailure f) {
         case LaunchFailure::ArgsTooLong: return "ArgsTooLong";
         case LaunchFailure::NoMemory: return "NoMemory";
         case LaunchFailure::NoN64Path: return "NoN64Path";
+        case LaunchFailure::NinMissing: return "NinMissing";
+        case LaunchFailure::NinUnknown: return "NinUnknown";
+        case LaunchFailure::NinTooOld: return "NinTooOld";
+        case LaunchFailure::NinPathTooLong: return "NinPathTooLong";
+        case LaunchFailure::AhbProt: return "AhbProt";
     }
     return "?";
 }
@@ -79,7 +131,8 @@ Result<LaunchPlan, LaunchError> preflightEmulator(FileSystem& fs, const Game& g,
 }
 
 Result<LaunchTarget, LaunchError> preflightGame(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus,
-                                                const N64Inputs* n64) {
+                                                const N64Inputs* n64, bool ahbprotOff) {
+    if (g.console == Console::Gc) return gcTarget(fs, g, libRoot, emus.nintendont(), ahbprotOff);
     if (g.console != Console::N64) return dolTarget(preflightEmulator(fs, g, libRoot, emus), std::nullopt);
 
     const N64Decision d = n64 != nullptr ? decideN64(*n64) : N64Decision{};

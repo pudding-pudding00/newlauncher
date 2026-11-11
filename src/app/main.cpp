@@ -452,7 +452,7 @@ int main(int, char**) {
             audio.play(nl::UiSound::Error);
         };
         const nl::N64Inputs inputs = n64Inputs(game);
-        auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs);
+        auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs, /*ahbprotOff=*/true);  // M8 Task 3 setzt den echten Wert
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Dol && !launchAllowed) {
             target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(
                 {nl::LaunchFailure::NoMemory, nl::ui::tr(nl::ui::Str::NoMemory)});

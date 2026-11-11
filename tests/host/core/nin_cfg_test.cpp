@@ -74,3 +74,59 @@ TEST_CASE("nin_cfg: ninGamePath") {
     CHECK(ninGamePath("games\\x\\game.iso") == "/games/x/game.iso");
     CHECK(ninGamePath("//games/x/game.iso") == "/games/x/game.iso");
 }
+
+// --- Task 2: Version aus der Nintendont-DOL ---
+#include "support/mem_fs.hpp"
+
+namespace {
+constexpr const char* kNinDol = "sd:/apps/nintendont/boot.dol";
+
+test::MemFileSystem fsWithTag(std::size_t size, std::size_t at, std::string_view tag) {
+    std::vector<u8> img(size, 0xA5);
+    for (std::size_t i = 0; i < tag.size(); ++i) img[at + i] = static_cast<u8>(tag[i]);
+    test::MemFileSystem fs;
+    fs.addFile(kNinDol, std::move(img));
+    return fs;
+}
+}  // namespace
+
+TEST_CASE("nin_cfg: Version gefunden") {
+    auto fs = fsWithTag(4096, 100, "$$Version:6.509");
+    auto v = findNintendontVersion(fs, kNinDol);
+    REQUIRE(v.has_value());
+    CHECK(v->major == 6);
+    CHECK(v->minor == 509);
+    CHECK(formatNinVersion(*v) == "6.509");
+}
+
+TEST_CASE("nin_cfg: Version auf der Blockgrenze") {
+    for (std::size_t at : {65536u - 5u, 65536u - 10u, 65536u - 12u, 65536u}) {
+        CAPTURE(at);
+        auto fs = fsWithTag(200000, at, "$$Version:6.509");
+        auto v = findNintendontVersion(fs, kNinDol);
+        REQUIRE(v.has_value());
+        CHECK(*v == NinVersion{6, 509});
+    }
+}
+
+TEST_CASE("nin_cfg: kein Versionsstring") {
+    auto fs = fsWithTag(100000, 0, "");
+    CHECK_FALSE(findNintendontVersion(fs, kNinDol).has_value());
+    test::MemFileSystem empty;
+    CHECK_FALSE(findNintendontVersion(empty, kNinDol).has_value());
+}
+
+TEST_CASE("nin_cfg: $$Version: ohne Zahl") {
+    auto a = fsWithTag(4096, 10, "$$Version:x.1");
+    CHECK_FALSE(findNintendontVersion(a, kNinDol).has_value());
+    auto b = fsWithTag(4096, 10, "$$Version:6.");
+    CHECK_FALSE(findNintendontVersion(b, kNinDol).has_value());
+    auto c = fsWithTag(4096, 4096 - 12, "$$Version:6.");  // Dateiende mitten in der Zahl
+    CHECK_FALSE(findNintendontVersion(c, kNinDol).has_value());
+}
+
+TEST_CASE("nin_cfg: Vergleich") {
+    CHECK(NinVersion{6, 492} < kMinNintendont);
+    CHECK(NinVersion{6, 493} >= kMinNintendont);
+    CHECK(NinVersion{7, 0} > kMinNintendont);
+}

@@ -3,10 +3,13 @@
 // common/include/CommonConfig.h. Gesendet wird immer Version 10; neuere Nintendont heben ihn selbst an.
 
 #include <array>
+#include <compare>
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 
+#include "core/fs.hpp"
 #include "core/result.hpp"
 #include "core/types.hpp"
 
@@ -32,5 +35,16 @@ Result<std::array<u8, kNinCfgSize>, NinCfgError> buildNinCfg(const NinConfigInpu
 
 // Genau ein führendes "/", "\" wird zu "/".
 std::string ninGamePath(std::string_view relPath);
+
+// Version aus der Nintendont-DOL: ASCII "$$Version:<major>.<minor>" (Spec 10, Risiko NIN_CFG-Version).
+struct NinVersion {
+    u16 major = 0, minor = 0;
+    auto operator<=>(const NinVersion&) const = default;
+};
+inline constexpr NinVersion kMinNintendont{6, 493};
+
+// Liest in Blöcken zu 64 KiB mit Überlappung; erstes "$$Version:" mit Ziffern.Ziffern, sonst nullopt.
+std::optional<NinVersion> findNintendontVersion(FileSystem& fs, std::string_view dolPath);
+std::string formatNinVersion(NinVersion v);  // "6.509"
 
 }  // namespace nl

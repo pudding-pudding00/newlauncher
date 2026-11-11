@@ -110,6 +110,20 @@ Emulator** starten, ohne dessen Dateiauswahl.
 | N2 | Zuordnung speichern, Neustart | Zuordnung bleibt (`n64_vc.ini`) | |
 | N3 | Inject starten | Kanal startet das Spiel | |
 
+## G – GameCube
+
+Voraussetzung: Nintendont ab 6.493 unter `sd:/apps/nintendont/boot.dol`, Launcher aus dem HBC-Eintrag gestartet.
+
+| ID | Schritt | Erwartet | Ergebnis |
+|---|---|---|---|
+| G1 | GC-Spiel von SD starten (`sd:/games/<Titel> [ID6]/game.iso`) | Nintendont startet das Spiel ohne eigenes Menü; Log zeigt `NL_NIN ver=… usb=0` | |
+| G2 | GC-Spiel von USB starten (Bibliotheksgerät USB) | Spiel startet; `NL_NIN … usb=1` | |
+| G3 | Im Spiel auf der Memory Card speichern, Wii neu starten, Spiel erneut starten und laden | Spielstand ist da (emulierte Karte unter `saves/`) | |
+| G4 | Zwei-Disc-Spiel mit `disc2.iso` bis zum Disc-Wechsel spielen | Nintendont wechselt auf Disc 2 – oder „kein Zwei-Disc-Spiel vorhanden“ | |
+| G5 | `sd:/apps/nintendont/boot.dol` umbenennen, GC-Spiel starten | Dialog „Nintendont fehlt“ mit dem Pfad, Launcher bleibt bedienbar | |
+| G6 | Launcher per `wiiload` starten, GC-Spiel starten | Log `NL_AHBPROT on`, Dialog „Kein Hardwarezugriff“ | |
+| G7 | GC-Controller und Wiimote+Classic Controller im Spiel benutzen | beide steuern das Spiel | |
+
 ## C – Cover
 
 | ID | Schritt | Erwartet | Ergebnis |

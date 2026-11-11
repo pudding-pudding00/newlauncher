@@ -77,10 +77,23 @@ class CheckLicensesTest(unittest.TestCase):
             rc = check_licenses.main([str(empty), "--root", str(self.root)])
         self.assertEqual(rc, 1)
 
+    def test_archives_linked_by_path_are_checked(self):
+        # CMake linkt Bibliotheken aus Unterprojekten (wii_tls, Mbed TLS) als Pfad statt mit -l.
+        with (self.root / "THIRD_PARTY.md").open("a", encoding="utf-8") as f:
+            f.write("| foo | 1.0 | MIT | https://example.org | gelinkt |\n")
+        link = self.build / "CMakeFiles/newlauncher.dir/link.txt"
+        link.write_text("g++ -o x.elf a.o libnl_core.a third_party/wii_tls/libwiitls.a "
+                        "_deps/mbedtls-build/library/libmbedtls.a -lfoo\n", encoding="utf-8")
+        rc, out = self.run_check()
+        self.assertEqual(rc, 1)
+        self.assertIn("wiitls", out)
+        self.assertIn("mbedtls", out)
+        self.assertNotIn("nl_core", out)  # eigene Bibliothek
+
     def test_repo_table_covers_current_wii_build(self):
         names = check_licenses.table_names(Path(check_licenses.REPO_ROOT / "THIRD_PARTY.md").read_text(encoding="utf-8"))
         for lib in ("freetype", "png16", "z", "bz2", "brotlidec", "brotlicommon", "ogg", "vorbisidec", "fat",
-                    "ogc", "asnd", "bte", "wiiuse"):
+                    "ogc", "asnd", "bte", "wiiuse", "wiitls", "mbedtls", "mbedx509", "tfpsacrypto"):
             self.assertTrue(check_licenses.is_listed(check_licenses.component_for_lib(lib), names), lib)
 
 

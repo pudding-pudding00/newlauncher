@@ -19,6 +19,7 @@ LINK_TARGETS = ("newlauncher", "nl_game_booter")
 SYSTEM_LIBS = {"m", "c", "gcc", "stdc++", "sysbase", "supc++", "g"}
 # Ordner unter third_party/, die nur Tests dienen und nicht verteilt werden.
 TEST_ONLY_DIRS = {"doctest"}
+OWN_LIB_PREFIX = "nl_"  # eigene Archive (nl_core, nl_fonts, nl_booter, …)
 # -l<name> → Teilstring, der in der Name-Spalte von THIRD_PARTY.md vorkommen muss (klein geschrieben).
 ALIASES = {
     "png16": "libpng",
@@ -73,7 +74,11 @@ def linked_libs(build_dir: Path) -> tuple[set[str], list[Path]]:
         link = build_dir / "CMakeFiles" / f"{target}.dir" / "link.txt"
         if link.is_file():
             found.append(link)
-            libs.update(re.findall(r"(?:^|\s)-l([A-Za-z0-9_+.-]+)", link.read_text(encoding="utf-8")))
+            text = link.read_text(encoding="utf-8")
+            libs.update(re.findall(r"(?:^|\s)-l([A-Za-z0-9_+.-]+)", text))
+            # Bibliotheken aus Unterprojekten (wii_tls, Mbed TLS) stehen als Pfad zum Archiv in der Zeile.
+            libs.update(a for a in re.findall(r"(?:^|[\s/])lib([A-Za-z0-9_+.-]+)\.a(?=\s|$)", text)
+                        if not a.startswith(OWN_LIB_PREFIX))
     return libs - SYSTEM_LIBS, found
 
 

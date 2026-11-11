@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 
+# devkitPro unter Windows: CMake läuft in MSYS2, der GCC ist nativ und schreibt Abhängigkeiten als C:/….
+# In Unterordnern (third_party/wii_tls, Mbed TLS) macht CMake daraus „_deps/…/C:/…“ und make bricht beim
+# zweiten Build ab. CMakes eigener Abhängigkeits-Scanner hat das Problem nicht (nur dort nötig).
+if(DEFINED ENV{MSYSTEM})  # vor project(): CMAKE_HOST_SYSTEM_NAME gibt es noch nicht
+    set(CMAKE_DEPENDS_USE_COMPILER FALSE)
+endif()
+
 project(newlauncher VERSION 0.0.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -94,6 +101,22 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     pkg_check_modules(FREETYPE REQUIRED freetype2)
     # libpng für die Cover (pacman -S ppc-libpng); FreeType bringt sie meist schon mit.
     pkg_check_modules(PNG REQUIRED libpng)
+
+    # HTTPS über wii_tls (M11, Spec v2 4.1): vendort nach third_party/wii_tls (tools/vendor_wii_tls.py), holt
+    # Mbed TLS 4.1.1 per FetchContent mit festem SHA256. Ohne NL_TLS baut der Launcher wie bisher nur HTTP.
+    option(NL_TLS "HTTPS über wii_tls" ON)
+    if(NL_TLS)
+        set(WTLS_PLATFORM ogc CACHE STRING "" FORCE)
+        set(WTLS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+        set(WTLS_BUILD_HWTEST OFF CACHE BOOL "" FORCE)
+        set(WTLS_BUILD_BENCH OFF CACHE BOOL "" FORCE)
+        set(WTLS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        # Mbed TLS 4.1.1 ruft cmake_minimum_required mit einer Version < 3.10 auf, neuere CMake-Versionen
+        # warnen dafür. Die Mindest-Policy-Version hebt nur den Upstream-Code an; danach wieder aus.
+        set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
+        add_subdirectory(third_party/wii_tls EXCLUDE_FROM_ALL)
+        unset(CMAKE_POLICY_VERSION_MINIMUM)
+    endif()
 
     # Schriften (Spec 3.7), per tools/subset_fonts.py auf Latin-1 + „…" reduziert.
     dkp_add_embedded_binary_library(nl_fonts
@@ -194,6 +217,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
         target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} nl_game_booter_blob fat wiiuse bte asnd vorbisidec ogg)
         target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}")
+        if(NL_TLS)
+            target_link_libraries(${name} PRIVATE wiitls)
+            target_compile_definitions(${name} PRIVATE NL_TLS=1)
+        endif()
         nl_apply_flags(${name})
         ogc_create_dol(${name})
     endfunction()

@@ -1,0 +1,5 @@
+/build*/
+/.superpowers/
+*.dol
+*.elf
+__pycache__/

@@ -11,9 +11,9 @@ Die Einstellungsseite „Über“ zeigt Name, Version und Lizenz aus dieser Tabe
 | Name | Version | Lizenz | Quelle | verteilt als |
 |---|---|---|---|---|
 | WiiFlow Lite (Game-Booter) | Stand siehe `boot/UPSTREAM.md` | GPL-3.0-or-later / GPL-2.0-or-later | https://github.com/Fledge68/WiiFlow_Lite | Quelltext in `boot/`, gelinkt in `game_booter.dol` |
-| wii_tls | siehe `third_party/wii_tls/VENDORED.txt` | Apache-2.0 | Projekt des Autors, vendort unter `third_party/wii_tls` | statisch gelinkt; `LICENSES/Apache-2.0.txt` |
-| Mbed TLS | 4.1.1 | Apache-2.0 | https://github.com/Mbed-TLS/mbedtls | statisch gelinkt über wii_tls; `LICENSES/Apache-2.0.txt` |
-| Mozilla CA-Zertifikate | Stand siehe `third_party/wii_tls/data/cacert.pem` | MPL-2.0 | https://curl.se/docs/caextract.html | unverändert eingebettet über wii_tls; `LICENSES/MPL-2.0.txt` |
+| wii_tls | 0.1.0 (2112b5b) | Apache-2.0 | Projekt des Autors, vendort unter `third_party/wii_tls` (Commit in `VENDORED.txt`) | statisch gelinkt, nur mit `NL_TLS=ON`; `LICENSES/Apache-2.0.txt` |
+| Mbed TLS | 4.1.1 | Apache-2.0 | https://github.com/Mbed-TLS/mbedtls (Release-Archiv, SHA256 in `third_party/wii_tls/CMakeLists.txt`) | statisch gelinkt über wii_tls, nur mit `NL_TLS=ON`; `LICENSES/Apache-2.0.txt` |
+| Mozilla CA-Zertifikate | 2026-11-05 | MPL-2.0 | https://curl.se/docs/caextract.html | unverändert eingebettet über wii_tls, nur mit `NL_TLS=ON`; `LICENSES/MPL-2.0.txt` |
 | M PLUS Rounded 1c | 1.059 | OFL-1.1 | https://github.com/google/fonts/tree/main/ofl/mplusrounded1c | Latin-1-Teilmenge eingebettet; `LICENSES/OFL-1.1.txt` |
 | libogc (mit libasnd, libbte, libwiiuse) | 3.2.1 | Zlib, BSD-2-Clause | https://github.com/devkitPro/libogc | statisch gelinkt; `LICENSES/libogc.txt` |
 | libfat | 2.1.0 | ZPL-2.1 | https://github.com/devkitPro/libfat | statisch gelinkt; `LICENSES/ZPL-2.1.txt` |

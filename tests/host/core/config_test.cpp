@@ -188,3 +188,9 @@ TEST_CASE("configFromIni: [debug] ignore_ahbprot") {
     CHECK(configFromIni(IniDoc::parse("[debug]\nignore_ahbprot = 1\n")).debugIgnoreAhbprot);
     CHECK_FALSE(configFromIni(IniDoc::parse("[debug]\nignore_ahbprot = 2\n")).debugIgnoreAhbprot);
 }
+
+TEST_CASE("configFromIni: [debug] wii_dry_run") {
+    CHECK_FALSE(configFromIni(IniDoc::parse("")).debugWiiDryRun);
+    CHECK(configFromIni(IniDoc::parse("[debug]\nwii_dry_run = 1\n")).debugWiiDryRun);
+    CHECK_FALSE(configFromIni(IniDoc::parse("[debug]\nwii_dry_run = 2\n")).debugWiiDryRun);
+}

@@ -54,4 +54,10 @@ Result<DolHeader> parseDol(std::span<const u8> head, u64 fileSize) {
     return Result<DolHeader>::ok(h);
 }
 
+Result<DolHeader> checkDolImage(std::span<const u8> dol, u32 maxBytes) {
+    if (dol.empty() || dol.size() > maxBytes) return invalid("DOL-Größe außerhalb der Grenze");
+    if (dol.size() < kDolHeaderBytes) return invalid("DOL kürzer als der Kopf");
+    return parseDol(dol.first(kDolHeaderBytes), dol.size());
+}
+
 }  // namespace nl

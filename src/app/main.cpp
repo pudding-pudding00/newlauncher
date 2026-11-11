@@ -36,6 +36,7 @@
 #include "gfx/renderer.hpp"
 #include "launch/chainloader.hpp"
 #include "launch/channel.hpp"
+#include "launch/wii_boot.hpp"
 #include "platform/crash.hpp"
 #include "platform/emu_worker.hpp"
 #include "platform/audio.hpp"
@@ -48,6 +49,7 @@
 #include "platform/storage.hpp"
 #include "platform/system.hpp"
 #include "platform/video.hpp"
+#include "platform/wii_disc.hpp"
 #include "platform/wii_input.hpp"
 #include "ui/settings_scene.hpp"
 #include "ui/debug_overlay.hpp"
@@ -444,6 +446,32 @@ int main(int, char**) {
     };
 
     // Spec 9: Preflight, Verlauf, Chainload. Kehrt nur zurück, wenn der Start scheitert (dann mit Dialog).
+    // Wii-Spiele (M9 Task 5): cIOS prüfen, Fragmentliste rechnen und gegenprüfen, dann preflightWii.
+    auto prepareWii = [&](const nl::Game& game) {
+        const nl::CiosStatus cios = nl::platform::readCiosStatus();
+        switch (cios.state) {
+            case nl::CiosState::D2x: nl::log::line("NL_CIOS ok base=%u ver=%s", static_cast<unsigned>(cios.base), cios.version.c_str()); break;
+            case nl::CiosState::Unverified: nl::log::line("NL_CIOS unverified"); break;
+            case nl::CiosState::Missing: nl::log::line("NL_CIOS missing"); break;
+            case nl::CiosState::NotD2x: nl::log::line("NL_CIOS not_d2x %s", cios.version.c_str()); break;
+        }
+        u32 partLba = 0;
+        auto frags = nl::platform::computeWiiFrags(fs, game, libRoot, &partLba);
+        if (frags.isOk()) {
+            const nl::FragList& f = frags.value();
+            const auto bytes = nl::serializeFragList(f);
+            char first[48] = "-";
+            if (!f.entries.empty()) {
+                std::snprintf(first, sizeof first, "%u:%u:%u", static_cast<unsigned>(f.entries[0].offset),
+                              static_cast<unsigned>(f.entries[0].sector), static_cast<unsigned>(f.entries[0].count));
+            }
+            nl::log::line("NL_FRAG dev=%s part_lba=%u n=%u size=%u crc=%08x first=%s", libRoot == "usb:" ? "usb" : "sd",
+                          static_cast<unsigned>(partLba), static_cast<unsigned>(f.entries.size()), static_cast<unsigned>(f.size),
+                          static_cast<unsigned>(nl::fragListCrc(bytes)), first);
+        }
+        return nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun);
+    };
+
     auto launchGame = [&](const nl::Game& game) {
         const std::string key = game.key;  // game kann auf Bibliotheksdaten zeigen
         auto showError = [&](const nl::LaunchError& e) {
@@ -461,7 +489,18 @@ int main(int, char**) {
         const bool hwAccess = ahbprotOff || config.debugIgnoreAhbprot;
 #endif
         auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs, hwAccess);
-        if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Dol && !launchAllowed) {
+        if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
+            if (auto plan = prepareWii(game); plan.isOk()) {
+                if (config.debugWiiDryRun) {
+                    nl::log::line("NL_WII_DRYRUN %s", plan.value().id6.c_str());
+                    return;
+                }
+                target.value().wii = std::move(plan.value());
+            } else {
+                target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(plan.error());
+            }
+        }
+        if (target.isOk() && target.value().kind != nl::LaunchTarget::Kind::Channel && !launchAllowed) {
             target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(
                 {nl::LaunchFailure::NoMemory, nl::ui::tr(nl::ui::Str::NoMemory)});
         }
@@ -498,6 +537,22 @@ int main(int, char**) {
             nl::log::line("NL_ERROR Kanalstart: %s", r.error().context.c_str());
             SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
             return;
+        }
+
+        if (target.value().kind == nl::LaunchTarget::Kind::Wii) {
+            auto booter = nl::launch::prepareWiiBoot(*target.value().wii, game.title != nullptr ? game.title : "");
+            if (!booter.isOk()) {
+                nl::log::line("NL_WARN Game-Booter nicht geladen: %s", booter.error().context.c_str());
+                showError({nl::LaunchFailure::EmuInvalid, "game_booter"});
+                return;
+            }
+            stopAudio();
+            logPerfSummary();
+            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            input.shutdown();
+            nl::platform::unmountAll();
+            nl::platform::shutdownVideo();
+            nl::launch::bootWiiGame(booter.value());
         }
 
         const nl::LaunchPlan& plan = target.value().dol;

@@ -67,6 +67,14 @@
       "Path too long.\nNintendont allows at most 254 characters: %s") \
     X(AhbProt, "Kein Hardwarezugriff.\nBitte den Launcher über den Homebrew Channel starten.", \
       "No hardware access.\nPlease start the launcher from the Homebrew Channel.") \
+    X(CiosMissing, "cIOS fehlt.\nFür Wii-Spiele wird d2x-cIOS in Slot 249 benötigt.", \
+      "cIOS missing.\nWii games need d2x cIOS in slot 249.") \
+    X(CiosNotD2x, "Falsches cIOS.\nSlot 249 enthält %s, benötigt wird d2x.", \
+      "Wrong cIOS.\nSlot 249 contains %s, d2x is required.") \
+    X(WiiFsUnsupported, "Dateisystem nicht unterstützt.\nWii-Spiele brauchen FAT32 mit 512-Byte-Sektoren (%s).", \
+      "File system not supported.\nWii games need FAT32 with 512-byte sectors (%s).") \
+    X(WiiFileBroken, "Spieldatei fehlerhaft.\n%s ist beschädigt oder zu stark fragmentiert.", \
+      "Game file damaged.\n%s is damaged or too fragmented.") \
     X(OverrideIgnored,"Gewählter Weg nicht verfügbar – automatisch gewählt.", "Chosen method unavailable – picked automatically.") \
     X(VcMapTitle, "VC-Injects zuordnen", "Map VC injects") \
     X(VcNone, "—", "—") \

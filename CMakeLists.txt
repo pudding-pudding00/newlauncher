@@ -50,6 +50,10 @@ add_library(nl_core STATIC
     src/core/emu_catalog.cpp
     src/core/emu_install.cpp
     src/core/nin_cfg.cpp
+    src/core/fat_chain.cpp
+    src/core/wbfs_map.cpp
+    src/core/frag_list.cpp
+    src/core/ios_info.cpp
     src/core/cover_download.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
@@ -111,6 +115,27 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     dkp_set_target_file(nl_app_booter ${NL_BOOTER_BIN})
     dkp_add_embedded_binary_library(nl_booter nl_app_booter)
 
+    # Game-Booter für Wii-Spiele (M9, Spec 5.1): Fremdcode aus WiiFlow Lite, siehe boot/UPSTREAM.md.
+    # Läuft ab 0x80A80000 hinter dem Launcher-Bereich; die Warnoptionen entsprechen dem upstream-Makefile.
+    file(GLOB NL_GAME_BOOTER_SOURCES CONFIGURE_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/boot/source/*.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/boot/source/*.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/boot/source/*.S)
+    enable_language(ASM)
+    add_executable(nl_game_booter ${NL_GAME_BOOTER_SOURCES} boot/nl/exception_close.cpp)
+    set_target_properties(nl_game_booter PROPERTIES OUTPUT_NAME game_booter)
+    target_include_directories(nl_game_booter PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/boot/source ${CMAKE_CURRENT_SOURCE_DIR}/boot/include)
+    target_compile_definitions(nl_game_booter PRIVATE HAVE_CONFIG_H NL_VERSION="${PROJECT_VERSION}")
+    target_compile_options(nl_game_booter PRIVATE $<$<COMPILE_LANGUAGE:C>:-std=gnu17> -O1 -Wall -Wextra -Wno-shift-negative-value
+        -Wno-array-bounds -Wno-stringop-overflow -Wno-stringop-overread)
+    target_link_options(nl_game_booter PRIVATE -Wl,--section-start,.init=0x80A80000)
+    # Die Plattform setzt -mregnames für alle ASM-Dateien; patchhook.S definiert r0…r31 selbst per .set.
+    set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/boot/source/patchhook.S PROPERTIES
+        COMPILE_OPTIONS -Wa,-mno-regnames)
+    ogc_create_dol(nl_game_booter)
+    dkp_add_embedded_binary_library(nl_game_booter_blob nl_game_booter)
+
     # Test-DOL für den Chainloader: gibt argc/argv über SYS_Report aus.
     add_executable(argv_echo tests/wii/argv_echo.c)
     target_compile_options(argv_echo PRIVATE -Wall -Wextra)
@@ -122,6 +147,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/video.cpp
         src/launch/chainloader.cpp
         src/launch/channel.cpp
+        src/launch/wii_boot.cpp
         src/platform/nand_titles.cpp
         src/platform/wii_input.cpp
         src/platform/crash.cpp
@@ -137,6 +163,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/system.cpp
         src/platform/audio.cpp
         src/platform/music.cpp
+        src/platform/wii_disc.cpp
         src/app/cover_service.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp
@@ -144,9 +171,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
 
     function(nl_wii_target name)
         add_executable(${name} ${ARGN})
-        target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS} ${PNG_STATIC_INCLUDE_DIRS})
+        target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS} ${PNG_STATIC_INCLUDE_DIRS} boot/include)
         target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
-        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} fat wiiuse bte asnd vorbisidec ogg)
+        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} nl_game_booter_blob fat wiiuse bte asnd vorbisidec ogg)
         target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}")
         nl_apply_flags(${name})
         ogc_create_dol(${name})

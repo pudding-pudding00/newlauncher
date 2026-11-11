@@ -94,3 +94,23 @@ TEST_CASE("launchErrorText: Nintendont-Fehler in DE und EN") {
           std::string::npos);
     setLanguage(saved);
 }
+
+TEST_CASE("launchErrorText: Wii-Fehler in DE und EN") {
+    const Lang saved = language();
+    setLanguage(Lang::De);
+    CHECK(std::string(render(LaunchFailure::WiiFsUnsupported, "NTFS").text) ==
+          "Dateisystem nicht unterstützt.\nWii-Spiele brauchen FAT32 mit 512-Byte-Sektoren (NTFS).");
+    CHECK(std::string(render(LaunchFailure::CiosMissing, "").text) ==
+          "cIOS fehlt.\nFür Wii-Spiele wird d2x-cIOS in Slot 249 benötigt.");
+    CHECK(std::string(render(LaunchFailure::CiosNotD2x, "cios").text) ==
+          "Falsches cIOS.\nSlot 249 enthält cios, benötigt wird d2x.");
+    CHECK(std::string(render(LaunchFailure::WiiFileBroken, "usb:/wbfs/a.wbfs").text) ==
+          "Spieldatei fehlerhaft.\nusb:/wbfs/a.wbfs ist beschädigt oder zu stark fragmentiert.");
+    setLanguage(Lang::En);
+    CHECK(std::string(render(LaunchFailure::WiiFsUnsupported, "NTFS").text) ==
+          "File system not supported.\nWii games need FAT32 with 512-byte sectors (NTFS).");
+    CHECK(std::string(render(LaunchFailure::CiosMissing, "").text) == "cIOS missing.\nWii games need d2x cIOS in slot 249.");
+    CHECK(std::string(render(LaunchFailure::CiosNotD2x, "cios").text) == "Wrong cIOS.\nSlot 249 contains cios, d2x is required.");
+    CHECK(std::string(render(LaunchFailure::WiiFileBroken, "a.wbfs").text) == "Game file damaged.\na.wbfs is damaged or too fragmented.");
+    setLanguage(saved);
+}

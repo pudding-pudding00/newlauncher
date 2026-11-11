@@ -62,3 +62,15 @@ TEST_CASE("Speicherlayout: Puffer, Booter und argv liegen hintereinander im rese
     CHECK(kMaxDolBytes == kBooterAddr - kDolBufferAddr);
     CHECK(kMaxDolBytes == 11u * 1024 * 1024);
 }
+
+TEST_CASE("DOL aus Speicher geprüft wie aus Datei") {
+    const u32 entry = 0x80004000;
+    const auto img = test::dolImage({{0x100, entry, 0x200}}, {}, entry);
+    const u32 size = static_cast<u32>(img.size());
+    CHECK(checkDolImage(img, size).isOk());
+    CHECK(checkDolImage(img, size).value().entry == entry);
+    CHECK_FALSE(checkDolImage(img, size - 1).isOk());                                   // über die Grenze
+    CHECK_FALSE(checkDolImage(std::span<const u8>(img.data(), 0), size).isOk());          // leer
+    CHECK_FALSE(checkDolImage(std::span<const u8>(img.data(), 0x80), size).isOk());       // kürzer als der Kopf
+    CHECK_FALSE(checkDolImage(std::span<const u8>(img.data(), 0x200), size).isOk());      // Sektion ragt hinaus
+}

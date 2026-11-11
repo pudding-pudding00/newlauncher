@@ -8,6 +8,9 @@
 #include <vector>
 
 #include "core/emulators.hpp"
+#include "core/fat_chain.hpp"
+#include "core/frag_list.hpp"
+#include "core/ios_info.hpp"
 #include "core/fs.hpp"
 #include "core/game.hpp"
 #include "core/n64_choice.hpp"
@@ -20,6 +23,7 @@ namespace nl {
 enum class LaunchFailure : u8 {
     Unsupported, EmuMissing, EmuInvalid, RomMissing, ArgsTooLong, NoMemory, NoN64Path,
     NinMissing, NinUnknown, NinTooOld, NinPathTooLong, AhbProt,  // M8: GameCube über Nintendont
+    CiosMissing, CiosNotD2x, WiiFsUnsupported, WiiFileBroken,     // M9: Wii-Spiele nativ
 };
 const char* launchFailureName(LaunchFailure f);  // Log-Marker NL_PREFLIGHT_FAIL
 
@@ -42,13 +46,33 @@ std::optional<u64> fileSize(FileSystem& fs, std::string_view path);
 // DOL-Pfad), RomMissing (Kontext ROM-Pfad), ArgsTooLong.
 Result<LaunchPlan, LaunchError> preflightEmulator(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus);
 
-// Ziel eines Starts: ein DOL über den Chainloader oder ein Kanal im NAND (VC-Inject).
+// M9: Fehler beim Abbilden einer Wii-Spieldatei. SectorSize/NoFatVolume/NotFat32 → WiiFsUnsupported,
+// PartMissing → RomMissing (Kontext: Pfad des fehlenden Teils), alles andere → WiiFileBroken.
+LaunchError fromFatError(FatError e, std::string context);
+LaunchError fromFragError(FragError e, std::string context);
+
+// Alles, was der Game-Booter braucht; the_CFG entsteht daraus erst auf der Plattform (Task 6).
+struct WiiBootPlan {
+    std::string id6;
+    bool usb = false;
+    CiosStatus cios;
+    std::vector<u8> fragBytes;  // serializeFragList, genau kFragListBytes
+};
+
+// Reihenfolge: cIOS Missing → CiosMissing; NotD2x → CiosNotD2x (Kontext Name); beides bei dryRun nur
+// durchgelassen (die Plattform loggt es); dann Fragmentfehler durchreichen; Schlüssel ohne ID6 →
+// Unsupported; sonst Plan. usb folgt aus libRoot („usb:“).
+Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
+                                              const Result<FragList, LaunchError>& frags, bool dryRun);
+
+// Ziel eines Starts: ein DOL über den Chainloader, ein Kanal im NAND (VC-Inject) oder ein Wii-Spiel.
 struct LaunchTarget {
-    enum class Kind : u8 { Dol, Channel } kind = Kind::Dol;
+    enum class Kind : u8 { Dol, Channel, Wii } kind = Kind::Dol;
     LaunchPlan dol;                // Kind::Dol
     u64 titleId = 0;               // Kind::Channel
     std::optional<N64Method> n64;  // gewählter Weg bei N64-Spielen
     std::optional<NinVersion> nintendont;  // GC: erkannte Version (Marker NL_NIN)
+    std::optional<WiiBootPlan> wii;        // Kind::Wii: erst nach preflightWii gesetzt
 };
 
 // Wie preflightEmulator, N64 zusätzlich über die Auto-Wahl (n64 == nullptr zählt als „kein Weg“).
@@ -56,6 +80,7 @@ struct LaunchTarget {
 // GC (Plan M8), in dieser Reihenfolge: !ahbprotOff → AhbProt; DOL fehlt → NinMissing; DOL ungültig →
 // EmuInvalid; keine Version → NinUnknown; zu alt → NinTooOld (Kontext gefundene Version); Spiel fehlt →
 // RomMissing; Pfad > 254 → NinPathTooLong; sonst args = {DOL, NIN_CFG}. Andere Konsolen ignorieren ahbprotOff.
+// Wii (M9): immer Kind::Wii ohne Plan; die Plattform rechnet die Fragmente und ruft preflightWii.
 Result<LaunchTarget, LaunchError> preflightGame(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus,
                                                 const N64Inputs* n64, bool ahbprotOff);
 

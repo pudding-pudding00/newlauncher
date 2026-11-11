@@ -306,6 +306,36 @@ class DolphinToolsTest(unittest.TestCase):
                                      "--user-dir", str(self.user), "--timeout", "2",
                                      "--marker", "NL_READY", "--marker", "NL_SELFTEST_OK"]), 1)
 
+    # --- M9: --expect-frag gleicht NL_FRAG mit fat_frag.py ab ---
+    FRAG_REL = "Super Mario Galaxy [RMGP01]/RMGP01.iso"
+    FRAG_LINE = "NL_FRAG dev=sd part_lba=2048 n=2 size=3 crc=6dabbf0a first=0:3182:2"
+
+    def _frag_run(self, logged: str, fat16: bool = False) -> int:
+        from test_fat_frag import build_image  # noqa: PLC0415 - nur hier gebraucht
+        image = self.user / "Load/WiiSD.raw"
+        image.parent.mkdir(parents=True, exist_ok=True)
+        build_image(image, fat16=fat16)
+        self._fake_dolphin(
+            "import pathlib, time\n"
+            "log = pathlib.Path(__file__).parent / 'Logs' / 'dolphin.log'\n"
+            "log.parent.mkdir(parents=True, exist_ok=True)\n"
+            f"log.write_text('OSREPORT: NL_READY\\nOSREPORT: {logged}\\n')\n"
+            "time.sleep(60)\n")
+        return smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                           "--timeout", "5", "--expect-frag", self.FRAG_REL])
+
+    def test_smoke_expect_frag_matches(self):
+        self.assertEqual(self._frag_run(self.FRAG_LINE), 0)
+
+    def test_smoke_expect_frag_mismatch_fails(self):
+        self.assertEqual(self._frag_run(self.FRAG_LINE.replace("crc=6dabbf0a", "crc=00000000")), 1)
+
+    def test_smoke_expect_frag_skips_non_fat32(self):
+        with mock.patch("sys.stdout") as out:
+            self.assertEqual(self._frag_run("NL_FRAG irgendwas", fat16=True), 0)
+        printed = "".join(str(c.args[0]) for c in out.write.call_args_list if c.args)
+        self.assertIn("SMOKE HINWEIS: SD-Image nicht FAT32, Abgleich übersprungen", printed)
+
     def test_smoke_reports_unstartable_dolphin(self):
         bad = self.tmp / "kaputt.exe"
         bad.write_bytes(b"x")

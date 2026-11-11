@@ -32,6 +32,7 @@ jobs:
             build/wii/newlauncher.dol
             build/wii/nl_selftest.dol
             build/wii/argv_echo.dol
+            build/wii/game_booter.dol
 
   host-tests:
     runs-on: ubuntu-latest

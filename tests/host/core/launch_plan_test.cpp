@@ -187,8 +187,8 @@ TEST_CASE("preflightGame: NES unverändert wie preflightEmulator") {
     CHECK(r.value().dol.dolPath == kDol);
     REQUIRE(r.value().dol.args.size() == 3);
     auto wii = preflightGame(fs, nesGame("games/x/game.iso", Console::Wii), "sd:", emus(), nullptr, true);
-    REQUIRE_FALSE(wii.isOk());
-    CHECK(wii.error().kind == LaunchFailure::Unsupported);
+    REQUIRE(wii.isOk());  // M9: Wii geht nicht mehr über preflightEmulator, sondern über preflightWii
+    CHECK(wii.value().kind == LaunchTarget::Kind::Wii);
 }
 
 TEST_CASE("preflightGame: NES ignoriert ahbprotOff") {
@@ -328,4 +328,95 @@ TEST_CASE("fileSize") {
     CHECK(fileSize(fs, "sd:/apps/x/boot.dol") == 123u);
     CHECK_FALSE(fileSize(fs, "sd:/apps/x/fehlt.dol").has_value());
     CHECK_FALSE(fileSize(fs, "sd:/apps/fehlt/boot.dol").has_value());
+}
+
+namespace {
+Game wiiGame() { return Game{Console::Wii, "RMCP01", "Mario Kart Wii", 0, 0, nullptr, "wbfs/Mario Kart Wii [RMCP01]/RMCP01.wbfs", 0, 0}; }
+const CiosStatus kD2x{CiosState::D2x, 56, "v10"};
+Result<FragList, LaunchError> goodFrags() { return Result<FragList, LaunchError>::ok(FragList{100, {{0, 2048, 100}}}); }
+}  // namespace
+
+TEST_CASE("preflightWii: Wii fehlt cIOS") {
+    auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::Missing, 56, ""}, goodFrags(), false);
+    REQUIRE_FALSE(r.isOk());
+    CHECK(r.error().kind == LaunchFailure::CiosMissing);
+    CHECK(std::string(launchFailureName(LaunchFailure::CiosMissing)) == "CiosMissing");
+}
+
+TEST_CASE("preflightWii: falsches cIOS mit Namen") {
+    auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::NotD2x, 38, "cios"}, goodFrags(), false);
+    REQUIRE_FALSE(r.isOk());
+    CHECK(r.error().kind == LaunchFailure::CiosNotD2x);
+    CHECK(r.error().context == "cios");
+}
+
+TEST_CASE("preflightWii: Dry-Run trotz fehlendem cIOS") {
+    for (CiosState s : {CiosState::Missing, CiosState::NotD2x}) {
+        auto r = preflightWii(wiiGame(), "usb:", CiosStatus{s, 56, ""}, goodFrags(), true);
+        REQUIRE(r.isOk());
+        CHECK(r.value().cios.state == s);
+    }
+}
+
+TEST_CASE("preflightWii: unbestätigtes cIOS startet") {
+    CHECK(preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::Unverified, 56, ""}, goodFrags(), false).isOk());
+}
+
+TEST_CASE("preflightWii: cIOS-Fehler vor Fragmentfehler") {
+    auto frags = Result<FragList, LaunchError>::err(fromFatError(FatError::NotFat32, "usb:"));
+    auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::Missing, 56, ""}, frags, false);
+    REQUIRE_FALSE(r.isOk());
+    CHECK(r.error().kind == LaunchFailure::CiosMissing);
+}
+
+TEST_CASE("preflightWii: NTFS-Fehler wird WiiFsUnsupported") {
+    for (FatError e : {FatError::SectorSize, FatError::NoFatVolume, FatError::NotFat32}) {
+        CHECK(fromFatError(e, "NTFS").kind == LaunchFailure::WiiFsUnsupported);
+        CHECK(fromFatError(e, "NTFS").context == "NTFS");
+    }
+    for (FatError e : {FatError::Io, FatError::BadChain, FatError::ChainTooShort})
+        CHECK(fromFatError(e, "x").kind == LaunchFailure::WiiFileBroken);
+    for (FragError e : {FragError::WbfsInvalid, FragError::TooFragmented, FragError::OutOfFile})
+        CHECK(fromFragError(e, "x").kind == LaunchFailure::WiiFileBroken);
+    auto r = preflightWii(wiiGame(), "usb:", kD2x,
+                          Result<FragList, LaunchError>::err(fromFatError(FatError::NoFatVolume, "NTFS")), false);
+    REQUIRE_FALSE(r.isOk());
+    CHECK(r.error().kind == LaunchFailure::WiiFsUnsupported);
+    CHECK(std::string(launchFailureName(LaunchFailure::WiiFsUnsupported)) == "WiiFsUnsupported");
+    CHECK(std::string(launchFailureName(LaunchFailure::WiiFileBroken)) == "WiiFileBroken");
+    CHECK(std::string(launchFailureName(LaunchFailure::CiosNotD2x)) == "CiosNotD2x");
+}
+
+TEST_CASE("preflightWii: Split-Teil fehlt wird RomMissing") {
+    const LaunchError e = fromFragError(FragError::PartMissing, "usb:/wbfs/X [RMCP01]/RMCP01.wbf1");
+    CHECK(e.kind == LaunchFailure::RomMissing);
+    CHECK(e.context == "usb:/wbfs/X [RMCP01]/RMCP01.wbf1");
+}
+
+TEST_CASE("preflightWii: Plan enthält ID6 und usb nach libRoot") {
+    auto usb = preflightWii(wiiGame(), "usb:", kD2x, goodFrags(), false);
+    REQUIRE(usb.isOk());
+    CHECK(usb.value().id6 == "RMCP01");
+    CHECK(usb.value().usb);
+    CHECK(usb.value().cios.base == 56);
+    CHECK(usb.value().fragBytes == serializeFragList(FragList{100, {{0, 2048, 100}}}));
+    auto sd = preflightWii(wiiGame(), "sd:", kD2x, goodFrags(), false);
+    REQUIRE(sd.isOk());
+    CHECK_FALSE(sd.value().usb);
+}
+
+TEST_CASE("preflightWii: Schlüssel ohne ID6") {
+    Game g = wiiGame();
+    g.key = "RMC";
+    auto r = preflightWii(g, "usb:", kD2x, goodFrags(), false);
+    REQUIRE_FALSE(r.isOk());
+    CHECK(r.error().kind == LaunchFailure::Unsupported);
+}
+
+TEST_CASE("preflightGame: Wii liefert Kind::Wii ohne Plan") {
+    test::MemFileSystem fs;
+    auto r = preflightGame(fs, wiiGame(), "usb:", emus(), nullptr, true);
+    REQUIRE(r.isOk());
+    CHECK(r.value().kind == LaunchTarget::Kind::Wii);
+    CHECK_FALSE(r.value().wii.has_value());
 }

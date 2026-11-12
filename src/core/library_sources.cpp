@@ -111,6 +111,9 @@ ConsolePaths defaultConsolePaths(Console c) {
         if (f != nullptr) p.folders.emplace_back(f);
     for (const char* e : info.extensions)
         if (e != nullptr) p.extensions.emplace_back(e);
+    // Spec v2 5.3: die GX-Emulatoren für NES, SNES, GB, GBC und GBA nehmen ZIP-Archive an.
+    if (c == Console::Nes || c == Console::Snes || c == Console::Gb || c == Console::Gbc || c == Console::Gba)
+        p.extensions.emplace_back(".zip");
     return p;
 }
 

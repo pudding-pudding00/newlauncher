@@ -29,7 +29,7 @@ DEFAULT_MARKERS = ["NL_READY"]
 MULTI_DIR = "emu"
 MULTI_ROM = "emu/nes/Kirby (Test).nes"
 MULTI_ZIP = "emu/nes/Metroid (Test).zip"
-MULTI_INI = "[paths]\nnes = roms/nes|emu/nes\n[extensions]\nnes = .nes|.zip\n"
+MULTI_INI = "[paths]\nnes = roms/nes|emu/nes\n"  # .zip ist Standardendung (Spec v2 5.3)
 
 
 def write_multi_layout(sd: Path) -> None:

@@ -34,7 +34,7 @@ TEST_CASE("device_names: exFAT zwischen zwei FAT-Partitionen bekommt keinen Name
     CHECK(s[2].name.empty());
     CHECK_FALSE(s[2].mount);
     CHECK(s[2].kind == FsKind::ExFat);
-    CHECK_FALSE(s[2].reason.empty());
+    CHECK(s[2].reason == "exFAT wird nicht unterstützt – bitte FAT32");  // Plan M12, Spec v2: klarer Hinweis
     CHECK(s[3].name == "usb2");
     CHECK(s[3].mount);
 }

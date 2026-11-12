@@ -53,8 +53,12 @@ TEST_CASE("library_sources: Standardordner und -endungen nach Spec 5.3") {
     CHECK(paths(r, Console::N64).folders == Strs{"roms/n64"});
     CHECK(paths(r, Console::N64).extensions == Strs{".z64", ".n64", ".v64"});
     CHECK(paths(r, Console::Snes).folders == Strs{"roms/snes"});
-    CHECK(paths(r, Console::Snes).extensions == Strs{".sfc", ".smc"});
-    CHECK(paths(r, Console::Gba).extensions == Strs{".gba"});
+    // Spec v2 5.3: .zip zusätzlich für NES, SNES, GB, GBC, GBA (die GX-Emulatoren entpacken selbst).
+    CHECK(paths(r, Console::Snes).extensions == Strs{".sfc", ".smc", ".zip"});
+    CHECK(paths(r, Console::Gba).extensions == Strs{".gba", ".zip"});
+    CHECK(paths(r, Console::Nes).extensions == Strs{".nes", ".zip"});
+    CHECK(paths(r, Console::Gb).extensions.back() == ".zip");
+    CHECK(paths(r, Console::Gbc).extensions.back() == ".zip");
 }
 
 TEST_CASE("library_sources: [paths] mit mehreren Ordnern") {
@@ -84,7 +88,7 @@ TEST_CASE("library_sources: höchstens 8 Ordner") {
 TEST_CASE("library_sources: [extensions] ersetzt die Liste") {
     const LibraryRules r = rules("[extensions]\ngba = .GBA|.zip\nnes = nes|.n/s\n");
     CHECK(paths(r, Console::Gba).extensions == Strs{".gba", ".zip"});
-    CHECK(paths(r, Console::Nes).extensions == Strs{".nes"});  // nichts Gültiges: Standard
+    CHECK(paths(r, Console::Nes).extensions == Strs{".nes", ".zip"});  // nichts Gültiges: Standard
     CHECK(r.bad == Strs{"extensions.nes"});
 }
 

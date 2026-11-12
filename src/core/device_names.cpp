@@ -6,7 +6,7 @@ namespace {
 // M16 hängt NTFS, ext und WBFS ein; bis dahin nennt der Grund, was fehlt.
 const char* unsupportedReason(FsKind kind) {
     switch (kind) {
-        case FsKind::ExFat: return "exFAT nicht unterstützt";
+        case FsKind::ExFat: return "exFAT wird nicht unterstützt – bitte FAT32";
         case FsKind::Ntfs: return "NTFS noch nicht unterstützt";
         case FsKind::Ext: return "ext noch nicht unterstützt";
         case FsKind::Wbfs: return "WBFS-Partition noch nicht unterstützt";

@@ -52,13 +52,14 @@ public:
     // Prüft Lage und Länge, bestimmt die Art und hängt die Partition an; false, wenn die Liste voll ist.
     bool add(std::vector<PartitionInfo>& out, u64 lba, u64 sectors, u8 type, bool logical) {
         if (out.size() >= kMaxPartitions) return false;
-        if (sectors == 0 || lba == 0 || lba + sectors - 1 > kMaxLba) return true;
+        if (sectors == 0 || lba == 0) return true;
         if (deviceSectors_ != 0 && lba + sectors > deviceSectors_) return true;
+        const bool beyond = lba + sectors - 1 > kMaxLba;  // bleibt sichtbar, damit das Log sie nennt
         const u32 count = (kProbeBytes + ss_ - 1) / ss_;
         FsKind kind = FsKind::Unknown;
         // Ein unlesbarer Partitionsanfang macht nur diese Partition unbekannt, nicht die ganze Tabelle.
         if (read(lba, count, probe_)) kind = detectFs(probe_);
-        out.push_back(PartitionInfo{lba, sectors, type, kind, logical});
+        out.push_back(PartitionInfo{lba, sectors, type, kind, logical, beyond});
         return true;
     }
 
@@ -146,7 +147,7 @@ Result<std::vector<PartitionInfo>> readPartitions(BlockDevice& dev, u64 deviceSe
     // Superfloppy: Dateisystem ohne Tabelle. ext zählt hier nicht, sein Magic läge nicht in Sektor 0.
     const FsKind whole = detectFs(std::span<const u8>(s0.data(), 512));
     if (whole != FsKind::Unknown && whole != FsKind::Ext) {
-        std::vector<PartitionInfo> out{PartitionInfo{0, deviceSectors, 0, whole, false}};
+        std::vector<PartitionInfo> out{PartitionInfo{0, deviceSectors, 0, whole, false, false}};
         return R::ok(std::move(out));
     }
     if (!hasSignature(s0)) return invalid("keine Partitionstabelle");

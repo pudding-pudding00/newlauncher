@@ -219,3 +219,19 @@ TEST_CASE("partition_table: Gerätegröße 0 heißt unbekannt, keine Grenzprüfu
     REQUIRE(r.value().size() == 1);
     CHECK(r.value()[0].kind == FsKind::Fat);
 }
+
+// M12-Review: Partitionen hinter der 32-Bit-Sektorgrenze (2 TiB bei 512 B) fielen still weg. Jetzt stehen sie in der
+// Liste, damit das Log sie nennt; eingehängt werden sie nicht (libfat und BlockDevice adressieren mit u32).
+TEST_CASE("partition_table: Partition über die 32-Bit-Sektorgrenze bleibt sichtbar") {
+    MemBlockDevice d;
+    writeMbrEntry(d, 0, 0x0C, 2048, 100000);
+    writeFatBootAt(d, 2048);
+    writeMbrEntry(d, 1, 0x0C, 0xFFFF0000u, 0x00100000u);  // beginnt vor, endet hinter Sektor 2^32
+    writeFatBootAt(d, 0xFFFF0000u);
+    auto r = readPartitions(d, 0);  // libogc nennt die Gerätegröße nicht
+    REQUIRE(r.isOk());
+    REQUIRE(r.value().size() == 2);
+    CHECK_FALSE(r.value()[0].beyondLimit);
+    CHECK(r.value()[1].beyondLimit);
+    CHECK(r.value()[1].lba == 0xFFFF0000u);
+}

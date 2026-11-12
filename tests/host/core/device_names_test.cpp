@@ -7,7 +7,7 @@
 using namespace nl;
 
 namespace {
-PartitionInfo part(u64 lba, FsKind kind) { return PartitionInfo{lba, 1000, 0x0C, kind, false}; }
+PartitionInfo part(u64 lba, FsKind kind) { return PartitionInfo{lba, 1000, 0x0C, kind, false, false}; }
 }  // namespace
 
 TEST_CASE("device_names: SD und zwei FAT-Partitionen → sd, usb, usb2") {
@@ -72,4 +72,17 @@ TEST_CASE("device_names: fsKindName für das Log") {
     CHECK(std::string(fsKindName(FsKind::ExFat)) == "exfat");
     CHECK(std::string(fsKindName(FsKind::Wbfs)) == "wbfs");
     CHECK(std::string(fsKindName(FsKind::Unknown)) == "unknown");
+}
+
+TEST_CASE("device_names: FAT-Partition hinter der Sektorgrenze bekommt keinen Namen, aber einen Grund") {
+    PartitionInfo far = part(9000, FsKind::Fat);
+    far.beyondLimit = true;
+    const std::vector<PartitionInfo> usb{part(2048, FsKind::Fat), far, part(20000, FsKind::Fat)};
+    const auto s = assignDevices(false, FsKind::Unknown, usb);
+    REQUIRE(s.size() == 3);
+    CHECK(s[0].name == "usb");
+    CHECK(s[1].name.empty());
+    CHECK_FALSE(s[1].mount);
+    CHECK(s[1].reason == "hinter der 32-Bit-Sektorgrenze (2 TiB)");
+    CHECK(s[2].name == "usb2");
 }

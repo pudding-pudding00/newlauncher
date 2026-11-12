@@ -19,6 +19,7 @@ struct PartitionInfo {
     u8 mbrType;    // Typbyte aus MBR/EBR; 0xEE für GPT-Einträge, 0 für ein Superfloppy-Abbild
     FsKind kind;   // aus dem Bootsektor bzw. Superblock, nicht aus dem Typbyte
     bool logical;  // aus einer EBR-Kette
+    bool beyondLimit = false;  // endet hinter Sektor 2^32: nur fürs Log, wird nicht eingehängt
 };
 
 inline constexpr std::size_t kMaxPartitions = 16;

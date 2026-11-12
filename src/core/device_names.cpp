@@ -27,7 +27,9 @@ std::vector<DeviceSlot> assignDevices(bool sdPresent, FsKind sdKind, std::span<c
     u32 fatCount = 0;
     for (const PartitionInfo& p : usbParts) {
         DeviceSlot s{"", true, p.lba, p.kind, false, ""};
-        if (p.kind != FsKind::Fat) {
+        if (p.beyondLimit) {
+            s.reason = "hinter der 32-Bit-Sektorgrenze (2 TiB)";  // libfat und BlockDevice adressieren mit u32
+        } else if (p.kind != FsKind::Fat) {
             s.reason = unsupportedReason(p.kind);
         } else if (fatCount >= kMaxUsbMounts) {
             s.reason = "zu viele Partitionen";

@@ -152,6 +152,11 @@ TEST_CASE("configToIniText behält CRLF und schreibt jeden Schlüssel nur einmal
     CHECK(n == 1);
 }
 
+TEST_CASE("configFromIni: [debug] list_games") {
+    CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugListGames);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nlist_games = 1\n")).debugListGames);
+}
+
 TEST_CASE("configFromIni: [debug] log_sounds") {
     CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugLogSounds);
     CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nlog_sounds = 1\n")).debugLogSounds);
@@ -243,3 +248,25 @@ TEST_CASE("Standardquellen: alte Standard-URL in config.ini folgt dem Build (M11
           "https://example.org/hbb");
 }
 
+
+TEST_CASE("Config: [library] sources, [paths] und Alt-Schlüssel") {
+    const Config d = configFromIni(IniDoc::parse(defaultConfigText()));
+    CHECK(d.libraryRules.sources.autoMode);
+    const Config v1 = configFromIni(IniDoc::parse("[general]\nlibrary = sd\n"));
+    CHECK(v1.library == Config::LibraryDevice::Sd);
+    CHECK(v1.libraryRules.sources.devices == std::vector<std::string>{"sd"});
+    const Config p = configFromIni(IniDoc::parse("[paths]\nwii = games/wii|wbfs\n"));
+    CHECK(p.libraryRules.paths[static_cast<std::size_t>(Console::Wii)].folders.size() == 2);
+}
+
+TEST_CASE("configToIniText schreibt [library] und bewahrt Kommentare und [paths]") {
+    const std::string before = "; oben\n[general]\nlanguage = auto\n[paths]\n; eigene Ordner\nwii = games/wii\n";
+    Config c = configFromIni(IniDoc::parse(before));
+    c.libraryRules.sources = SourceSpec{false, {"usb2", "sd"}};
+    const std::string after = configToIniText(c, before);
+    CHECK(after.find("; oben\n") != std::string::npos);
+    CHECK(after.find("; eigene Ordner\nwii = games/wii\n") != std::string::npos);
+    CHECK(after.find("[library]\nsources = usb2,sd\n") != std::string::npos);
+    const Config r = configFromIni(IniDoc::parse(after));
+    CHECK(r.libraryRules.sources.devices == std::vector<std::string>{"usb2", "sd"});
+}

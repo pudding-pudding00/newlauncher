@@ -1,4 +1,5 @@
 #include "core/bin_io.hpp"
+#include "core/library_merge.hpp"
 #include "core/library_store.hpp"
 #include <doctest/doctest.h>
 #include <cstring>
@@ -142,10 +143,35 @@ TEST_CASE("recordPlayed setzt an den Anfang, entfernt Duplikat, kappt bei 20, hi
     CHECK(s.lastPlayed("nes/0.nes") == 0u);  // aus dem Verlauf gefallen
 
     LibraryStore t;
-    t.setGames(s.index(), nullptr);
+    t.setGames(s.library(), nullptr);
     t.loadHistory(IniDoc::parse(s.historyIni().serialize()));
     REQUIRE(t.recent().size() == kHistoryMax);
     CHECK(std::strcmp(t.recent()[0]->key, "nes/5.nes") == 0);
     CHECK(t.lastPlayed("nes/5.nes") == 2000u);
     CHECK(t.lastPlayed("nes/21.nes") == 1000u);
+}
+
+TEST_CASE("setGames(MergedLibrary): Gerät je Spiel, Favorit übersteht Gerätewechsel") {
+    auto one = [](const char* device) {
+        DeviceIndex d{device, lib({"nes/a.nes", "nes/b.nes"})};
+        return d;
+    };
+    LibraryStore s;
+    const std::vector<DeviceIndex> first{one("usb"), one("sd")};
+    s.setGames(mergeIndexes(first), nullptr);
+    REQUIRE(s.devices().size() == 2);
+    const Game* a = s.findByKey("nes/a.nes");
+    REQUIRE(a != nullptr);
+    CHECK(a->device == 0);
+    REQUIRE(s.alsoOn(*a).size() == 1);
+    CHECK(s.alsoOn(*a)[0] == 1);
+    s.toggleFavorite("nes/a.nes");
+
+    // Danach nur noch auf der SD (USB fehlt): Favorit bleibt, Gerät ist jetzt sd.
+    const std::vector<DeviceIndex> second{one("sd")};
+    s.setGames(mergeIndexes(second), nullptr);
+    REQUIRE(s.favorites().size() == 1);
+    CHECK(std::strcmp(s.favorites()[0]->key, "nes/a.nes") == 0);
+    CHECK(s.devices()[s.favorites()[0]->device] == "sd");
+    CHECK(s.alsoOn(*s.favorites()[0]).empty());
 }

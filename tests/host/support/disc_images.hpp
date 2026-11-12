@@ -46,4 +46,14 @@ inline std::vector<u8> wbfsFile(std::string_view id6, std::string_view title, u8
     return b;
 }
 
+// CISO (Nintendont/USB Loader GX): „CISO“, Blockgröße 2 MiB (LE), Blockkarte; der GC-Disc-Kopf steht bei 0x8000.
+inline std::vector<u8> cisoFile(std::string_view id6, std::string_view title) {
+    std::vector<u8> b(0x8000 + 1024, 0);
+    std::memcpy(b.data(), "CISO", 4);
+    b[6] = 0x20;  // 0x00200000 little endian
+    b[8] = 1;     // Block 0 belegt
+    putHeader(b, 0x8000, id6, title, false);
+    return b;
+}
+
 }  // namespace nl::test

@@ -25,6 +25,23 @@ from test_ca import make as make_test_ca
 DEFAULT_MARKERS = ["NL_READY"]
 
 # Bilder des Test-Cover-Servers (Pfad wie bei GameTDB: <Region>/<ID6>.png). RMGP01 fehlt absichtlich.
+# --sd-layout multi (M12): eigener NES-Ordner neben roms/nes und ein ZIP-ROM. Nur zur Laufzeit erzeugt.
+MULTI_DIR = "emu"
+MULTI_ROM = "emu/nes/Kirby (Test).nes"
+MULTI_ZIP = "emu/nes/Metroid (Test).zip"
+MULTI_INI = "[paths]\nnes = roms/nes|emu/nes\n"  # .zip ist Standardendung (Spec v2 5.3)
+
+
+def write_multi_layout(sd: Path) -> None:
+    rom = b"NES\x1a" + bytes(16 * 1024 - 4)
+    (sd / MULTI_ROM).parent.mkdir(parents=True, exist_ok=True)
+    (sd / MULTI_ROM).write_bytes(rom)
+    with zipfile.ZipFile(sd / MULTI_ZIP, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("Metroid (Test).nes", rom)
+    with (sd / "newlauncher/config.ini").open("a", encoding="utf-8", newline="\n") as f:
+        f.write(MULTI_INI)
+
+
 COVER_SERVER_FILES = {"EN/RMCP01.png": (160, 224, (200, 40, 40, 255)),
                       "US/GM8P01.png": (160, 224, (40, 40, 200, 255))}
 
@@ -128,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Server per HTTPS auf localhost mit einer Test-CA (braucht --cover-server/--emu-server)")
     parser.add_argument("--tls-wrong-ca", action="store_true",
                         help="wie --tls, aber der Launcher bekommt eine fremde CA (Gegenprobe: Zertifikatsfehler)")
+    parser.add_argument("--sd-layout", choices=["default", "multi"], default="default",
+                        help="multi: zusätzlicher NES-Ordner emu/nes mit [paths] und ein ZIP-ROM (M12)")
     args = parser.parse_args(argv)
     tls = args.tls or args.tls_wrong_ca
     if tls and not (args.cover_server or args.emu_server):
@@ -216,6 +235,8 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             set_ini_value(sd / "newlauncher/emulators.ini", "nes", "dol", f"sd:/apps/{EMU_SERVER_APP}/boot.dol")
         if getattr(args, "sd_ca", None) is not None:
             shutil.copyfile(args.sd_ca, sd / SD_TEST_CA)
+        if args.sd_layout == "multi":
+            write_multi_layout(sd)
         if debug_lines:
             with (sd / "newlauncher/config.ini").open("a", encoding="utf-8", newline="\n") as f:
                 f.write("[debug]\n" + "".join(line + "\n" for line in debug_lines))
@@ -228,6 +249,7 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
         return _run_dolphin(args, markers, user_dir)
     finally:
         (sd_sync_dir(user_dir) / SD_TEST_CA).unlink(missing_ok=True)  # Test-CA nicht auf der SD lassen
+        shutil.rmtree(sd_sync_dir(user_dir) / MULTI_DIR, ignore_errors=True)  # --sd-layout multi
 
 
 def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -> int:

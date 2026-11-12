@@ -41,7 +41,7 @@ std::vector<CoverJob> coverDownloadJobs(std::span<const Game* const> games,
         if (!g || !g->key || (g->console != Console::Wii && g->console != Console::Gc)) continue;
         std::string stem = coverStem(*g);
         if (exists(coverSrcPath(libRoot, stem)) || exists(coverTexPath(libRoot, stem))) continue;
-        jobs.push_back({std::string(g->key), std::move(stem)});
+        jobs.push_back({std::string(g->key), std::move(stem), std::string(libRoot)});
     }
     return jobs;
 }

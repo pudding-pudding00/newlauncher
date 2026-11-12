@@ -3,6 +3,7 @@
 // Hält eigene Kopien der Spieltexte: ein Hintergrund-Scan darf die Bibliothek austauschen, während sie offen ist.
 
 #include <optional>
+#include <span>
 #include <string>
 
 #include "core/n64_choice.hpp"
@@ -21,6 +22,8 @@ public:
     int methodChoice() const { return choice_; }  // 0 = Automatisch, sonst 1 + N64Method
     static constexpr int kFocusMethod = 2;
     int focusedButton() const { return focus_; }
+    void setDeviceLine(std::string line) { device_ = std::move(line); }  // nach open(); leer = keine Zeile
+    const std::string& deviceLine() const { return device_; }
     const Game* game() const { return hasGame_ ? &game_ : nullptr; }
 
     void update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) override;
@@ -30,7 +33,7 @@ public:
     gfx::Rect buttonRect(const UiContext& ctx, int index) const;
 
 private:
-    std::string key_, title_, description_, path_;
+    std::string key_, title_, description_, path_, device_;
     Game game_{};
     bool hasGame_ = false;
     CoverProvider* covers_ = nullptr;
@@ -50,6 +53,9 @@ private:
     bool choiceAllowed(int c) const;
     void refreshN64Text();
 };
+
+// "Gerät: USB 1 (auch auf: SD)" (Spec v2 5.2); leer, wenn die Sitzung nur ein Gerät hat.
+std::string detailsDeviceLine(std::span<const std::string> devices, u8 device, std::span<const u8> alsoOn);
 
 // "N64 · Gen 5 · 1996 · 1 Spieler · zuletzt 09.11.2025"; fehlende Teile entfallen. Datum in UTC.
 int detailsInfoLine(const Game& g, u32 lastPlayedUnix, char* out, std::size_t cap);

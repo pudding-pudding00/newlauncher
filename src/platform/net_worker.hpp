@@ -23,7 +23,7 @@ public:
     NetWorker& operator=(const NetWorker&) = delete;
 
     // false, wenn schon ein Lauf aktiv ist oder der NetService den Auftrag nicht annimmt.
-    bool start(FileSystem& fs, std::string libRoot, std::vector<CoverJob> jobs, std::vector<std::string> regions,
+    bool start(FileSystem& fs, std::vector<CoverJob> jobs, std::vector<std::string> regions,
                std::string baseUrl);
     u32 done() const { return done_; }
     u32 total() const { return total_; }
@@ -42,7 +42,7 @@ private:
     u32 jobId_ = 0;
     mutex_t mutex_ = LWP_MUTEX_NULL;
     FileSystem* fs_ = nullptr;
-    std::string root_, base_;
+    std::string base_;
     std::vector<CoverJob> jobs_;
     std::vector<std::string> regions_;
     volatile u32 done_ = 0, total_ = 0;

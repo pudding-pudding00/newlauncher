@@ -13,10 +13,10 @@ class SettingsScene final : public Scene {
 public:
     static constexpr int kCount = static_cast<int>(SettingRow::Count);
 
-    // Beim Start aufrufen: das Bibliotheksgerät der Live-Config gilt als das gemountete (Hinweis „nach Neustart“).
+    // Beim Start aufrufen: die Quellen der Live-Config gelten als die laufenden (Hinweis „nach Neustart“).
     void setConfig(Config* live) {
         live_ = live;
-        if (live != nullptr) bootLibrary_ = live->library;
+        if (live != nullptr) bootSources_ = live->libraryRules.sources;
     }
 
     void update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) override;
@@ -25,8 +25,9 @@ public:
     void onEnter() override;
 
     int focus() const { return focus_; }
-    void setActiveLibrary(Config::LibraryDevice mounted) { bootLibrary_ = mounted; }  // gemountetes Gerät (Rückfall auf SD)
-    bool restartHintShown() const { return live_ != nullptr && live_->library != bootLibrary_; }
+    void setActiveSources(const SourceSpec& running) { bootSources_ = running; }  // laufende Quellen (Rückfall auf SD)
+    bool restartHintShown() const { return live_ != nullptr && !(live_->libraryRules.sources == bootSources_); }
+    std::string valueTextFor(SettingRow row) const;  // angezeigter Wert einer Zeile (leer bei Aktionen)
     gfx::Rect rowRect(const UiContext& ctx, int row) const;
 
 private:
@@ -36,7 +37,7 @@ private:
 
     Config* live_ = nullptr;
     Config saved_;       // Stand bei onEnter bzw. nach dem letzten SaveSettings
-    Config::LibraryDevice bootLibrary_ = Config::LibraryDevice::Usb;  // beim Start gemountet
+    SourceSpec bootSources_;  // beim Start gültige Bibliotheksquellen
     AppCommand pendingAction_ = AppCommand::None;  // Aktion nach SaveSettings im nächsten Frame
     int focus_ = 0;
     bool keysSincePointerMove_ = false;

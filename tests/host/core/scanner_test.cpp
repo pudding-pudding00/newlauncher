@@ -2,6 +2,7 @@
 #include "core/scanner.hpp"
 #include "support/disc_images.hpp"
 #include "support/mem_fs.hpp"
+#include "support/zip_builder.hpp"
 #include <doctest/doctest.h>
 #include <string>
 using namespace nl;
@@ -41,7 +42,7 @@ TEST_CASE("ROMs: Endungen, Groß/klein, nicht rekursiv, readme.txt ignoriert") {
     fs.addFile("sd:/roms/nes/Zelda (Europe).nes", {});
     fs.addFile("sd:/roms/snes/F-Zero (Europe).SMC", {1});
     fs.addFile("sd:/roms/nes/readme.txt", {});
-    fs.addFile("sd:/roms/nes/sub/Tief.nes", {});
+    fs.addFile("sd:/roms/nes/sub/tiefer/Tief.nes", {});  // Ebene 3
     fs.addFile("sd:/roms/n64/Mario.v64", {});
     const ScanResult r = scan(fs);
     CHECK(r.index.games.size() == 3);
@@ -211,4 +212,132 @@ TEST_CASE("Fortschritts-Callback mit false bricht den Scan ab") {
     if (!r.isOk()) CHECK(r.error().code == ErrorCode::Cancelled);
     CHECK(calls == 3);
     CHECK(fs.reads == 0);  // abgebrochen, bevor ein Disc-Header gelesen wurde
+}
+
+// ---- M12 Task 5: Ordnerregeln, Namensformen, FST, CISO, ZIP ----
+
+namespace {
+ScanResult scanWith(test::MemFileSystem& fs, const ScanRules& rules, const MetaDb* meta = nullptr) {
+    auto r = scanLibrary(fs, "sd:", rules, nullptr, meta);
+    REQUIRE(r.isOk());
+    return std::move(r).value();
+}
+std::vector<u8> zipOf(std::initializer_list<const char*> names) {
+    std::vector<test::TestZipEntry> e;
+    for (const char* n : names) e.push_back(test::storedEntry(n, "x"));
+    return test::buildZip(e);
+}
+}  // namespace
+
+TEST_CASE("Wii-Namensformen: ID6 aus dem Kopf, Ersatztitel aus dem Namen nur ohne Kopftitel") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/wbfs/Galaxy [RMGP01]/RMGP01.wbfs", test::wbfsFile("RMGP01", "Super Mario Galaxy"));
+    fs.addFile("sd:/wbfs/RSBP01.wbfs", test::wbfsFile("RSBP01", "Smash Bros"));
+    fs.addFile("sd:/wbfs/SOUP01_Zelda Skyward.iso", test::wiiIso("SOUP01", ""));
+    fs.addFile("sd:/wbfs/Kart [RMCP01].wbfs", test::wbfsFile("RMCP01", ""));
+    fs.addFile("sd:/wbfs/Sports.iso", test::wiiIso("RSPP01", ""));
+    fs.addFile("sd:/wbfs/R8PP01.iso", test::wiiIso("R8PP01", ""));
+    fs.addFile("sd:/wbfs/Falsch [ABCD01].iso", test::wiiIso("SMNP01", "New Super Mario"));
+    fs.addFile("sd:/wbfs/Ordner [RZDP01]/RZDP01.iso", test::wiiIso("RZDP01", ""));
+    const MetaDb meta = metaWith("SMNP01", "NSMB (Meta)");
+    const ScanResult r = scan(fs, nullptr, &meta);
+    REQUIRE(r.index.games.size() == 8);
+    CHECK(byKey(r.index, "RMGP01")->title == "Super Mario Galaxy");
+    CHECK(byKey(r.index, "RSBP01")->title == "Smash Bros");
+    CHECK(byKey(r.index, "RSBP01")->path == "wbfs/RSBP01.wbfs");
+    CHECK(byKey(r.index, "SOUP01")->title == "Zelda Skyward");
+    CHECK(byKey(r.index, "RMCP01")->title == "Kart");
+    CHECK(byKey(r.index, "RSPP01")->title == "Sports");
+    CHECK(byKey(r.index, "R8PP01")->title == "R8PP01");
+    CHECK(byKey(r.index, "SMNP01")->title == "NSMB (Meta)");  // ID6 aus dem Kopf, nicht aus dem Namen
+    CHECK(byKey(r.index, "ABCD01") == nullptr);
+    CHECK(byKey(r.index, "RZDP01")->title == "Ordner");
+    CHECK((byKey(r.index, "RZDP01")->flags & kFlagTitleFromHeader) == 0);
+}
+
+TEST_CASE("Wii: .wbf1 neben einer Datei auf Ebene 1 setzt Split") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/wbfs/Kart [RMCP01].wbfs", test::wbfsFile("RMCP01", "Mario Kart Wii"));
+    fs.addFile("sd:/wbfs/Kart [RMCP01].wbf1", {});
+    const ScanResult r = scan(fs);
+    REQUIRE(r.index.games.size() == 1);
+    CHECK((byKey(r.index, "RMCP01")->flags & kFlagSplitFile) != 0);
+}
+
+TEST_CASE("GC: FST-Ordner, Namensformen, .gcm und CISO") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/games/Zelda [GZLE01]/sys/boot.bin", test::gcIso("GZLE01", "Wind Waker"));
+    fs.addDir("sd:/games/Zelda [GZLE01]/files");
+    fs.addFile("sd:/games/Melee [GALP01].iso", test::gcIso("GALP01", "Melee"));
+    fs.addFile("sd:/games/GM4P01.gcm", test::gcIso("GM4P01", "Mario Kart DD"));
+    fs.addFile("sd:/gc/Pikmin [GPIP01].ciso", test::cisoFile("GPIP01", "Pikmin"));
+    fs.addFile("sd:/gc/Sunshine/game.nkit.iso", test::gcIso("GMSP01", "Sunshine"));
+    const ScanResult r = scan(fs);
+    REQUIRE(r.index.games.size() == 5);
+    const IndexGame* z = byKey(r.index, "GZLE01");
+    REQUIRE(z != nullptr);
+    CHECK(z->path == "games/Zelda [GZLE01]");
+    CHECK(z->title == "Wind Waker");
+    CHECK(byKey(r.index, "GALP01")->path == "games/Melee [GALP01].iso");
+    CHECK(byKey(r.index, "GM4P01")->console == Console::Gc);
+    CHECK(byKey(r.index, "GPIP01")->title == "Pikmin");  // Kopf bei 0x8000
+    CHECK(byKey(r.index, "GMSP01")->path == "gc/Sunshine/game.nkit.iso");
+}
+
+TEST_CASE("Tiefe: Ebene 2 gefunden, Ebene 3 nicht; ROMs ebenso") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/games/sub/x.iso", test::gcIso("GAAP01", "Zwei"));
+    fs.addFile("sd:/games/sub/sub2/y.iso", test::gcIso("GBBP01", "Drei"));
+    fs.addFile("sd:/roms/gba/Sammlung/Metroid.gba", {});
+    fs.addFile("sd:/roms/gba/Sammlung/Tiefer/Zu tief.gba", {});
+    const ScanResult r = scan(fs);
+    CHECK(byKey(r.index, "GAAP01") != nullptr);
+    CHECK(byKey(r.index, "GBBP01") == nullptr);
+    const IndexGame* m = byKey(r.index, "gba/Metroid.gba");
+    REQUIRE(m != nullptr);
+    CHECK(m->path == "roms/gba/Sammlung/Metroid.gba");
+    CHECK(byKey(r.index, "gba/Zu tief.gba") == nullptr);
+}
+
+TEST_CASE("ZIP-ROMs: passender Eintrag nötig, Konsole muss ZIP annehmen") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/roms/nes/Zelda (Europe).zip", zipOf({"Zelda (Europe).nes"}));
+    fs.addFile("sd:/roms/nes/Handbuch.zip", zipOf({"liesmich.txt"}));
+    fs.addFile("sd:/roms/nes/Kaputt.zip", {1, 2, 3});
+    ScanRules rules = defaultScanRules();
+    rules.paths[static_cast<std::size_t>(Console::Nes)].extensions = {".nes", ".zip"};
+    const ScanResult r = scanWith(fs, rules);
+    const IndexGame* z = byKey(r.index, "nes/Zelda (Europe).zip");
+    REQUIRE(z != nullptr);
+    CHECK(z->title == "Zelda");
+    CHECK(z->path == "roms/nes/Zelda (Europe).zip");
+    CHECK(byKey(r.index, "nes/Handbuch.zip") == nullptr);
+    CHECK(byKey(r.index, "nes/Kaputt.zip") == nullptr);
+
+    rules.zipConsoles = 0;
+    CHECK(scanWith(fs, rules).index.games.empty());
+}
+
+TEST_CASE("zwei Ordner für eine Konsole: beide gescannt, gleicher Schlüssel einmal") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/a/Zelda.nes", {});
+    fs.addFile("sd:/b/Zelda.nes", {});
+    fs.addFile("sd:/b/Metroid.nes", {});
+    ScanRules rules = defaultScanRules();
+    rules.paths[static_cast<std::size_t>(Console::Nes)].folders = {"a", "b"};
+    const ScanResult r = scanWith(fs, rules);
+    REQUIRE(r.index.games.size() == 2);
+    CHECK(byKey(r.index, "nes/Zelda.nes")->path == "a/Zelda.nes");
+    CHECK(byKey(r.index, "nes/Metroid.nes") != nullptr);
+}
+
+TEST_CASE("maxDepth 1 sucht nur direkt im Ordner") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/wbfs/RSBP01.wbfs", test::wbfsFile("RSBP01", "Smash"));
+    fs.addFile("sd:/wbfs/Galaxy [RMGP01]/RMGP01.wbfs", test::wbfsFile("RMGP01", "Galaxy"));
+    ScanRules rules = defaultScanRules();
+    rules.maxDepth = 1;
+    const ScanResult r = scanWith(fs, rules);
+    CHECK(byKey(r.index, "RSBP01") != nullptr);
+    CHECK(byKey(r.index, "RMGP01") == nullptr);
 }

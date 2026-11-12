@@ -7,6 +7,7 @@
 #include "core/cover_download.hpp"
 #include "core/emu_catalog.hpp"
 #include "core/ini.hpp"
+#include "core/library_sources.hpp"
 #include "core/theme.hpp"
 
 namespace nl {
@@ -16,7 +17,8 @@ struct Config {
     enum class LibraryDevice : u8 { Usb, Sd };
 
     Language language = Language::Auto;
-    LibraryDevice library = LibraryDevice::Usb;
+    LibraryDevice library = LibraryDevice::Usb;  // Alt-Schlüssel [general] library; gilt bis M12 Task 6 für den Start
+    LibraryRules libraryRules;                   // [library] sources, [paths], [extensions] (Spec v2 5.2–5.4)
     int usbTimeoutSec = 15;
     ThemeMode themeMode = ThemeMode::Light;
     int darkFromMin = 19 * 60, darkToMin = 7 * 60;
@@ -35,6 +37,7 @@ struct Config {
     std::string debugOpenScene;     // [debug] open_scene = about: Szene nach NL_READY öffnen (Smoke, M11)
     bool debugWiiDryRun = false;    // [debug] wii_dry_run = 1: Wii-Spiel nur prüfen (NL_WII_DRYRUN), nicht starten (M9)
     bool debugLogSounds = false;    // [debug] log_sounds = 1: NL_SOUND <name> je gespieltem Klang (Smoke-Test)
+    bool debugListGames = false;    // [debug] list_games = 1: NL_GAME <schlüssel> <gerät> je Spiel nach dem Laden (Smoke, M12)
     std::string debugEmuRepo;       // [debug] emu_repo: ersetzt emulatorRepo (Smoke-Test)
     std::string debugEmuInstall;    // [debug] emu_install: Komma-Liste, nach NL_READY installieren (Smoke-Test)
 };

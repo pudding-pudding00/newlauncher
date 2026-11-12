@@ -5,6 +5,7 @@
 #include "core/dol.hpp"
 #include "core/launch_args.hpp"
 #include "core/launch_layout.hpp"
+#include "core/library_merge.hpp"
 
 namespace nl {
 
@@ -12,6 +13,17 @@ namespace {
 
 using PlanResult = Result<LaunchPlan, LaunchError>;
 using TargetResult = Result<LaunchTarget, LaunchError>;
+
+// Wurzel liegt auf einem USB-Gerät („usb:“, „usb2:“ …).
+bool onUsb(std::string_view libRoot) { return libRoot.substr(0, 3) == "usb"; }
+
+// Weitere USB-Partition (usb2 … usb8): nur der Game-Booter liest dort selbst (Fragmentliste mit LBAs).
+// Kontext für den Dialog: Gerätename wie in der Detailansicht („USB 2“).
+std::optional<std::string> secondaryUsb(std::string_view libRoot) {
+    if (!onUsb(libRoot) || libRoot.size() < 4 || libRoot[3] == ':') return std::nullopt;
+    const std::size_t colon = libRoot.find(':');
+    return deviceLabel(libRoot.substr(0, colon));
+}
 
 PlanResult fail(LaunchFailure kind, std::string context) { return PlanResult::err({kind, std::move(context)}); }
 
@@ -41,6 +53,7 @@ PlanResult finish(LaunchPlan plan) {
 }
 
 PlanResult planFor(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorEntry& emu) {
+    if (auto dev = secondaryUsb(libRoot)) return fail(LaunchFailure::DeviceUnsupported, std::move(*dev));
     auto size = checkDol(fs, emu.dol, LaunchFailure::EmuMissing);
     if (!size.isOk()) return PlanResult::err(size.error());
 
@@ -56,6 +69,7 @@ PlanResult planFor(FileSystem& fs, const Game& g, std::string_view libRoot, cons
 
 TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorEntry& nin, bool ahbprotOff) {
     auto err = [](LaunchFailure k, std::string c) { return TargetResult::err({k, std::move(c)}); };
+    if (auto dev = secondaryUsb(libRoot)) return err(LaunchFailure::DeviceUnsupported, std::move(*dev));
     if (!ahbprotOff) return err(LaunchFailure::AhbProt, "");
     auto size = checkDol(fs, nin.dol, LaunchFailure::NinMissing);
     if (!size.isOk()) return TargetResult::err(size.error());
@@ -65,9 +79,21 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
 
     const std::string rel = g.path != nullptr ? g.path : "";
     const std::string game = joinPath(libRoot, rel);
-    if (!exists(fs, game)) return err(LaunchFailure::RomMissing, game);
-    const std::string gamePath = ninGamePath(rel);
-    const bool usb = libRoot.substr(0, 4) == "usb:";
+    // Entpacktes Abbild (FST): Nintendont hängt „sys/boot.bin“ direkt an den Pfad, er braucht also „/“ am Ende.
+    const bool fst = exists(fs, joinPath(game, "sys/boot.bin"));
+    if (!fst && !exists(fs, game)) return err(LaunchFailure::RomMissing, game);
+    if (!fst) {
+        // Nintendont (IsSupportedFileExt, Stand c683db3) prüft nur die letzte Endung.
+        const std::size_t dot = rel.rfind('.');
+        const std::size_t slash = rel.rfind('/');
+        const std::string ext = dot == std::string::npos || (slash != std::string::npos && dot < slash) ? "" : rel.substr(dot);
+        std::string low = ext;
+        for (char& ch : low)
+            if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+        if (low != ".iso" && low != ".gcm" && low != ".cso" && low != ".ciso") return err(LaunchFailure::NinFormat, ext);
+    }
+    const std::string gamePath = fst ? ninGamePath(rel) + "/" : ninGamePath(rel);
+    const bool usb = onUsb(libRoot);
     auto cfg = buildNinCfg({gamePath, g.key != nullptr ? g.key : "", usb});
     if (!cfg.isOk()) {
         if (cfg.error() == NinCfgError::PathTooLong) return err(LaunchFailure::NinPathTooLong, gamePath);
@@ -120,10 +146,12 @@ const char* launchFailureName(LaunchFailure f) {
         case LaunchFailure::NinTooOld: return "NinTooOld";
         case LaunchFailure::NinPathTooLong: return "NinPathTooLong";
         case LaunchFailure::AhbProt: return "AhbProt";
+        case LaunchFailure::NinFormat: return "NinFormat";
         case LaunchFailure::CiosMissing: return "CiosMissing";
         case LaunchFailure::CiosNotD2x: return "CiosNotD2x";
         case LaunchFailure::WiiFsUnsupported: return "WiiFsUnsupported";
         case LaunchFailure::WiiFileBroken: return "WiiFileBroken";
+        case LaunchFailure::DeviceUnsupported: return "DeviceUnsupported";
     }
     return "?";
 }
@@ -156,7 +184,7 @@ Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view li
 
     WiiBootPlan p;
     p.id6 = std::string(key.substr(0, 6));
-    p.usb = libRoot.substr(0, 4) == "usb:";
+    p.usb = onUsb(libRoot);
     p.cios = cios;
     p.fragBytes = serializeFragList(frags.value());
     return R::ok(std::move(p));

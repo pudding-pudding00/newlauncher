@@ -10,8 +10,8 @@ namespace nl::app {
 
 void* CoverService::Memory::alloc(u32 bytes) { return memalign(32, bytes); }
 
-CoverService::CoverService(FileSystem& fs, std::string libRoot)
-    : fs_(fs), root_(std::move(libRoot)), cache_(kCoverBudgetBytes, mem_) {}
+CoverService::CoverService(FileSystem& fs, std::vector<std::string> roots)
+    : fs_(fs), roots_(std::move(roots)), cache_(kCoverBudgetBytes, mem_) {}
 
 CoverService::~CoverService() { shutdown(); }
 
@@ -30,7 +30,12 @@ const std::string& CoverService::stemOf(const Game& game) const {
     return e.stem;
 }
 
-void CoverService::want(const Game& game, CoverPriority priority) { cache_.want(stemOf(game), priority); }
+void CoverService::want(const Game& game, CoverPriority priority) {
+    const std::string& stem = stemOf(game);
+    if (cache_.slotOf(stem)) return;  // fertig: kein Map-Zugriff je Frame
+    deviceOfStem_.insert_or_assign(stem, game.device);
+    cache_.want(stem, priority);
+}
 
 ui::CoverView CoverService::view(const Game& game) const {
     const std::string& stem = stemOf(game);
@@ -48,7 +53,9 @@ void CoverService::pump() {
     takeResult();
     if (worker_.running()) return;
     if (auto stem = cache_.nextRequest()) {
-        if (!worker_.start(fs_, root_, *stem, mem_)) cache_.fail(*stem);
+        const auto dev = deviceOfStem_.find(*stem);
+        const u8 d = dev != deviceOfStem_.end() ? dev->second : 0;
+        if (d >= roots_.size() || !worker_.start(fs_, roots_[d], *stem, mem_)) cache_.fail(*stem);
     }
 }
 

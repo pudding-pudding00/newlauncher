@@ -54,10 +54,23 @@ TEST_CASE("stepSetting: Schalter, Gerät, Region") {
     CHECK_FALSE(c.music);
     stepSetting(c, SettingRow::Sounds, -1);
     CHECK_FALSE(c.sounds);
+    // M12-Review: Auto → USB → SD → Auto; die Quellenliste ist der Wert der Zeile.
+    REQUIRE(c.libraryRules.sources.autoMode);
     stepSetting(c, SettingRow::Library, +1);
-    CHECK(c.library == Config::LibraryDevice::Sd);
-    stepSetting(c, SettingRow::Library, +1);
+    CHECK(sourceChoice(c.libraryRules.sources) == SourceChoice::Usb);
+    CHECK(c.libraryRules.sources.devices == std::vector<std::string>{"usb"});
     CHECK(c.library == Config::LibraryDevice::Usb);
+    stepSetting(c, SettingRow::Library, +1);
+    CHECK(sourceChoice(c.libraryRules.sources) == SourceChoice::Sd);
+    CHECK(c.library == Config::LibraryDevice::Sd);  // Alt-Schlüssel folgt
+    stepSetting(c, SettingRow::Library, +1);
+    CHECK(c.libraryRules.sources.autoMode);
+    stepSetting(c, SettingRow::Library, -1);
+    CHECK(sourceChoice(c.libraryRules.sources) == SourceChoice::Sd);
+    c.libraryRules.sources = SourceSpec{false, {"usb2", "sd"}};
+    CHECK(sourceChoice(c.libraryRules.sources) == SourceChoice::Custom);
+    stepSetting(c, SettingRow::Library, +1);
+    CHECK(c.libraryRules.sources.autoMode);  // eigene Liste: ein Druck führt zurück in den Umlauf
     c.coverRegion = "JA";
     stepSetting(c, SettingRow::CoverRegion, +1);
     CHECK(c.coverRegion == "auto");

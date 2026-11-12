@@ -96,8 +96,9 @@ bool RawDevice::read(u32 lba, u32 count, std::span<u8> out) {
     return true;
 }
 
-Result<FragList, LaunchError> computeWiiFrags(FileSystem& fs, const Game& g, std::string_view libRoot, u32* partLbaOut) {
+Result<FragList, LaunchError> computeWiiFrags(FileSystem& fs, const Game& g, const Device& device, u32* partLbaOut) {
     using R = Result<FragList, LaunchError>;
+    const std::string libRoot = device.slot.name + ":";
     const std::string main = joinPath(libRoot, g.path != nullptr ? g.path : "");
     const bool wbfs = endsWithNoCase(main, ".wbfs");
 
@@ -113,8 +114,9 @@ Result<FragList, LaunchError> computeWiiFrags(FileSystem& fs, const Game& g, std
         parts.push_back({path, static_cast<u32>(st.st_ino), {static_cast<u64>(st.st_size), {}}});
     }
 
-    RawDevice dev(libRoot.substr(0, 4) == "usb:");
-    auto vol = findFatVolume(dev);
+    RawDevice dev(device.slot.usb);
+    if (device.slot.lba > 0xFFFFFFFFull) return R::err({LaunchFailure::WiiFileBroken, main});
+    auto vol = findFatVolumeAt(dev, static_cast<u32>(device.slot.lba));
     if (!vol.isOk()) return R::err(fromFatError(vol.error(), main));
     if (partLbaOut != nullptr) *partLbaOut = vol.value().partLba;
 

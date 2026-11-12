@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <malloc.h>
+#include <unistd.h>
 #include <memory>
 #include <optional>
 #include <string>
@@ -17,6 +18,7 @@
 #include "app/cover_service.hpp"
 #include "core/config.hpp"
 #include "core/cover_download.hpp"
+#include "core/data_dir.hpp"
 #include "core/emu_catalog.hpp"
 #include "core/emu_install.hpp"
 #include "core/emulators.hpp"
@@ -77,19 +79,19 @@
 namespace {
 
 constexpr float kFrameMs = 1000.0f / 60.0f;
-constexpr const char* kConfigDir = "sd:/newlauncher";
-constexpr const char* kConfigPath = "sd:/newlauncher/config.ini";
 #ifdef NL_TLS
 constexpr bool kHasTls = true;  // Standardquellen über HTTPS (M11)
 #else
 constexpr bool kHasTls = false;
 #endif
-constexpr const char* kFavoritesPath = "sd:/newlauncher/favorites.ini";
-constexpr const char* kHistoryPath = "sd:/newlauncher/history.ini";
-constexpr const char* kEmulatorsPath = "sd:/newlauncher/emulators.ini";
-constexpr const char* kVcMapPath = "sd:/newlauncher/n64_vc.ini";
-constexpr const char* kGamesPath = "sd:/newlauncher/games.ini";
-constexpr const char* kLogPath = "sd:/newlauncher/log.txt";
+
+// <data> (Spec v2 5.1): Ordner newlauncher/ auf dem Startgerät, sonst SD, sonst USB (core/data_dir).
+struct DataDir {
+    std::string dir;        // z. B. "usb:/newlauncher"; leer, wenn kein Gerät taugt
+    bool readable = false;  // dir ist gesetzt
+    bool writable = false;  // sonst läuft der Launcher nur lesend
+    std::string path(const char* name) const { return dir + "/" + name; }
+};
 constexpr std::size_t kMaxIniBytes = 256 * 1024;
 constexpr std::size_t kMaxIndexBytes = 16 * 1024 * 1024;
 constexpr std::size_t kMaxMetaBytes = 8 * 1024 * 1024;
@@ -125,37 +127,39 @@ bool writeText(nl::FileSystem& fs, const char* path, const std::string& text) {
 }
 
 // text erhält den gelesenen bzw. neu geschriebenen Inhalt (Grundlage für configToIniText).
-nl::Config loadConfig(nl::FileSystem& fs, bool sdOk, std::string& text) {
+nl::Config loadConfig(nl::FileSystem& fs, const DataDir& dataDir, std::string& text) {
     text = nl::defaultConfigText(kHasTls);
-    if (!sdOk) {
-        nl::log::line("NL_CONFIG default (keine SD)");
+    if (!dataDir.readable) {
+        nl::log::line("NL_CONFIG default (kein Datenordner)");
         return nl::Config{};
     }
-    auto data = nl::readAllWithFallback(fs, kConfigPath, kMaxIniBytes);
+    const std::string configPath = dataDir.path("config.ini");
+    auto data = nl::readAllWithFallback(fs, configPath, kMaxIniBytes);
     if (data.isOk()) {
         const auto& b = data.value();
         nl::log::line("NL_CONFIG ok");
         text.assign(reinterpret_cast<const char*>(b.data()), b.size());
-        return nl::configFromIni(nl::IniDoc::parse(text), kHasTls);
+        nl::Config config = nl::configFromIni(nl::IniDoc::parse(text), kHasTls);
+        for (const std::string& key : config.libraryRules.bad) nl::log::line("NL_CFG_BAD %s", key.c_str());
+        return config;
     }
-    static_cast<void>(fs.makeDirs(kConfigDir));
-    writeText(fs, kConfigPath, nl::defaultConfigText(kHasTls));
+    if (dataDir.writable) writeText(fs, configPath.c_str(), nl::defaultConfigText(kHasTls));
     nl::log::line("NL_CONFIG default");
     return nl::Config{};
 }
 
-nl::EmulatorTable loadEmulators(nl::FileSystem& fs, bool sdOk) {
-    if (sdOk) {
-        auto data = nl::readAllWithFallback(fs, kEmulatorsPath, kMaxIniBytes);
+nl::EmulatorTable loadEmulators(nl::FileSystem& fs, const DataDir& dataDir) {
+    if (dataDir.readable) {
+        const std::string emulatorsPath = dataDir.path("emulators.ini");
+        auto data = nl::readAllWithFallback(fs, emulatorsPath, kMaxIniBytes);
         if (data.isOk()) {
             const auto& b = data.value();
             nl::log::line("NL_EMULATORS ok");
             return nl::EmulatorTable::fromIni(
                 nl::IniDoc::parse(std::string_view(reinterpret_cast<const char*>(b.data()), b.size())));
         }
-        if (data.error().code == nl::ErrorCode::NotFound) {
-            static_cast<void>(fs.makeDirs(kConfigDir));
-            writeText(fs, kEmulatorsPath, nl::defaultEmulatorsText());
+        if (data.error().code == nl::ErrorCode::NotFound && dataDir.writable) {
+            writeText(fs, emulatorsPath.c_str(), nl::defaultEmulatorsText());
         }
     }
     nl::log::line("NL_EMULATORS default");
@@ -186,11 +190,40 @@ struct Frame {
     }
 };
 
+constexpr int kDataUsbTries = 6;           // höchstens ~2,5 s Wartezeit vor der Datenordner-Wahl
+constexpr u32 kDataUsbRetryUs = 500 * 1000;
+
+// Hängt bei Start von USB das USB-Gerät sofort ein (der Ordner kann dort liegen), wählt <data> und legt ihn an.
+DataDir chooseData(nl::FileSystem& fs, const char* argv0) {
+    auto& table = nl::platform::deviceTable();
+    auto collect = [&] {
+        std::vector<nl::DataCandidate> out;
+        for (const nl::platform::Device& d : table.devices()) {
+            if (!d.mounted) continue;
+            const bool hasDir = fs.list(d.slot.name + ":/newlauncher").isOk();
+            out.push_back(nl::DataCandidate{d.slot.name, d.writable, hasDir});
+        }
+        return out;
+    };
+    std::vector<nl::DataCandidate> candidates = collect();
+    // Ordner kann auf USB liegen (Start von USB oder nichts auf SD): kurz mehrmals versuchen, das Laufwerk
+    // braucht nach dem Einschalten etwas. SD-Nutzer mit newlauncher/ warten nie.
+    for (int attempt = 0; attempt < kDataUsbTries && nl::wantUsbForData(argv0, candidates); ++attempt) {
+        if (attempt > 0) usleep(kDataUsbRetryUs);
+        if (table.mountUsb()) candidates = collect();
+    }
+    const nl::DataDirChoice choice = nl::chooseDataDir(argv0, candidates);
+    DataDir out{choice.path, !choice.path.empty(), !choice.path.empty() && !choice.readOnly};
+    if (choice.create && !fs.makeDirs(choice.path).isOk()) out = DataDir{};
+    nl::log::line("NL_DATA %s%s", out.readable ? out.dir.c_str() : "-", out.writable ? "" : " readonly");
+    return out;
+}
+
 u32 msSince(u64 start) { return static_cast<u32>(ticks_to_millisecs(diff_ticks(start, gettime()))); }
 
 }  // namespace
 
-int main(int, char**) {
+int main(int argc, char** argv) {
     const u64 bootTicks = gettime();  // Perf: Startzeiten relativ zum Einsprung
     // Spec 9: MEM2 ab kDolBufferAddr gehört dem Chainloader. Vor jeder Allokation reservieren.
     const bool launchAllowed = reinterpret_cast<u32>(SYS_GetArena2Hi()) > nl::kDolBufferAddr;
@@ -201,9 +234,13 @@ int main(int, char**) {
 
     // 1. SD und Konfiguration (Spec 6.1 Schritt 2)
     nl::platform::StdFileSystem fs;
-    const bool sdOk = nl::platform::mountSd();
+    const bool sdOk = nl::platform::mountSd();  // Emulatoren und ihre Installation bleiben auf der SD (Spec 6.9)
+    const DataDir data = chooseData(fs, argc > 0 && argv != nullptr && argv[0] != nullptr ? argv[0] : "");
+    const std::string configPath = data.path("config.ini"), favoritesPath = data.path("favorites.ini"),
+                      historyPath = data.path("history.ini"), vcMapPath = data.path("n64_vc.ini"),
+                      gamesPath = data.path("games.ini"), logPath = data.path("log.txt");
     std::string configText;
-    nl::Config config = loadConfig(fs, sdOk, configText);  // die Einstellungsszene ändert sie live
+    nl::Config config = loadConfig(fs, data, configText);  // die Einstellungsszene ändert sie live
     const bool systemGerman = CONF_GetLanguage() == CONF_LANG_GERMAN;
     nl::ui::setLanguage(nl::ui::resolveLanguage(config.language, systemGerman));
     nl::log::line("NL_LANG %s", nl::ui::langKey(nl::ui::language()));
@@ -211,14 +248,14 @@ int main(int, char**) {
     nl::log::line("NL_AHBPROT %s", ahbprotOff ? "off" : "on");
     auto saveConfig = [&]() {
         std::string text = nl::configToIniText(config, configText);
-        if (sdOk && writeText(fs, kConfigPath, text)) {
+        if (data.writable && writeText(fs, configPath.c_str(), text)) {
             configText = std::move(text);
             nl::log::line("NL_CONFIG_SAVED");
         } else {
             nl::log::line("NL_WARN config.ini nicht gespeichert");
         }
     };
-    const nl::EmulatorTable emulators = loadEmulators(fs, sdOk);
+    const nl::EmulatorTable emulators = loadEmulators(fs, data);
     if (sdOk) {  // Reste einer abgebrochenen Emulator-Installation (Spec 6.9)
         nl::recoverEmuInstall(fs);
         nl::clearEmuTmp(fs);
@@ -253,8 +290,8 @@ int main(int, char**) {
         for (const std::string& line : music.takeLogLines()) nl::log::line("%s", line.c_str());
     };
     auto startMusic = [&]() {
-        if (music.started() || !sdOk) return;
-        music.start(nl::musicFiles(fs, "sd:/newlauncher/music"), static_cast<u32>(gettime()));
+        if (music.started() || !data.readable) return;
+        music.start(nl::musicFiles(fs, data.path("music")), static_cast<u32>(gettime()));
     };
     // Vor jedem Verlassen des Launchers: erst den Musik-Thread (er speist Stimme 0), dann ASND.
     auto stopAudio = [&]() {
@@ -305,9 +342,14 @@ int main(int, char**) {
         markFirstFrame();
     };
 
-    // 3. Bibliotheksgerät (Spec 6.1 Schritt 4)
-    std::string libRoot = "sd:";
-    if (config.library == nl::Config::LibraryDevice::Usb) {
+    // 3. Bibliotheksgeräte (Spec 6.1 Schritt 4, Spec v2 5.2): Quellen aus [library] sources.
+    // USB wird nur abgewartet, wenn die Quellen USB enthalten können. Bei „auto“ geht es nach der Wartezeit
+    // still mit den übrigen Geräten weiter; eine ausdrückliche USB-Quelle zeigt den v1-Dialog.
+    const nl::SourceSpec& sources = config.libraryRules.sources;
+    bool wantUsb = sources.autoMode;
+    for (const std::string& d : sources.devices)
+        if (d.rfind("usb", 0) == 0) wantUsb = true;
+    if (wantUsb) {
         nl::platform::UsbMount usb;
         const u64 usbStart = gettime();  // Echtzeit: auch Dialog, blockierender Mount und 50-Hz-Frames
         usb.begin(config.usbTimeoutSec);
@@ -315,7 +357,8 @@ int main(int, char**) {
         while (!decided) {
             const auto state = usb.poll(kFrameMs);
             if (state == nl::platform::UsbMount::State::Ready) {
-                libRoot = "usb:";
+                decided = true;
+            } else if (state == nl::platform::UsbMount::State::TimedOut && sources.autoMode) {
                 decided = true;
             } else if (state == nl::platform::UsbMount::State::TimedOut) {
                 startup.showUsbFailed();
@@ -331,13 +374,36 @@ int main(int, char**) {
         }
         usbWaitMs = msSince(usbStart);
     }
-    nl::log::line("NL_MOUNT %s", libRoot.c_str());
-    const std::string cacheDir = libRoot + "/newlauncher/cache";
-    const std::string indexPath = cacheDir + "/index.bin";
+    auto& devTable = nl::platform::deviceTable();
+    std::vector<std::string> libDevices;
+    {
+        std::vector<std::string> mounted;
+        for (const nl::platform::Device& d : devTable.devices())
+            if (d.mounted) mounted.push_back(d.slot.name);
+        libDevices = nl::orderedSources(sources, mounted);
+    }
+    const bool libFellBack = libDevices.empty();
+    if (libFellBack) libDevices.push_back("sd");  // v1: Rückfall auf die SD-Karte
+    {
+        std::string list;
+        for (const std::string& d : libDevices) list += (list.empty() ? "" : ",") + d + ":";
+        nl::log::line("NL_MOUNT %s", list.c_str());
+    }
+    // Cover und index.bin liegen auf dem Gerät selbst; ist es nicht beschreibbar, unter <data>/cache/<gerät>.
+    auto deviceWritable = [&](const std::string& dev) {
+        const nl::platform::Device* d = devTable.byName(dev);
+        return d != nullptr && d->writable;
+    };
+    auto cacheDirOf = [&](const std::string& dev) { return nl::deviceCacheDir(dev, deviceWritable(dev), data.dir); };
+    auto coverRootsOf = [&](std::span<const std::string> devices) {
+        std::vector<std::string> roots;
+        for (const std::string& dev : devices) roots.push_back(nl::coverRoot(dev, deviceWritable(dev), data.dir));
+        return roots;
+    };
 
     // 4. meta.bin, index.bin, Favoriten, Verlauf (Spec 6.1 Schritt 5)
-    std::optional<nl::MetaDb> meta;
-    if (auto data = nl::readAllWithFallback(fs, cacheDir + "/meta.bin", kMaxMetaBytes); data.isOk()) {
+    std::optional<nl::MetaDb> meta;  // vom ersten Bibliotheksgerät
+    if (auto data = nl::readAllWithFallback(fs, cacheDirOf(libDevices.front()) + "/meta.bin", kMaxMetaBytes); data.isOk()) {
         auto parsed = nl::MetaDb::parse(std::move(data).value());
         if (parsed.isOk()) meta.emplace(std::move(parsed).value());
         else nl::log::line("NL_WARN meta.bin verworfen: %s", parsed.error().context.c_str());
@@ -348,11 +414,11 @@ int main(int, char**) {
     nl::GameOverrides overrides;
     nl::VcMap vcMapping;
     std::string vcMapText;  // Originaltext: Kommentare und unlesbare Einträge überleben das Speichern
-    if (sdOk) {
-        store.loadFavorites(readIni(fs, kFavoritesPath));
-        store.loadHistory(readIni(fs, kHistoryPath));
-        overrides = nl::GameOverrides::fromIni(readIni(fs, kGamesPath));
-        vcMapText = readText(fs, kVcMapPath);
+    if (data.readable) {
+        store.loadFavorites(readIni(fs, favoritesPath.c_str()));
+        store.loadHistory(readIni(fs, historyPath.c_str()));
+        overrides = nl::GameOverrides::fromIni(readIni(fs, gamesPath.c_str()));
+        vcMapText = readText(fs, vcMapPath.c_str());
         vcMapping = nl::VcMap::fromIni(nl::IniDoc::parse(vcMapText));
     }
 
@@ -377,39 +443,56 @@ int main(int, char**) {
     };
     std::vector<nl::ChannelInfo> channels;  // Namen erst beim ersten Öffnen des VC-Dialogs
     bool channelsLoaded = false;
-    auto saveIndex = [&](const nl::IndexData& index) {
-        static_cast<void>(fs.makeDirs(cacheDir));
-        const std::vector<u8> bytes = nl::writeIndex(index);
-        if (fs.writeAtomic(indexPath, bytes).isOk()) nl::log::line("NL_INDEX_SAVED");
+    // Ein Index je Gerät (Spec v2 5.2); store hält die zusammengeführte Sicht.
+    std::vector<nl::DeviceIndex> deviceIndexes;
+    auto saveIndexes = [&]() {
+        bool ok = true;
+        for (const nl::DeviceIndex& di : deviceIndexes) {
+            const std::string dir = cacheDirOf(di.device);
+            static_cast<void>(fs.makeDirs(dir));
+            ok = fs.writeAtomic(dir + "/index.bin", nl::writeIndex(di.index)).isOk() && ok;
+        }
+        if (ok) nl::log::line("NL_INDEX_SAVED");
         else nl::log::line("NL_WARN index.bin nicht gespeichert");
+    };
+    auto logGames = [&]() {
+        if (!config.debugListGames) return;
+        for (const nl::Game& g : store.games())
+            nl::log::line("NL_GAME %s %s", g.key, store.devices()[g.device].c_str());
+    };
+    auto applyIndexes = [&]() {
+        store.setGames(nl::mergeIndexes(deviceIndexes), metaPtr);
+        logGames();
     };
 
     nl::platform::ScanWorker worker;
-    bool haveIndex = false;
-    if (auto data = nl::readAllWithFallback(fs, indexPath, kMaxIndexBytes); data.isOk()) {
-        auto index = nl::readIndex(data.value());
-        if (index.isOk()) {
-            store.setGames(std::move(index).value(), metaPtr);
-            haveIndex = true;
-            nl::log::line("NL_LIBRARY games=%u source=index", static_cast<unsigned>(store.games().size()));
-            worker.start(fs, libRoot, &store.index(), metaPtr);  // Hintergrund-Scan (Schritt 6)
-        } else {
-            nl::log::line("NL_WARN index.bin verworfen: %s", index.error().context.c_str());
-        }
+    nl::ScanRules scanRules = nl::defaultScanRules();
+    scanRules.paths = config.libraryRules.paths;  // [paths]/[extensions] aus config.ini (M12)
+    for (const std::string& dev : libDevices) {
+        auto bytes = nl::readAllWithFallback(fs, cacheDirOf(dev) + "/index.bin", kMaxIndexBytes);
+        if (!bytes.isOk()) continue;
+        auto index = nl::readIndex(bytes.value());
+        if (index.isOk()) deviceIndexes.push_back(nl::DeviceIndex{dev, std::move(index).value()});
+        else nl::log::line("NL_WARN index.bin verworfen (%s): %s", dev.c_str(), index.error().context.c_str());
     }
-    if (!haveIndex) {
-        worker.start(fs, libRoot, nullptr, metaPtr);
-        std::optional<nl::Result<nl::ScanResult>> result;
+    if (!deviceIndexes.empty()) {
+        applyIndexes();
+        nl::log::line("NL_LIBRARY games=%u source=index", static_cast<unsigned>(store.games().size()));
+        worker.start(fs, libDevices, scanRules, deviceIndexes, metaPtr);  // Hintergrund-Scan (Schritt 6)
+    } else {
+        worker.start(fs, libDevices, scanRules, {}, metaPtr);
+        std::optional<nl::Result<nl::MultiScan>> result;
         while (!(result = worker.take())) {
             startup.showScanning(worker.filesSeen());
             startupFrame();
         }
         if (result->isOk()) {
             const nl::ScanStats st = result->value().stats;
-            store.setGames(std::move(*result).value().index, metaPtr);
+            deviceIndexes = std::move(*result).value().indexes;
+            applyIndexes();
             nl::log::line("NL_SCAN_DONE games=%u added=%u removed=%u", static_cast<unsigned>(store.games().size()),
                           static_cast<unsigned>(st.added), static_cast<unsigned>(st.removed));
-            saveIndex(store.index());
+            saveIndexes();
         } else {
             nl::log::line("NL_WARN Scan fehlgeschlagen: %s", result->error().context.c_str());
         }
@@ -418,7 +501,7 @@ int main(int, char**) {
     auto libraryView = [&]() { return nl::ui::Library{store.games(), store.favorites(), store.recent()}; };
 
     // 5. Hauptbildschirm
-    nl::app::CoverService covers(fs, libRoot);
+    nl::app::CoverService covers(fs, coverRootsOf(store.devices()));
     nl::ui::MainScene mainScene(libraryView());
     mainScene.setCovers(&covers);
     covers.setPerf(perf.get());
@@ -426,7 +509,11 @@ int main(int, char**) {
     mainScene.setHomeMenu(&homeMenu);
     nl::ui::SettingsScene settings;
     settings.setConfig(&config);
-    settings.setActiveLibrary(libRoot == "usb:" ? nl::Config::LibraryDevice::Usb : nl::Config::LibraryDevice::Sd);
+    settings.setActiveSources(libFellBack ? nl::SourceSpec{false, {"sd"}} : sources);
+    // Wurzel des Geräts, auf dem ein Spiel liegt ("usb2:"); Game::device zählt in store.devices().
+    auto rootOf = [&](const nl::Game& game) {
+        return game.device < store.devices().size() ? store.devices()[game.device] + ":" : std::string("sd:");
+    };
     homeMenu.setSettings(&settings);
     nl::platform::setTlsCaPath(config.debugTlsCa);  // vor dem ersten submit; geladen beim ersten HTTPS-Auftrag
     nl::platform::setNetPerf(config.debugPerf);
@@ -473,7 +560,11 @@ int main(int, char**) {
             case nl::CiosState::NotD2x: nl::log::line("NL_CIOS not_d2x %s", cios.version.c_str()); break;
         }
         u32 partLba = 0;
-        auto frags = nl::platform::computeWiiFrags(fs, game, libRoot, &partLba);
+        const std::string libRoot = rootOf(game);
+        const nl::platform::Device* device = nl::platform::deviceTable().byName(libRoot);
+        auto frags = device != nullptr
+                         ? nl::platform::computeWiiFrags(fs, game, *device, &partLba)
+                         : nl::Result<nl::FragList, nl::LaunchError>::err({nl::LaunchFailure::RomMissing, libRoot});
         if (frags.isOk()) {
             const nl::FragList& f = frags.value();
             const auto bytes = nl::serializeFragList(f);
@@ -482,7 +573,7 @@ int main(int, char**) {
                 std::snprintf(first, sizeof first, "%u:%u:%u", static_cast<unsigned>(f.entries[0].offset),
                               static_cast<unsigned>(f.entries[0].sector), static_cast<unsigned>(f.entries[0].count));
             }
-            nl::log::line("NL_FRAG dev=%s part_lba=%u n=%u size=%u crc=%08x first=%s", libRoot == "usb:" ? "usb" : "sd",
+            nl::log::line("NL_FRAG dev=%s part_lba=%u n=%u size=%u crc=%08x first=%s", device->slot.name.c_str(),
                           static_cast<unsigned>(partLba), static_cast<unsigned>(f.entries.size()), static_cast<unsigned>(f.size),
                           static_cast<unsigned>(nl::fragListCrc(bytes)), first);
         }
@@ -505,7 +596,7 @@ int main(int, char**) {
 #else
         const bool hwAccess = ahbprotOff || config.debugIgnoreAhbprot;
 #endif
-        auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs, hwAccess);
+        auto target = nl::preflightGame(fs, game, rootOf(game), emulators, &inputs, hwAccess);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
             if (auto plan = prepareWii(game); plan.isOk()) {
                 if (config.debugWiiDryRun) {
@@ -533,7 +624,7 @@ int main(int, char**) {
                           (static_cast<unsigned char>(cfg[0x0A]) & 0x04) != 0 ? 1 : 0);
         }
         store.recordPlayed(key, static_cast<u32>(std::time(nullptr)));
-        if (sdOk && writeText(fs, kHistoryPath, store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
+        if (data.writable && writeText(fs, historyPath.c_str(), store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
         else nl::log::line("NL_WARN history.ini nicht gespeichert");
         nl::log::line("NL_LAUNCH %s", key.c_str());
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
@@ -547,7 +638,7 @@ int main(int, char**) {
             nl::log::line("NL_LAUNCH_VC %s", nl::formatTitleId(titleId).c_str());
             stopAudio();
             logPerfSummary();
-            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (data.writable) nl::log::flushLogFile(fs, logPath);
             input.shutdown();
             nl::platform::unmountAll();
             nl::platform::shutdownVideo();
@@ -566,7 +657,7 @@ int main(int, char**) {
             }
             stopAudio();
             logPerfSummary();
-            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (data.writable) nl::log::flushLogFile(fs, logPath);
             input.shutdown();
             nl::platform::unmountAll();
             nl::platform::shutdownVideo();
@@ -581,7 +672,7 @@ int main(int, char**) {
         }
         stopAudio();
         logPerfSummary();
-        if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+        if (data.writable) nl::log::flushLogFile(fs, logPath);
         input.shutdown();
         nl::platform::unmountAll();
         nl::platform::shutdownVideo();
@@ -595,12 +686,19 @@ int main(int, char**) {
     auto fetchCovers = [&]() {
         nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
         if (net.running()) return;  // Emulator-Aufträge warten in derselben Warteschlange (NetService)
-        std::vector<const nl::Game*> games;
-        games.reserve(store.games().size());
-        for (const nl::Game& g : store.games()) games.push_back(&g);
-        const auto present = nl::existingCoverFiles(fs, libRoot);  // vier Ordnerlisten statt zwei je Spiel
-        std::vector<nl::CoverJob> jobs =
-            nl::coverDownloadJobs(games, [&](const std::string& path) { return present.count(path) > 0; }, libRoot);
+        // Je Gerät: Cover landen dort, wo das Spiel liegt (oder in dessen Cache unter <data>).
+        const std::vector<std::string> roots = coverRootsOf(store.devices());
+        std::vector<nl::CoverJob> jobs;
+        for (std::size_t d = 0; d < roots.size(); ++d) {
+            std::vector<const nl::Game*> games;
+            for (const nl::Game& g : store.games())
+                if (g.device == d) games.push_back(&g);
+            if (games.empty()) continue;
+            const auto present = nl::existingCoverFiles(fs, roots[d]);  // vier Ordnerlisten statt zwei je Spiel
+            auto part = nl::coverDownloadJobs(games, [&](const std::string& path) { return present.count(path) > 0; },
+                                              roots[d]);
+            for (nl::CoverJob& j : part) jobs.push_back(std::move(j));
+        }
         nl::log::line("NL_COVER_DL_START jobs=%u", static_cast<unsigned>(jobs.size()));
         if (jobs.empty()) {
             dialog.open(nl::ui::tr(nl::ui::Str::NoMissingCovers), nl::ui::tr(nl::ui::Str::NoMissingCoversText));
@@ -612,7 +710,7 @@ int main(int, char**) {
             regions.emplace_back(r);
         const std::string base =
             config.debugCoverUrl.empty() ? config.coverBase : config.debugCoverUrl;
-        if (!net.start(fs, libRoot, std::move(jobs), std::move(regions), base)) {
+        if (!net.start(fs, std::move(jobs), std::move(regions), base)) {
             nl::log::line("NL_WARN Netz-Thread startet nicht");
             return;
         }
@@ -641,7 +739,7 @@ int main(int, char**) {
             for (const std::string& stem : net.takeFinishedStems()) covers.invalidate(stem);
             nl::log::line("NL_COVER_DL_DONE ok=%u missing=%u failed=%u", static_cast<unsigned>(sum->ok),
                           static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
-            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (data.writable) nl::log::flushLogFile(fs, logPath);
             if (perf) perf->pause();  // der Flush gehört zur Messung, nicht zum Launcher
             const std::string text = nl::ui::coversSummaryText(sum->ok, sum->missing, sum->failed, sum->lastError);
             dialog.open(nl::ui::tr(nl::ui::Str::CoversLoaded), text.c_str());
@@ -728,7 +826,7 @@ int main(int, char**) {
             nl::log::line("NL_EMU_DONE not64=%d wii64=%d", not64Dol ? 1 : 0, wii64Dol ? 1 : 0);
             onDebugInstallDone();
         }
-        if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+        if (data.writable) nl::log::flushLogFile(fs, logPath);
         if (perf) perf->pause();
     };
 
@@ -771,7 +869,7 @@ int main(int, char**) {
 #ifdef NL_SELFTEST
         const nl::app::SelftestView view{mainScene, scenes, debug, worker.running(), store, ctx, keyboard, &dialog,
                                                  &details, &vcMapScene, &settings, &config, &covers,
-                                                 sdOk ? &fs : nullptr, kLogPath};
+                                                 data.writable ? &fs : nullptr, logPath.c_str()};
         input.poll();  // Geräte weiter abfragen, Eingaben kommen aber aus dem Skript
         const nl::ui::InputFrame in = frame.begin(nl::app::selftestInput(frameNo, view));
 #else
@@ -783,12 +881,14 @@ int main(int, char**) {
             if (result->isOk()) {
                 const nl::ScanStats st = result->value().stats;
                 const std::string focusKey = mainScene.focusedKey();  // vor setGames: danach sind die Zeiger ungültig
-                store.setGames(std::move(*result).value().index, metaPtr);
+                deviceIndexes = std::move(*result).value().indexes;
+                applyIndexes();
+                covers.setRoots(coverRootsOf(store.devices()));
                 covers.libraryChanged();
                 mainScene.setLibrary(libraryView(), focusKey);
                 nl::log::line("NL_SCAN_DONE games=%u added=%u removed=%u", static_cast<unsigned>(store.games().size()),
                               static_cast<unsigned>(st.added), static_cast<unsigned>(st.removed));
-                saveIndex(store.index());
+                saveIndexes();
             } else {
                 nl::log::line("NL_WARN Scan fehlgeschlagen: %s", result->error().context.c_str());
             }
@@ -816,7 +916,7 @@ int main(int, char**) {
                 const std::optional<nl::N64Method> method =
                     req.n64Choice == 0 ? std::nullopt : std::optional<nl::N64Method>(static_cast<nl::N64Method>(req.n64Choice - 1));
                 overrides.setN64Method(key, method);
-                if (sdOk && writeText(fs, kGamesPath, overrides.toIni().serialize()))
+                if (data.writable && writeText(fs, gamesPath.c_str(), overrides.toIni().serialize()))
                     nl::log::line("NL_OVERRIDE_SAVED %s %s", key.c_str(), method ? nl::n64MethodKey(*method) : "auto");
                 else nl::log::line("NL_WARN games.ini nicht gespeichert");
                 refreshDetailsN64();
@@ -845,7 +945,7 @@ int main(int, char**) {
             case nl::ui::AppCommand::SaveVcMap: {
                 for (const nl::ui::VcMapRow& row : vcMapScene.rows()) vcMapping.set(row.key, row.mapped);
                 std::string text = vcMapping.serialize(vcMapText);
-                if (sdOk && writeText(fs, kVcMapPath, text)) {
+                if (data.writable && writeText(fs, vcMapPath.c_str(), text)) {
                     vcMapText = std::move(text);
                     nl::log::line("NL_VCMAP_SAVED n=%u", static_cast<unsigned>(vcMapping.size()));
                 } else nl::log::line("NL_WARN n64_vc.ini nicht gespeichert");
@@ -858,7 +958,7 @@ int main(int, char**) {
                 const std::string focusKey = mainScene.focusedKey();  // vor toggleFavorite: Favoritenliste wird neu gebaut
                 const bool nowFavorite = store.toggleFavorite(key);
                 const std::string text = store.favoritesIni().serialize();
-                if (sdOk && writeText(fs, kFavoritesPath, text)) nl::log::line("NL_FAV_SAVED %s", key.c_str());
+                if (data.writable && writeText(fs, favoritesPath.c_str(), text)) nl::log::line("NL_FAV_SAVED %s", key.c_str());
                 else nl::log::line("NL_WARN favorites.ini nicht gespeichert");
                 mainScene.setLibrary(libraryView(), focusKey);
                 mainScene.showToast(nowFavorite ? nl::ui::tr(nl::ui::Str::FavAdded) : nl::ui::tr(nl::ui::Str::FavRemoved));
@@ -892,7 +992,7 @@ int main(int, char**) {
                 break;
             case nl::ui::AppCommand::Rescan:
                 if (worker.running()) break;  // läuft schon, das Ergebnis kommt über den Scan-Pfad unten
-                if (!worker.start(fs, libRoot, nullptr, metaPtr)) {
+                if (!worker.start(fs, libDevices, scanRules, {}, metaPtr)) {
                     nl::log::line("NL_WARN Neu-Scan nicht gestartet");
                     break;
                 }
@@ -913,7 +1013,7 @@ int main(int, char**) {
                 covers.shutdown();
                 stopAudio();
                 logPerfSummary();
-                if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+                if (data.writable) nl::log::flushLogFile(fs, logPath);
                 input.shutdown();
                 nl::platform::unmountAll();
                 SYS_ResetSystem(cmd == nl::ui::AppCommand::WiiMenu ? SYS_RETURNTOMENU : SYS_POWEROFF, 0, 0);
@@ -981,7 +1081,7 @@ int main(int, char**) {
                 perf->formatBoot(line, sizeof line);
                 nl::log::line("%s", line);
             }
-            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (data.writable) nl::log::flushLogFile(fs, logPath);
             if (perf) perf->pause();  // Flush und Musikstart liegen im nächsten Abstand
             readyReported = true;
             if (config.music) startMusic();
@@ -999,7 +1099,7 @@ int main(int, char**) {
         }
         if (readyReported && !coversReported && covers.idle()) {
             nl::log::line("NL_COVERS ready=%u", static_cast<unsigned>(covers.readyCount()));
-            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (data.writable) nl::log::flushLogFile(fs, logPath);
             if (perf) perf->pause();
             coversReported = true;
         }
@@ -1014,7 +1114,7 @@ int main(int, char**) {
     covers.shutdown();
     stopAudio();
     logPerfSummary();
-    if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+    if (data.writable) nl::log::flushLogFile(fs, logPath);
     input.shutdown();
     nl::platform::unmountAll();
     return 0;

@@ -36,7 +36,17 @@ void stepSetting(Config& c, SettingRow r, int dir) {
         case SettingRow::Music: c.music = !c.music; break;
         case SettingRow::Volume: c.musicVolume = std::clamp(c.musicVolume + dir * 10, 0, 100); break;
         case SettingRow::Sounds: c.sounds = !c.sounds; break;
-        case SettingRow::Library: c.library = cycle(c.library, 2, dir); break;
+        case SettingRow::Library:
+        {
+            // Umlauf Auto → USB → SD; eine eigene Liste aus config.ini steht vor Auto.
+            const SourceChoice cur = sourceChoice(c.libraryRules.sources);
+            const int i = cur == SourceChoice::Custom ? -1 : static_cast<int>(cur);
+            const int next = cur == SourceChoice::Custom && dir < 0 ? 2 : (i + dir + 3) % 3;
+            if (next == 0) c.libraryRules.sources = SourceSpec{};
+            else c.libraryRules.sources = SourceSpec{false, {next == 1 ? "usb" : "sd"}};
+            c.library = next == 2 ? Config::LibraryDevice::Sd : Config::LibraryDevice::Usb;  // Alt-Schlüssel folgt
+            break;
+        }
         case SettingRow::CoverRegion: {
             const auto it = std::find(kRegions.begin(), kRegions.end(), std::string_view(c.coverRegion));
             const int n = static_cast<int>(kRegions.size());

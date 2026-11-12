@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 
+#include "core/library_merge.hpp"
 #include "gfx/text.hpp"
 #include "ui/launch_text.hpp"
 #include "ui/layout.hpp"
@@ -53,6 +54,25 @@ void appendf(char* out, std::size_t cap, int& len, const char* fmt, const char* 
     if (n > 0) len = static_cast<std::size_t>(len + n) >= cap ? static_cast<int>(cap) - 1 : len + n;
 }
 }  // namespace
+
+std::string detailsDeviceLine(std::span<const std::string> devices, u8 device, std::span<const u8> alsoOn) {
+    if (devices.size() < 2 || device >= devices.size()) return {};
+    const auto fill = [](const char* fmt, const std::string& v) {
+        std::string s(fmt);
+        const std::size_t at = s.find("%s");
+        if (at != std::string::npos) s.replace(at, 2, v);
+        return s;
+    };
+    std::string line = fill(tr(Str::DeviceLine), deviceLabel(devices[device]));
+    std::string others;
+    for (u8 d : alsoOn) {
+        if (d >= devices.size()) continue;
+        if (!others.empty()) others += ", ";
+        others += deviceLabel(devices[d]);
+    }
+    if (!others.empty()) line += " (" + fill(tr(Str::AlsoOn), others) + ")";
+    return line;
+}
 
 int detailsInfoLine(const Game& g, u32 lastPlayedUnix, char* out, std::size_t cap) {
     if (cap == 0) return 0;
@@ -130,6 +150,7 @@ void DetailsScene::open(const Game& game, bool favorite, u32 lastPlayedUnix) {
     game_.description = description_.empty() ? nullptr : description_.c_str();
     game_.path = path_.c_str();
     hasGame_ = true;
+    device_.clear();
     favorite_ = favorite;
     lastPlayed_ = lastPlayedUnix;
     focus_ = 0;
@@ -239,9 +260,15 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const gfx::FontFace& body = ctx.fonts->face(FontSize::Body, FontWeight::Regular);
     y += 4.0f;
     gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, info_, t.text2);
-    y += body.lineHeight + 12.0f;
+    y += body.lineHeight;
+    if (!device_.empty()) {
+        gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, device_, t.text2);
+        y += body.lineHeight;
+    }
+    y += 12.0f;
     const std::string_view desc(description_);
-    n = gfx::wrapText(body, desc, w, std::span<gfx::Line>(lines, hasN64_ ? 2 : 3));
+    const int descLines = (hasN64_ ? 2 : 3) - (device_.empty() ? 0 : 1);
+    n = gfx::wrapText(body, desc, w, std::span<gfx::Line>(lines, static_cast<std::size_t>(descLines)));
     for (int i = 0; i < n; ++i) {
         gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, desc.substr(lines[i].start, lines[i].length), t.text);
         y += body.lineHeight;

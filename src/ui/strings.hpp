@@ -60,7 +60,10 @@
     X(WhyNotMapped, "nicht zugeordnet", "not mapped") \
     X(WhyNotInstalled, "Kanal nicht installiert", "channel not installed") \
     X(WhyDolMissing, "DOL fehlt", "DOL missing") \
-    X(NinMissing, "Nintendont fehlt.\nNicht gefunden: %s\nInstallieren: Einstellungen → Emulatoren", \
+    X(DeviceLine, "Gerät: %s", "Device: %s") \
+    X(AlsoOn, "auch auf: %s", "also on: %s") \
+    X(NinFormat,"Nintendont startet dieses Format nicht: %s", "Nintendont cannot start this format: %s") \
+    X(NinMissing,"Nintendont fehlt.\nNicht gefunden: %s\nInstallieren: Einstellungen → Emulatoren", \
       "Nintendont missing.\nNot found: %s\nInstall: Settings → Emulators") \
     X(NinUnknown, "Nintendont nicht erkannt.\n%s enthält keine Versionsangabe.", \
       "Nintendont not recognized.\n%s contains no version string.") \
@@ -78,6 +81,8 @@
       "File system not supported.\nWii games need FAT32 with 512-byte sectors (%s).") \
     X(WiiFileBroken, "Spieldatei fehlerhaft.\n%s ist beschädigt oder zu stark fragmentiert.", \
       "Game file damaged.\n%s is damaged or too fragmented.") \
+    X(DeviceUnsupported, "Gerät nicht unterstützt.\nDas Spiel liegt auf %s. Nintendont und die Emulatoren lesen nur SD und die erste USB-Partition.", \
+      "Device not supported.\nThe game is on %s. Nintendont and the emulators only read SD and the first USB partition.") \
     X(OverrideIgnored,"Gewählter Weg nicht verfügbar – automatisch gewählt.", "Chosen method unavailable – picked automatically.") \
     X(VcMapTitle, "VC-Injects zuordnen", "Map VC injects") \
     X(VcNone, "—", "—") \

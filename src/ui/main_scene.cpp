@@ -346,6 +346,8 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
             const bool fav = detailsStore_ != nullptr && detailsStore_->isFavorite(g->key);
             const u32 last = detailsStore_ != nullptr ? detailsStore_->lastPlayed(g->key) : 0;
             details_->open(*g, fav, last);
+            if (detailsStore_ != nullptr)
+                details_->setDeviceLine(detailsDeviceLine(detailsStore_->devices(), g->device, detailsStore_->alsoOn(*g)));
             out.push = details_;
         }
     }

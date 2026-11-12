@@ -14,16 +14,17 @@ ScanWorker::~ScanWorker() {
     LWP_MutexDestroy(mutex_);
 }
 
-bool ScanWorker::start(FileSystem& fs, std::string libRoot, const IndexData* previous, const MetaDb* meta) {
+bool ScanWorker::start(FileSystem& fs, std::vector<std::string> devices, const ScanRules& rules,
+                       std::vector<DeviceIndex> previous, const MetaDb* meta) {
     if (running_) return false;
     if (thread_ != LWP_THREAD_NULL) {  // vorheriger Lauf beendet, aber noch nicht abgeholt
         LWP_JoinThread(thread_, nullptr);
         thread_ = LWP_THREAD_NULL;
     }
     fs_ = &fs;
-    root_ = std::move(libRoot);
-    hasPrevious_ = previous != nullptr;
-    previous_ = hasPrevious_ ? *previous : IndexData{};
+    devices_ = std::move(devices);
+    rules_ = rules;
+    previous_ = std::move(previous);
     meta_ = meta;
     seen_ = 0;
     cancel_ = false;
@@ -56,8 +57,8 @@ void ScanWorker::cancelAndJoin() {
 
 void* ScanWorker::entry(void* arg) {
     auto* self = static_cast<ScanWorker*>(arg);
-    Result<ScanResult> r = scanLibrary(*self->fs_, self->root_, self->hasPrevious_ ? &self->previous_ : nullptr,
-                                       self->meta_, &ScanWorker::onProgress, self);
+    Result<MultiScan> r =
+        scanDevices(*self->fs_, self->devices_, self->rules_, self->previous_, self->meta_, &ScanWorker::onProgress, self);
     LWP_MutexLock(self->mutex_);
     self->result_.emplace(std::move(r));
     self->running_ = false;
@@ -65,10 +66,10 @@ void* ScanWorker::entry(void* arg) {
     return nullptr;
 }
 
-std::optional<Result<ScanResult>> ScanWorker::take() {
+std::optional<Result<MultiScan>> ScanWorker::take() {
     if (running_) return std::nullopt;
     LWP_MutexLock(mutex_);
-    std::optional<Result<ScanResult>> out = std::move(result_);
+    std::optional<Result<MultiScan>> out = std::move(result_);
     result_.reset();
     LWP_MutexUnlock(mutex_);
     if (out && thread_ != LWP_THREAD_NULL) {

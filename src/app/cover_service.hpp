@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 #include "core/cover_cache.hpp"
 #include "core/fs.hpp"
@@ -19,7 +20,9 @@ namespace nl::app {
 
 class CoverService final : public ui::CoverProvider, public gfx::CoverTextures {
 public:
-    CoverService(FileSystem& fs, std::string libRoot);
+    // roots[d] = Cover-Wurzel des Geräts d (coverRoot), Index wie Game::device.
+    CoverService(FileSystem& fs, std::vector<std::string> roots);
+    void setRoots(std::vector<std::string> roots) { roots_ = std::move(roots); }
     ~CoverService();
 
     void beginFrame(u32 frame, float nowMs) { cache_.beginFrame(frame, nowMs); }
@@ -55,7 +58,8 @@ private:
     void takeResult();
 
     FileSystem& fs_;
-    std::string root_;
+    std::vector<std::string> roots_;
+    std::unordered_map<std::string, u8> deviceOfStem_;  // aus want(); Stämme sind nach dem Zusammenführen eindeutig
     Memory mem_;
     CoverCache cache_;
     platform::CoverWorker worker_;

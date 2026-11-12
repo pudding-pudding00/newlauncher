@@ -22,8 +22,9 @@ namespace nl {
 // Warum ein Start scheitert; bestimmt den Dialogtext (nicht die Dateiendung).
 enum class LaunchFailure : u8 {
     Unsupported, EmuMissing, EmuInvalid, RomMissing, ArgsTooLong, NoMemory, NoN64Path,
-    NinMissing, NinUnknown, NinTooOld, NinPathTooLong, AhbProt,  // M8: GameCube über Nintendont
+    NinMissing, NinUnknown, NinTooOld, NinPathTooLong, AhbProt, NinFormat,  // M8/M12: GameCube über Nintendont
     CiosMissing, CiosNotD2x, WiiFsUnsupported, WiiFileBroken,     // M9: Wii-Spiele nativ
+    DeviceUnsupported,  // M12: GC/ROM auf usb2…usb8 – Nintendont und GX-Emulatoren sehen nur sd: und usb:
 };
 const char* launchFailureName(LaunchFailure f);  // Log-Marker NL_PREFLIGHT_FAIL
 

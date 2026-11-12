@@ -12,6 +12,7 @@
 #include "core/game.hpp"
 #include "core/index_file.hpp"
 #include "core/ini.hpp"
+#include "core/library_merge.hpp"
 #include "core/meta_db.hpp"
 
 namespace nl {
@@ -21,10 +22,13 @@ inline constexpr int kHistoryMax = 20;
 class LibraryStore {
 public:
     // Übernimmt die Spiele; alle Game-Zeiger bleiben bis zum nächsten setGames gültig.
-    void setGames(IndexData index, const MetaDb* meta);
+    void setGames(MergedLibrary library, const MetaDb* meta);
+    void setGames(IndexData index, const MetaDb* meta);  // ein Gerät ohne Namen (Tests, Altpfade)
     std::span<const Game> games() const { return games_; }
     const Game* findByKey(std::string_view key) const;
-    const IndexData& index() const { return index_; }
+    const MergedLibrary& library() const { return lib_; }
+    std::span<const std::string> devices() const { return lib_.devices; }
+    std::span<const u8> alsoOn(const Game& g) const;  // weitere Geräte mit demselben Spiel
 
     void loadFavorites(const IniDoc& ini);  // [favorites], eine Zeile pro Schlüssel
     IniDoc favoritesIni() const;            // unbekannte Schlüssel bleiben erhalten
@@ -42,7 +46,7 @@ public:
 private:
     void rebuildLists();
 
-    IndexData index_;
+    MergedLibrary lib_;
     std::deque<std::string> descriptions_;
     std::vector<Game> games_;
     std::unordered_map<std::string_view, std::size_t> byKey_;

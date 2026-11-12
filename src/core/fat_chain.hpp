@@ -22,6 +22,8 @@ struct FatVolume {
 
 // Sektor 0 als Bootsektor, sonst die vier primären MBR-Einträge in Reihenfolge; der erste gültige gilt.
 Result<FatVolume, FatError> findFatVolume(BlockDevice& dev);
+// Bootsektor genau an `partLba` (eine von mehreren eingehängten Partitionen, M12); 0 sucht wie findFatVolume.
+Result<FatVolume, FatError> findFatVolumeAt(BlockDevice& dev, u32 partLba);
 
 struct Extent {
     u32 fileSector;  // Offset in der Datei, in Sektoren

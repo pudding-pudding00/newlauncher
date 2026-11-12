@@ -19,16 +19,32 @@ bool parseUnixTime(std::string_view s, u32& out) {
 }  // namespace
 
 void LibraryStore::setGames(IndexData index, const MetaDb* meta) {
-    index_ = std::move(index);
+    MergedLibrary lib;
+    lib.devices.emplace_back();
+    lib.games.reserve(index.games.size());
+    for (IndexGame& g : index.games) lib.games.push_back(MergedGame{std::move(g), 0, {}});
+    setGames(std::move(lib), meta);
+}
+
+std::span<const u8> LibraryStore::alsoOn(const Game& g) const {
+    auto it = byKey_.find(g.key != nullptr ? std::string_view(g.key) : std::string_view());
+    if (it == byKey_.end()) return {};
+    return lib_.games[it->second].alsoOn;
+}
+
+void LibraryStore::setGames(MergedLibrary library, const MetaDb* meta) {
+    lib_ = std::move(library);
     descriptions_.clear();
     games_.clear();
-    games_.reserve(index_.games.size());
+    games_.reserve(lib_.games.size());
     byKey_.clear();
-    for (const IndexGame& g : index_.games) {
+    for (const MergedGame& m : lib_.games) {
+        const IndexGame& g = m.game;
         Game game{g.console, g.key.c_str(), g.title.c_str(), 0, 0};
         game.path = g.path.c_str();
         game.size = g.size;
         game.flags = g.flags;
+        game.device = m.device;
         if (meta != nullptr) {
             if (auto e = meta->find(metaKey(g))) {
                 game.year = e->year;
@@ -41,7 +57,7 @@ void LibraryStore::setGames(IndexData index, const MetaDb* meta) {
         }
         games_.push_back(game);
     }
-    for (std::size_t i = 0; i < index_.games.size(); ++i) byKey_.emplace(index_.games[i].key, i);
+    for (std::size_t i = 0; i < lib_.games.size(); ++i) byKey_.emplace(lib_.games[i].game.key, i);
     rebuildLists();
 }
 

@@ -14,6 +14,32 @@ std::vector<u8> bytes(std::string_view s) { return std::vector<u8>(s.begin(), s.
 
 const EmulatorTable kNoIni = EmulatorTable::fromIni(IniDoc::parse(""));
 
+// emulators.ini, wie v1 sie beim ersten Start immer vollständig schrieb
+constexpr const char* kV1File =
+    "[nes]\n"
+    "dol = sd:/apps/fceugx/boot.dol\n"
+    "args = {dir}|{file}\n"
+    "[snes]\n"
+    "dol = sd:/apps/snes9xgx/boot.dol\n"
+    "args = {dir}|{file}\n"
+    "[gb]\n"
+    "dol = sd:/apps/vbagx/boot.dol\n"
+    "args = {dir}|{file}\n"
+    "[gbc]\n"
+    "dol = sd:/apps/vbagx/boot.dol\n"
+    "args = {dir}|{file}\n"
+    "[gba]\n"
+    "dol = sd:/apps/vbagx/boot.dol\n"
+    "args = {dir}|{file}\n"
+    "[n64_not64]\n"
+    "dol = sd:/apps/not64/boot.dol\n"
+    "args = {path}\n"
+    "[n64_wii64]\n"
+    "dol = sd:/apps/wii64/boot.dol\n"
+    "args = {path}\n"
+    "[nintendont]\n"
+    "dol = sd:/apps/nintendont/boot.dol\n";
+
 }  // namespace
 
 TEST_CASE("isV1Default: alle acht v1-Abschnitte, nur der exakte Pfad") {
@@ -80,14 +106,36 @@ TEST_CASE("resolveEmulator: v1-Standard-INI bei fehlender Datei → Erkennung gr
     CHECK_FALSE(r->fromIni);
 }
 
-TEST_CASE("resolveEmulator: v1-Standard-INI, Datei vorhanden → bleibt (fromIni)") {
+TEST_CASE("resolveEmulator: v1-Standard-INI, Datei vorhanden → bleibt, gilt als erkannt") {
     const EmulatorTable ini = EmulatorTable::fromIni(IniDoc::parse("[nes]\ndol = sd:/apps/fceugx/boot.dol\nargs = {dir}|{file}\n"));
     const std::vector<FoundApp> found{app("sd", "FCEUGX"), app("usb", "fceugx")};
     const auto r = resolveEmulator(Console::Nes, ini, found, std::nullopt);
     REQUIRE(r);
     CHECK(r->dol == "sd:/apps/fceugx/boot.dol");
-    CHECK(r->fromIni);
+    CHECK_FALSE(r->fromIni);  // v1 schrieb die Vorgabe immer; sie ist keine Nutzerentscheidung
     CHECK(r->profile == "fceugx");
+}
+
+TEST_CASE("resolveTable: komplette v1-emulators.ini, nichts installiert → kein Eintrag gilt als aus der INI") {
+    const EmulatorTable ini = EmulatorTable::fromIni(IniDoc::parse(kV1File));
+    const EmulatorTable t = resolveTable(ini, {});
+    for (Console c : {Console::Nes, Console::Snes, Console::Gb, Console::Gbc, Console::Gba}) {
+        REQUIRE(t.forConsole(c));
+        CHECK_FALSE(t.forConsole(c)->fromFile);
+    }
+    CHECK_FALSE(t.forN64(N64Method::Not64)->fromFile);
+    CHECK_FALSE(t.nintendont().fromFile);
+}
+
+TEST_CASE("resolveEmulator: eigener INI-Abschnitt auf einen RetroArch-Kern trägt dessen Profil (kein ZIP)") {
+    const EmulatorTable ini = EmulatorTable::fromIni(
+        IniDoc::parse("[nes]\ndol = sd:/apps/retroarch-wii/fceumm_libretro_wii.dol\nargs = {dir}|{file}\n"));
+    const std::vector<FoundApp> found{app("sd", "retroarch-wii", "fceumm_libretro_wii.dol")};
+    const auto r = resolveEmulator(Console::Nes, ini, found, std::nullopt);
+    REQUIRE(r);
+    CHECK(r->fromIni);
+    CHECK(r->profile == "retroarch-fceumm");
+    CHECK((zipConsoles(resolveTable(ini, found)) & (1u << static_cast<unsigned>(Console::Nes))) == 0);
 }
 
 TEST_CASE("resolveEmulator: nur RetroArch installiert → retroarch-fceumm für NES") {

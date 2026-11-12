@@ -113,6 +113,20 @@ TEST_CASE("SetupWizard: Auswahl ändern weicht vom Vorschlag ab") {
     CHECK(ini->find("[snes]") == std::string::npos);
 }
 
+TEST_CASE("SetupWizard: festschreiben behält eigene INI-Abschnitte") {
+    SystemInfo s = sys();
+    s.emulators.push_back(ResolvedEmuSummary{"n64_not64", "", "ini", "usb:/apps/not64-beta/boot.dol", "{rom}"});
+    SetupWizard w(s, Config{}, {});
+    for (int i = 0; i < 3; ++i) w.accept();
+    REQUIRE(w.step() == WizardStep::Emulators);
+    w.select(1);  // festschreiben
+    runAll(w, true);
+    const auto ini = w.emulatorsIni();
+    REQUIRE(ini.has_value());
+    CHECK(ini->find("[nes]\ndol = usb2:/apps/fceugx/boot.dol\n") != std::string::npos);
+    CHECK(ini->find("[n64_not64]\ndol = usb:/apps/not64-beta/boot.dol\nargs = {rom}\n") != std::string::npos);
+}
+
 TEST_CASE("SetupWizard: emulatorsIni() ohne Abweichung ist leer") {
     SetupWizard w(sys(), Config{}, {});
     runAll(w, true);

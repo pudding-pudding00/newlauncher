@@ -55,6 +55,7 @@ private:
     Config current_;
     std::vector<DeviceGames> games_;
     std::vector<ResolvedEmuSummary> detected_;
+    std::vector<ResolvedEmuSummary> ownIni_;  // how == "ini": eigene Abschnitte, festschreiben übernimmt sie
     std::size_t missing_ = 0;
     std::vector<Config::Language> langs_;
     std::vector<SourceSpec> sources_;

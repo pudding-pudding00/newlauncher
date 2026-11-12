@@ -97,8 +97,12 @@ ResolvedEmu fromProfile(const EmuProfile& p, const FoundApp& a, bool bad) {
 
 ResolvedEmu resolveSection(const Section& s, const EmulatorEntry& e, std::span<const FoundApp> found,
                            std::optional<std::string_view> gameProfile) {
-    // 1. eigener Abschnitt (nicht die v1-Vorgabe): stärkste Stufe
-    if (e.fromFile && !isV1Default(s.name, e.dol)) return ResolvedEmu{e.dol, e.args, "", true, false};
+    // 1. eigener Abschnitt (nicht die v1-Vorgabe): stärkste Stufe. Zeigt er auf ein bekanntes Profil (z. B. einen
+    //    RetroArch-Kern), trägt er dessen id, damit zipConsoles dessen ZIP-Fähigkeit kennt.
+    if (e.fromFile && !isV1Default(s.name, e.dol)) {
+        const char* id = profileOfDol(e.dol, found);
+        return ResolvedEmu{e.dol, e.args, id != nullptr ? id : "", true, false};
+    }
     // 2. games.ini [emulator]
     bool bad = false;
     if (gameProfile) {
@@ -109,8 +113,9 @@ ResolvedEmu resolveSection(const Section& s, const EmulatorEntry& e, std::span<c
             return fromProfile(*p, *a, false);
         }
     }
+    // Ab hier ist e die v1-Vorgabe: v1 schrieb sie immer, sie ist keine Nutzerentscheidung → fromIni = false.
     // 3. v1-Vorgabe, deren Datei es gibt: bleibt, wie v1 sie startete
-    if (const char* id = profileOfDol(e.dol, found)) return ResolvedEmu{e.dol, e.args, id, e.fromFile, bad};
+    if (const char* id = profileOfDol(e.dol, found)) return ResolvedEmu{e.dol, e.args, id, false, bad};
     // 4. Profilreihenfolge
     for (const char* id : s.order) {
         const EmuProfile* p = findProfile(id);
@@ -118,7 +123,7 @@ ResolvedEmu resolveSection(const Section& s, const EmulatorEntry& e, std::span<c
         if (const FoundApp* a = findApp(*p, found)) return fromProfile(*p, *a, bad);
     }
     // 5. nichts installiert: v1-Vorgabe bleibt (Preflight meldet dann „Emulator fehlt“)
-    return ResolvedEmu{e.dol, e.args, "", e.fromFile, bad};
+    return ResolvedEmu{e.dol, e.args, "", false, bad};
 }
 
 std::span<const char* const> orderOf(Console c) {

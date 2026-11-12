@@ -74,6 +74,7 @@ SetupWizard::SetupWizard(const SystemInfo& sys, const Config& current, std::span
     // Emulatoren: erkannte verwenden; festschreiben nur bei erkannten; installieren nur bei fehlenden.
     for (const ResolvedEmuSummary& e : sys.emulators)
         if (e.how == "detected") detected_.push_back(e);
+        else if (e.how == "ini") ownIni_.push_back(e);  // festschreiben behält eigene Abschnitte
     for (const char* sec : kEmuSections) {
         bool found = false;
         for (const ResolvedEmuSummary& e : sys.emulators) found = found || (e.section == sec && e.how != "default");
@@ -170,10 +171,12 @@ Config SetupWizard::result() const {
 std::optional<std::string> SetupWizard::emulatorsIni() const {
     if (emus_[sel_[3]] != EmuChoice::Freeze) return std::nullopt;
     std::string t = defaultEmulatorsText();
-    for (const ResolvedEmuSummary& e : detected_) {
+    auto add = [&t](const ResolvedEmuSummary& e) {
         if (!t.empty() && t.back() != '\n') t += '\n';
         t += "\n[" + e.section + "]\ndol = " + e.path + "\nargs = " + e.args + "\n";
-    }
+    };
+    for (const ResolvedEmuSummary& e : ownIni_) add(e);  // eigene Abschnitte bleiben unverändert
+    for (const ResolvedEmuSummary& e : detected_) add(e);
     return t;
 }
 

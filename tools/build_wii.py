@@ -1,4 +1,6 @@
-"""Baut newlauncher.dol (Preset `wii`). Aufruf: python tools/build_wii.py [--no-tls]"""
+"""Baut newlauncher.dol (Preset `wii`). Aufruf: python tools/build_wii.py [--no-tls]
+
+Mit TLS nach build/wii, ohne TLS nach build/wii-notls (Smokes und Deploy nehmen build/wii)."""
 
 import argparse
 import os

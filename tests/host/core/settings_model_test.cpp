@@ -85,7 +85,7 @@ TEST_CASE("Aktionszeilen ändern nichts") {
     Config c;
     const Config before = c;
     for (SettingRow r : {SettingRow::Rescan, SettingRow::FetchCovers, SettingRow::VcMap, SettingRow::Emulators,
-                          SettingRow::About}) {
+                          SettingRow::SysInfo, SettingRow::About}) {
         CHECK(isAction(r));
         stepSetting(c, r, +1);
     }
@@ -109,4 +109,9 @@ TEST_CASE("settingEnabled") {
 TEST_CASE("Zeile Über ist die letzte und eine Aktion (M11)") {
     CHECK(static_cast<int>(SettingRow::About) + 1 == static_cast<int>(SettingRow::Count));
     CHECK(isAction(SettingRow::About));
+}
+
+TEST_CASE("Zeile Systeminfo steht vor Über und ist eine Aktion (M13)") {
+    CHECK(static_cast<int>(SettingRow::SysInfo) + 1 == static_cast<int>(SettingRow::About));
+    CHECK(isAction(SettingRow::SysInfo));
 }

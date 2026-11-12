@@ -53,6 +53,7 @@
 #include "platform/std_fs.hpp"
 #include "platform/storage.hpp"
 #include "platform/system.hpp"
+#include "platform/system_probe.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_disc.hpp"
 #include "platform/wii_input.hpp"
@@ -62,6 +63,8 @@
 #include "ui/dialog_scene.hpp"
 #include "ui/emulators_scene.hpp"
 #include "ui/about_scene.hpp"
+#include "ui/sysinfo_scene.hpp"
+#include "core/sysinfo.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/jump_bar.hpp"
 #include "ui/keyboard.hpp"
@@ -406,12 +409,9 @@ int main(int argc, char** argv) {
             foundApps.insert(foundApps.end(), apps.begin(), apps.end());
         }
         emulators = nl::resolveTable(emulatorIni, foundApps);
-        for (const char* sec : {"nes", "snes", "gb", "gbc", "gba", "n64_not64", "n64_wii64", "nintendont"}) {
-            const nl::EmulatorEntry* e = emulators.section(sec);
-            if (e == nullptr) continue;
-            const char* how = e->fromFile ? "ini" : e->profile.empty() ? "default" : "detected";
-            nl::log::line("NL_EMU %s %s %s %s", sec, e->profile.empty() ? "-" : e->profile.c_str(), how, e->dol.c_str());
-        }
+        for (const nl::ResolvedEmuSummary& e : nl::emuSummaries(emulators))
+            nl::log::line("NL_EMU %s %s %s %s", e.section.c_str(), e.profile.empty() ? "-" : e.profile.c_str(),
+                          e.how.c_str(), e.path.c_str());
     };
     detectEmulators();
     // Cover und index.bin liegen auf dem Gerät selbst; ist es nicht beschreibbar, unter <data>/cache/<gerät>.
@@ -568,6 +568,46 @@ int main(int argc, char** argv) {
     const std::string emuRepo = config.debugEmuRepo.empty() ? config.emulatorRepo : config.debugEmuRepo;
     nl::ui::SceneStack scenes;
     scenes.push(&mainScene);
+    // Systeminfo (M13, Spec v2 6.1): beim Öffnen frisch gesammelt; MAC und IP kommen nie hinein.
+    nl::ui::SysInfoScene sysInfoScene;
+    auto buildSysInfo = [&]() {
+        nl::SystemInfo s;
+        s.sysMenuVersion = nl::platform::sysMenuVersion();
+        s.platform = nl::platformForSysMenu(s.sysMenuVersion, nl::platform::latteDetected());
+        s.region = nl::regionFromSysMenu(s.sysMenuVersion);
+        s.launcherVersion = NL_VERSION;
+        s.launcherIos = nl::platform::runningIos();
+        s.ahbprot = ahbprotOff;
+        s.cios = nl::platform::scanCios();
+        s.ciosSlot = nl::chooseCios(s.cios, std::nullopt, config.wiiIos).slot.value_or(0);
+        s.gcPorts = s.platform != nl::Platform::VWii;
+        for (const nl::platform::Device& d : devTable.devices()) {
+            if (!d.mounted) continue;
+            nl::DeviceSummary sum{d.slot.name, nl::fsKindName(d.slot.kind), d.totalBytes, d.freeBytes, 0};
+            for (const nl::Game& g : store.games())
+                if (g.device < store.devices().size() && store.devices()[g.device] == d.slot.name) ++sum.games;
+            s.devices.push_back(std::move(sum));
+        }
+        s.emulators = nl::emuSummaries(emulators);
+        s.netUp = netService.networkUp();  // Stand nach dem letzten Netzaufbau (volatile, nur gelesen)
+        s.timeSynced = nl::platform::clockSynced();
+        s.tls = kHasTls && netService.tlsUp();
+        return s;
+    };
+    auto openSysInfo = [&]() {
+        sysInfoScene.setInfo(buildSysInfo());
+        scenes.push(&sysInfoScene);
+        nl::log::line("NL_SCENE sysinfo");
+    };
+    auto saveSysInfo = [&]() {
+        const std::string path = data.path("sysinfo.txt");
+        const bool ok = data.writable &&
+                        writeText(fs, path.c_str(),
+                                  nl::formatSysInfo(sysInfoScene.info(), nl::ui::language() == nl::ui::Lang::De));
+        sysInfoScene.setSaveResult(path, ok);
+        if (ok) nl::log::line("NL_SYSINFO_SAVED %s", path.c_str());
+        else nl::log::line("NL_SYSINFO_SAVE fail");
+    };
 
     // Zeile „Startmethode“ der Detailansicht aus Override, Zuordnung und Verfügbarkeit.
     auto refreshDetailsN64 = [&]() {
@@ -1088,6 +1128,14 @@ int main(int argc, char** argv) {
                 scenes.push(&aboutScene);
                 nl::log::line("NL_SCENE about");
                 break;
+            case nl::ui::AppCommand::OpenSysInfo:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                openSysInfo();
+                break;
+            case nl::ui::AppCommand::SaveSysInfo:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                saveSysInfo();
+                break;
             case nl::ui::AppCommand::EmuCancel:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 emu.cancel();
@@ -1140,6 +1188,11 @@ int main(int argc, char** argv) {
             if (config.debugOpenScene == "about") {   // nur für Tests (M11)
                 scenes.push(&aboutScene);
                 nl::log::line("NL_SCENE about");
+            }
+            if (config.debugOpenScene == "sysinfo") openSysInfo();  // nur für Tests (M13)
+            if (config.debugSysinfoSave) {                          // nur für Tests (M13)
+                sysInfoScene.setInfo(buildSysInfo());
+                saveSysInfo();
             }
         }
         if (readyReported && !coversReported && covers.idle()) {

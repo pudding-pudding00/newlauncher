@@ -88,6 +88,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     c.debugAutostart = std::string(ini.get("debug", "autostart"));  // nur für Tests (Spec 9)
     c.debugCoverUrl = std::string(ini.get("debug", "cover_url"));
     c.debugFetchCovers = parseIntIn(ini.get("debug", "fetch_covers"), 0, 1, 0) == 1;
+    c.debugSysinfoSave = parseIntIn(ini.get("debug", "sysinfo_save"), 0, 1, 0) == 1;
     c.debugLogSounds = parseIntIn(ini.get("debug", "log_sounds"), 0, 1, 0) == 1;
     c.debugListGames = parseIntIn(ini.get("debug", "list_games"), 0, 1, 0) == 1;
     c.debugPerf = parseIntIn(ini.get("debug", "perf"), 0, 1, 0) == 1;

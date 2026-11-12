@@ -41,6 +41,8 @@ enum class AppCommand : u8 {
     EmuInstallAll,
     EmuCancel,
     OpenAbout,        // Seite „Über“ öffnen (M11, Spec v2 3.4)
+    OpenSysInfo,      // Systeminfo öffnen (M13, Spec v2 6.1)
+    SaveSysInfo,      // <data>/sysinfo.txt schreiben
 };
 const char* appCommandName(AppCommand c);
 

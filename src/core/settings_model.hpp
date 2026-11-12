@@ -20,11 +20,12 @@ enum class SettingRow : u8 {
     FetchCovers,
     VcMap,
     Emulators,
+    SysInfo,  // Systeminfo (M13)
     About,  // Version, Lizenz, Drittanbieter (M11)
     Count
 };
 
-bool isAction(SettingRow r);  // Rescan, FetchCovers, VcMap, Emulators, About: lösen etwas aus statt einen Wert zu ändern
+bool isAction(SettingRow r);  // Rescan, FetchCovers, VcMap, Emulators, SysInfo, About: lösen etwas aus statt einen Wert zu ändern
 // dir = ±1. Uhrzeiten ±30 min mit Umlauf, Lautstärke ±10 begrenzt auf 0..100, sonst zyklisch.
 void stepSetting(Config& c, SettingRow r, int dir);
 // DarkFrom/DarkTo nur bei ThemeMode::Auto, Volume nur bei eingeschalteter Musik.

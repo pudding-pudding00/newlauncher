@@ -45,6 +45,9 @@ void setTlsCaPath(std::string path);
 // [debug] perf (Spec v2 4.6): je erfolgreichem TLS-Handshake "NL_PERF tls heap=<Bytes> ms=<Dauer>". Wie setTlsCaPath
 // vor dem ersten submit setzen.
 void setNetPerf(bool on);
+// Stand für die Systeminfo (vom Haupt-Thread lesbar): true, sobald in dieser Sitzung die Uhr per SNTP gestellt
+// wurde. Ohne NL_TLS immer false.
+bool clockSynced();
 
 // Ok nur bei Status 200 mit vollständigem Body (höchstens maxBody Bytes); 404 → NotFound; alles andere Failed.
 // http:// über Klartext, https:// über TLS (ohne NL_TLS: Failed/TlsMissing, kein Rückfall auf HTTP). Klartext:

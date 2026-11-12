@@ -145,6 +145,10 @@
       "Source: the release's Git tag. License texts: apps/newlauncher/THIRD_PARTY.txt") \
     X(AboutComponents, "Enthaltene Komponenten", "Included components") \
     X(AboutHelp, "▲▼ Blättern · B Zurück", "▲▼ Scroll · B Back") \
+    X(SysInfo, "Systeminfo", "System info") \
+    X(SysInfoHelp, "▲▼ Blättern · A Als Datei speichern · B Zurück", "▲▼ Scroll · A Save as file · B Back") \
+    X(SysInfoSaved, "Gespeichert: %s", "Saved: %s") \
+    X(SysInfoSaveFailed, "Speichern fehlgeschlagen", "Saving failed") \
     X(NetErrNone, "Kein Fehler", "No error") \
     X(NetErrDns, "Server nicht gefunden (DNS)", "Server not found (DNS)") \
     X(NetErrConnect, "Verbindung zum Server fehlgeschlagen", "Could not connect to the server") \

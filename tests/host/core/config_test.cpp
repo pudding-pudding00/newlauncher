@@ -87,6 +87,12 @@ TEST_CASE("configFromIni: [debug] cover_url und fetch_covers") {
     CHECK(c.debugFetchCovers);
 }
 
+TEST_CASE("configFromIni: [debug] sysinfo_save (M13)") {
+    CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugSysinfoSave);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nsysinfo_save = 1\n")).debugSysinfoSave);
+    CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("[debug]\nsysinfo_save = 7\n")).debugSysinfoSave);
+}
+
 TEST_CASE("formatClock") {
     CHECK(formatClock(0) == "00:00");
     CHECK(formatClock(1140) == "19:00");

@@ -6,6 +6,7 @@ Exit-Codes: 0 = OK, 1 = Marker fehlt, 2 = Voraussetzung fehlt.
 import argparse
 import functools
 import http.server
+import re
 import ssl
 import subprocess
 import sys
@@ -16,13 +17,30 @@ import zipfile
 from pathlib import Path
 
 from deploy_dolphin import ARGV_ECHO_DOL, DEFAULT_DOL, DIST_DIR, FIXTURES_DIR, deploy
-from fat_frag import NotFat32Error, expected_frag_line
+from fat_frag import NotFat32Error, expected_frag_line, read_file
 from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_path, reset_log,
                      sd_sync_dir, wait_for_markers, write_dev_config)
 from pngfile import solid_png
 from test_ca import make as make_test_ca
 
 DEFAULT_MARKERS = ["NL_READY"]
+
+# --expect-sysinfo (M13): die Datei zum Weitergeben darf keine MAC- und keine IPv4-Adresse enthalten.
+SYSINFO_REL = "newlauncher/sysinfo.txt"
+_MAC_RE = re.compile(r"[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}")
+_IPV4_RE = re.compile(r"\b\d{1,3}(\.\d{1,3}){3}\b")
+
+
+def sysinfo_problems(text: str) -> list[str]:
+    """Leere Liste, wenn sysinfo.txt eine Plattformzeile und weder MAC noch IPv4 enthält."""
+    problems = []
+    if "Plattform: " not in text and "Platform: " not in text:
+        problems.append("sysinfo.txt ohne Plattformzeile")
+    if _MAC_RE.search(text):
+        problems.append("sysinfo.txt enthält eine MAC-Adresse")
+    if _IPV4_RE.search(text):
+        problems.append("sysinfo.txt enthält eine IPv4-Adresse")
+    return problems
 
 # Bilder des Test-Cover-Servers (Pfad wie bei GameTDB: <Region>/<ID6>.png). RMGP01 fehlt absichtlich.
 # --sd-layout multi (M12): eigener NES-Ordner neben roms/nes und ein ZIP-ROM. Nur zur Laufzeit erzeugt.
@@ -147,6 +165,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="wie --tls, aber der Launcher bekommt eine fremde CA (Gegenprobe: Zertifikatsfehler)")
     parser.add_argument("--detect-emus", action="store_true",
                         help="ohne emulators.ini: argv_echo als apps/fceugx/boot.dol mit meta.xml (Erkennung, M13)")
+    parser.add_argument("--expect-sysinfo", action="store_true",
+                        help="[debug] sysinfo_save = 1; danach sysinfo.txt aus der SD auf MAC/IP prüfen (M13)")
     parser.add_argument("--sd-layout", choices=["default", "multi"], default="default",
                         help="multi: zusätzlicher NES-Ordner emu/nes mit [paths] und ein ZIP-ROM (M12)")
     args = parser.parse_args(argv)
@@ -206,6 +226,9 @@ def main(argv: list[str] | None = None) -> int:
         server, port = start_cover_server(Path(server_dirs[-1].name), ssl_context)
         servers.append(server)
         debug_lines += [f"emu_repo = {scheme_host}:{port}/hbb", f"emu_install = {EMU_SERVER_APP}"]
+    if args.expect_sysinfo:
+        debug_lines.append("sysinfo_save = 1")
+        markers = markers + ["NL_SYSINFO_SAVED"]
     debug_lines += debug_lines_tls
     try:
         return _run(args, markers, debug_lines)
@@ -249,6 +272,7 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             shutil.copyfile(args.sd_ca, sd / SD_TEST_CA)
         if args.sd_layout == "multi":
             write_multi_layout(sd)
+        (sd / SYSINFO_REL).unlink(missing_ok=True)  # alte Datei darf die Prüfung nicht bestehen lassen
         if debug_lines:
             with (sd / "newlauncher/config.ini").open("a", encoding="utf-8", newline="\n") as f:
                 f.write("[debug]\n" + "".join(line + "\n" for line in debug_lines))
@@ -283,6 +307,8 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
 
     if not missing and args.expect_frag:
         missing = _check_frag(user_dir, args.expect_frag)
+    if not missing and args.expect_sysinfo:
+        missing = _check_sysinfo(user_dir)
     if not missing:
         print("SMOKE OK")
         return 0
@@ -302,6 +328,23 @@ def _check_frag(user_dir: Path, rel_path: str) -> list[str]:
         return ["NL_FRAG (Abgleich)"]
     log = log_path(user_dir).read_text(encoding="utf-8", errors="replace")
     return [] if line in log else [line]
+
+
+def _check_sysinfo(user_dir: Path) -> list[str]:
+    """sysinfo.txt aus dem SD-Image lesen (Dolphin wird beendet, die Ordner-Synchronisation ist nicht sicher)."""
+    raw = user_dir / "Load/WiiSD.raw"
+    try:
+        text = read_file(raw, SYSINFO_REL).decode("utf-8", errors="replace")
+    except (OSError, ValueError, NotFat32Error) as e:
+        synced = sd_sync_dir(user_dir) / SYSINFO_REL
+        if not synced.is_file():
+            print(f"SMOKE FEHLER: sysinfo.txt nicht lesbar: {e}")
+            return ["sysinfo.txt"]
+        text = synced.read_text(encoding="utf-8", errors="replace")
+    problems = sysinfo_problems(text)
+    if not problems:
+        print(f"SMOKE sysinfo.txt geprüft ({len(text.splitlines())} Zeilen)")
+    return problems
 
 
 if __name__ == "__main__":

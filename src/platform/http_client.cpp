@@ -135,7 +135,7 @@ constexpr int kMaxSntpAttempts = 2;  // je Sitzung: der erste und genau ein neue
 
 // Sitzungszustand, nur im Netz-Thread benutzt.
 bool g_caTried = false;
-bool g_clockSynced = false;
+volatile bool g_clockSynced = false;  // einziger Schreiber: Netz-Thread; clockSynced() liest den Stand
 int g_sntpAttempts = 0;
 
 void loadTestCa(const HttpLog& log) {
@@ -372,6 +372,14 @@ HttpResult httpDownload(const Url& url, const std::string& destFile, u32 maxBody
     if (std::fclose(sink.f) != 0 || !flushed) r.outcome = HttpOutcome::Failed;
     if (r.outcome != HttpOutcome::Ok) std::remove(destFile.c_str());
     return r;
+}
+
+bool clockSynced() {
+#ifdef NL_TLS
+    return g_clockSynced;
+#else
+    return false;
+#endif
 }
 
 }  // namespace nl::platform

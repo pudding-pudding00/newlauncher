@@ -129,6 +129,37 @@ def _merge(entries: list[list[int]], off: int, lba: int, count: int) -> None:
         entries.append([off, lba, count])
 
 
+def _lookup(vol: "_Volume", rel_path: str) -> tuple[int, int, bool]:
+    """(Startcluster, Größe, Ordner?) für rel_path; Namen ohne Rücksicht auf Groß-/Kleinschreibung."""
+    cluster, size, is_dir = vol.root_cluster, 0, True
+    for part in [p for p in rel_path.split("/") if p]:
+        if not is_dir:
+            raise FileNotFoundError(rel_path)
+        found = vol.list_dir(cluster).get(part.lower())
+        if found is None:
+            raise FileNotFoundError(rel_path)
+        cluster, size, is_dir = found
+    return cluster, size, is_dir
+
+
+def read_file(image: Path, rel_path: str) -> bytes:
+    """Inhalt einer Datei unter rel_path (relativ zur Wurzel des Volumes)."""
+    img = _Image(image)
+    try:
+        vol = _find_volume(img)
+        cluster, size, is_dir = _lookup(vol, rel_path)
+        if is_dir:
+            raise FileNotFoundError(rel_path)
+        need = (size + vol.spc * SECTOR - 1) // (vol.spc * SECTOR)
+        clusters = vol.chain(cluster, need) if need else []
+        if len(clusters) < need:
+            raise ValueError("Clusterkette zu kurz")
+        data = b"".join(img.read(vol.cluster_lba(c), vol.spc) for c in clusters)
+    finally:
+        img.close()
+    return data[:size]
+
+
 def expected_frag_line(image: Path, rel_path: str) -> str:
     """NL_FRAG-Zeile für eine ISO unter rel_path (relativ zur Wurzel des Volumes)."""
     if not rel_path.lower().endswith(".iso"):
@@ -136,14 +167,9 @@ def expected_frag_line(image: Path, rel_path: str) -> str:
     img = _Image(image)
     try:
         vol = _find_volume(img)
-        cluster, size, is_dir = vol.root_cluster, 0, True
-        for part in [p for p in rel_path.split("/") if p]:
-            if not is_dir:
-                raise FileNotFoundError(rel_path)
-            found = vol.list_dir(cluster).get(part.lower())
-            if found is None:
-                raise FileNotFoundError(rel_path)
-            cluster, size, is_dir = found
+        cluster, size, is_dir = _lookup(vol, rel_path)
+        if is_dir:
+            raise FileNotFoundError(rel_path)
         sectors = (size + SECTOR - 1) // SECTOR
         need = (sectors + vol.spc - 1) // vol.spc
         clusters = vol.chain(cluster, need)

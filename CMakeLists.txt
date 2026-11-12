@@ -71,6 +71,7 @@ add_library(nl_core STATIC
     src/core/ios_info.cpp
     src/core/cios_scan.cpp
     src/core/emu_profiles.cpp
+    src/core/sysinfo.cpp
     src/core/cover_download.cpp
     src/core/lz77.cpp
     src/gfx/draw_list.cpp
@@ -88,6 +89,7 @@ add_library(nl_core STATIC
     src/ui/settings_scene.cpp
     src/ui/emulators_scene.cpp
     src/ui/about_scene.cpp
+    src/ui/sysinfo_scene.cpp
     src/ui/debug_overlay.cpp
     src/ui/pointer_cursor.cpp
     src/ui/startup_scene.cpp
@@ -213,6 +215,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/emu_worker.cpp
         src/platform/sd_space.cpp
         src/platform/system.cpp
+        src/platform/system_probe.cpp
         src/platform/audio.cpp
         src/platform/music.cpp
         src/platform/wii_disc.cpp

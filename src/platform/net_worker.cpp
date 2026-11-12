@@ -29,12 +29,11 @@ NetWorker::~NetWorker() {
     LWP_MutexDestroy(mutex_);
 }
 
-bool NetWorker::start(FileSystem& fs, std::string libRoot, std::vector<CoverJob> jobs,
+bool NetWorker::start(FileSystem& fs, std::vector<CoverJob> jobs,
                       std::vector<std::string> regions, std::string baseUrl) {
     if (running_) return false;
     join();
     fs_ = &fs;
-    root_ = std::move(libRoot);
     jobs_ = std::move(jobs);
     regions_ = std::move(regions);
     base_ = std::move(baseUrl);
@@ -122,7 +121,12 @@ DownloadSummary NetWorker::run(const volatile bool& cancel) {
         return r.outcome;
     };
     io.save = [this](const std::string& stem, std::span<const u8> png) {
-        const std::string path = coverSrcPath(root_, stem);
+        // Ziel ist das Gerät des Spiels (CoverJob::root); Stämme sind nach dem Zusammenführen eindeutig.
+        const CoverJob* job = nullptr;
+        for (const CoverJob& j : jobs_)
+            if (j.stem == stem) job = &j;
+        if (job == nullptr) return false;
+        const std::string path = coverSrcPath(job->root, stem);
         static_cast<void>(fs_->makeDirs(parentDir(path)));
         return fs_->writeAtomic(path, png).isOk();
     };

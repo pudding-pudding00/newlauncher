@@ -51,6 +51,18 @@ TEST_CASE("detailsInfoLine mit allen Feldern, ohne Jahr, ohne Verlauf") {
     CHECK(std::string(buf).find("zuletzt 29.02.2000") != std::string::npos);
 }
 
+TEST_CASE("detailsDeviceLine: nur bei mehreren Geräten, mit „auch auf“") {
+    const std::vector<std::string> one{"sd"}, three{"usb", "usb2", "sd"};
+    setLanguage(Lang::De);
+    CHECK(detailsDeviceLine(one, 0, {}).empty());
+    CHECK(detailsDeviceLine(three, 1, {}) == "Gerät: USB 2");
+    const std::vector<u8> also{0, 2};
+    CHECK(detailsDeviceLine(three, 1, also) == "Gerät: USB 2 (auch auf: USB 1, SD)");
+    setLanguage(Lang::En);
+    CHECK(detailsDeviceLine(three, 0, std::vector<u8>{2}) == "Device: USB 1 (also on: SD)");
+    setLanguage(Lang::De);
+}
+
 TEST_CASE_FIXTURE(Fixture, "Details: Left/Right zwischen Starten und Favorit, Confirm auf Favorit → ToggleFavorite") {
     DetailsScene d;
     const Game g{Console::N64, "n64/sm64.z64", "Super Mario 64", 1996, 1};

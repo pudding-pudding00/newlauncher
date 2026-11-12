@@ -85,6 +85,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     c.debugCoverUrl = std::string(ini.get("debug", "cover_url"));
     c.debugFetchCovers = parseIntIn(ini.get("debug", "fetch_covers"), 0, 1, 0) == 1;
     c.debugLogSounds = parseIntIn(ini.get("debug", "log_sounds"), 0, 1, 0) == 1;
+    c.debugListGames = parseIntIn(ini.get("debug", "list_games"), 0, 1, 0) == 1;
     c.debugPerf = parseIntIn(ini.get("debug", "perf"), 0, 1, 0) == 1;
     c.debugIgnoreAhbprot = parseIntIn(ini.get("debug", "ignore_ahbprot"), 0, 1, 0) == 1;
     c.debugWiiDryRun = parseIntIn(ini.get("debug", "wii_dry_run"), 0, 1, 0) == 1;

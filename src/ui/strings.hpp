@@ -60,7 +60,9 @@
     X(WhyNotMapped, "nicht zugeordnet", "not mapped") \
     X(WhyNotInstalled, "Kanal nicht installiert", "channel not installed") \
     X(WhyDolMissing, "DOL fehlt", "DOL missing") \
-    X(NinFormat, "Nintendont startet dieses Format nicht: %s", "Nintendont cannot start this format: %s") \
+    X(DeviceLine, "Gerät: %s", "Device: %s") \
+    X(AlsoOn, "auch auf: %s", "also on: %s") \
+    X(NinFormat,"Nintendont startet dieses Format nicht: %s", "Nintendont cannot start this format: %s") \
     X(NinMissing,"Nintendont fehlt.\nNicht gefunden: %s\nInstallieren: Einstellungen → Emulatoren", \
       "Nintendont missing.\nNot found: %s\nInstall: Settings → Emulators") \
     X(NinUnknown, "Nintendont nicht erkannt.\n%s enthält keine Versionsangabe.", \

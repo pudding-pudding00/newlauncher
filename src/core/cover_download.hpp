@@ -31,6 +31,7 @@ std::string gametdbCoverUrl(std::string_view base, std::string_view region, std:
 struct CoverJob {
     std::string id6;
     std::string stem;
+    std::string root;  // Cover-Wurzel des Geräts (coverRoot), Ziel von coverSrcPath
 };
 
 // Nur Wii/GC, bei denen weder covers_src-PNG noch .tex existiert.

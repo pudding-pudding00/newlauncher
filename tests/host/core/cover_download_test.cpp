@@ -44,6 +44,12 @@ TEST_CASE("coverDownloadJobs nur Wii/GC ohne PNG und ohne .tex") {
     REQUIRE(jobs.size() == 1);
     CHECK(jobs[0].id6 == "RMGP01");
     CHECK(jobs[0].stem == "wii/RMGP01");
+    CHECK(jobs[0].root == "sd:");  // Cover-Wurzel des Geräts, auf dem das Spiel liegt (Spec v2 5.2)
+    const Game onUsb2[] = {{Console::Wii, "RSBP01", "SSBB", 0, 0}};
+    const Game* usbPtrs[] = {&onUsb2[0]};
+    const auto ro = coverDownloadJobs(usbPtrs, [](const std::string&) { return false; }, "sd:/newlauncher/cache/usb2");
+    REQUIRE(ro.size() == 1);
+    CHECK(ro[0].root == "sd:/newlauncher/cache/usb2");
 }
 
 TEST_CASE("isPng") {

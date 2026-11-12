@@ -16,6 +16,7 @@ struct Game {
     const char* path = nullptr;         // relativ zum Bibliotheksgerät
     u64 size = 0;
     u8 flags = 0;                       // IndexFlags
+    u8 device = 0;                      // Index in die Geräteliste der Sitzung (LibraryStore::devices)
 };
 
 }  // namespace nl

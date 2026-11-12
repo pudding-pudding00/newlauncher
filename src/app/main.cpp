@@ -329,9 +329,14 @@ int main(int argc, char** argv) {
         markFirstFrame();
     };
 
-    // 3. Bibliotheksgerät (Spec 6.1 Schritt 4)
-    std::string libRoot = "sd:";
-    if (config.library == nl::Config::LibraryDevice::Usb) {
+    // 3. Bibliotheksgeräte (Spec 6.1 Schritt 4, Spec v2 5.2): Quellen aus [library] sources.
+    // USB wird nur abgewartet, wenn die Quellen USB enthalten können. Bei „auto“ geht es nach der Wartezeit
+    // still mit den übrigen Geräten weiter; eine ausdrückliche USB-Quelle zeigt den v1-Dialog.
+    const nl::SourceSpec& sources = config.libraryRules.sources;
+    bool wantUsb = sources.autoMode;
+    for (const std::string& d : sources.devices)
+        if (d.rfind("usb", 0) == 0) wantUsb = true;
+    if (wantUsb) {
         nl::platform::UsbMount usb;
         const u64 usbStart = gettime();  // Echtzeit: auch Dialog, blockierender Mount und 50-Hz-Frames
         usb.begin(config.usbTimeoutSec);
@@ -339,7 +344,8 @@ int main(int argc, char** argv) {
         while (!decided) {
             const auto state = usb.poll(kFrameMs);
             if (state == nl::platform::UsbMount::State::Ready) {
-                libRoot = "usb:";
+                decided = true;
+            } else if (state == nl::platform::UsbMount::State::TimedOut && sources.autoMode) {
                 decided = true;
             } else if (state == nl::platform::UsbMount::State::TimedOut) {
                 startup.showUsbFailed();
@@ -355,13 +361,35 @@ int main(int argc, char** argv) {
         }
         usbWaitMs = msSince(usbStart);
     }
-    nl::log::line("NL_MOUNT %s", libRoot.c_str());
-    const std::string cacheDir = libRoot + "/newlauncher/cache";
-    const std::string indexPath = cacheDir + "/index.bin";
+    auto& devTable = nl::platform::deviceTable();
+    std::vector<std::string> libDevices;
+    {
+        std::vector<std::string> mounted;
+        for (const nl::platform::Device& d : devTable.devices())
+            if (d.mounted) mounted.push_back(d.slot.name);
+        libDevices = nl::orderedSources(sources, mounted);
+    }
+    if (libDevices.empty()) libDevices.push_back("sd");  // v1: Rückfall auf die SD-Karte
+    {
+        std::string list;
+        for (const std::string& d : libDevices) list += (list.empty() ? "" : ",") + d + ":";
+        nl::log::line("NL_MOUNT %s", list.c_str());
+    }
+    // Cover und index.bin liegen auf dem Gerät selbst; ist es nicht beschreibbar, unter <data>/cache/<gerät>.
+    auto deviceWritable = [&](const std::string& dev) {
+        const nl::platform::Device* d = devTable.byName(dev);
+        return d != nullptr && d->writable;
+    };
+    auto cacheDirOf = [&](const std::string& dev) { return nl::deviceCacheDir(dev, deviceWritable(dev), data.dir); };
+    auto coverRootsOf = [&](std::span<const std::string> devices) {
+        std::vector<std::string> roots;
+        for (const std::string& dev : devices) roots.push_back(nl::coverRoot(dev, deviceWritable(dev), data.dir));
+        return roots;
+    };
 
     // 4. meta.bin, index.bin, Favoriten, Verlauf (Spec 6.1 Schritt 5)
-    std::optional<nl::MetaDb> meta;
-    if (auto data = nl::readAllWithFallback(fs, cacheDir + "/meta.bin", kMaxMetaBytes); data.isOk()) {
+    std::optional<nl::MetaDb> meta;  // vom ersten Bibliotheksgerät
+    if (auto data = nl::readAllWithFallback(fs, cacheDirOf(libDevices.front()) + "/meta.bin", kMaxMetaBytes); data.isOk()) {
         auto parsed = nl::MetaDb::parse(std::move(data).value());
         if (parsed.isOk()) meta.emplace(std::move(parsed).value());
         else nl::log::line("NL_WARN meta.bin verworfen: %s", parsed.error().context.c_str());
@@ -401,41 +429,56 @@ int main(int argc, char** argv) {
     };
     std::vector<nl::ChannelInfo> channels;  // Namen erst beim ersten Öffnen des VC-Dialogs
     bool channelsLoaded = false;
-    auto saveIndex = [&](const nl::IndexData& index) {
-        static_cast<void>(fs.makeDirs(cacheDir));
-        const std::vector<u8> bytes = nl::writeIndex(index);
-        if (fs.writeAtomic(indexPath, bytes).isOk()) nl::log::line("NL_INDEX_SAVED");
+    // Ein Index je Gerät (Spec v2 5.2); store hält die zusammengeführte Sicht.
+    std::vector<nl::DeviceIndex> deviceIndexes;
+    auto saveIndexes = [&]() {
+        bool ok = true;
+        for (const nl::DeviceIndex& di : deviceIndexes) {
+            const std::string dir = cacheDirOf(di.device);
+            static_cast<void>(fs.makeDirs(dir));
+            ok = fs.writeAtomic(dir + "/index.bin", nl::writeIndex(di.index)).isOk() && ok;
+        }
+        if (ok) nl::log::line("NL_INDEX_SAVED");
         else nl::log::line("NL_WARN index.bin nicht gespeichert");
+    };
+    auto logGames = [&]() {
+        if (!config.debugListGames) return;
+        for (const nl::Game& g : store.games())
+            nl::log::line("NL_GAME %s %s", g.key, store.devices()[g.device].c_str());
+    };
+    auto applyIndexes = [&]() {
+        store.setGames(nl::mergeIndexes(deviceIndexes), metaPtr);
+        logGames();
     };
 
     nl::platform::ScanWorker worker;
     nl::ScanRules scanRules = nl::defaultScanRules();
     scanRules.paths = config.libraryRules.paths;  // [paths]/[extensions] aus config.ini (M12)
-    bool haveIndex = false;
-    if (auto data = nl::readAllWithFallback(fs, indexPath, kMaxIndexBytes); data.isOk()) {
-        auto index = nl::readIndex(data.value());
-        if (index.isOk()) {
-            store.setGames(std::move(index).value(), metaPtr);
-            haveIndex = true;
-            nl::log::line("NL_LIBRARY games=%u source=index", static_cast<unsigned>(store.games().size()));
-            worker.start(fs, libRoot, scanRules, &store.index(), metaPtr);  // Hintergrund-Scan (Schritt 6)
-        } else {
-            nl::log::line("NL_WARN index.bin verworfen: %s", index.error().context.c_str());
-        }
+    for (const std::string& dev : libDevices) {
+        auto bytes = nl::readAllWithFallback(fs, cacheDirOf(dev) + "/index.bin", kMaxIndexBytes);
+        if (!bytes.isOk()) continue;
+        auto index = nl::readIndex(bytes.value());
+        if (index.isOk()) deviceIndexes.push_back(nl::DeviceIndex{dev, std::move(index).value()});
+        else nl::log::line("NL_WARN index.bin verworfen (%s): %s", dev.c_str(), index.error().context.c_str());
     }
-    if (!haveIndex) {
-        worker.start(fs, libRoot, scanRules, nullptr, metaPtr);
-        std::optional<nl::Result<nl::ScanResult>> result;
+    if (!deviceIndexes.empty()) {
+        applyIndexes();
+        nl::log::line("NL_LIBRARY games=%u source=index", static_cast<unsigned>(store.games().size()));
+        worker.start(fs, libDevices, scanRules, deviceIndexes, metaPtr);  // Hintergrund-Scan (Schritt 6)
+    } else {
+        worker.start(fs, libDevices, scanRules, {}, metaPtr);
+        std::optional<nl::Result<nl::MultiScan>> result;
         while (!(result = worker.take())) {
             startup.showScanning(worker.filesSeen());
             startupFrame();
         }
         if (result->isOk()) {
             const nl::ScanStats st = result->value().stats;
-            store.setGames(std::move(*result).value().index, metaPtr);
+            deviceIndexes = std::move(*result).value().indexes;
+            applyIndexes();
             nl::log::line("NL_SCAN_DONE games=%u added=%u removed=%u", static_cast<unsigned>(store.games().size()),
                           static_cast<unsigned>(st.added), static_cast<unsigned>(st.removed));
-            saveIndex(store.index());
+            saveIndexes();
         } else {
             nl::log::line("NL_WARN Scan fehlgeschlagen: %s", result->error().context.c_str());
         }
@@ -444,7 +487,7 @@ int main(int argc, char** argv) {
     auto libraryView = [&]() { return nl::ui::Library{store.games(), store.favorites(), store.recent()}; };
 
     // 5. Hauptbildschirm
-    nl::app::CoverService covers(fs, libRoot);
+    nl::app::CoverService covers(fs, coverRootsOf(store.devices()));
     nl::ui::MainScene mainScene(libraryView());
     mainScene.setCovers(&covers);
     covers.setPerf(perf.get());
@@ -452,7 +495,11 @@ int main(int argc, char** argv) {
     mainScene.setHomeMenu(&homeMenu);
     nl::ui::SettingsScene settings;
     settings.setConfig(&config);
-    settings.setActiveLibrary(libRoot == "usb:" ? nl::Config::LibraryDevice::Usb : nl::Config::LibraryDevice::Sd);
+    settings.setActiveLibrary(libDevices.front() == "sd" ? nl::Config::LibraryDevice::Sd : nl::Config::LibraryDevice::Usb);
+    // Wurzel des Geräts, auf dem ein Spiel liegt ("usb2:"); Game::device zählt in store.devices().
+    auto rootOf = [&](const nl::Game& game) {
+        return game.device < store.devices().size() ? store.devices()[game.device] + ":" : std::string("sd:");
+    };
     homeMenu.setSettings(&settings);
     nl::platform::setTlsCaPath(config.debugTlsCa);  // vor dem ersten submit; geladen beim ersten HTTPS-Auftrag
     nl::platform::setNetPerf(config.debugPerf);
@@ -499,6 +546,7 @@ int main(int argc, char** argv) {
             case nl::CiosState::NotD2x: nl::log::line("NL_CIOS not_d2x %s", cios.version.c_str()); break;
         }
         u32 partLba = 0;
+        const std::string libRoot = rootOf(game);
         const nl::platform::Device* device = nl::platform::deviceTable().byName(libRoot);
         auto frags = device != nullptr
                          ? nl::platform::computeWiiFrags(fs, game, *device, &partLba)
@@ -534,7 +582,7 @@ int main(int argc, char** argv) {
 #else
         const bool hwAccess = ahbprotOff || config.debugIgnoreAhbprot;
 #endif
-        auto target = nl::preflightGame(fs, game, libRoot, emulators, &inputs, hwAccess);
+        auto target = nl::preflightGame(fs, game, rootOf(game), emulators, &inputs, hwAccess);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
             if (auto plan = prepareWii(game); plan.isOk()) {
                 if (config.debugWiiDryRun) {
@@ -624,12 +672,19 @@ int main(int argc, char** argv) {
     auto fetchCovers = [&]() {
         nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
         if (net.running()) return;  // Emulator-Aufträge warten in derselben Warteschlange (NetService)
-        std::vector<const nl::Game*> games;
-        games.reserve(store.games().size());
-        for (const nl::Game& g : store.games()) games.push_back(&g);
-        const auto present = nl::existingCoverFiles(fs, libRoot);  // vier Ordnerlisten statt zwei je Spiel
-        std::vector<nl::CoverJob> jobs =
-            nl::coverDownloadJobs(games, [&](const std::string& path) { return present.count(path) > 0; }, libRoot);
+        // Je Gerät: Cover landen dort, wo das Spiel liegt (oder in dessen Cache unter <data>).
+        const std::vector<std::string> roots = coverRootsOf(store.devices());
+        std::vector<nl::CoverJob> jobs;
+        for (std::size_t d = 0; d < roots.size(); ++d) {
+            std::vector<const nl::Game*> games;
+            for (const nl::Game& g : store.games())
+                if (g.device == d) games.push_back(&g);
+            if (games.empty()) continue;
+            const auto present = nl::existingCoverFiles(fs, roots[d]);  // vier Ordnerlisten statt zwei je Spiel
+            auto part = nl::coverDownloadJobs(games, [&](const std::string& path) { return present.count(path) > 0; },
+                                              roots[d]);
+            for (nl::CoverJob& j : part) jobs.push_back(std::move(j));
+        }
         nl::log::line("NL_COVER_DL_START jobs=%u", static_cast<unsigned>(jobs.size()));
         if (jobs.empty()) {
             dialog.open(nl::ui::tr(nl::ui::Str::NoMissingCovers), nl::ui::tr(nl::ui::Str::NoMissingCoversText));
@@ -641,7 +696,7 @@ int main(int argc, char** argv) {
             regions.emplace_back(r);
         const std::string base =
             config.debugCoverUrl.empty() ? config.coverBase : config.debugCoverUrl;
-        if (!net.start(fs, libRoot, std::move(jobs), std::move(regions), base)) {
+        if (!net.start(fs, std::move(jobs), std::move(regions), base)) {
             nl::log::line("NL_WARN Netz-Thread startet nicht");
             return;
         }
@@ -812,12 +867,14 @@ int main(int argc, char** argv) {
             if (result->isOk()) {
                 const nl::ScanStats st = result->value().stats;
                 const std::string focusKey = mainScene.focusedKey();  // vor setGames: danach sind die Zeiger ungültig
-                store.setGames(std::move(*result).value().index, metaPtr);
+                deviceIndexes = std::move(*result).value().indexes;
+                applyIndexes();
+                covers.setRoots(coverRootsOf(store.devices()));
                 covers.libraryChanged();
                 mainScene.setLibrary(libraryView(), focusKey);
                 nl::log::line("NL_SCAN_DONE games=%u added=%u removed=%u", static_cast<unsigned>(store.games().size()),
                               static_cast<unsigned>(st.added), static_cast<unsigned>(st.removed));
-                saveIndex(store.index());
+                saveIndexes();
             } else {
                 nl::log::line("NL_WARN Scan fehlgeschlagen: %s", result->error().context.c_str());
             }
@@ -921,7 +978,7 @@ int main(int argc, char** argv) {
                 break;
             case nl::ui::AppCommand::Rescan:
                 if (worker.running()) break;  // läuft schon, das Ergebnis kommt über den Scan-Pfad unten
-                if (!worker.start(fs, libRoot, scanRules, nullptr, metaPtr)) {
+                if (!worker.start(fs, libDevices, scanRules, {}, metaPtr)) {
                     nl::log::line("NL_WARN Neu-Scan nicht gestartet");
                     break;
                 }

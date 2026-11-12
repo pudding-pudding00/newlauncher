@@ -152,6 +152,11 @@ TEST_CASE("configToIniText behält CRLF und schreibt jeden Schlüssel nur einmal
     CHECK(n == 1);
 }
 
+TEST_CASE("configFromIni: [debug] list_games") {
+    CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugListGames);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nlist_games = 1\n")).debugListGames);
+}
+
 TEST_CASE("configFromIni: [debug] log_sounds") {
     CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugLogSounds);
     CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nlog_sounds = 1\n")).debugLogSounds);

@@ -17,6 +17,7 @@
 #include "app/cover_service.hpp"
 #include "core/config.hpp"
 #include "core/cover_download.hpp"
+#include "core/data_dir.hpp"
 #include "core/emu_catalog.hpp"
 #include "core/emu_install.hpp"
 #include "core/emulators.hpp"
@@ -77,19 +78,19 @@
 namespace {
 
 constexpr float kFrameMs = 1000.0f / 60.0f;
-constexpr const char* kConfigDir = "sd:/newlauncher";
-constexpr const char* kConfigPath = "sd:/newlauncher/config.ini";
 #ifdef NL_TLS
 constexpr bool kHasTls = true;  // Standardquellen über HTTPS (M11)
 #else
 constexpr bool kHasTls = false;
 #endif
-constexpr const char* kFavoritesPath = "sd:/newlauncher/favorites.ini";
-constexpr const char* kHistoryPath = "sd:/newlauncher/history.ini";
-constexpr const char* kEmulatorsPath = "sd:/newlauncher/emulators.ini";
-constexpr const char* kVcMapPath = "sd:/newlauncher/n64_vc.ini";
-constexpr const char* kGamesPath = "sd:/newlauncher/games.ini";
-constexpr const char* kLogPath = "sd:/newlauncher/log.txt";
+
+// <data> (Spec v2 5.1): Ordner newlauncher/ auf dem Startgerät, sonst SD, sonst USB (core/data_dir).
+struct DataDir {
+    std::string dir;        // z. B. "usb:/newlauncher"; leer, wenn kein Gerät taugt
+    bool readable = false;  // dir ist gesetzt
+    bool writable = false;  // sonst läuft der Launcher nur lesend
+    std::string path(const char* name) const { return dir + "/" + name; }
+};
 constexpr std::size_t kMaxIniBytes = 256 * 1024;
 constexpr std::size_t kMaxIndexBytes = 16 * 1024 * 1024;
 constexpr std::size_t kMaxMetaBytes = 8 * 1024 * 1024;
@@ -125,37 +126,37 @@ bool writeText(nl::FileSystem& fs, const char* path, const std::string& text) {
 }
 
 // text erhält den gelesenen bzw. neu geschriebenen Inhalt (Grundlage für configToIniText).
-nl::Config loadConfig(nl::FileSystem& fs, bool sdOk, std::string& text) {
+nl::Config loadConfig(nl::FileSystem& fs, const DataDir& dataDir, std::string& text) {
     text = nl::defaultConfigText(kHasTls);
-    if (!sdOk) {
-        nl::log::line("NL_CONFIG default (keine SD)");
+    if (!dataDir.readable) {
+        nl::log::line("NL_CONFIG default (kein Datenordner)");
         return nl::Config{};
     }
-    auto data = nl::readAllWithFallback(fs, kConfigPath, kMaxIniBytes);
+    const std::string configPath = dataDir.path("config.ini");
+    auto data = nl::readAllWithFallback(fs, configPath, kMaxIniBytes);
     if (data.isOk()) {
         const auto& b = data.value();
         nl::log::line("NL_CONFIG ok");
         text.assign(reinterpret_cast<const char*>(b.data()), b.size());
         return nl::configFromIni(nl::IniDoc::parse(text), kHasTls);
     }
-    static_cast<void>(fs.makeDirs(kConfigDir));
-    writeText(fs, kConfigPath, nl::defaultConfigText(kHasTls));
+    if (dataDir.writable) writeText(fs, configPath.c_str(), nl::defaultConfigText(kHasTls));
     nl::log::line("NL_CONFIG default");
     return nl::Config{};
 }
 
-nl::EmulatorTable loadEmulators(nl::FileSystem& fs, bool sdOk) {
-    if (sdOk) {
-        auto data = nl::readAllWithFallback(fs, kEmulatorsPath, kMaxIniBytes);
+nl::EmulatorTable loadEmulators(nl::FileSystem& fs, const DataDir& dataDir) {
+    if (dataDir.readable) {
+        const std::string emulatorsPath = dataDir.path("emulators.ini");
+        auto data = nl::readAllWithFallback(fs, emulatorsPath, kMaxIniBytes);
         if (data.isOk()) {
             const auto& b = data.value();
             nl::log::line("NL_EMULATORS ok");
             return nl::EmulatorTable::fromIni(
                 nl::IniDoc::parse(std::string_view(reinterpret_cast<const char*>(b.data()), b.size())));
         }
-        if (data.error().code == nl::ErrorCode::NotFound) {
-            static_cast<void>(fs.makeDirs(kConfigDir));
-            writeText(fs, kEmulatorsPath, nl::defaultEmulatorsText());
+        if (data.error().code == nl::ErrorCode::NotFound && dataDir.writable) {
+            writeText(fs, emulatorsPath.c_str(), nl::defaultEmulatorsText());
         }
     }
     nl::log::line("NL_EMULATORS default");
@@ -186,11 +187,28 @@ struct Frame {
     }
 };
 
+// Hängt bei Start von USB das USB-Gerät sofort ein (der Ordner kann dort liegen), wählt <data> und legt ihn an.
+DataDir chooseData(nl::FileSystem& fs, const char* argv0) {
+    auto& table = nl::platform::deviceTable();
+    if (nl::deviceFromArgv0(argv0).rfind("usb", 0) == 0) static_cast<void>(table.mountUsb());
+    std::vector<nl::DataCandidate> candidates;
+    for (const nl::platform::Device& d : table.devices()) {
+        if (!d.mounted) continue;
+        const bool hasDir = fs.list(d.slot.name + ":/newlauncher").isOk();
+        candidates.push_back(nl::DataCandidate{d.slot.name, d.writable, hasDir});
+    }
+    const nl::DataDirChoice choice = nl::chooseDataDir(argv0, candidates);
+    DataDir out{choice.path, !choice.path.empty(), !choice.path.empty() && !choice.readOnly};
+    if (choice.create && !fs.makeDirs(choice.path).isOk()) out = DataDir{};
+    nl::log::line("NL_DATA %s%s", out.readable ? out.dir.c_str() : "-", out.writable ? "" : " readonly");
+    return out;
+}
+
 u32 msSince(u64 start) { return static_cast<u32>(ticks_to_millisecs(diff_ticks(start, gettime()))); }
 
 }  // namespace
 
-int main(int, char**) {
+int main(int argc, char** argv) {
     const u64 bootTicks = gettime();  // Perf: Startzeiten relativ zum Einsprung
     // Spec 9: MEM2 ab kDolBufferAddr gehört dem Chainloader. Vor jeder Allokation reservieren.
     const bool launchAllowed = reinterpret_cast<u32>(SYS_GetArena2Hi()) > nl::kDolBufferAddr;
@@ -201,9 +219,13 @@ int main(int, char**) {
 
     // 1. SD und Konfiguration (Spec 6.1 Schritt 2)
     nl::platform::StdFileSystem fs;
-    const bool sdOk = nl::platform::mountSd();
+    const bool sdOk = nl::platform::mountSd();  // Emulatoren und ihre Installation bleiben auf der SD (Spec 6.9)
+    const DataDir data = chooseData(fs, argc > 0 && argv != nullptr && argv[0] != nullptr ? argv[0] : "");
+    const std::string configPath = data.path("config.ini"), favoritesPath = data.path("favorites.ini"),
+                      historyPath = data.path("history.ini"), vcMapPath = data.path("n64_vc.ini"),
+                      gamesPath = data.path("games.ini"), logPath = data.path("log.txt");
     std::string configText;
-    nl::Config config = loadConfig(fs, sdOk, configText);  // die Einstellungsszene ändert sie live
+    nl::Config config = loadConfig(fs, data, configText);  // die Einstellungsszene ändert sie live
     const bool systemGerman = CONF_GetLanguage() == CONF_LANG_GERMAN;
     nl::ui::setLanguage(nl::ui::resolveLanguage(config.language, systemGerman));
     nl::log::line("NL_LANG %s", nl::ui::langKey(nl::ui::language()));
@@ -211,14 +233,14 @@ int main(int, char**) {
     nl::log::line("NL_AHBPROT %s", ahbprotOff ? "off" : "on");
     auto saveConfig = [&]() {
         std::string text = nl::configToIniText(config, configText);
-        if (sdOk && writeText(fs, kConfigPath, text)) {
+        if (data.writable && writeText(fs, configPath.c_str(), text)) {
             configText = std::move(text);
             nl::log::line("NL_CONFIG_SAVED");
         } else {
             nl::log::line("NL_WARN config.ini nicht gespeichert");
         }
     };
-    const nl::EmulatorTable emulators = loadEmulators(fs, sdOk);
+    const nl::EmulatorTable emulators = loadEmulators(fs, data);
     if (sdOk) {  // Reste einer abgebrochenen Emulator-Installation (Spec 6.9)
         nl::recoverEmuInstall(fs);
         nl::clearEmuTmp(fs);
@@ -253,8 +275,8 @@ int main(int, char**) {
         for (const std::string& line : music.takeLogLines()) nl::log::line("%s", line.c_str());
     };
     auto startMusic = [&]() {
-        if (music.started() || !sdOk) return;
-        music.start(nl::musicFiles(fs, "sd:/newlauncher/music"), static_cast<u32>(gettime()));
+        if (music.started() || !data.readable) return;
+        music.start(nl::musicFiles(fs, data.path("music")), static_cast<u32>(gettime()));
     };
     // Vor jedem Verlassen des Launchers: erst den Musik-Thread (er speist Stimme 0), dann ASND.
     auto stopAudio = [&]() {
@@ -348,11 +370,11 @@ int main(int, char**) {
     nl::GameOverrides overrides;
     nl::VcMap vcMapping;
     std::string vcMapText;  // Originaltext: Kommentare und unlesbare Einträge überleben das Speichern
-    if (sdOk) {
-        store.loadFavorites(readIni(fs, kFavoritesPath));
-        store.loadHistory(readIni(fs, kHistoryPath));
-        overrides = nl::GameOverrides::fromIni(readIni(fs, kGamesPath));
-        vcMapText = readText(fs, kVcMapPath);
+    if (data.readable) {
+        store.loadFavorites(readIni(fs, favoritesPath.c_str()));
+        store.loadHistory(readIni(fs, historyPath.c_str()));
+        overrides = nl::GameOverrides::fromIni(readIni(fs, gamesPath.c_str()));
+        vcMapText = readText(fs, vcMapPath.c_str());
         vcMapping = nl::VcMap::fromIni(nl::IniDoc::parse(vcMapText));
     }
 
@@ -536,7 +558,7 @@ int main(int, char**) {
                           (static_cast<unsigned char>(cfg[0x0A]) & 0x04) != 0 ? 1 : 0);
         }
         store.recordPlayed(key, static_cast<u32>(std::time(nullptr)));
-        if (sdOk && writeText(fs, kHistoryPath, store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
+        if (data.writable && writeText(fs, historyPath.c_str(), store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
         else nl::log::line("NL_WARN history.ini nicht gespeichert");
         nl::log::line("NL_LAUNCH %s", key.c_str());
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
@@ -550,7 +572,7 @@ int main(int, char**) {
             nl::log::line("NL_LAUNCH_VC %s", nl::formatTitleId(titleId).c_str());
             stopAudio();
             logPerfSummary();
-            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (data.writable) nl::log::flushLogFile(fs, logPath);
             input.shutdown();
             nl::platform::unmountAll();
             nl::platform::shutdownVideo();
@@ -569,7 +591,7 @@ int main(int, char**) {
             }
             stopAudio();
             logPerfSummary();
-            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (data.writable) nl::log::flushLogFile(fs, logPath);
             input.shutdown();
             nl::platform::unmountAll();
             nl::platform::shutdownVideo();
@@ -584,7 +606,7 @@ int main(int, char**) {
         }
         stopAudio();
         logPerfSummary();
-        if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+        if (data.writable) nl::log::flushLogFile(fs, logPath);
         input.shutdown();
         nl::platform::unmountAll();
         nl::platform::shutdownVideo();
@@ -644,7 +666,7 @@ int main(int, char**) {
             for (const std::string& stem : net.takeFinishedStems()) covers.invalidate(stem);
             nl::log::line("NL_COVER_DL_DONE ok=%u missing=%u failed=%u", static_cast<unsigned>(sum->ok),
                           static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
-            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (data.writable) nl::log::flushLogFile(fs, logPath);
             if (perf) perf->pause();  // der Flush gehört zur Messung, nicht zum Launcher
             const std::string text = nl::ui::coversSummaryText(sum->ok, sum->missing, sum->failed, sum->lastError);
             dialog.open(nl::ui::tr(nl::ui::Str::CoversLoaded), text.c_str());
@@ -731,7 +753,7 @@ int main(int, char**) {
             nl::log::line("NL_EMU_DONE not64=%d wii64=%d", not64Dol ? 1 : 0, wii64Dol ? 1 : 0);
             onDebugInstallDone();
         }
-        if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+        if (data.writable) nl::log::flushLogFile(fs, logPath);
         if (perf) perf->pause();
     };
 
@@ -774,7 +796,7 @@ int main(int, char**) {
 #ifdef NL_SELFTEST
         const nl::app::SelftestView view{mainScene, scenes, debug, worker.running(), store, ctx, keyboard, &dialog,
                                                  &details, &vcMapScene, &settings, &config, &covers,
-                                                 sdOk ? &fs : nullptr, kLogPath};
+                                                 data.writable ? &fs : nullptr, logPath.c_str()};
         input.poll();  // Geräte weiter abfragen, Eingaben kommen aber aus dem Skript
         const nl::ui::InputFrame in = frame.begin(nl::app::selftestInput(frameNo, view));
 #else
@@ -819,7 +841,7 @@ int main(int, char**) {
                 const std::optional<nl::N64Method> method =
                     req.n64Choice == 0 ? std::nullopt : std::optional<nl::N64Method>(static_cast<nl::N64Method>(req.n64Choice - 1));
                 overrides.setN64Method(key, method);
-                if (sdOk && writeText(fs, kGamesPath, overrides.toIni().serialize()))
+                if (data.writable && writeText(fs, gamesPath.c_str(), overrides.toIni().serialize()))
                     nl::log::line("NL_OVERRIDE_SAVED %s %s", key.c_str(), method ? nl::n64MethodKey(*method) : "auto");
                 else nl::log::line("NL_WARN games.ini nicht gespeichert");
                 refreshDetailsN64();
@@ -848,7 +870,7 @@ int main(int, char**) {
             case nl::ui::AppCommand::SaveVcMap: {
                 for (const nl::ui::VcMapRow& row : vcMapScene.rows()) vcMapping.set(row.key, row.mapped);
                 std::string text = vcMapping.serialize(vcMapText);
-                if (sdOk && writeText(fs, kVcMapPath, text)) {
+                if (data.writable && writeText(fs, vcMapPath.c_str(), text)) {
                     vcMapText = std::move(text);
                     nl::log::line("NL_VCMAP_SAVED n=%u", static_cast<unsigned>(vcMapping.size()));
                 } else nl::log::line("NL_WARN n64_vc.ini nicht gespeichert");
@@ -861,7 +883,7 @@ int main(int, char**) {
                 const std::string focusKey = mainScene.focusedKey();  // vor toggleFavorite: Favoritenliste wird neu gebaut
                 const bool nowFavorite = store.toggleFavorite(key);
                 const std::string text = store.favoritesIni().serialize();
-                if (sdOk && writeText(fs, kFavoritesPath, text)) nl::log::line("NL_FAV_SAVED %s", key.c_str());
+                if (data.writable && writeText(fs, favoritesPath.c_str(), text)) nl::log::line("NL_FAV_SAVED %s", key.c_str());
                 else nl::log::line("NL_WARN favorites.ini nicht gespeichert");
                 mainScene.setLibrary(libraryView(), focusKey);
                 mainScene.showToast(nowFavorite ? nl::ui::tr(nl::ui::Str::FavAdded) : nl::ui::tr(nl::ui::Str::FavRemoved));
@@ -916,7 +938,7 @@ int main(int, char**) {
                 covers.shutdown();
                 stopAudio();
                 logPerfSummary();
-                if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+                if (data.writable) nl::log::flushLogFile(fs, logPath);
                 input.shutdown();
                 nl::platform::unmountAll();
                 SYS_ResetSystem(cmd == nl::ui::AppCommand::WiiMenu ? SYS_RETURNTOMENU : SYS_POWEROFF, 0, 0);
@@ -984,7 +1006,7 @@ int main(int, char**) {
                 perf->formatBoot(line, sizeof line);
                 nl::log::line("%s", line);
             }
-            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (data.writable) nl::log::flushLogFile(fs, logPath);
             if (perf) perf->pause();  // Flush und Musikstart liegen im nächsten Abstand
             readyReported = true;
             if (config.music) startMusic();
@@ -1002,7 +1024,7 @@ int main(int, char**) {
         }
         if (readyReported && !coversReported && covers.idle()) {
             nl::log::line("NL_COVERS ready=%u", static_cast<unsigned>(covers.readyCount()));
-            if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+            if (data.writable) nl::log::flushLogFile(fs, logPath);
             if (perf) perf->pause();
             coversReported = true;
         }
@@ -1017,7 +1039,7 @@ int main(int, char**) {
     covers.shutdown();
     stopAudio();
     logPerfSummary();
-    if (sdOk) nl::log::flushLogFile(fs, kLogPath);
+    if (data.writable) nl::log::flushLogFile(fs, logPath);
     input.shutdown();
     nl::platform::unmountAll();
     return 0;

@@ -54,6 +54,7 @@ struct NinConfigInput {
     u32 language = kNinLangAuto;
     u32 maxPads = 4;
     u32 memcardBlocks = 2;            // Index 0–5: (1 << (i + 6)) - 5 Blöcke, 2 = 251
+    bool memcardEmu = true;           // false bei memcard = real (Spec 7.3)
 };
 
 enum class NinCfgError : u8 { PathTooLong, BadId };

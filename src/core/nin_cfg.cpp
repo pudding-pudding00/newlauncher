@@ -26,7 +26,7 @@ Result<std::array<u8, kNinCfgSize>, NinCfgError> buildNinCfg(const NinConfigInpu
     std::array<u8, kNinCfgSize> b{};
     put32(b, 0x000, kNinCfgMagic);
     put32(b, 0x004, kNinCfgVersion);
-    put32(b, kOffConfig, kNinCfgMemcardEmu | kNinCfgAutoBoot | (in.usb ? kNinCfgUsb : 0) | in.extraFlags);
+    put32(b, kOffConfig, (in.memcardEmu ? kNinCfgMemcardEmu : 0) | kNinCfgAutoBoot | (in.usb ? kNinCfgUsb : 0) | in.extraFlags);
     put32(b, kOffVideo, in.videoMode);
     put32(b, kOffLang, in.language);
     std::copy(in.gamePath.begin(), in.gamePath.end(), b.begin() + kOffPath);

@@ -89,6 +89,10 @@ void IniDoc::addLine(std::string_view section, std::string_view line) {
     s.raw.emplace_back(line);
 }
 
+void IniDoc::removeSection(std::string_view section) {
+    std::erase_if(sections_, [section](const Section& s) { return s.name == section; });
+}
+
 std::span<const std::string> IniDoc::rawLines(std::string_view section) const {
     const Section* s = find(section);
     return s != nullptr ? std::span<const std::string>(s->raw) : std::span<const std::string>{};

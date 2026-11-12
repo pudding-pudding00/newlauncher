@@ -45,6 +45,7 @@ add_library(nl_core STATIC
     src/core/launch_args.cpp
     src/core/launch_plan.cpp
     src/core/n64.cpp
+    src/core/game_options.cpp
     src/core/n64_choice.cpp
     src/core/vc_map.cpp
     src/core/wii_title.cpp

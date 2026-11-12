@@ -71,6 +71,16 @@ Result<FatVolume, FatError> findFatVolume(BlockDevice& dev) {
     return R::err(FatError::NoFatVolume);
 }
 
+Result<FatVolume, FatError> findFatVolumeAt(BlockDevice& dev, u32 partLba) {
+    using R = Result<FatVolume, FatError>;
+    if (partLba == 0) return findFatVolume(dev);
+    if (dev.sectorSize() != kSector) return R::err(FatError::SectorSize);
+    Sector s{};
+    if (!dev.read(partLba, 1, s)) return R::err(FatError::Io);
+    if (!isFatBoot(s)) return R::err(FatError::NoFatVolume);
+    return volumeAt(s, partLba);
+}
+
 Result<std::vector<Extent>, FatError> fileExtents(BlockDevice& dev, const FatVolume& vol, u32 startCluster, u64 fileSize) {
     using R = Result<std::vector<Extent>, FatError>;
     std::vector<Extent> out;

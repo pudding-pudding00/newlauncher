@@ -208,3 +208,14 @@ TEST_CASE("partition_table: detectFs unbekannt und MBR ohne Signatur") {
     REQUIRE_FALSE(r.isOk());
     CHECK(r.error().code == ErrorCode::InvalidData);
 }
+
+TEST_CASE("partition_table: Gerätegröße 0 heißt unbekannt, keine Grenzprüfung") {
+    // libogc nennt für SD und USB keine Sektorzahl (DISC_INTERFACE hat keine Abfrage dafür).
+    MemBlockDevice d;
+    writeMbrEntry(d, 0, 0x0C, 2048, 100000);
+    writeFatBootAt(d, 2048);
+    auto r = readPartitions(d, 0);
+    REQUIRE(r.isOk());
+    REQUIRE(r.value().size() == 1);
+    CHECK(r.value()[0].kind == FsKind::Fat);
+}

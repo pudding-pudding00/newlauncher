@@ -473,7 +473,10 @@ int main(int, char**) {
             case nl::CiosState::NotD2x: nl::log::line("NL_CIOS not_d2x %s", cios.version.c_str()); break;
         }
         u32 partLba = 0;
-        auto frags = nl::platform::computeWiiFrags(fs, game, libRoot, &partLba);
+        const nl::platform::Device* device = nl::platform::deviceTable().byName(libRoot);
+        auto frags = device != nullptr
+                         ? nl::platform::computeWiiFrags(fs, game, *device, &partLba)
+                         : nl::Result<nl::FragList, nl::LaunchError>::err({nl::LaunchFailure::RomMissing, libRoot});
         if (frags.isOk()) {
             const nl::FragList& f = frags.value();
             const auto bytes = nl::serializeFragList(f);
@@ -482,7 +485,7 @@ int main(int, char**) {
                 std::snprintf(first, sizeof first, "%u:%u:%u", static_cast<unsigned>(f.entries[0].offset),
                               static_cast<unsigned>(f.entries[0].sector), static_cast<unsigned>(f.entries[0].count));
             }
-            nl::log::line("NL_FRAG dev=%s part_lba=%u n=%u size=%u crc=%08x first=%s", libRoot == "usb:" ? "usb" : "sd",
+            nl::log::line("NL_FRAG dev=%s part_lba=%u n=%u size=%u crc=%08x first=%s", device->slot.name.c_str(),
                           static_cast<unsigned>(partLba), static_cast<unsigned>(f.entries.size()), static_cast<unsigned>(f.size),
                           static_cast<unsigned>(nl::fragListCrc(bytes)), first);
         }

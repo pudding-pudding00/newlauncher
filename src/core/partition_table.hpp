@@ -29,6 +29,7 @@ FsKind detectFs(std::span<const u8> firstSector);
 
 // Liest die Partitionen eines Geräts in Tabellenreihenfolge (primäre vor logischen), höchstens kMaxPartitions.
 // Partitionen mit Länge 0, jenseits von `deviceSectors` oder jenseits der 32-Bit-LBA von BlockDevice fehlen.
+// deviceSectors = 0 heißt unbekannt (libogc nennt die Größe nicht): dann keine Prüfung gegen das Plattenende.
 // IoError, wenn ein Tabellensektor nicht lesbar ist; InvalidData bei fehlender Signatur oder falscher GPT-CRC.
 Result<std::vector<PartitionInfo>> readPartitions(BlockDevice& dev, u64 deviceSectors);
 

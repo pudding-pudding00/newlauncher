@@ -4,6 +4,7 @@
 using namespace nl;
 using nl::test::Fat32Builder;
 using nl::test::SparseDisk;
+using nl::test::writeMbrEntry;
 
 namespace {
 constexpr u32 kSpc = 8;              // 4 KiB-Cluster
@@ -176,4 +177,21 @@ TEST_CASE("fat_chain: leere Datei") {
     auto e = fileExtents(t.d, t.v, 0, 0);
     REQUIRE(e.isOk());
     CHECK(e.value().empty());
+}
+
+TEST_CASE("fat_chain: Volume an vorgegebener Partitions-LBA (zweite Partition, M12)") {
+    SparseDisk d;
+    Fat32Builder first(d, 2048, kSpc, kTotal);
+    Fat32Builder second(d, 2048 + kTotal, kSpc, kTotal, false);
+    writeMbrEntry(d, 1, 0x0C, 2048 + kTotal, kTotal);
+    auto v = findFatVolumeAt(d, 2048 + kTotal);
+    REQUIRE(v.isOk());
+    CHECK(v.value().partLba == 2048 + kTotal);
+    CHECK(v.value().fatLba == second.fatLba);
+    auto none = findFatVolumeAt(d, 100);  // kein Bootsektor dort
+    REQUIRE_FALSE(none.isOk());
+    CHECK(none.error() == FatError::NoFatVolume);
+    auto search = findFatVolumeAt(d, 0);  // 0: Suche wie findFatVolume
+    REQUIRE(search.isOk());
+    CHECK(search.value().partLba == 2048);
 }

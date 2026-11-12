@@ -8,6 +8,7 @@
 #include "core/game.hpp"
 #include "core/ios_info.hpp"
 #include "core/launch_plan.hpp"
+#include "platform/storage.hpp"
 
 #include <string_view>
 
@@ -35,7 +36,8 @@ private:
 
 // Teile sammeln (Hauptdatei, bei .wbfs dazu .wbf1 … .wbf9), Extents je Teil, Liste bauen und gegenprüfen:
 // erster und letzter Sektor des ersten und des letzten Teils roh gegen fs.read. Loggt NL_FRAG_VERIFY.
-Result<FragList, LaunchError> computeWiiFrags(FileSystem& fs, const Game& g, std::string_view libRoot, u32* partLbaOut);
+// `dev` ist das Gerät, auf dem das Spiel liegt; die Gegenprobe liest ab dessen Partitions-LBA.
+Result<FragList, LaunchError> computeWiiFrags(FileSystem& fs, const Game& g, const Device& dev, u32* partLbaOut);
 
 // TMD von 00000001-000000F9 und Kopf des Boot-Contents (d2x: ios_info_t).
 CiosStatus readCiosStatus();

@@ -7,6 +7,7 @@ namespace nl {
 namespace {
 
 constexpr std::size_t kTmdTitleId = 0x18C;
+constexpr std::size_t kTmdTitleVersion = 0x1DC;
 constexpr std::size_t kTmdNumContents = 0x1DE;
 constexpr std::size_t kTmdBootIndex = 0x1E0;
 constexpr std::size_t kTmdContents = 0x1E4;
@@ -51,6 +52,7 @@ Result<TmdInfo> parseTmd(std::span<const u8> d) {
     if (d.size() < kTmdContents) return invalid("TMD zu kurz");
     TmdInfo t;
     t.titleId = be64(d, kTmdTitleId);
+    t.titleVersion = be16(d, kTmdTitleVersion);
     t.bootIndex = be16(d, kTmdBootIndex);
     const std::size_t n = be16(d, kTmdNumContents);
     if (d.size() < kTmdContents + n * kTmdContentSize) return invalid("TMD-Contents abgeschnitten");

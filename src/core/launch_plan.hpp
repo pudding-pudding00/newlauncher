@@ -23,7 +23,7 @@ namespace nl {
 enum class LaunchFailure : u8 {
     Unsupported, EmuMissing, EmuInvalid, RomMissing, ArgsTooLong, NoMemory, NoN64Path,
     NinMissing, NinUnknown, NinTooOld, NinPathTooLong, AhbProt, NinFormat,  // M8/M12: GameCube über Nintendont
-    CiosMissing, CiosNotD2x, WiiFsUnsupported, WiiFileBroken,     // M9: Wii-Spiele nativ
+    CiosMissing, WiiFsUnsupported, WiiFileBroken,                 // M9: Wii-Spiele nativ; CiosMissing: Kontext Slot
     DeviceUnsupported,  // M12: GC/ROM auf usb2…usb8 – Nintendont und GX-Emulatoren sehen nur sd: und usb:
 };
 const char* launchFailureName(LaunchFailure f);  // Log-Marker NL_PREFLIGHT_FAIL
@@ -57,12 +57,13 @@ struct WiiBootPlan {
     std::string id6;
     bool usb = false;
     CiosStatus cios;
+    u8 iosSlot = kDefaultCiosSlot;  // M13: IOS_ReloadIOS und the_CFG.IOS.Version (= cios.slot)
     std::vector<u8> fragBytes;  // serializeFragList, genau kFragListBytes
 };
 
-// Reihenfolge: cIOS Missing → CiosMissing; NotD2x → CiosNotD2x (Kontext Name); beides bei dryRun nur
-// durchgelassen (die Plattform loggt es); dann Fragmentfehler durchreichen; Schlüssel ohne ID6 →
-// Unsupported; sonst Plan. usb folgt aus libRoot („usb:“).
+// Reihenfolge: cIOS Missing → CiosMissing (Kontext Slot, z. B. "222"); bei dryRun nur durchgelassen (die
+// Plattform loggt es); dann Fragmentfehler durchreichen; Schlüssel ohne ID6 → Unsupported; sonst Plan.
+// cios kommt aus ciosStatusFor (core/cios_scan); usb folgt aus libRoot („usb:“).
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
                                               const Result<FragList, LaunchError>& frags, bool dryRun);
 

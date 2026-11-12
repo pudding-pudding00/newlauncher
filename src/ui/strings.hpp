@@ -73,10 +73,8 @@
       "Path too long.\nNintendont allows at most 254 characters: %s") \
     X(AhbProt, "Kein Hardwarezugriff.\nBitte den Launcher über den Homebrew Channel starten.", \
       "No hardware access.\nPlease start the launcher from the Homebrew Channel.") \
-    X(CiosMissing, "cIOS fehlt.\nFür Wii-Spiele wird d2x-cIOS in Slot 249 benötigt.", \
-      "cIOS missing.\nWii games need d2x cIOS in slot 249.") \
-    X(CiosNotD2x, "Falsches cIOS.\nSlot 249 enthält %s, benötigt wird d2x.", \
-      "Wrong cIOS.\nSlot 249 contains %s, d2x is required.") \
+    X(CiosMissing, "cIOS fehlt.\nFür dieses Spiel wird ein cIOS in Slot %s benötigt (d2x empfohlen).", \
+      "cIOS missing.\nThis game needs a cIOS in slot %s (d2x recommended).") \
     X(WiiFsUnsupported, "Dateisystem nicht unterstützt.\nWii-Spiele brauchen FAT32 mit 512-Byte-Sektoren (%s).", \
       "File system not supported.\nWii games need FAT32 with 512-byte sectors (%s).") \
     X(WiiFileBroken, "Spieldatei fehlerhaft.\n%s ist beschädigt oder zu stark fragmentiert.", \
@@ -147,6 +145,37 @@
       "Source: the release's Git tag. License texts: apps/newlauncher/THIRD_PARTY.txt") \
     X(AboutComponents, "Enthaltene Komponenten", "Included components") \
     X(AboutHelp, "▲▼ Blättern · B Zurück", "▲▼ Scroll · B Back") \
+    X(SysInfo, "Systeminfo", "System info") \
+    X(SysInfoHelp, "▲▼ Blättern · A Als Datei speichern · B Zurück", "▲▼ Scroll · A Save as file · B Back") \
+    X(SysInfoSaved, "Gespeichert: %s", "Saved: %s") \
+    X(SysInfoSaveFailed, "Speichern fehlgeschlagen", "Saving failed") \
+    X(Setup, "Einrichtung", "Setup") \
+    X(SetupStepOf, "Einrichtung %d/%d", "Setup %d/%d") \
+    X(SetupLanguage, "Sprache", "Language") \
+    X(SetupLanguageText, "In welcher Sprache soll der Launcher erscheinen?", "Which language should the launcher use?") \
+    X(SetupSources, "Bibliotheksquellen", "Library sources") \
+    X(SetupSourcesText, "Auf diesen Geräten wird nach Spielen gesucht. Gilt ab dem nächsten Start.", \
+      "These devices are searched for games. Takes effect on the next start.") \
+    X(SetupCios, "cIOS für Wii-Spiele", "cIOS for Wii games") \
+    X(SetupCiosText, "Automatik wählt das passende d2x-cIOS.", "Automatic picks the matching d2x cIOS.") \
+    X(SetupEmulators, "Emulatoren", "Emulators") \
+    X(SetupEmulatorsText, "Gefundene Emulatoren. Fehlende lassen sich über das Netz installieren.", \
+      "Emulators found. Missing ones can be installed over the network.") \
+    X(SetupNetwork, "Netzwerk", "Network") \
+    X(SetupNetworkText, "Verbindungstest zur Cover-Quelle.", "Connection test to the cover source.") \
+    X(SetupNetRunning, "Prüfe Verbindung …", "Checking connection …") \
+    X(SetupNetOk, "Cover-Quelle erreichbar", "Cover source reachable") \
+    X(SetupNetOkTime, "Cover-Quelle erreichbar, Uhrzeit gestellt", "Cover source reachable, clock set") \
+    X(SetupNetFail, "Keine Verbindung (später in den Einstellungen erneut möglich)", \
+      "No connection (try again later in Settings)") \
+    X(SetupDone, "Fertig", "Done") \
+    X(SetupDoneText, "A speichert config.ini. Eine vorhandene Datei bleibt als .bak erhalten.", \
+      "A saves config.ini. An existing file is kept as .bak.") \
+    X(SetupSuggested, "Vorschlag", "Suggested") \
+    X(SetupHelp, "▲▼ Wählen · A Übernehmen · B Überspringen · − Zurück · Home Abbrechen", \
+      "▲▼ Choose · A Accept · B Skip · − Back · Home Cancel") \
+    X(SetupSaved, "Einrichtung gespeichert", "Setup saved") \
+    X(SetupSaveFailed, "Einrichtung nicht gespeichert", "Setup not saved") \
     X(NetErrNone, "Kein Fehler", "No error") \
     X(NetErrDns, "Server nicht gefunden (DNS)", "Server not found (DNS)") \
     X(NetErrConnect, "Verbindung zum Server fehlgeschlagen", "Could not connect to the server") \

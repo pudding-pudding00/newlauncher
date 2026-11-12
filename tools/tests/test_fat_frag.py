@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from fat_frag import NotFat32Error, expected_frag_line  # noqa: E402
+from fat_frag import NotFat32Error, expected_frag_line, read_file  # noqa: E402
 
 PART_LBA = 2048
 SPC = 1
@@ -127,6 +127,8 @@ def build_image(path: Path, fat16: bool = False) -> None:
         fs.chain([10, 11, 20])  # ISO in zwei Fragmenten
         img.write(fs.lba(2), 0, dir_entries("Super Mario Galaxy [RMGP01]", b"SUPERM~1   ", 0x10, 3, 0))
         img.write(fs.lba(3), 0, dir_entries("RMGP01.iso", b"RMGP01  ISO", 0x20, 10, 3 * 512 - 100))
+        for i, c in enumerate([10, 11, 20]):
+            img.write(fs.lba(c), 0, bytes([0x41 + i]) * 512)
     img.save(path, PART_LBA + TOTAL)
 
 
@@ -153,6 +155,16 @@ class FatFragTest(unittest.TestCase):
         build_image(self.path)
         with self.assertRaises(FileNotFoundError):
             expected_frag_line(self.path, "Super Mario Galaxy [RMGP01]/RMGP02.iso")
+
+    def test_read_file_follows_chain_and_size(self):
+        build_image(self.path)
+        data = read_file(self.path, "super mario galaxy [rmgp01]/RMGP01.iso")
+        self.assertEqual(data, b"A" * 512 + b"B" * 512 + b"C" * (512 - 100))
+
+    def test_read_file_missing(self):
+        build_image(self.path)
+        with self.assertRaises(FileNotFoundError):
+            read_file(self.path, "Super Mario Galaxy [RMGP01]/nope.txt")
 
     def test_fat16_raises(self):
         build_image(self.path, fat16=True)

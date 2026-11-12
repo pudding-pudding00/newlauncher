@@ -41,6 +41,11 @@ enum class AppCommand : u8 {
     EmuInstallAll,
     EmuCancel,
     OpenAbout,        // Seite „Über“ öffnen (M11, Spec v2 3.4)
+    OpenSysInfo,      // Systeminfo öffnen (M13, Spec v2 6.1)
+    SaveSysInfo,      // <data>/sysinfo.txt schreiben
+    OpenSetup,        // Einrichtungs-Assistent öffnen (M13, Spec v2 6.4)
+    SetupNetTest,     // Assistent: Verbindungstest (mit Zeitabgleich bei TLS) im NetService
+    FinishSetup,      // Assistent: config.ini (und emulators.ini) schreiben, Szene schließen
 };
 const char* appCommandName(AppCommand c);
 

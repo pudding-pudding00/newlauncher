@@ -1,10 +1,13 @@
 #include "core/n64.hpp"
 
+#include "core/cios_scan.hpp"
+
 namespace nl {
 
 namespace {
 
 constexpr const char* kSection = "n64_method";
+constexpr std::string_view kGamePrefix = "game ";
 
 bool equalsIgnoreCase(std::string_view a, std::string_view b) {
     if (a.size() != b.size()) return false;
@@ -48,7 +51,31 @@ GameOverrides GameOverrides::fromIni(const IniDoc& doc) {
     GameOverrides o;
     for (const auto& [k, v] : doc.entries(kSection))
         if (const auto m = parseN64Method(v)) o.setN64Method(k, *m);
+    for (const auto& [k, v] : doc.entries("emulator"))
+        if (!trim(v).empty()) o.emulator_.emplace_back(std::string(k), std::string(trim(v)));
+    for (std::string_view name : doc.sectionNames()) {
+        if (name == kSection) continue;
+        const auto raw = doc.rawLines(name);
+        o.others_.emplace_back(std::string(name), std::vector<std::string>(raw.begin(), raw.end()));
+        if (name.substr(0, kGamePrefix.size()) != kGamePrefix) continue;
+        const std::string_view id6 = trim(name.substr(kGamePrefix.size()));
+        const std::string_view ios = doc.get(name, "ios");
+        if (const auto slot = parseIosValue(ios)) o.wiiIos_.emplace_back(std::string(id6), *slot);
+        else if (isBadIosValue(ios)) o.bad_.push_back(std::string(name) + ".ios");
+    }
     return o;
+}
+
+std::optional<u8> GameOverrides::wiiIos(std::string_view id6) const {
+    for (const auto& [k, slot] : wiiIos_)
+        if (k == id6) return slot;
+    return std::nullopt;
+}
+
+std::optional<std::string_view> GameOverrides::emulatorProfile(std::string_view key) const {
+    for (const auto& [k, p] : emulator_)
+        if (k == key) return std::string_view(p);
+    return std::nullopt;
 }
 
 std::optional<N64Method> GameOverrides::n64Method(std::string_view key) const {
@@ -71,6 +98,10 @@ IniDoc GameOverrides::toIni() const {
     // Neu aus Text aufgebaut, weil IniDoc kein Entfernen kennt.
     std::string text = std::string("[") + kSection + "]\n";
     for (const auto& [k, m] : n64_) text += k + " = " + n64MethodKey(m) + "\n";
+    for (const auto& [name, lines] : others_) {
+        text += "[" + name + "]\n";
+        for (const std::string& line : lines) text += line + "\n";
+    }
     return IniDoc::parse(text);
 }
 

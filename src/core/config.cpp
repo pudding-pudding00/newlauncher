@@ -4,6 +4,7 @@
 #include <cctype>
 #include <vector>
 
+#include "core/cios_scan.hpp"
 #include "core/emu_catalog.hpp"
 #include "core/http.hpp"
 
@@ -51,6 +52,23 @@ std::string sourceForBuild(std::string_view value, std::string_view http, std::s
 }
 }  // namespace
 
+void applyDebugIni(Config& c, const IniDoc& ini) {
+    c.debugEmuRepo = std::string(trim(ini.get("debug", "emu_repo")));
+    c.debugEmuInstall = std::string(trim(ini.get("debug", "emu_install")));
+    c.debugAutostart = std::string(ini.get("debug", "autostart"));  // nur für Tests (Spec 9)
+    c.debugCoverUrl = std::string(ini.get("debug", "cover_url"));
+    c.debugFetchCovers = parseIntIn(ini.get("debug", "fetch_covers"), 0, 1, 0) == 1;
+    c.debugSysinfoSave = parseIntIn(ini.get("debug", "sysinfo_save"), 0, 1, 0) == 1;
+    c.debugLogSounds = parseIntIn(ini.get("debug", "log_sounds"), 0, 1, 0) == 1;
+    c.debugListGames = parseIntIn(ini.get("debug", "list_games"), 0, 1, 0) == 1;
+    c.debugPerf = parseIntIn(ini.get("debug", "perf"), 0, 1, 0) == 1;
+    c.debugIgnoreAhbprot = parseIntIn(ini.get("debug", "ignore_ahbprot"), 0, 1, 0) == 1;
+    c.debugWiiDryRun = parseIntIn(ini.get("debug", "wii_dry_run"), 0, 1, 0) == 1;
+    c.debugOpenScene = std::string(trim(ini.get("debug", "open_scene")));
+    c.debugTlsCa = std::string(trim(ini.get("debug", "tls_ca")));
+    c.debugWizard = std::string(trim(ini.get("debug", "wizard")));
+}
+
 Config configFromIni(const IniDoc& ini, bool tls) {
     Config c;
     const std::string_view lang = ini.get("general", "language");
@@ -79,18 +97,10 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     c.emulatorRepo = sourceForBuild(repo, kDefaultEmuRepoHttp, kDefaultEmuRepoHttps, defaultEmuRepo(tls));
     const std::string_view coverBase = trim(ini.get("covers", "base"));
     c.coverBase = sourceForBuild(coverBase, kGametdbCoverBaseHttp, kGametdbCoverBaseHttps, defaultCoverBase(tls));
-    c.debugEmuRepo = std::string(trim(ini.get("debug", "emu_repo")));
-    c.debugEmuInstall = std::string(trim(ini.get("debug", "emu_install")));
-    c.debugAutostart = std::string(ini.get("debug", "autostart"));  // nur für Tests (Spec 9)
-    c.debugCoverUrl = std::string(ini.get("debug", "cover_url"));
-    c.debugFetchCovers = parseIntIn(ini.get("debug", "fetch_covers"), 0, 1, 0) == 1;
-    c.debugLogSounds = parseIntIn(ini.get("debug", "log_sounds"), 0, 1, 0) == 1;
-    c.debugListGames = parseIntIn(ini.get("debug", "list_games"), 0, 1, 0) == 1;
-    c.debugPerf = parseIntIn(ini.get("debug", "perf"), 0, 1, 0) == 1;
-    c.debugIgnoreAhbprot = parseIntIn(ini.get("debug", "ignore_ahbprot"), 0, 1, 0) == 1;
-    c.debugWiiDryRun = parseIntIn(ini.get("debug", "wii_dry_run"), 0, 1, 0) == 1;
-    c.debugOpenScene = std::string(trim(ini.get("debug", "open_scene")));
-    c.debugTlsCa = std::string(trim(ini.get("debug", "tls_ca")));
+    const std::string_view ios = ini.get("wii", "ios");
+    c.wiiIos = parseIosValue(ios);
+    if (isBadIosValue(ios)) c.badKeys.emplace_back("wii.ios");
+    applyDebugIni(c, ini);
     return c;
 }
 
@@ -129,6 +139,7 @@ std::vector<IniValue> configValues(const Config& c) {
         {"audio", "sounds", c.sounds ? "1" : "0"},
         {"covers", "region", c.coverRegion},
         {"emulators", "repo", c.emulatorRepo},
+        {"wii", "ios", c.wiiIos ? std::to_string(static_cast<unsigned>(*c.wiiIos)) : std::string("auto")},
     };
 }
 
@@ -228,7 +239,9 @@ std::string defaultConfigText(bool tls) {
            "region = auto\n"
            "[emulators]\n"
            "repo = " +
-           std::string(defaultEmuRepo(tls)) + "\n";
+           std::string(defaultEmuRepo(tls)) + "\n" +
+           "[wii]\n"
+           "ios = auto\n";
 }
 
 }  // namespace nl

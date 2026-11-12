@@ -33,16 +33,22 @@ struct EmuInstallIo {
 
 inline constexpr std::string_view kEmuTmpDir = "sd:/newlauncher/tmp";
 
+// Zielgerät der Installation (Spec v2 6.3): "sd:", ohne SD das <data>-Gerät (z. B. "usb:").
+std::string emuTmpDir(std::string_view root);          // <root>/newlauncher/tmp
+std::string installedEmusPath(std::string_view root);  // <root>/newlauncher/emulators_installed.ini
+std::string onRoot(std::string_view sdPath, std::string_view root);  // "sd:/apps/x" → "<root>/apps/x"
+
 std::string_view emuInstallErrorName(EmuInstallError e);
 
-EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_view repo, const OscApp& app);
+EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_view repo, const OscApp& app,
+                                 std::string_view root = "sd:");
 
 // Löscht alle Dateien unter kEmuTmpDir (rekursiv); leere Ordner bleiben stehen.
-void clearEmuTmp(FileSystem& fs);
+void clearEmuTmp(FileSystem& fs, std::string_view root = "sd:");
 
 // Beim Start vor clearEmuTmp: Fehlt die DOL eines Katalog-Emulators, liegt aber <dol>.old daneben (Strom weg
 // zwischen den beiden Umbenennungen in installEmulator), kommt die alte DOL zurück. Liegen beide da, ist .old
 // ein Rest und wird gelöscht.
-void recoverEmuInstall(FileSystem& fs);
+void recoverEmuInstall(FileSystem& fs, std::string_view root = "sd:");
 
 }  // namespace nl

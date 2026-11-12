@@ -87,6 +87,12 @@ TEST_CASE("configFromIni: [debug] cover_url und fetch_covers") {
     CHECK(c.debugFetchCovers);
 }
 
+TEST_CASE("configFromIni: [debug] sysinfo_save (M13)") {
+    CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugSysinfoSave);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nsysinfo_save = 1\n")).debugSysinfoSave);
+    CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("[debug]\nsysinfo_save = 7\n")).debugSysinfoSave);
+}
+
 TEST_CASE("formatClock") {
     CHECK(formatClock(0) == "00:00");
     CHECK(formatClock(1140) == "19:00");
@@ -269,4 +275,27 @@ TEST_CASE("configToIniText schreibt [library] und bewahrt Kommentare und [paths]
     CHECK(after.find("[library]\nsources = usb2,sd\n") != std::string::npos);
     const Config r = configFromIni(IniDoc::parse(after));
     CHECK(r.libraryRules.sources.devices == std::vector<std::string>{"usb2", "sd"});
+}
+
+TEST_CASE("Config: [wii] ios (M13, Spec 6.2)") {
+    CHECK_FALSE(configFromIni(IniDoc::parse("")).wiiIos.has_value());
+    CHECK_FALSE(configFromIni(IniDoc::parse("[wii]\nios = auto\n")).wiiIos.has_value());
+    const Config c = configFromIni(IniDoc::parse("[wii]\nios = 250\n"));
+    CHECK(c.wiiIos == std::optional<u8>(250));
+    CHECK(c.badKeys.empty());
+    const Config bad = configFromIni(IniDoc::parse("[wii]\nios = 199\n"));
+    CHECK_FALSE(bad.wiiIos.has_value());
+    CHECK(bad.badKeys == std::vector<std::string>{"wii.ios"});
+    CHECK(configToIniText(c, "").find("[wii]\nios = 250\n") != std::string::npos);
+    CHECK(configToIniText(Config{}, "").find("[wii]\nios = auto\n") != std::string::npos);
+}
+
+TEST_CASE("applyDebugIni: nur [debug] aus debug.ini, wizard-Schlüssel (M13 Task 5)") {
+    Config c;
+    c.language = Config::Language::De;
+    applyDebugIni(c, IniDoc::parse("[debug]\nwizard = accept\nsysinfo_save = 1\n[general]\nlanguage = en\n"));
+    CHECK(c.debugWizard == "accept");
+    CHECK(c.debugSysinfoSave);
+    CHECK(c.language == Config::Language::De);
+    CHECK(configFromIni(IniDoc::parse("[debug]\nwizard = accept\n")).debugWizard == "accept");
 }

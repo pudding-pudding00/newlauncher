@@ -28,7 +28,7 @@ jobs:
           test -f "$DEVKITPRO/portlibs/ppc/lib/libpng.a" || dkp-pacman -S --noconfirm --needed ppc-libpng
           test -f "$DEVKITPRO/portlibs/ppc/lib/libvorbisidec.a" || dkp-pacman -S --noconfirm --needed ppc-libvorbisidec ppc-libogg
       - name: DOL bauen
-        run: cmake --preset wii -DNL_TLS=${{ matrix.nl_tls }} && cmake --build --preset wii
+        run: cmake --preset wii -DNL_TLS=${{ matrix.nl_tls }} && cmake --build --preset wii --parallel $(nproc)
       - name: Lizenzeinträge prüfen (Spec v2 3.4)
         run: |
           command -v python3 || (apt-get update && apt-get install -y --no-install-recommends python3)

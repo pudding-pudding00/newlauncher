@@ -21,6 +21,7 @@
 #include "core/data_dir.hpp"
 #include "core/emu_catalog.hpp"
 #include "core/emu_install.hpp"
+#include "core/emu_profiles.hpp"
 #include "core/emulators.hpp"
 #include "core/index_file.hpp"
 #include "core/launch_layout.hpp"
@@ -52,6 +53,7 @@
 #include "platform/std_fs.hpp"
 #include "platform/storage.hpp"
 #include "platform/system.hpp"
+#include "platform/system_probe.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_disc.hpp"
 #include "platform/wii_input.hpp"
@@ -61,6 +63,9 @@
 #include "ui/dialog_scene.hpp"
 #include "ui/emulators_scene.hpp"
 #include "ui/about_scene.hpp"
+#include "ui/setup_scene.hpp"
+#include "ui/sysinfo_scene.hpp"
+#include "core/sysinfo.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/jump_bar.hpp"
 #include "ui/keyboard.hpp"
@@ -126,12 +131,14 @@ bool writeText(nl::FileSystem& fs, const char* path, const std::string& text) {
     return fs.writeAtomic(path, std::span<const u8>(p, text.size())).isOk();
 }
 
-// text erhält den gelesenen bzw. neu geschriebenen Inhalt (Grundlage für configToIniText).
-nl::Config loadConfig(nl::FileSystem& fs, const DataDir& dataDir, std::string& text) {
+// text erhält den gelesenen Inhalt bzw. den Standardtext (Grundlage für configToIniText). firstRun: config.ini fehlt
+// in einem beschreibbaren Datenordner; dann schreibt erst der Einrichtungs-Assistent die Datei (M13, Spec v2 6.4).
+nl::Config loadConfig(nl::FileSystem& fs, const DataDir& dataDir, std::string& text, bool& firstRun) {
+    firstRun = false;
     text = nl::defaultConfigText(kHasTls);
     if (!dataDir.readable) {
         nl::log::line("NL_CONFIG default (kein Datenordner)");
-        return nl::Config{};
+        return nl::configFromIni(nl::IniDoc::parse(text), kHasTls);  // Config{} hätte keine [paths]
     }
     const std::string configPath = dataDir.path("config.ini");
     auto data = nl::readAllWithFallback(fs, configPath, kMaxIniBytes);
@@ -141,11 +148,12 @@ nl::Config loadConfig(nl::FileSystem& fs, const DataDir& dataDir, std::string& t
         text.assign(reinterpret_cast<const char*>(b.data()), b.size());
         nl::Config config = nl::configFromIni(nl::IniDoc::parse(text), kHasTls);
         for (const std::string& key : config.libraryRules.bad) nl::log::line("NL_CFG_BAD %s", key.c_str());
+        for (const std::string& key : config.badKeys) nl::log::line("NL_CFG_BAD %s", key.c_str());
         return config;
     }
-    if (dataDir.writable) writeText(fs, configPath.c_str(), nl::defaultConfigText(kHasTls));
-    nl::log::line("NL_CONFIG default");
-    return nl::Config{};
+    firstRun = dataDir.writable;
+    nl::log::line(firstRun ? "NL_CONFIG missing" : "NL_CONFIG default");
+    return nl::configFromIni(nl::IniDoc::parse(text), kHasTls);  // Standardordner aus dem Standardtext
 }
 
 nl::EmulatorTable loadEmulators(nl::FileSystem& fs, const DataDir& dataDir) {
@@ -240,7 +248,16 @@ int main(int argc, char** argv) {
                       historyPath = data.path("history.ini"), vcMapPath = data.path("n64_vc.ini"),
                       gamesPath = data.path("games.ini"), logPath = data.path("log.txt");
     std::string configText;
-    nl::Config config = loadConfig(fs, data, configText);  // die Einstellungsszene ändert sie live
+    bool firstRun = false;
+    nl::Config config = loadConfig(fs, data, configText, firstRun);  // die Einstellungsszene ändert sie live
+    if (data.readable) {  // Smoke-Tests ohne config.ini (M13): [debug] aus <data>/debug.ini, sonst nichts
+        auto dbg = nl::readAllWithFallback(fs, data.path("debug.ini"), kMaxIniBytes);
+        if (dbg.isOk()) {
+            const auto& b = dbg.value();
+            nl::applyDebugIni(config, nl::IniDoc::parse(std::string_view(reinterpret_cast<const char*>(b.data()), b.size())));
+            nl::log::line("NL_DEBUG_INI");
+        }
+    }
     const bool systemGerman = CONF_GetLanguage() == CONF_LANG_GERMAN;
     nl::ui::setLanguage(nl::ui::resolveLanguage(config.language, systemGerman));
     nl::log::line("NL_LANG %s", nl::ui::langKey(nl::ui::language()));
@@ -255,10 +272,14 @@ int main(int argc, char** argv) {
             nl::log::line("NL_WARN config.ini nicht gespeichert");
         }
     };
-    const nl::EmulatorTable emulators = loadEmulators(fs, data);
-    if (sdOk) {  // Reste einer abgebrochenen Emulator-Installation (Spec 6.9)
-        nl::recoverEmuInstall(fs);
-        nl::clearEmuTmp(fs);
+    const nl::EmulatorTable emulatorIni = loadEmulators(fs, data);
+    // Ziel der Emulator-Installation (Spec v2 6.3): SD, ohne SD das <data>-Gerät; leer = keine Installation.
+    const std::string emuRoot = sdOk          ? std::string("sd:")
+                                : data.writable ? data.dir.substr(0, data.dir.find(':') + 1)
+                                                : std::string();
+    if (!emuRoot.empty()) {  // Reste einer abgebrochenen Emulator-Installation (Spec 6.9)
+        nl::recoverEmuInstall(fs, emuRoot);
+        nl::clearEmuTmp(fs, emuRoot);
     }
 
     // 2. Video, Renderer, Atlas, Theme aus der Konfiguration
@@ -389,6 +410,22 @@ int main(int argc, char** argv) {
         for (const std::string& d : libDevices) list += (list.empty() ? "" : ",") + d + ":";
         nl::log::line("NL_MOUNT %s", list.c_str());
     }
+    // Emulator-Erkennung (Spec v2 6.3): apps/ auf allen eingehängten Geräten; nach einer Installation erneut.
+    std::vector<nl::FoundApp> foundApps;
+    nl::EmulatorTable emulators = emulatorIni;
+    auto detectEmulators = [&]() {
+        foundApps.clear();
+        for (const nl::platform::Device& d : devTable.devices()) {
+            if (!d.mounted) continue;
+            std::vector<nl::FoundApp> apps = nl::scanApps(fs, d.slot.name);
+            foundApps.insert(foundApps.end(), apps.begin(), apps.end());
+        }
+        emulators = nl::resolveTable(emulatorIni, foundApps);
+        for (const nl::ResolvedEmuSummary& e : nl::emuSummaries(emulators))
+            nl::log::line("NL_EMU %s %s %s %s", e.section.c_str(), e.profile.empty() ? "-" : e.profile.c_str(),
+                          e.how.c_str(), e.path.c_str());
+    };
+    detectEmulators();
     // Cover und index.bin liegen auf dem Gerät selbst; ist es nicht beschreibbar, unter <data>/cache/<gerät>.
     auto deviceWritable = [&](const std::string& dev) {
         const nl::platform::Device* d = devTable.byName(dev);
@@ -418,6 +455,7 @@ int main(int argc, char** argv) {
         store.loadFavorites(readIni(fs, favoritesPath.c_str()));
         store.loadHistory(readIni(fs, historyPath.c_str()));
         overrides = nl::GameOverrides::fromIni(readIni(fs, gamesPath.c_str()));
+        for (const std::string& key : overrides.badKeys()) nl::log::line("NL_OPT_BAD %s", key.c_str());
         vcMapText = readText(fs, vcMapPath.c_str());
         vcMapping = nl::VcMap::fromIni(nl::IniDoc::parse(vcMapText));
     }
@@ -467,6 +505,7 @@ int main(int argc, char** argv) {
 
     nl::platform::ScanWorker worker;
     nl::ScanRules scanRules = nl::defaultScanRules();
+    scanRules.zipConsoles = nl::zipConsoles(emulators);  // RetroArch-Kerne bekommen keine ZIPs (Spike M13)
     scanRules.paths = config.libraryRules.paths;  // [paths]/[extensions] aus config.ini (M12)
     for (const std::string& dev : libDevices) {
         auto bytes = nl::readAllWithFallback(fs, cacheDirOf(dev) + "/index.bin", kMaxIndexBytes);
@@ -541,6 +580,118 @@ int main(int argc, char** argv) {
     const std::string emuRepo = config.debugEmuRepo.empty() ? config.emulatorRepo : config.debugEmuRepo;
     nl::ui::SceneStack scenes;
     scenes.push(&mainScene);
+    // Systeminfo (M13, Spec v2 6.1): beim Öffnen frisch gesammelt; MAC und IP kommen nie hinein.
+    nl::ui::SysInfoScene sysInfoScene;
+    auto buildSysInfo = [&]() {
+        nl::SystemInfo s;
+        s.sysMenuVersion = nl::platform::sysMenuVersion();
+        s.platform = nl::platformForSysMenu(s.sysMenuVersion, nl::platform::latteDetected());
+        s.region = nl::regionFromSysMenu(s.sysMenuVersion);
+        s.launcherVersion = NL_VERSION;
+        s.launcherIos = nl::platform::runningIos();
+        s.ahbprot = ahbprotOff;
+        s.cios = nl::platform::scanCios();
+        s.ciosSlot = nl::chooseCios(s.cios, std::nullopt, config.wiiIos).slot.value_or(0);
+        s.gcPorts = s.platform != nl::Platform::VWii;
+        for (const nl::platform::Device& d : devTable.devices()) {
+            if (!d.mounted) continue;
+            nl::DeviceSummary sum{d.slot.name, nl::fsKindName(d.slot.kind), d.totalBytes, d.freeBytes, 0};
+            for (const nl::Game& g : store.games())
+                if (g.device < store.devices().size() && store.devices()[g.device] == d.slot.name) ++sum.games;
+            s.devices.push_back(std::move(sum));
+        }
+        s.emulators = nl::emuSummaries(emulators);
+        s.netUp = netService.networkUp();  // Stand nach dem letzten Netzaufbau (volatile, nur gelesen)
+        s.timeSynced = nl::platform::clockSynced();
+        s.tls = kHasTls && netService.tlsUp();
+        return s;
+    };
+    auto openSysInfo = [&]() {
+        sysInfoScene.setInfo(buildSysInfo());
+        scenes.push(&sysInfoScene);
+        nl::log::line("NL_SCENE sysinfo");
+    };
+    auto saveSysInfo = [&]() {
+        const std::string path = data.path("sysinfo.txt");
+        const bool ok = data.writable &&
+                        writeText(fs, path.c_str(),
+                                  nl::formatSysInfo(sysInfoScene.info(), nl::ui::language() == nl::ui::Lang::De));
+        sysInfoScene.setSaveResult(path, ok);
+        if (ok) nl::log::line("NL_SYSINFO_SAVED %s", path.c_str());
+        else nl::log::line("NL_SYSINFO_SAVE fail");
+    };
+
+    // Einrichtungs-Assistent (M13, Spec v2 6.4): beim ersten Start ohne config.ini und über Einstellungen.
+    nl::ui::SetupScene setupScene;
+    volatile int setupNet = 0;  // Netztest: 0 läuft/keiner, 1 ok, 2 ok mit Zeitabgleich, 3 fehlgeschlagen (Netz-Thread schreibt)
+    auto openSetup = [&]() {
+        std::vector<nl::DeviceGames> games;
+        for (const nl::platform::Device& d : devTable.devices()) {
+            if (!d.mounted) continue;
+            nl::DeviceGames g;
+            g.device = d.slot.name;
+            for (const nl::Game& game : store.games())
+                if (game.device < store.devices().size() && store.devices()[game.device] == d.slot.name)
+                    ++g.games[static_cast<std::size_t>(game.console)];
+            games.push_back(std::move(g));
+        }
+        setupScene.start(nl::SetupWizard(buildSysInfo(), config, games));
+        std::string counts;  // Log: Spiele je Gerät, Grundlage des Quellen-Vorschlags
+        for (const nl::DeviceGames& g : games) counts += " " + g.device + "=" + std::to_string(g.total());
+        nl::log::line("NL_WIZARD start%s", counts.c_str());
+    };
+    // Verbindungstest gegen die Cover-Quelle; jede HTTP-Antwort (auch 404) zählt als erreichbar. Mit TLS vorher
+    // einmal SNTP. Läuft wie alle wtls-Aufrufe im Netz-Thread.
+    auto startSetupNetTest = [&]() {
+        setupNet = 0;
+        const std::string base = config.debugCoverUrl.empty() ? config.coverBase : config.debugCoverUrl;
+        const u32 id = netService.submit([&setupNet, &netService, base](const volatile bool& cancel) {
+            if (!netService.networkUp()) {
+                setupNet = 3;
+                return;
+            }
+            const bool timeSet = kHasTls && nl::platform::syncClockOnce();
+            bool ok = false;
+            if (const auto url = nl::parseUrl(base)) {
+                std::vector<u8> body;
+                ok = nl::platform::httpGet(*url, 64 * 1024, body, &cancel).status != 0;
+            }
+            setupNet = ok ? (timeSet ? 2 : 1) : 3;
+        });
+        if (id == 0) setupNet = 3;
+    };
+    // Schreibt eine Datei mit Sicherung: vorhandene Datei → <datei>.bak, dann neu über .tmp und Umbenennen.
+    auto writeWithBackup = [&](const std::string& path, const std::string& text) {
+        auto old = nl::readAllWithFallback(fs, path, kMaxIniBytes);
+        if (old.isOk()) {
+            const auto& b = old.value();
+            if (!fs.writeAtomic(nl::backupName(path), std::span<const u8>(b.data(), b.size())).isOk()) return false;
+        }
+        return writeText(fs, path.c_str(), text);
+    };
+    // Ergebnis übernehmen: config.ini (und bei „festschreiben“ emulators.ini) mit Sicherung schreiben, Sprache
+    // sofort anwenden. Quellen und Emulatoren gelten ab dem nächsten Start (wie in den Einstellungen).
+    auto finishSetup = [&]() {
+        if (!setupScene.active()) return;
+        const nl::SetupWizard& w = setupScene.wizard();
+        nl::Config next = w.result();
+        const std::string text = nl::configToIniText(next, configText);
+        bool ok = data.writable && writeWithBackup(configPath, text);
+        if (ok) configText = text;
+        if (ok) {
+            if (const auto emu = w.emulatorsIni()) ok = writeWithBackup(data.path("emulators.ini"), *emu);
+        }
+        config = std::move(next);
+        firstRun = false;
+        const nl::ui::Lang lang = nl::ui::resolveLanguage(config.language, systemGerman);
+        if (lang != nl::ui::language()) {
+            nl::ui::setLanguage(lang);
+            channelsLoaded = false;
+            nl::log::line("NL_LANG %s", nl::ui::langKey(lang));
+        }
+        mainScene.showToast(nl::ui::tr(ok ? nl::ui::Str::SetupSaved : nl::ui::Str::SetupSaveFailed));
+        nl::log::line(ok ? "NL_WIZARD done" : "NL_WIZARD save_fail");
+    };
 
     // Zeile „Startmethode“ der Detailansicht aus Override, Zuordnung und Verfügbarkeit.
     auto refreshDetailsN64 = [&]() {
@@ -552,12 +703,20 @@ int main(int argc, char** argv) {
     // Spec 9: Preflight, Verlauf, Chainload. Kehrt nur zurück, wenn der Start scheitert (dann mit Dialog).
     // Wii-Spiele (M9 Task 5): cIOS prüfen, Fragmentliste rechnen und gegenprüfen, dann preflightWii.
     auto prepareWii = [&](const nl::Game& game) {
-        const nl::CiosStatus cios = nl::platform::readCiosStatus();
+        // Spec v2 6.2: Slots 200–255 lesen, dann games.ini > config.ini > Automatik.
+        const std::vector<nl::CiosEntry> found = nl::platform::scanCios();
+        for (const nl::CiosEntry& e : found) {
+            nl::log::line("NL_CIOS_SLOT %u %s base=%u ver=%s", static_cast<unsigned>(e.slot), nl::ciosKindName(e.kind),
+                          static_cast<unsigned>(e.base), e.version.c_str());
+        }
+        const std::string id6 = game.key != nullptr ? std::string(game.key).substr(0, 6) : std::string();
+        const nl::CiosChoice choice = nl::chooseCios(found, overrides.wiiIos(id6), config.wiiIos);
+        const nl::CiosStatus cios = nl::ciosStatusFor(found, choice);
+        nl::log::line("NL_WII_IOS %u %s", static_cast<unsigned>(cios.slot), choice.forced ? "forced" : "auto");
         switch (cios.state) {
             case nl::CiosState::D2x: nl::log::line("NL_CIOS ok base=%u ver=%s", static_cast<unsigned>(cios.base), cios.version.c_str()); break;
             case nl::CiosState::Unverified: nl::log::line("NL_CIOS unverified"); break;
             case nl::CiosState::Missing: nl::log::line("NL_CIOS missing"); break;
-            case nl::CiosState::NotD2x: nl::log::line("NL_CIOS not_d2x %s", cios.version.c_str()); break;
         }
         u32 partLba = 0;
         const std::string libRoot = rootOf(game);
@@ -596,7 +755,15 @@ int main(int argc, char** argv) {
 #else
         const bool hwAccess = ahbprotOff || config.debugIgnoreAhbprot;
 #endif
-        auto target = nl::preflightGame(fs, game, rootOf(game), emulators, &inputs, hwAccess);
+        // games.ini [emulator] <schlüssel> = <profil> gilt nur für dieses Spiel (Spec v2 6.3).
+        nl::EmulatorTable gameEmus = emulators;
+        if (const auto profile = overrides.emulatorProfile(game.key)) {
+            if (const auto r = nl::resolveEmulator(game.console, emulatorIni, foundApps, *profile)) {
+                if (r->badProfile) nl::log::line("NL_OPT_BAD emulator %s", game.key);
+                gameEmus.set(nl::consoleInfo(game.console).key, nl::EmulatorEntry{r->dol, r->args, r->fromIni, r->profile});
+            }
+        }
+        auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, hwAccess);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
             if (auto plan = prepareWii(game); plan.isOk()) {
                 if (config.debugWiiDryRun) {
@@ -661,7 +828,7 @@ int main(int argc, char** argv) {
             input.shutdown();
             nl::platform::unmountAll();
             nl::platform::shutdownVideo();
-            nl::launch::bootWiiGame(booter.value());
+            nl::launch::bootWiiGame(booter.value(), target.value().wii->iosSlot);
         }
 
         const nl::LaunchPlan& plan = target.value().dol;
@@ -753,9 +920,10 @@ int main(int argc, char** argv) {
     std::string emuDebugPending = config.debugEmuInstall;  // Komma-Liste; nach dem Laden der Liste installieren
     bool autostartPending = false;                         // debug autostart wartet auf diese Installation
     auto refreshEmuRows = [&]() {
-        const std::string text = sdOk ? readText(fs, std::string(nl::kInstalledEmusPath).c_str()) : std::string();
+        const std::string text = emuRoot.empty() ? std::string() : readText(fs, nl::installedEmusPath(emuRoot).c_str());
         emuScene.setRows(nl::emuRows(nl::parseInstalledEmus(text),
-                                     [&](std::string_view dol) { return nl::fileSize(fs, dol).has_value(); }, emuList));
+                                     [&](std::string_view dol) { return nl::fileSize(fs, nl::onRoot(dol, emuRoot)).has_value(); },
+                                     emuList));
     };
     auto startEmuList = [&]() {
         if (emu.running()) return;
@@ -767,8 +935,8 @@ int main(int argc, char** argv) {
         emuScene.setListState(nl::ui::EmulatorsScene::ListState::Loading);
     };
     auto startEmuInstall = [&](std::vector<nl::OscApp> apps) {
-        if (apps.empty() || !sdOk || emu.running()) return;
-        if (!emu.startInstall(fs, emuRepo, std::move(apps))) {
+        if (apps.empty() || emuRoot.empty() || emu.running()) return;
+        if (!emu.startInstall(fs, emuRepo, std::move(apps), emuRoot)) {
             nl::log::line("NL_WARN Emulator-Thread startet nicht");
             return;
         }
@@ -822,6 +990,7 @@ int main(int argc, char** argv) {
         } else {
             emuScene.setBusy(std::nullopt);
             refreshEmuRows();
+            detectEmulators();
             probeN64Dols();
             nl::log::line("NL_EMU_DONE not64=%d wii64=%d", not64Dol ? 1 : 0, wii64Dol ? 1 : 0);
             onDebugInstallDone();
@@ -894,6 +1063,13 @@ int main(int argc, char** argv) {
             }
         }
 
+        if (setupScene.netStatus() == nl::ui::SetupScene::NetTest::Running && setupNet != 0) {
+            const int r = setupNet;
+            setupScene.setNetStatus(r == 1   ? nl::ui::SetupScene::NetTest::Ok
+                                    : r == 2 ? nl::ui::SetupScene::NetTest::OkTimeSet
+                                             : nl::ui::SetupScene::NetTest::Fail);
+            nl::log::line("NL_WIZARD net %s", r == 3 ? "fail" : "ok");
+        }
         if (in.pressed(nl::ui::Action::DebugToggle)) debug.toggle();
         // Mit Perf echte Zeit, damit die Cover-Latenz langsame Frames enthält; sonst die feste Taktung,
         // die den Selbsttest reproduzierbar hält.
@@ -1043,6 +1219,27 @@ int main(int argc, char** argv) {
                 scenes.push(&aboutScene);
                 nl::log::line("NL_SCENE about");
                 break;
+            case nl::ui::AppCommand::OpenSysInfo:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                openSysInfo();
+                break;
+            case nl::ui::AppCommand::SaveSysInfo:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                saveSysInfo();
+                break;
+            case nl::ui::AppCommand::OpenSetup:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                openSetup();
+                scenes.push(&setupScene);
+                break;
+            case nl::ui::AppCommand::SetupNetTest:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                startSetupNetTest();
+                break;
+            case nl::ui::AppCommand::FinishSetup:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                finishSetup();
+                break;
             case nl::ui::AppCommand::EmuCancel:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 emu.cancel();
@@ -1095,6 +1292,21 @@ int main(int argc, char** argv) {
             if (config.debugOpenScene == "about") {   // nur für Tests (M11)
                 scenes.push(&aboutScene);
                 nl::log::line("NL_SCENE about");
+            }
+            if (config.debugOpenScene == "sysinfo") openSysInfo();  // nur für Tests (M13)
+            if (config.debugSysinfoSave) {                          // nur für Tests (M13)
+                sysInfoScene.setInfo(buildSysInfo());
+                saveSysInfo();
+            }
+            if (firstRun) {  // Spec v2 6.4: ohne config.ini startet der Einrichtungs-Assistent
+                openSetup();
+                if (config.debugWizard == "accept") {  // nur für Tests: jeden Vorschlag annehmen, ohne Netztest
+                    for (int i = 0; i < nl::kWizardStepCount && setupScene.wizard().step() != nl::WizardStep::Done; ++i)
+                        setupScene.wizard().accept();
+                    finishSetup();
+                } else {
+                    scenes.push(&setupScene);
+                }
             }
         }
         if (readyReported && !coversReported && covers.idle()) {

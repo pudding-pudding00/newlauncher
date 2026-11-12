@@ -18,8 +18,8 @@ Result<void> loadDolBytesToBuffer(std::span<const u8> dol);
 // den Launcher bedienbar.
 Result<LaunchPlan> prepareWiiBoot(const WiiBootPlan& plan, std::string_view title);
 
-// Vorher: prepareWiiBoot erfolgreich, Laufwerke ausgehängt, Video schwarz. Lädt IOS 249; ist danach ein
-// anderes IOS aktiv, zurück ins System-Menü. Kehrt nie zurück.
-[[noreturn]] void bootWiiGame(const LaunchPlan& booter);
+// Vorher: prepareWiiBoot erfolgreich, Laufwerke ausgehängt, Video schwarz. Lädt das cIOS in iosSlot
+// (WiiBootPlan::iosSlot); ist danach ein anderes IOS aktiv, zurück ins System-Menü. Kehrt nie zurück.
+[[noreturn]] void bootWiiGame(const LaunchPlan& booter, u8 iosSlot);
 
 }  // namespace nl::launch

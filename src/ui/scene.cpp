@@ -19,6 +19,11 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::Rescan: return "rescan";
         case AppCommand::OpenEmulators: return "open_emulators";
         case AppCommand::OpenAbout: return "open_about";
+        case AppCommand::OpenSysInfo: return "open_sysinfo";
+        case AppCommand::SaveSysInfo: return "save_sysinfo";
+        case AppCommand::OpenSetup: return "open_setup";
+        case AppCommand::SetupNetTest: return "setup_net_test";
+        case AppCommand::FinishSetup: return "finish_setup";
         case AppCommand::EmuFetchList: return "emu_fetch_list";
         case AppCommand::EmuInstall: return "emu_install";
         case AppCommand::EmuInstallAll: return "emu_install_all";

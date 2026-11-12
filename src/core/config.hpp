@@ -1,8 +1,10 @@
 #pragma once
 // config.ini (Spec 3.4/5.4): Einstellungen mit Standardwerten; ungültige Werte fallen auf Standard.
 
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/cover_download.hpp"
 #include "core/emu_catalog.hpp"
@@ -28,9 +30,12 @@ struct Config {
     std::string coverRegion = "auto";
     std::string emulatorRepo = std::string(defaultEmuRepo(true));  // [emulators] repo (Spec 6.9), http:// oder https://
     std::string coverBase = std::string(defaultCoverBase(true));   // [covers] base (M11): Cover-Quelle, http:// oder https://
+    std::optional<u8> wiiIos;                // [wii] ios (M13, Spec 6.2): auto → nullopt, sonst Slot 200–255
+    std::vector<std::string> badKeys;        // ungültige Werte außerhalb von [library]/[paths] (NL_CFG_BAD), z. B. "wii.ios"
     std::string debugAutostart;  // [debug] autostart: Spielschlüssel, der nach NL_READY startet
     std::string debugCoverUrl;   // [debug] cover_url: ersetzt die GameTDB-Basis (Smoke-Test)
     bool debugFetchCovers = false;  // [debug] fetch_covers = 1: „Fehlende Cover laden“ nach NL_READY
+    bool debugSysinfoSave = false;  // [debug] sysinfo_save = 1: <data>/sysinfo.txt nach NL_READY schreiben (Smoke, M13)
     bool debugPerf = false;         // [debug] perf = 1: NL_PERF-Zeilen für die Hardware-Messung (M7)
     bool debugIgnoreAhbprot = false;  // [debug] ignore_ahbprot = 1: AHBPROT-Prüfung für GC überbrücken (Dolphin-Smoke, M8)
     std::string debugTlsCa;         // [debug] tls_ca: PEM der Test-CA statt Mozilla-Bundle (Smoke, M11)
@@ -40,11 +45,14 @@ struct Config {
     bool debugListGames = false;    // [debug] list_games = 1: NL_GAME <schlüssel> <gerät> je Spiel nach dem Laden (Smoke, M12)
     std::string debugEmuRepo;       // [debug] emu_repo: ersetzt emulatorRepo (Smoke-Test)
     std::string debugEmuInstall;    // [debug] emu_install: Komma-Liste, nach NL_READY installieren (Smoke-Test)
+    std::string debugWizard;        // [debug] wizard = accept: Einrichtungs-Assistent nimmt jeden Vorschlag an (Smoke, M13)
 };
 
 // tls: Build mit HTTPS (NL_TLS). Bestimmt die Standardquellen; die offiziellen Quellen in http- oder https-Form
 // folgen dem Build (M10 schrieb die HTTP-Form aus), fremde Quellen bleiben unverändert.
 Config configFromIni(const IniDoc& ini, bool tls = true);
+// Liest nur [debug] in c (auch aus <data>/debug.ini, wenn config.ini noch fehlt; M13 Task 5).
+void applyDebugIni(Config& c, const IniDoc& ini);
 std::string defaultConfigText(bool tls = true);
 int parseClock(std::string_view hhmm, int fallback);  // "19:00" → 1140
 std::string formatClock(int minuteOfDay);              // 1140 → "19:00"

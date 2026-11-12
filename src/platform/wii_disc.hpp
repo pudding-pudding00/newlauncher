@@ -6,11 +6,13 @@
 #include "core/frag_list.hpp"
 #include "core/fs.hpp"
 #include "core/game.hpp"
-#include "core/ios_info.hpp"
+#include "core/cios_scan.hpp"
 #include "core/launch_plan.hpp"
 #include "platform/storage.hpp"
 
+#include <optional>
 #include <string_view>
+#include <vector>
 
 struct DISC_INTERFACE_STRUCT;
 
@@ -39,7 +41,10 @@ private:
 // `dev` ist das Gerät, auf dem das Spiel liegt; die Gegenprobe liest ab dessen Partitions-LBA.
 Result<FragList, LaunchError> computeWiiFrags(FileSystem& fs, const Game& g, const Device& dev, u32* partLbaOut);
 
-// TMD von 00000001-000000F9 und Kopf des Boot-Contents (d2x: ios_info_t).
-CiosStatus readCiosStatus();
+// Spec v2 6.2: TMD von 00000001-000000xx und Kopf des ersten Contents (d2x: ios_info_t) → Einordnung.
+// nullopt, wenn der Slot keinen gespeicherten TMD hat.
+std::optional<CiosEntry> readCiosEntry(u8 slot);
+// Alle installierten Titel 00000001-000000C8 … -000000FF aus einer ES-Titelliste, aufsteigend nach Slot.
+std::vector<CiosEntry> scanCios();
 
 }  // namespace nl::platform

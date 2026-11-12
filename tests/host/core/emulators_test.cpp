@@ -34,20 +34,31 @@ TEST_CASE("N64, GC und Wii liefern nullptr") {
     CHECK(t.forConsole(Console::Wii) == nullptr);
 }
 
-TEST_CASE("defaultEmulatorsText ergibt nach dem Parsen dieselben Werte und enthält [n64_not64], [n64_wii64], [nintendont]") {
+TEST_CASE("defaultEmulatorsText ist nur ein Kommentarkopf (M13: Erkennung statt v1-Pfade)") {
     const std::string text = defaultEmulatorsText();
     const IniDoc doc = IniDoc::parse(text);
+    CHECK(doc.sectionNames().empty());
     const EmulatorTable fromText = EmulatorTable::fromIni(doc);
-    const EmulatorTable defaults = EmulatorTable::fromIni(IniDoc::parse(""));
     for (Console c : {Console::Nes, Console::Snes, Console::Gb, Console::Gbc, Console::Gba}) {
-        CHECK(fromText.forConsole(c)->dol == defaults.forConsole(c)->dol);
-        CHECK(fromText.forConsole(c)->args == defaults.forConsole(c)->args);
+        CHECK(fromText.forConsole(c)->dol == std::string(v1DefaultDol(consoleInfo(c).key)));
+        CHECK_FALSE(fromText.forConsole(c)->fromFile);
     }
-    CHECK(text.find("[n64_not64]") != std::string::npos);
-    CHECK(text.find("[n64_wii64]") != std::string::npos);
-    CHECK(text.find("[nintendont]") != std::string::npos);
-    CHECK(doc.get("n64_not64", "args") == "{path}");
-    CHECK(doc.get("nintendont", "dol") == "sd:/apps/nintendont/boot.dol");
+    CHECK(v1DefaultDol("nintendont") == "sd:/apps/nintendont/boot.dol");
+    CHECK(v1DefaultDol("n64") .empty());
+}
+
+TEST_CASE("fromFile, section und set") {
+    const EmulatorTable t = EmulatorTable::fromIni(IniDoc::parse("[gba]\ndol = usb:/apps/x/boot.dol\n"));
+    CHECK(t.section("gba")->fromFile);
+    CHECK_FALSE(t.section("gb")->fromFile);
+    CHECK(t.section("n64_wii64") == t.forN64(N64Method::Wii64));
+    CHECK(t.section("wii") == nullptr);
+    EmulatorTable u = t;
+    u.set("nintendont", EmulatorEntry{"usb:/apps/nintendont/boot.dol", "x", false, "nintendont"});
+    CHECK(u.nintendont().dol == "usb:/apps/nintendont/boot.dol");
+    CHECK(u.nintendont().args.empty());
+    u.set("snes", EmulatorEntry{"sd:/apps/retroarch-wii/snes9x2010_libretro_wii.dol", "{dir}|{file}", false, "retroarch-snes9x2010"});
+    CHECK(u.forConsole(Console::Snes)->profile == "retroarch-snes9x2010");
 }
 
 TEST_CASE("forN64 liefert Not64/Wii64 aus emulators.ini, VC nullptr") {

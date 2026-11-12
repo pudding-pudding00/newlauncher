@@ -116,6 +116,23 @@ TEST_CASE_FIXTURE(Fixture, "A auf Über öffnet die Über-Seite (M11)") {
     CHECK(std::string(appCommandName(AppCommand::OpenAbout)) == "open_about");
 }
 
+TEST_CASE_FIXTURE(Fixture, "A auf Systeminfo öffnet die Systeminfo (M13)") {
+    focusRow(SettingRow::SysInfo);
+    const SceneRequests r = press(Action::Confirm);
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::OpenSysInfo);
+    CHECK(std::string(appCommandName(AppCommand::OpenSysInfo)) == "open_sysinfo");
+    CHECK(std::string(appCommandName(AppCommand::SaveSysInfo)) == "save_sysinfo");
+}
+
+TEST_CASE_FIXTURE(Fixture, "A auf Einrichtung öffnet den Assistenten (M13)") {
+    focusRow(SettingRow::Setup);
+    const SceneRequests r = press(Action::Confirm);
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::OpenSetup);
+    CHECK(std::string(appCommandName(AppCommand::OpenSetup)) == "open_setup");
+}
+
 TEST_CASE_FIXTURE(Fixture, "Karte mit allen Zeilen passt in 480 Zeilen") {
     ctx.height = 480.0f;
     const gfx::Rect first = s.rowRect(ctx, 0);

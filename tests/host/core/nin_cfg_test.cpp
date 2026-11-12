@@ -156,3 +156,94 @@ TEST_CASE("nin_cfg: Vergleich") {
     CHECK(NinVersion{6, 493} >= kMinNintendont);
     CHECK(NinVersion{7, 0} > kMinNintendont);
 }
+
+// --- M14 Task 1: Optionsbits und Mindestversionen (CommonConfig.h, Nintendont c683db3) ---
+#include <cstring>
+
+TEST_CASE("nin_cfg: Config-Bits wie CommonConfig.h") {
+    CHECK(kNinCfgCheats == 1u << 0);
+    CHECK(kNinCfgMemcardEmu == 1u << 3);
+    CHECK(kNinCfgCheatPath == 1u << 4);
+    CHECK(kNinCfgForceWide == 1u << 5);
+    CHECK(kNinCfgForceProg == 1u << 6);
+    CHECK(kNinCfgAutoBoot == 1u << 7);
+    CHECK(kNinCfgUsb == 1u << 10);
+    CHECK(kNinCfgMcMulti == 1u << 13);
+    CHECK(kNinCfgNativeSi == 1u << 14);
+    CHECK(kNinCfgWiiuWide == 1u << 15);
+    CHECK(kNinCfgSkipIpl == 1u << 18);
+}
+
+TEST_CASE("nin_cfg: Video- und Sprachwerte wie CommonConfig.h") {
+    CHECK(kNinVidAuto == 0u);
+    CHECK(kNinVidForce == 1u << 16);
+    CHECK(kNinVidNone == 2u << 16);
+    CHECK(kNinVidPal50 == 1u << 0);
+    CHECK(kNinVidPal60 == 1u << 1);
+    CHECK(kNinVidNtsc == 1u << 2);
+    CHECK(kNinVidMpal == 1u << 3);
+    CHECK(kNinVidProg == 1u << 4);
+    CHECK(kNinLangAuto == 0xFFFFFFFFu);
+    CHECK(kNinLangEn == 0u);
+    CHECK(kNinLangDe == 1u);
+    CHECK(kNinLangFr == 2u);
+    CHECK(kNinLangEs == 3u);
+    CHECK(kNinLangIt == 4u);
+    CHECK(kNinLangNl == 5u);
+}
+
+TEST_CASE("nin_cfg: Optionen landen an den Offsets") {
+    NinConfigInput in{"/games/x [GM8P01]/game.iso", "GM8P01", false};
+    in.extraFlags = kNinCfgForceWide;
+    in.videoMode = kNinVidForce | kNinVidPal60;
+    in.language = 1;
+    in.maxPads = 2;
+    in.memcardBlocks = 3;
+    auto r = buildNinCfg(in);
+    REQUIRE(r.isOk());
+    const auto& b = r.value();
+    CHECK(be32(b, 0x008) == (0x00000088u | (1u << 5)));
+    CHECK(be32(b, 0x00C) == 0x00010002u);
+    CHECK(be32(b, 0x010) == 1u);
+    CHECK(be32(b, 0x214) == 2u);
+    CHECK(b[0x21C] == 3);
+}
+
+TEST_CASE("nin_cfg: Standardeingabe bleibt byte-gleich zu M8") {
+    const std::string path = "/games/Metroid Prime [GM8P01]/game.iso";
+    NinConfigInput in{path, "GM8P01", false};
+    CHECK(in.extraFlags == 0u);
+    CHECK(in.videoMode == kNinVidAuto);
+    CHECK(in.language == kNinLangAuto);
+    CHECK(in.maxPads == 4u);
+    CHECK(in.memcardBlocks == 2u);
+    auto r = buildNinCfg(in);
+    REQUIRE(r.isOk());
+    std::array<u8, kNinCfgSize> golden{};
+    const u8 head[] = {0x01, 0x07, 0x0C, 0xF6, 0, 0, 0, 10, 0, 0, 0, 0x88, 0, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF};
+    std::memcpy(golden.data(), head, sizeof head);
+    std::memcpy(golden.data() + 0x014, path.data(), path.size());
+    golden[0x217] = 4;
+    std::memcpy(golden.data() + 0x218, "GM8P", 4);
+    golden[0x21C] = 2;
+    CHECK(r.value() == golden);
+}
+
+TEST_CASE("nin_cfg: Mindestversion je Option") {
+    auto gate = [](std::string_view key) -> std::optional<NinVersion> {
+        for (const NinOptionGate& g : ninOptionGates())
+            if (key == g.key) return g.minVersion;
+        return std::nullopt;
+    };
+    CHECK(gate("force_wide") == NinVersion{1, 109});
+    CHECK(gate("progressive") == NinVersion{1, 109});
+    CHECK(gate("video") == NinVersion{1, 109});
+    CHECK(gate("memcard") == NinVersion{1, 135});
+    CHECK(gate("memcard_blocks") == NinVersion{1, 135});
+    CHECK(gate("native_si") == NinVersion{2, 189});
+    CHECK(gate("wiiu_wide") == NinVersion{2, 258});
+    CHECK(gate("skip_ipl") == NinVersion{4, 434});
+    CHECK(gate("language") == NinVersion{1, 0});
+    CHECK(gate("max_pads") == NinVersion{1, 0});
+    CHECK_FALSE(gate("unbekannt").has_value());
+}

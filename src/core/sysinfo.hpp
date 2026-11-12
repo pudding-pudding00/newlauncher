@@ -26,6 +26,7 @@ struct ResolvedEmuSummary {
     std::string profile;  // leer = kein Profil
     std::string how;      // "ini", "detected", "default"
     std::string path;
+    std::string args;     // Argument-Schema (für „festschreiben“ im Einrichtungs-Assistenten)
 };
 
 struct SystemInfo {

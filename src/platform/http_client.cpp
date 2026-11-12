@@ -382,4 +382,18 @@ bool clockSynced() {
 #endif
 }
 
+bool syncClockOnce(const HttpLog& log) {
+#ifdef NL_TLS
+    if (!g_clockSynced && g_sntpAttempts < kMaxSntpAttempts) {
+        ++g_sntpAttempts;
+        g_clockSynced = wtls_time_sync_sntp(nullptr, kSntpMs) == WTLS_OK;
+        emit(log, g_clockSynced ? "NL_TLS_TIMESYNC ok" : "NL_TLS_TIMESYNC fail");
+    }
+    return g_clockSynced;
+#else
+    (void)log;
+    return false;
+#endif
+}
+
 }  // namespace nl::platform

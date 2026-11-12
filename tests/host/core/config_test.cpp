@@ -289,3 +289,13 @@ TEST_CASE("Config: [wii] ios (M13, Spec 6.2)") {
     CHECK(configToIniText(c, "").find("[wii]\nios = 250\n") != std::string::npos);
     CHECK(configToIniText(Config{}, "").find("[wii]\nios = auto\n") != std::string::npos);
 }
+
+TEST_CASE("applyDebugIni: nur [debug] aus debug.ini, wizard-Schlüssel (M13 Task 5)") {
+    Config c;
+    c.language = Config::Language::De;
+    applyDebugIni(c, IniDoc::parse("[debug]\nwizard = accept\nsysinfo_save = 1\n[general]\nlanguage = en\n"));
+    CHECK(c.debugWizard == "accept");
+    CHECK(c.debugSysinfoSave);
+    CHECK(c.language == Config::Language::De);
+    CHECK(configFromIni(IniDoc::parse("[debug]\nwizard = accept\n")).debugWizard == "accept");
+}

@@ -27,8 +27,8 @@ SystemInfo sample() {
     s.ciosSlot = 249;
     s.gcPorts = true;
     s.devices = {DeviceSummary{"sd", "FAT", 0, 0, 12}, DeviceSummary{"usb2", "FAT", 500107862016ull, 1073741824ull, 40}};
-    s.emulators = {ResolvedEmuSummary{"nes", "fceugx", "detected", "usb2:/apps/fceugx/boot.dol"},
-                   ResolvedEmuSummary{"snes", "", "default", "sd:/apps/snes9xgx/boot.dol"}};
+    s.emulators = {ResolvedEmuSummary{"nes", "fceugx", "detected", "usb2:/apps/fceugx/boot.dol", ""},
+                   ResolvedEmuSummary{"snes", "", "default", "sd:/apps/snes9xgx/boot.dol", ""}};
     s.netUp = true;
     s.timeSynced = true;
     s.tls = true;

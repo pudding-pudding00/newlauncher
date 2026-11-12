@@ -149,6 +149,33 @@
     X(SysInfoHelp, "▲▼ Blättern · A Als Datei speichern · B Zurück", "▲▼ Scroll · A Save as file · B Back") \
     X(SysInfoSaved, "Gespeichert: %s", "Saved: %s") \
     X(SysInfoSaveFailed, "Speichern fehlgeschlagen", "Saving failed") \
+    X(Setup, "Einrichtung", "Setup") \
+    X(SetupStepOf, "Einrichtung %d/%d", "Setup %d/%d") \
+    X(SetupLanguage, "Sprache", "Language") \
+    X(SetupLanguageText, "In welcher Sprache soll der Launcher erscheinen?", "Which language should the launcher use?") \
+    X(SetupSources, "Bibliotheksquellen", "Library sources") \
+    X(SetupSourcesText, "Auf diesen Geräten wird nach Spielen gesucht. Gilt ab dem nächsten Start.", \
+      "These devices are searched for games. Takes effect on the next start.") \
+    X(SetupCios, "cIOS für Wii-Spiele", "cIOS for Wii games") \
+    X(SetupCiosText, "Automatik wählt das passende d2x-cIOS.", "Automatic picks the matching d2x cIOS.") \
+    X(SetupEmulators, "Emulatoren", "Emulators") \
+    X(SetupEmulatorsText, "Gefundene Emulatoren. Fehlende lassen sich über das Netz installieren.", \
+      "Emulators found. Missing ones can be installed over the network.") \
+    X(SetupNetwork, "Netzwerk", "Network") \
+    X(SetupNetworkText, "Verbindungstest zur Cover-Quelle.", "Connection test to the cover source.") \
+    X(SetupNetRunning, "Prüfe Verbindung …", "Checking connection …") \
+    X(SetupNetOk, "Cover-Quelle erreichbar", "Cover source reachable") \
+    X(SetupNetOkTime, "Cover-Quelle erreichbar, Uhrzeit gestellt", "Cover source reachable, clock set") \
+    X(SetupNetFail, "Keine Verbindung (später in den Einstellungen erneut möglich)", \
+      "No connection (try again later in Settings)") \
+    X(SetupDone, "Fertig", "Done") \
+    X(SetupDoneText, "A speichert config.ini. Eine vorhandene Datei bleibt als .bak erhalten.", \
+      "A saves config.ini. An existing file is kept as .bak.") \
+    X(SetupSuggested, "Vorschlag", "Suggested") \
+    X(SetupHelp, "▲▼ Wählen · A Übernehmen · B Überspringen · − Zurück · Home Abbrechen", \
+      "▲▼ Choose · A Accept · B Skip · − Back · Home Cancel") \
+    X(SetupSaved, "Einrichtung gespeichert", "Setup saved") \
+    X(SetupSaveFailed, "Einrichtung nicht gespeichert", "Setup not saved") \
     X(NetErrNone, "Kein Fehler", "No error") \
     X(NetErrDns, "Server nicht gefunden (DNS)", "Server not found (DNS)") \
     X(NetErrConnect, "Verbindung zum Server fehlgeschlagen", "Could not connect to the server") \

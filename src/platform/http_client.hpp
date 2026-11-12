@@ -48,6 +48,9 @@ void setNetPerf(bool on);
 // Stand für die Systeminfo (vom Haupt-Thread lesbar): true, sobald in dieser Sitzung die Uhr per SNTP gestellt
 // wurde. Ohne NL_TLS immer false.
 bool clockSynced();
+// Einrichtungs-Assistent (M13): Uhr per SNTP stellen, falls in dieser Sitzung noch nicht geschehen (höchstens die
+// zwei Versuche je Sitzung, die auch httpGet hat). Nur im Netz-Thread aufrufen. true = Uhr gestellt; ohne NL_TLS false.
+bool syncClockOnce(const HttpLog& log = {});
 
 // Ok nur bei Status 200 mit vollständigem Body (höchstens maxBody Bytes); 404 → NotFound; alles andere Failed.
 // http:// über Klartext, https:// über TLS (ohne NL_TLS: Failed/TlsMissing, kein Rückfall auf HTTP). Klartext:

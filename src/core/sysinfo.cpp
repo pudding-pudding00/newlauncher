@@ -88,7 +88,7 @@ std::vector<ResolvedEmuSummary> emuSummaries(const EmulatorTable& resolved) {
         const EmulatorEntry* e = resolved.section(sec);
         if (e == nullptr || e->dol.empty()) continue;
         const char* how = e->fromFile ? "ini" : e->profile.empty() ? "default" : "detected";
-        out.push_back(ResolvedEmuSummary{sec, e->profile, how, e->dol});
+        out.push_back(ResolvedEmuSummary{sec, e->profile, how, e->dol, e->args});
     }
     return out;
 }

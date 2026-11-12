@@ -45,11 +45,14 @@ struct Config {
     bool debugListGames = false;    // [debug] list_games = 1: NL_GAME <schlüssel> <gerät> je Spiel nach dem Laden (Smoke, M12)
     std::string debugEmuRepo;       // [debug] emu_repo: ersetzt emulatorRepo (Smoke-Test)
     std::string debugEmuInstall;    // [debug] emu_install: Komma-Liste, nach NL_READY installieren (Smoke-Test)
+    std::string debugWizard;        // [debug] wizard = accept: Einrichtungs-Assistent nimmt jeden Vorschlag an (Smoke, M13)
 };
 
 // tls: Build mit HTTPS (NL_TLS). Bestimmt die Standardquellen; die offiziellen Quellen in http- oder https-Form
 // folgen dem Build (M10 schrieb die HTTP-Form aus), fremde Quellen bleiben unverändert.
 Config configFromIni(const IniDoc& ini, bool tls = true);
+// Liest nur [debug] in c (auch aus <data>/debug.ini, wenn config.ini noch fehlt; M13 Task 5).
+void applyDebugIni(Config& c, const IniDoc& ini);
 std::string defaultConfigText(bool tls = true);
 int parseClock(std::string_view hhmm, int fallback);  // "19:00" → 1140
 std::string formatClock(int minuteOfDay);              // 1140 → "19:00"

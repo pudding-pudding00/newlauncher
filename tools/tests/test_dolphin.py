@@ -214,6 +214,25 @@ class DolphinToolsTest(unittest.TestCase):
         self.assertTrue(text.endswith("[debug]\nsysinfo_save = 1\n"))
         self.assertFalse((self.user / "SDSync/newlauncher/sysinfo.txt").exists())
 
+    def test_smoke_fresh_data_writes_only_debug_ini(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        rc = smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                         "--timeout", "2", "--fresh-data", "--debug", "perf=1"])
+        self.assertEqual(rc, 1)  # NL_WIZARD done fehlt
+        data = self.user / "SDSync/newlauncher"
+        self.assertFalse((data / "config.ini").exists())
+        self.assertEqual((data / "debug.ini").read_text(encoding="utf-8"), "[debug]\nwizard = accept\nperf = 1\n")
+
+    def test_smoke_without_fresh_data_removes_stale_debug_ini(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        data = self.user / "SDSync/newlauncher"
+        data.mkdir(parents=True, exist_ok=True)
+        (data / "debug.ini").write_text("[debug]\nwizard = accept\n", encoding="utf-8")
+        smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                    "--timeout", "2"])
+        self.assertFalse((data / "debug.ini").exists())
+        self.assertTrue((data / "config.ini").exists())
+
     def test_smoke_tls_requires_a_server(self):
         with mock.patch("sys.stderr"), self.assertRaises(SystemExit) as cm:
             smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),

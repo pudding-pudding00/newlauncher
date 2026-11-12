@@ -63,6 +63,7 @@
 #include "ui/dialog_scene.hpp"
 #include "ui/emulators_scene.hpp"
 #include "ui/about_scene.hpp"
+#include "ui/setup_scene.hpp"
 #include "ui/sysinfo_scene.hpp"
 #include "core/sysinfo.hpp"
 #include "ui/home_menu.hpp"
@@ -130,12 +131,14 @@ bool writeText(nl::FileSystem& fs, const char* path, const std::string& text) {
     return fs.writeAtomic(path, std::span<const u8>(p, text.size())).isOk();
 }
 
-// text erhält den gelesenen bzw. neu geschriebenen Inhalt (Grundlage für configToIniText).
-nl::Config loadConfig(nl::FileSystem& fs, const DataDir& dataDir, std::string& text) {
+// text erhält den gelesenen Inhalt bzw. den Standardtext (Grundlage für configToIniText). firstRun: config.ini fehlt
+// in einem beschreibbaren Datenordner; dann schreibt erst der Einrichtungs-Assistent die Datei (M13, Spec v2 6.4).
+nl::Config loadConfig(nl::FileSystem& fs, const DataDir& dataDir, std::string& text, bool& firstRun) {
+    firstRun = false;
     text = nl::defaultConfigText(kHasTls);
     if (!dataDir.readable) {
         nl::log::line("NL_CONFIG default (kein Datenordner)");
-        return nl::Config{};
+        return nl::configFromIni(nl::IniDoc::parse(text), kHasTls);  // Config{} hätte keine [paths]
     }
     const std::string configPath = dataDir.path("config.ini");
     auto data = nl::readAllWithFallback(fs, configPath, kMaxIniBytes);
@@ -148,9 +151,9 @@ nl::Config loadConfig(nl::FileSystem& fs, const DataDir& dataDir, std::string& t
         for (const std::string& key : config.badKeys) nl::log::line("NL_CFG_BAD %s", key.c_str());
         return config;
     }
-    if (dataDir.writable) writeText(fs, configPath.c_str(), nl::defaultConfigText(kHasTls));
-    nl::log::line("NL_CONFIG default");
-    return nl::Config{};
+    firstRun = dataDir.writable;
+    nl::log::line(firstRun ? "NL_CONFIG missing" : "NL_CONFIG default");
+    return nl::configFromIni(nl::IniDoc::parse(text), kHasTls);  // Standardordner aus dem Standardtext
 }
 
 nl::EmulatorTable loadEmulators(nl::FileSystem& fs, const DataDir& dataDir) {
@@ -245,7 +248,16 @@ int main(int argc, char** argv) {
                       historyPath = data.path("history.ini"), vcMapPath = data.path("n64_vc.ini"),
                       gamesPath = data.path("games.ini"), logPath = data.path("log.txt");
     std::string configText;
-    nl::Config config = loadConfig(fs, data, configText);  // die Einstellungsszene ändert sie live
+    bool firstRun = false;
+    nl::Config config = loadConfig(fs, data, configText, firstRun);  // die Einstellungsszene ändert sie live
+    if (data.readable) {  // Smoke-Tests ohne config.ini (M13): [debug] aus <data>/debug.ini, sonst nichts
+        auto dbg = nl::readAllWithFallback(fs, data.path("debug.ini"), kMaxIniBytes);
+        if (dbg.isOk()) {
+            const auto& b = dbg.value();
+            nl::applyDebugIni(config, nl::IniDoc::parse(std::string_view(reinterpret_cast<const char*>(b.data()), b.size())));
+            nl::log::line("NL_DEBUG_INI");
+        }
+    }
     const bool systemGerman = CONF_GetLanguage() == CONF_LANG_GERMAN;
     nl::ui::setLanguage(nl::ui::resolveLanguage(config.language, systemGerman));
     nl::log::line("NL_LANG %s", nl::ui::langKey(nl::ui::language()));
@@ -607,6 +619,78 @@ int main(int argc, char** argv) {
         sysInfoScene.setSaveResult(path, ok);
         if (ok) nl::log::line("NL_SYSINFO_SAVED %s", path.c_str());
         else nl::log::line("NL_SYSINFO_SAVE fail");
+    };
+
+    // Einrichtungs-Assistent (M13, Spec v2 6.4): beim ersten Start ohne config.ini und über Einstellungen.
+    nl::ui::SetupScene setupScene;
+    volatile int setupNet = 0;  // Netztest: 0 läuft/keiner, 1 ok, 2 ok mit Zeitabgleich, 3 fehlgeschlagen (Netz-Thread schreibt)
+    auto openSetup = [&]() {
+        std::vector<nl::DeviceGames> games;
+        for (const nl::platform::Device& d : devTable.devices()) {
+            if (!d.mounted) continue;
+            nl::DeviceGames g;
+            g.device = d.slot.name;
+            for (const nl::Game& game : store.games())
+                if (game.device < store.devices().size() && store.devices()[game.device] == d.slot.name)
+                    ++g.games[static_cast<std::size_t>(game.console)];
+            games.push_back(std::move(g));
+        }
+        setupScene.start(nl::SetupWizard(buildSysInfo(), config, games));
+        std::string counts;  // Log: Spiele je Gerät, Grundlage des Quellen-Vorschlags
+        for (const nl::DeviceGames& g : games) counts += " " + g.device + "=" + std::to_string(g.total());
+        nl::log::line("NL_WIZARD start%s", counts.c_str());
+    };
+    // Verbindungstest gegen die Cover-Quelle; jede HTTP-Antwort (auch 404) zählt als erreichbar. Mit TLS vorher
+    // einmal SNTP. Läuft wie alle wtls-Aufrufe im Netz-Thread.
+    auto startSetupNetTest = [&]() {
+        setupNet = 0;
+        const std::string base = config.debugCoverUrl.empty() ? config.coverBase : config.debugCoverUrl;
+        const u32 id = netService.submit([&setupNet, &netService, base](const volatile bool& cancel) {
+            if (!netService.networkUp()) {
+                setupNet = 3;
+                return;
+            }
+            const bool timeSet = kHasTls && nl::platform::syncClockOnce();
+            bool ok = false;
+            if (const auto url = nl::parseUrl(base)) {
+                std::vector<u8> body;
+                ok = nl::platform::httpGet(*url, 64 * 1024, body, &cancel).status != 0;
+            }
+            setupNet = ok ? (timeSet ? 2 : 1) : 3;
+        });
+        if (id == 0) setupNet = 3;
+    };
+    // Schreibt eine Datei mit Sicherung: vorhandene Datei → <datei>.bak, dann neu über .tmp und Umbenennen.
+    auto writeWithBackup = [&](const std::string& path, const std::string& text) {
+        auto old = nl::readAllWithFallback(fs, path, kMaxIniBytes);
+        if (old.isOk()) {
+            const auto& b = old.value();
+            if (!fs.writeAtomic(nl::backupName(path), std::span<const u8>(b.data(), b.size())).isOk()) return false;
+        }
+        return writeText(fs, path.c_str(), text);
+    };
+    // Ergebnis übernehmen: config.ini (und bei „festschreiben“ emulators.ini) mit Sicherung schreiben, Sprache
+    // sofort anwenden. Quellen und Emulatoren gelten ab dem nächsten Start (wie in den Einstellungen).
+    auto finishSetup = [&]() {
+        if (!setupScene.active()) return;
+        const nl::SetupWizard& w = setupScene.wizard();
+        nl::Config next = w.result();
+        const std::string text = nl::configToIniText(next, configText);
+        bool ok = data.writable && writeWithBackup(configPath, text);
+        if (ok) configText = text;
+        if (ok) {
+            if (const auto emu = w.emulatorsIni()) ok = writeWithBackup(data.path("emulators.ini"), *emu);
+        }
+        config = std::move(next);
+        firstRun = false;
+        const nl::ui::Lang lang = nl::ui::resolveLanguage(config.language, systemGerman);
+        if (lang != nl::ui::language()) {
+            nl::ui::setLanguage(lang);
+            channelsLoaded = false;
+            nl::log::line("NL_LANG %s", nl::ui::langKey(lang));
+        }
+        mainScene.showToast(nl::ui::tr(ok ? nl::ui::Str::SetupSaved : nl::ui::Str::SetupSaveFailed));
+        nl::log::line(ok ? "NL_WIZARD done" : "NL_WIZARD save_fail");
     };
 
     // Zeile „Startmethode“ der Detailansicht aus Override, Zuordnung und Verfügbarkeit.
@@ -979,6 +1063,13 @@ int main(int argc, char** argv) {
             }
         }
 
+        if (setupScene.netStatus() == nl::ui::SetupScene::NetTest::Running && setupNet != 0) {
+            const int r = setupNet;
+            setupScene.setNetStatus(r == 1   ? nl::ui::SetupScene::NetTest::Ok
+                                    : r == 2 ? nl::ui::SetupScene::NetTest::OkTimeSet
+                                             : nl::ui::SetupScene::NetTest::Fail);
+            nl::log::line("NL_WIZARD net %s", r == 3 ? "fail" : "ok");
+        }
         if (in.pressed(nl::ui::Action::DebugToggle)) debug.toggle();
         // Mit Perf echte Zeit, damit die Cover-Latenz langsame Frames enthält; sonst die feste Taktung,
         // die den Selbsttest reproduzierbar hält.
@@ -1136,6 +1227,19 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 saveSysInfo();
                 break;
+            case nl::ui::AppCommand::OpenSetup:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                openSetup();
+                scenes.push(&setupScene);
+                break;
+            case nl::ui::AppCommand::SetupNetTest:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                startSetupNetTest();
+                break;
+            case nl::ui::AppCommand::FinishSetup:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                finishSetup();
+                break;
             case nl::ui::AppCommand::EmuCancel:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 emu.cancel();
@@ -1193,6 +1297,16 @@ int main(int argc, char** argv) {
             if (config.debugSysinfoSave) {                          // nur für Tests (M13)
                 sysInfoScene.setInfo(buildSysInfo());
                 saveSysInfo();
+            }
+            if (firstRun) {  // Spec v2 6.4: ohne config.ini startet der Einrichtungs-Assistent
+                openSetup();
+                if (config.debugWizard == "accept") {  // nur für Tests: jeden Vorschlag annehmen, ohne Netztest
+                    for (int i = 0; i < nl::kWizardStepCount && setupScene.wizard().step() != nl::WizardStep::Done; ++i)
+                        setupScene.wizard().accept();
+                    finishSetup();
+                } else {
+                    scenes.push(&setupScene);
+                }
             }
         }
         if (readyReported && !coversReported && covers.idle()) {

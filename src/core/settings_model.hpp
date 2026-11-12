@@ -20,6 +20,7 @@ enum class SettingRow : u8 {
     FetchCovers,
     VcMap,
     Emulators,
+    Setup,    // Einrichtungs-Assistent (M13)
     SysInfo,  // Systeminfo (M13)
     About,  // Version, Lizenz, Drittanbieter (M11)
     Count

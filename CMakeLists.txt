@@ -70,6 +70,7 @@ add_library(nl_core STATIC
     src/core/frag_list.cpp
     src/core/ios_info.cpp
     src/core/cios_scan.cpp
+    src/core/emu_profiles.cpp
     src/core/cover_download.cpp
     src/core/lz77.cpp
     src/gfx/draw_list.cpp

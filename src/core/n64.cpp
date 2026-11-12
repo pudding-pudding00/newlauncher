@@ -51,6 +51,8 @@ GameOverrides GameOverrides::fromIni(const IniDoc& doc) {
     GameOverrides o;
     for (const auto& [k, v] : doc.entries(kSection))
         if (const auto m = parseN64Method(v)) o.setN64Method(k, *m);
+    for (const auto& [k, v] : doc.entries("emulator"))
+        if (!trim(v).empty()) o.emulator_.emplace_back(std::string(k), std::string(trim(v)));
     for (std::string_view name : doc.sectionNames()) {
         if (name == kSection) continue;
         const auto raw = doc.rawLines(name);
@@ -67,6 +69,12 @@ GameOverrides GameOverrides::fromIni(const IniDoc& doc) {
 std::optional<u8> GameOverrides::wiiIos(std::string_view id6) const {
     for (const auto& [k, slot] : wiiIos_)
         if (k == id6) return slot;
+    return std::nullopt;
+}
+
+std::optional<std::string_view> GameOverrides::emulatorProfile(std::string_view key) const {
+    for (const auto& [k, p] : emulator_)
+        if (k == key) return std::string_view(p);
     return std::nullopt;
 }
 

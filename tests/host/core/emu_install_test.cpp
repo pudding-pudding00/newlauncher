@@ -246,3 +246,28 @@ TEST_CASE("clearEmuTmp: löscht alle Dateien rekursiv") {
     CHECK(fs.file("sd:/newlauncher/config.ini") != nullptr);
     clearEmuTmp(fs);  // zweimal ok
 }
+
+TEST_CASE("installEmulator: ohne SD auf das <data>-Gerät (Wurzel usb:)") {
+    Harness h;
+    h.fs.addDir("usb:/newlauncher");
+    const EmuInstallResult r = installEmulator(h.fs, h.io, "http://h/hbb", appFor(h.zip), "usb:");
+    CHECK(r.error == EmuInstallError::None);
+    CHECK(text(h.fs.file("usb:/apps/fceugx/boot.dol")) == "NEUES-DOL");
+    CHECK(text(h.fs.file("usb:/fceugx/fceugx.cfg")) == "standard-cfg");
+    CHECK(h.fs.file("sd:/apps/fceugx/boot.dol") == nullptr);
+    CHECK(h.fs.file(installedEmusPath("usb:")) != nullptr);
+    CHECK(h.fs.filesUnder("usb:/newlauncher/tmp/").empty());
+    CHECK(emuTmpDir("usb:") == "usb:/newlauncher/tmp");
+    CHECK(installedEmusPath("sd:") == kInstalledEmusPath);
+    CHECK(onRoot("sd:/apps/vbagx/boot.dol", "usb2:") == "usb2:/apps/vbagx/boot.dol");
+}
+
+TEST_CASE("recoverEmuInstall und clearEmuTmp mit Wurzel") {
+    MemFileSystem fs;
+    fs.addFile("usb:/apps/fceugx/boot.dol.old", bytes("ALT"));
+    fs.addFile("usb:/newlauncher/tmp/a.zip", bytes("x"));
+    recoverEmuInstall(fs, "usb:");
+    clearEmuTmp(fs, "usb:");
+    CHECK(text(fs.file("usb:/apps/fceugx/boot.dol")) == "ALT");
+    CHECK(fs.filesUnder("usb:/newlauncher/tmp/").empty());
+}

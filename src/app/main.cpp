@@ -21,6 +21,7 @@
 #include "core/data_dir.hpp"
 #include "core/emu_catalog.hpp"
 #include "core/emu_install.hpp"
+#include "core/emu_profiles.hpp"
 #include "core/emulators.hpp"
 #include "core/index_file.hpp"
 #include "core/launch_layout.hpp"
@@ -256,10 +257,14 @@ int main(int argc, char** argv) {
             nl::log::line("NL_WARN config.ini nicht gespeichert");
         }
     };
-    const nl::EmulatorTable emulators = loadEmulators(fs, data);
-    if (sdOk) {  // Reste einer abgebrochenen Emulator-Installation (Spec 6.9)
-        nl::recoverEmuInstall(fs);
-        nl::clearEmuTmp(fs);
+    const nl::EmulatorTable emulatorIni = loadEmulators(fs, data);
+    // Ziel der Emulator-Installation (Spec v2 6.3): SD, ohne SD das <data>-Gerät; leer = keine Installation.
+    const std::string emuRoot = sdOk          ? std::string("sd:")
+                                : data.writable ? data.dir.substr(0, data.dir.find(':') + 1)
+                                                : std::string();
+    if (!emuRoot.empty()) {  // Reste einer abgebrochenen Emulator-Installation (Spec 6.9)
+        nl::recoverEmuInstall(fs, emuRoot);
+        nl::clearEmuTmp(fs, emuRoot);
     }
 
     // 2. Video, Renderer, Atlas, Theme aus der Konfiguration
@@ -390,6 +395,25 @@ int main(int argc, char** argv) {
         for (const std::string& d : libDevices) list += (list.empty() ? "" : ",") + d + ":";
         nl::log::line("NL_MOUNT %s", list.c_str());
     }
+    // Emulator-Erkennung (Spec v2 6.3): apps/ auf allen eingehängten Geräten; nach einer Installation erneut.
+    std::vector<nl::FoundApp> foundApps;
+    nl::EmulatorTable emulators = emulatorIni;
+    auto detectEmulators = [&]() {
+        foundApps.clear();
+        for (const nl::platform::Device& d : devTable.devices()) {
+            if (!d.mounted) continue;
+            std::vector<nl::FoundApp> apps = nl::scanApps(fs, d.slot.name);
+            foundApps.insert(foundApps.end(), apps.begin(), apps.end());
+        }
+        emulators = nl::resolveTable(emulatorIni, foundApps);
+        for (const char* sec : {"nes", "snes", "gb", "gbc", "gba", "n64_not64", "n64_wii64", "nintendont"}) {
+            const nl::EmulatorEntry* e = emulators.section(sec);
+            if (e == nullptr) continue;
+            const char* how = e->fromFile ? "ini" : e->profile.empty() ? "default" : "detected";
+            nl::log::line("NL_EMU %s %s %s %s", sec, e->profile.empty() ? "-" : e->profile.c_str(), how, e->dol.c_str());
+        }
+    };
+    detectEmulators();
     // Cover und index.bin liegen auf dem Gerät selbst; ist es nicht beschreibbar, unter <data>/cache/<gerät>.
     auto deviceWritable = [&](const std::string& dev) {
         const nl::platform::Device* d = devTable.byName(dev);
@@ -469,6 +493,7 @@ int main(int argc, char** argv) {
 
     nl::platform::ScanWorker worker;
     nl::ScanRules scanRules = nl::defaultScanRules();
+    scanRules.zipConsoles = nl::zipConsoles(emulators);  // RetroArch-Kerne bekommen keine ZIPs (Spike M13)
     scanRules.paths = config.libraryRules.paths;  // [paths]/[extensions] aus config.ini (M12)
     for (const std::string& dev : libDevices) {
         auto bytes = nl::readAllWithFallback(fs, cacheDirOf(dev) + "/index.bin", kMaxIndexBytes);
@@ -606,7 +631,15 @@ int main(int argc, char** argv) {
 #else
         const bool hwAccess = ahbprotOff || config.debugIgnoreAhbprot;
 #endif
-        auto target = nl::preflightGame(fs, game, rootOf(game), emulators, &inputs, hwAccess);
+        // games.ini [emulator] <schlüssel> = <profil> gilt nur für dieses Spiel (Spec v2 6.3).
+        nl::EmulatorTable gameEmus = emulators;
+        if (const auto profile = overrides.emulatorProfile(game.key)) {
+            if (const auto r = nl::resolveEmulator(game.console, emulatorIni, foundApps, *profile)) {
+                if (r->badProfile) nl::log::line("NL_OPT_BAD emulator %s", game.key);
+                gameEmus.set(nl::consoleInfo(game.console).key, nl::EmulatorEntry{r->dol, r->args, r->fromIni, r->profile});
+            }
+        }
+        auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, hwAccess);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
             if (auto plan = prepareWii(game); plan.isOk()) {
                 if (config.debugWiiDryRun) {
@@ -763,9 +796,10 @@ int main(int argc, char** argv) {
     std::string emuDebugPending = config.debugEmuInstall;  // Komma-Liste; nach dem Laden der Liste installieren
     bool autostartPending = false;                         // debug autostart wartet auf diese Installation
     auto refreshEmuRows = [&]() {
-        const std::string text = sdOk ? readText(fs, std::string(nl::kInstalledEmusPath).c_str()) : std::string();
+        const std::string text = emuRoot.empty() ? std::string() : readText(fs, nl::installedEmusPath(emuRoot).c_str());
         emuScene.setRows(nl::emuRows(nl::parseInstalledEmus(text),
-                                     [&](std::string_view dol) { return nl::fileSize(fs, dol).has_value(); }, emuList));
+                                     [&](std::string_view dol) { return nl::fileSize(fs, nl::onRoot(dol, emuRoot)).has_value(); },
+                                     emuList));
     };
     auto startEmuList = [&]() {
         if (emu.running()) return;
@@ -777,8 +811,8 @@ int main(int argc, char** argv) {
         emuScene.setListState(nl::ui::EmulatorsScene::ListState::Loading);
     };
     auto startEmuInstall = [&](std::vector<nl::OscApp> apps) {
-        if (apps.empty() || !sdOk || emu.running()) return;
-        if (!emu.startInstall(fs, emuRepo, std::move(apps))) {
+        if (apps.empty() || emuRoot.empty() || emu.running()) return;
+        if (!emu.startInstall(fs, emuRepo, std::move(apps), emuRoot)) {
             nl::log::line("NL_WARN Emulator-Thread startet nicht");
             return;
         }
@@ -832,6 +866,7 @@ int main(int argc, char** argv) {
         } else {
             emuScene.setBusy(std::nullopt);
             refreshEmuRows();
+            detectEmulators();
             probeN64Dols();
             nl::log::line("NL_EMU_DONE not64=%d wii64=%d", not64Dol ? 1 : 0, wii64Dol ? 1 : 0);
             onDebugInstallDone();

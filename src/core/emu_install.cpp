@@ -81,9 +81,10 @@ struct Session {
     FileSystem& fs;
     EmuInstallIo& io;
     const OscApp& app;
+    std::string_view root;
 
     EmuInstallResult fail(EmuInstallError e, std::string detail) {
-        clearEmuTmp(fs);
+        clearEmuTmp(fs, root);
         if (io.log)
             io.log("NL_EMU_INSTALL " + app.name + " fail " + std::string(emuInstallErrorName(e)) + " " + detail);
         return EmuInstallResult{e, std::move(detail)};
@@ -109,11 +110,22 @@ std::string_view emuInstallErrorName(EmuInstallError e) {
     return "?";
 }
 
-void clearEmuTmp(FileSystem& fs) { clearDir(fs, std::string(kEmuTmpDir), 0); }
+std::string emuTmpDir(std::string_view root) { return std::string(root) + "/newlauncher/tmp"; }
 
-void recoverEmuInstall(FileSystem& fs) {
+std::string installedEmusPath(std::string_view root) {
+    return std::string(root) + "/newlauncher/emulators_installed.ini";
+}
+
+std::string onRoot(std::string_view sdPath, std::string_view root) {
+    if (sdPath.rfind("sd:", 0) != 0) return std::string(sdPath);
+    return std::string(root) + std::string(sdPath.substr(3));
+}
+
+void clearEmuTmp(FileSystem& fs, std::string_view root) { clearDir(fs, emuTmpDir(root), 0); }
+
+void recoverEmuInstall(FileSystem& fs, std::string_view root) {
     for (const EmuInfo& e : emulatorCatalog()) {
-        const std::string dol(e.dol), old = dol + ".old";
+        const std::string dol = onRoot(e.dol, root), old = dol + ".old";
         if (!exists(fs, old)) continue;
         if (exists(fs, dol))
             (void)fs.removeFile(old);
@@ -122,9 +134,10 @@ void recoverEmuInstall(FileSystem& fs) {
     }
 }
 
-EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_view repo, const OscApp& app) {
-    Session s{fs, io, app};
-    clearEmuTmp(fs);
+EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_view repo, const OscApp& app,
+                                 std::string_view root) {
+    Session s{fs, io, app, root};
+    clearEmuTmp(fs, root);
 
     // 1. Platz
     const u64 need = u64{app.zipSize} + u64{app.unzippedSize} + kSpareBytes;
@@ -132,7 +145,7 @@ EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_v
         return s.fail(EmuInstallError::NoSpace, std::to_string(need));
 
     // 2. Download in die Zwischenablage
-    const std::string tmp(kEmuTmpDir);
+    const std::string tmp = emuTmpDir(root);
     if (!fs.makeDirs(tmp).isOk()) return s.fail(EmuInstallError::Write, tmp);
     const std::string zip = tmp + "/" + app.name + ".zip";
     s.progress(EmuStep::Download, 0, app.zipSize);
@@ -188,7 +201,7 @@ EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_v
         s.progress(EmuStep::Move, done++, static_cast<u32>(files.size()));
         const std::string staged = stage + "/" + e->name;
         const bool apps = underApps(e->name);
-        const std::string dest = "sd:/" + (apps ? "apps/" + e->name.substr(5) : e->name);
+        const std::string dest = std::string(root) + "/" + (apps ? "apps/" + e->name.substr(5) : e->name);
         if (!fs.makeDirs(parentDir(dest)).isOk()) return s.fail(EmuInstallError::Write, dest);
         if (apps) {
             if (!replaceFile(fs, staged, dest).isOk()) return s.fail(EmuInstallError::Write, dest);
@@ -199,16 +212,17 @@ EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_v
 
     // 6. Stand eintragen
     std::map<std::string, InstalledEmu> installed;
-    if (auto old = fs.readAll(kInstalledEmusPath, kMaxInstalledIni); old.isOk()) {
+    const std::string installedPath = installedEmusPath(root);
+    if (auto old = fs.readAll(installedPath, kMaxInstalledIni); old.isOk()) {
         const auto& d = old.value();
         installed = parseInstalledEmus(std::string_view(reinterpret_cast<const char*>(d.data()), d.size()));
     }
     installed[app.name] = InstalledEmu{app.timestamp, app.version};
     const std::string ini = formatInstalledEmus(installed);
-    if (!fs.writeAtomic(kInstalledEmusPath, std::span<const u8>(reinterpret_cast<const u8*>(ini.data()), ini.size())).isOk())
-        return s.fail(EmuInstallError::Write, std::string(kInstalledEmusPath));
+    if (!fs.writeAtomic(installedPath, std::span<const u8>(reinterpret_cast<const u8*>(ini.data()), ini.size())).isOk())
+        return s.fail(EmuInstallError::Write, installedPath);
 
-    clearEmuTmp(fs);
+    clearEmuTmp(fs, root);
     if (io.log) io.log("NL_EMU_INSTALL " + app.name + " ok files=" + std::to_string(files.size()));
     return EmuInstallResult{};
 }

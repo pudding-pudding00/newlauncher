@@ -29,7 +29,7 @@ public:
     EmuWorker& operator=(const EmuWorker&) = delete;
 
     bool startFetchList(std::string repo);
-    bool startInstall(FileSystem& fs, std::string repo, std::vector<OscApp> apps);
+    bool startInstall(FileSystem& fs, std::string repo, std::vector<OscApp> apps, std::string root = "sd:");
     bool running() const { return running_; }
     void cancel();
     void join();  // eigenen Auftrag abbrechen und auf sein Ende warten; vor dem Aushängen
@@ -62,6 +62,7 @@ private:
     Job job_ = Job::List;
     FileSystem* fs_ = nullptr;
     std::string repo_;
+    std::string root_ = "sd:";  // Zielgerät der Installation
     std::vector<OscApp> apps_;
     volatile u8 step_ = 0;
     volatile u32 done_ = 0, total_ = 0, appIndex_ = 0, appCount_ = 0;

@@ -67,3 +67,14 @@ TEST_CASE("GameOverrides: [game ID6] ios lesen, Fehler melden, beim Speichern er
     CHECK(edit.toIni().get("game RMCP01", "video") == "pal60");  // unbekannte Schlüssel bleiben
     CHECK(edit.toIni().get("game RSBP01", "ios") == "300");       // auch ungültige Werte schreibt nur der Nutzer um
 }
+
+TEST_CASE("GameOverrides: [emulator] <schlüssel> = <profil> (M13)") {
+    const GameOverrides o = GameOverrides::fromIni(IniDoc::parse(
+        "[emulator]\nnes/Metroid (Test).zip = retroarch-fceumm\nsnes/a.sfc =\n"));
+    CHECK(o.emulatorProfile("nes/Metroid (Test).zip") == std::optional<std::string_view>("retroarch-fceumm"));
+    CHECK_FALSE(o.emulatorProfile("snes/a.sfc").has_value());
+    CHECK_FALSE(o.emulatorProfile("gb/x.gb").has_value());
+    GameOverrides edit = o;
+    edit.setN64Method("n64/b.z64", N64Method::Wii64);
+    CHECK(GameOverrides::fromIni(edit.toIni()).emulatorProfile("nes/Metroid (Test).zip").has_value());
+}

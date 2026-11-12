@@ -145,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Server per HTTPS auf localhost mit einer Test-CA (braucht --cover-server/--emu-server)")
     parser.add_argument("--tls-wrong-ca", action="store_true",
                         help="wie --tls, aber der Launcher bekommt eine fremde CA (Gegenprobe: Zertifikatsfehler)")
+    parser.add_argument("--detect-emus", action="store_true",
+                        help="ohne emulators.ini: argv_echo als apps/fceugx/boot.dol mit meta.xml (Erkennung, M13)")
     parser.add_argument("--sd-layout", choices=["default", "multi"], default="default",
                         help="multi: zusätzlicher NES-Ordner emu/nes mit [paths] und ein ZIP-ROM (M12)")
     args = parser.parse_args(argv)
@@ -233,6 +235,16 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             shutil.rmtree(sd / f"apps/{EMU_SERVER_APP}", ignore_errors=True)
             (sd / "newlauncher/emulators_installed.ini").unlink(missing_ok=True)
             set_ini_value(sd / "newlauncher/emulators.ini", "nes", "dol", f"sd:/apps/{EMU_SERVER_APP}/boot.dol")
+        if args.detect_emus:
+            # Erkennung statt emulators.ini: FCE Ultra GX liegt als argv_echo in apps/fceugx/ (Spec v2 6.3).
+            if not ARGV_ECHO_DOL.is_file():
+                print(f"SMOKE FEHLER: argv_echo.dol nicht gebaut: {ARGV_ECHO_DOL}")
+                return 2
+            (sd / "newlauncher/emulators.ini").unlink(missing_ok=True)
+            (sd / f"apps/{EMU_SERVER_APP}").mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ARGV_ECHO_DOL, sd / f"apps/{EMU_SERVER_APP}/boot.dol")
+            (sd / f"apps/{EMU_SERVER_APP}/meta.xml").write_text(
+                "<app><name>FCE Ultra GX</name></app>", encoding="utf-8")
         if getattr(args, "sd_ca", None) is not None:
             shutil.copyfile(args.sd_ca, sd / SD_TEST_CA)
         if args.sd_layout == "multi":

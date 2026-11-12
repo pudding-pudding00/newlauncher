@@ -34,9 +34,13 @@ public:
     std::optional<u8> wiiIos(std::string_view id6) const;
     const std::vector<std::string>& badKeys() const { return bad_; }  // "game <ID6>.ios" für NL_OPT_BAD
 
+    // [emulator] <schlüssel> = <profil> (Spec v2 6.3); leerer Wert → nullopt. Gültigkeit prüft resolveEmulator.
+    std::optional<std::string_view> emulatorProfile(std::string_view key) const;
+
 private:
     std::vector<std::pair<std::string, N64Method>> n64_;  // Einfügereihenfolge
     std::vector<std::pair<std::string, u8>> wiiIos_;      // ID6 → Slot
+    std::vector<std::pair<std::string, std::string>> emulator_;  // Spielschlüssel → Profil
     std::vector<std::pair<std::string, std::vector<std::string>>> others_;  // fremde Abschnitte, Rohzeilen
     std::vector<std::string> bad_;
 };

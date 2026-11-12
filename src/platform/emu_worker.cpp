@@ -48,12 +48,13 @@ bool EmuWorker::startFetchList(std::string repo) {
     return launch(Job::List);
 }
 
-bool EmuWorker::startInstall(FileSystem& fs, std::string repo, std::vector<OscApp> apps) {
+bool EmuWorker::startInstall(FileSystem& fs, std::string repo, std::vector<OscApp> apps, std::string root) {
     if (running_ || apps.empty()) return false;
     join();
     fs_ = &fs;
     repo_ = std::move(repo);
     apps_ = std::move(apps);
+    root_ = std::move(root);
     appCount_ = static_cast<u32>(apps_.size());
     return launch(Job::Install);
 }
@@ -155,7 +156,8 @@ void EmuWorker::runInstall(const volatile bool& cancel) {
         if (!net || !u) return HttpOutcome::Failed;
         return httpDownload(*u, dest, maxBytes, &cancel, &done_, logFn()).outcome;
     };
-    io.freeBytes = [] { return sdFreeBytes(); };
+    // Freier Platz ist nur für die SD bekannt; auf USB prüft erst das Schreiben (Fehler → Write).
+    io.freeBytes = [this] { return root_ == "sd:" ? sdFreeBytes() : ~u64{0}; };
     io.cancelled = [&cancel] { return cancel; };
     io.log = [this](std::string line) { log(std::move(line)); };
     io.progress = [this](EmuStep s, u32 done, u32 total) {
@@ -172,7 +174,7 @@ void EmuWorker::runInstall(const volatile bool& cancel) {
         if (cancel)
             r = EmuInstallResult{EmuInstallError::Cancelled, "queue"};
         else
-            r = installEmulator(*fs_, io, repo_, apps_[i]);
+            r = installEmulator(*fs_, io, repo_, apps_[i], root_);
         LWP_MutexLock(mutex_);
         results_.emplace_back(apps_[i].name, std::move(r));
         LWP_MutexUnlock(mutex_);

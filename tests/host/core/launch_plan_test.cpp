@@ -451,3 +451,26 @@ TEST_CASE("preflightGame: GC-FST-Ordner bekommt den Pfad mit Schrägstrich") {
     empty.addDir("sd:/games/Leer [GZLE01]");
     CHECK(gcErr(empty, gcGame("games/Leer [GZLE01]")).kind == LaunchFailure::RomMissing);
 }
+
+// --- M12-Review: Spiele auf weiteren USB-Partitionen (usb2 … usb8) ---
+TEST_CASE("preflightWii: Spiel auf usb2 bootet vom USB-Gerät") {
+    auto r = preflightWii(wiiGame(), "usb2:", kD2x, goodFrags(), false);
+    REQUIRE(r.isOk());
+    CHECK(r.value().usb);  // sonst liest das cIOS die USB-LBAs von der SD
+}
+
+TEST_CASE("preflightGame: GC auf usb2 → DeviceUnsupported, Nintendont kennt nur SD und die erste USB-Partition") {
+    auto fs = gcFs("usb2:");
+    const LaunchError e = gcErr(fs, gcGame(), true, "usb2:");
+    CHECK(e.kind == LaunchFailure::DeviceUnsupported);
+    CHECK(e.context == "USB 2");
+}
+
+TEST_CASE("preflightGame: ROM auf usb3 → DeviceUnsupported, die GX-Emulatoren hängen nur sd: und usb: ein") {
+    auto fs = fsWith(goodDol());
+    auto r = preflightGame(fs, nesGame(), "usb3:", emus(), nullptr, true);
+    REQUIRE_FALSE(r.isOk());
+    CHECK(r.error().kind == LaunchFailure::DeviceUnsupported);
+    CHECK(r.error().context == "USB 3");
+    CHECK(std::string(launchFailureName(LaunchFailure::DeviceUnsupported)) == "DeviceUnsupported");
+}

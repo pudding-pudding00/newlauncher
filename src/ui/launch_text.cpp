@@ -61,6 +61,7 @@ int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, cha
         case LaunchFailure::CiosNotD2x: msg = fill(tr(Str::CiosNotD2x), e.context); break;
         case LaunchFailure::WiiFsUnsupported: msg = fill(tr(Str::WiiFsUnsupported), e.context); break;
         case LaunchFailure::WiiFileBroken: msg = fill(tr(Str::WiiFileBroken), e.context); break;
+        case LaunchFailure::DeviceUnsupported: msg = fill(tr(Str::DeviceUnsupported), e.context); break;
     }
     return static_cast<int>(copyEllipsized(text, textCap, msg));
 }

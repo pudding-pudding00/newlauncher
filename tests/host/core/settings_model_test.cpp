@@ -56,8 +56,11 @@ TEST_CASE("stepSetting: Schalter, Gerät, Region") {
     CHECK_FALSE(c.sounds);
     stepSetting(c, SettingRow::Library, +1);
     CHECK(c.library == Config::LibraryDevice::Sd);
+    CHECK(c.libraryRules.sources.devices == std::vector<std::string>{"sd"});  // Quellenliste folgt der Wahl
+    CHECK_FALSE(c.libraryRules.sources.autoMode);
     stepSetting(c, SettingRow::Library, +1);
     CHECK(c.library == Config::LibraryDevice::Usb);
+    CHECK(c.libraryRules.sources.devices == std::vector<std::string>{"usb"});
     c.coverRegion = "JA";
     stepSetting(c, SettingRow::CoverRegion, +1);
     CHECK(c.coverRegion == "auto");

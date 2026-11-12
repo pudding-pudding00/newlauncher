@@ -138,7 +138,9 @@ nl::Config loadConfig(nl::FileSystem& fs, const DataDir& dataDir, std::string& t
         const auto& b = data.value();
         nl::log::line("NL_CONFIG ok");
         text.assign(reinterpret_cast<const char*>(b.data()), b.size());
-        return nl::configFromIni(nl::IniDoc::parse(text), kHasTls);
+        nl::Config config = nl::configFromIni(nl::IniDoc::parse(text), kHasTls);
+        for (const std::string& key : config.libraryRules.bad) nl::log::line("NL_CFG_BAD %s", key.c_str());
+        return config;
     }
     if (dataDir.writable) writeText(fs, configPath.c_str(), nl::defaultConfigText(kHasTls));
     nl::log::line("NL_CONFIG default");

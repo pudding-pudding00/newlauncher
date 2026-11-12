@@ -18,8 +18,8 @@ struct ConsoleInfo {
     const char* name;   // voller Name, z. B. "Nintendo 64"
     u8 generation;
     bool handheld;
-    const char* folder;                       // relativ zum Bibliotheksgerät (Spec 5.3)
-    std::array<const char*, 3> extensions;    // klein, mit Punkt; nullptr = unbenutzt
+    std::array<const char*, 2> folders;     // Standardordner relativ zum Quellgerät (Spec v2 5.3); nullptr = unbenutzt
+    std::array<const char*, 5> extensions;  // Standardendungen, klein, mit Punkt; nullptr = unbenutzt
 };
 
 const ConsoleInfo& consoleInfo(Console c);

@@ -58,6 +58,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     else if (lang == "en") c.language = Config::Language::En;
 
     if (ini.get("general", "library") == "sd") c.library = Config::LibraryDevice::Sd;
+    c.libraryRules = libraryRulesFromIni(ini);
     c.usbTimeoutSec = parseIntIn(ini.get("general", "usb_timeout"), 1, 120, c.usbTimeoutSec);
 
     const std::string_view mode = ini.get("theme", "mode");
@@ -118,6 +119,7 @@ std::vector<IniValue> configValues(const Config& c) {
         {"general", "language", lang},
         {"general", "library", c.library == Config::LibraryDevice::Sd ? "sd" : "usb"},
         {"general", "usb_timeout", std::to_string(c.usbTimeoutSec)},
+        {"library", "sources", sourcesToText(c.libraryRules.sources)},
         {"theme", "mode", mode},
         {"theme", "dark_from", formatClock(c.darkFromMin)},
         {"theme", "dark_to", formatClock(c.darkToMin)},
@@ -211,6 +213,8 @@ std::string defaultConfigText(bool tls) {
            "language = auto\n"
            "library = usb\n"
            "usb_timeout = 15\n"
+           "[library]\n"
+           "sources = auto\n"
            "[theme]\n"
            "mode = light\n"
            "dark_from = 19:00\n"

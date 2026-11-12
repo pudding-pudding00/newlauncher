@@ -36,7 +36,11 @@ void stepSetting(Config& c, SettingRow r, int dir) {
         case SettingRow::Music: c.music = !c.music; break;
         case SettingRow::Volume: c.musicVolume = std::clamp(c.musicVolume + dir * 10, 0, 100); break;
         case SettingRow::Sounds: c.sounds = !c.sounds; break;
-        case SettingRow::Library: c.library = cycle(c.library, 2, dir); break;
+        case SettingRow::Library:
+            c.library = cycle(c.library, 2, dir);
+            // Bis M12 Task 6 wählt die Zeile ein Gerät; die Quellenliste folgt, damit config.ini eindeutig bleibt.
+            c.libraryRules.sources = SourceSpec{false, {c.library == Config::LibraryDevice::Sd ? "sd" : "usb"}};
+            break;
         case SettingRow::CoverRegion: {
             const auto it = std::find(kRegions.begin(), kRegions.end(), std::string_view(c.coverRegion));
             const int n = static_cast<int>(kRegions.size());

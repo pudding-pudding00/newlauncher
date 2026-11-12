@@ -65,6 +65,7 @@ add_library(nl_core STATIC
     src/core/partition_table.cpp
     src/core/device_names.cpp
     src/core/data_dir.cpp
+    src/core/library_sources.cpp
     src/core/frag_list.cpp
     src/core/ios_info.cpp
     src/core/cover_download.cpp

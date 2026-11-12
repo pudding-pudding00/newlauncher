@@ -7,6 +7,7 @@
 #include "core/cover_download.hpp"
 #include "core/emu_catalog.hpp"
 #include "core/ini.hpp"
+#include "core/library_sources.hpp"
 #include "core/theme.hpp"
 
 namespace nl {
@@ -16,7 +17,8 @@ struct Config {
     enum class LibraryDevice : u8 { Usb, Sd };
 
     Language language = Language::Auto;
-    LibraryDevice library = LibraryDevice::Usb;
+    LibraryDevice library = LibraryDevice::Usb;  // Alt-Schlüssel [general] library; gilt bis M12 Task 6 für den Start
+    LibraryRules libraryRules;                   // [library] sources, [paths], [extensions] (Spec v2 5.2–5.4)
     int usbTimeoutSec = 15;
     ThemeMode themeMode = ThemeMode::Light;
     int darkFromMin = 19 * 60, darkToMin = 7 * 60;

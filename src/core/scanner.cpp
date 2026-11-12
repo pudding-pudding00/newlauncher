@@ -44,11 +44,11 @@ public:
     void roms(Console c) {
         const ConsoleInfo& info = consoleInfo(c);
         std::vector<DirEntry> entries;
-        if (!listSorted(info.folder, topMtime(info.folder), entries)) return;
+        if (!listSorted(info.folders[0], topMtime(info.folders[0]), entries)) return;
         for (const DirEntry& e : entries) {
             if (e.isDir || !hasExtension(e.name, info)) continue;
             if (!tick()) return;
-            IndexGame g{c, 0, std::string(info.key) + "/" + e.name, "", joinPath(info.folder, e.name), e.size};
+            IndexGame g{c, 0, std::string(info.key) + "/" + e.name, "", joinPath(info.folders[0], e.name), e.size};
             g.title = metaTitle(g).value_or(cleanTitle(stemOf(e.name)));
             add(std::move(g));
         }
@@ -57,11 +57,11 @@ public:
     void discs(Console c) {
         const ConsoleInfo& info = consoleInfo(c);
         std::vector<DirEntry> subdirs;
-        if (!listSorted(info.folder, topMtime(info.folder), subdirs)) return;
+        if (!listSorted(info.folders[0], topMtime(info.folders[0]), subdirs)) return;
         for (const DirEntry& d : subdirs) {
             if (cancelled_) return;
             if (!d.isDir) continue;
-            const std::string dir = joinPath(info.folder, d.name);
+            const std::string dir = joinPath(info.folders[0], d.name);
             std::vector<DirEntry> files;
             if (!listSorted(dir, d.mtime, files)) continue;
             std::set<std::string> names;

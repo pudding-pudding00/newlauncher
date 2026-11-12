@@ -409,6 +409,8 @@ int main(int argc, char** argv) {
     };
 
     nl::platform::ScanWorker worker;
+    nl::ScanRules scanRules = nl::defaultScanRules();
+    scanRules.paths = config.libraryRules.paths;  // [paths]/[extensions] aus config.ini (M12)
     bool haveIndex = false;
     if (auto data = nl::readAllWithFallback(fs, indexPath, kMaxIndexBytes); data.isOk()) {
         auto index = nl::readIndex(data.value());
@@ -416,13 +418,13 @@ int main(int argc, char** argv) {
             store.setGames(std::move(index).value(), metaPtr);
             haveIndex = true;
             nl::log::line("NL_LIBRARY games=%u source=index", static_cast<unsigned>(store.games().size()));
-            worker.start(fs, libRoot, &store.index(), metaPtr);  // Hintergrund-Scan (Schritt 6)
+            worker.start(fs, libRoot, scanRules, &store.index(), metaPtr);  // Hintergrund-Scan (Schritt 6)
         } else {
             nl::log::line("NL_WARN index.bin verworfen: %s", index.error().context.c_str());
         }
     }
     if (!haveIndex) {
-        worker.start(fs, libRoot, nullptr, metaPtr);
+        worker.start(fs, libRoot, scanRules, nullptr, metaPtr);
         std::optional<nl::Result<nl::ScanResult>> result;
         while (!(result = worker.take())) {
             startup.showScanning(worker.filesSeen());
@@ -919,7 +921,7 @@ int main(int argc, char** argv) {
                 break;
             case nl::ui::AppCommand::Rescan:
                 if (worker.running()) break;  // läuft schon, das Ergebnis kommt über den Scan-Pfad unten
-                if (!worker.start(fs, libRoot, nullptr, metaPtr)) {
+                if (!worker.start(fs, libRoot, scanRules, nullptr, metaPtr)) {
                     nl::log::line("NL_WARN Neu-Scan nicht gestartet");
                     break;
                 }

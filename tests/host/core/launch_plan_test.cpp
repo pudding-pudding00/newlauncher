@@ -420,3 +420,34 @@ TEST_CASE("preflightGame: Wii liefert Kind::Wii ohne Plan") {
     CHECK(r.value().kind == LaunchTarget::Kind::Wii);
     CHECK_FALSE(r.value().wii.has_value());
 }
+
+TEST_CASE("preflightGame: GC-Formate laut Nintendont (IsSupportedFileExt, FST)") {
+    for (const char* rel : {"games/A.gcm", "games/B.ciso", "games/C.cso", "gc/D.nkit.iso"}) {
+        CAPTURE(rel);
+        auto fs = gcFs("sd:", "$$Version:6.509", rel);
+        auto r = preflightGame(fs, gcGame(rel), "sd:", emus(), nullptr, true);
+        CHECK(r.isOk());
+    }
+    for (const char* rel : {"games/E.gcz", "games/F.rvz", "games/G.nkit.gcz"}) {
+        CAPTURE(rel);
+        auto fs = gcFs("sd:", "$$Version:6.509", rel);
+        const LaunchError e = gcErr(fs, gcGame(rel));
+        CHECK(e.kind == LaunchFailure::NinFormat);
+        CHECK(e.context == std::string(rel).substr(std::string(rel).rfind('.')));
+    }
+    CHECK(std::string(launchFailureName(LaunchFailure::NinFormat)) == "NinFormat");
+}
+
+TEST_CASE("preflightGame: GC-FST-Ordner bekommt den Pfad mit Schrägstrich") {
+    test::MemFileSystem fs;
+    fs.addFile(kNin, ninDol());
+    fs.addFile("sd:/games/Zelda v1.0 [GZLE01]/sys/boot.bin", std::vector<u8>(64, 0));
+    auto r = preflightGame(fs, gcGame("games/Zelda v1.0 [GZLE01]"), "sd:", emus(), nullptr, true);
+    REQUIRE(r.isOk());
+    CHECK(blobPath(r.value().dol.args[1]) == "/games/Zelda v1.0 [GZLE01]/");
+
+    test::MemFileSystem empty;  // Ordner ohne sys/boot.bin: fehlt
+    empty.addFile(kNin, ninDol());
+    empty.addDir("sd:/games/Leer [GZLE01]");
+    CHECK(gcErr(empty, gcGame("games/Leer [GZLE01]")).kind == LaunchFailure::RomMissing);
+}

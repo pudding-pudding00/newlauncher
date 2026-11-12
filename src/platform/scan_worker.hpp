@@ -19,8 +19,8 @@ public:
     ScanWorker(const ScanWorker&) = delete;
     ScanWorker& operator=(const ScanWorker&) = delete;
 
-    // previous wird kopiert; meta muss bis zum Ende des Scans gültig bleiben. false, wenn schon aktiv.
-    bool start(FileSystem& fs, std::string libRoot, const IndexData* previous, const MetaDb* meta);
+    // previous und rules werden kopiert; meta muss bis zum Ende des Scans gültig bleiben. false, wenn schon aktiv.
+    bool start(FileSystem& fs, std::string libRoot, const ScanRules& rules, const IndexData* previous, const MetaDb* meta);
     u32 filesSeen() const { return seen_; }
     bool running() const { return running_; }
     std::optional<Result<ScanResult>> take();  // fertiges Ergebnis genau einmal
@@ -35,6 +35,7 @@ private:
     mutex_t mutex_ = LWP_MUTEX_NULL;
     FileSystem* fs_ = nullptr;
     std::string root_;
+    ScanRules rules_;
     IndexData previous_;
     bool hasPrevious_ = false;
     const MetaDb* meta_ = nullptr;

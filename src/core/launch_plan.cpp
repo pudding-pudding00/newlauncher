@@ -65,8 +65,20 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
 
     const std::string rel = g.path != nullptr ? g.path : "";
     const std::string game = joinPath(libRoot, rel);
-    if (!exists(fs, game)) return err(LaunchFailure::RomMissing, game);
-    const std::string gamePath = ninGamePath(rel);
+    // Entpacktes Abbild (FST): Nintendont hängt „sys/boot.bin“ direkt an den Pfad, er braucht also „/“ am Ende.
+    const bool fst = exists(fs, joinPath(game, "sys/boot.bin"));
+    if (!fst && !exists(fs, game)) return err(LaunchFailure::RomMissing, game);
+    if (!fst) {
+        // Nintendont (IsSupportedFileExt, Stand c683db3) prüft nur die letzte Endung.
+        const std::size_t dot = rel.rfind('.');
+        const std::size_t slash = rel.rfind('/');
+        const std::string ext = dot == std::string::npos || (slash != std::string::npos && dot < slash) ? "" : rel.substr(dot);
+        std::string low = ext;
+        for (char& ch : low)
+            if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+        if (low != ".iso" && low != ".gcm" && low != ".cso" && low != ".ciso") return err(LaunchFailure::NinFormat, ext);
+    }
+    const std::string gamePath = fst ? ninGamePath(rel) + "/" : ninGamePath(rel);
     const bool usb = libRoot.substr(0, 4) == "usb:";
     auto cfg = buildNinCfg({gamePath, g.key != nullptr ? g.key : "", usb});
     if (!cfg.isOk()) {
@@ -120,6 +132,7 @@ const char* launchFailureName(LaunchFailure f) {
         case LaunchFailure::NinTooOld: return "NinTooOld";
         case LaunchFailure::NinPathTooLong: return "NinPathTooLong";
         case LaunchFailure::AhbProt: return "AhbProt";
+        case LaunchFailure::NinFormat: return "NinFormat";
         case LaunchFailure::CiosMissing: return "CiosMissing";
         case LaunchFailure::CiosNotD2x: return "CiosNotD2x";
         case LaunchFailure::WiiFsUnsupported: return "WiiFsUnsupported";

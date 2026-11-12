@@ -56,6 +56,7 @@ int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, cha
         case LaunchFailure::NinTooOld: msg = fill(tr(Str::NinTooOld), e.context); break;
         case LaunchFailure::NinPathTooLong: msg = fill(tr(Str::NinPathTooLong), e.context); break;
         case LaunchFailure::AhbProt: msg = tr(Str::AhbProt); break;
+        case LaunchFailure::NinFormat: msg = fill(tr(Str::NinFormat), e.context); break;
         case LaunchFailure::CiosMissing: msg = tr(Str::CiosMissing); break;
         case LaunchFailure::CiosNotD2x: msg = fill(tr(Str::CiosNotD2x), e.context); break;
         case LaunchFailure::WiiFsUnsupported: msg = fill(tr(Str::WiiFsUnsupported), e.context); break;

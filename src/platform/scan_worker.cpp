@@ -14,7 +14,8 @@ ScanWorker::~ScanWorker() {
     LWP_MutexDestroy(mutex_);
 }
 
-bool ScanWorker::start(FileSystem& fs, std::string libRoot, const IndexData* previous, const MetaDb* meta) {
+bool ScanWorker::start(FileSystem& fs, std::string libRoot, const ScanRules& rules, const IndexData* previous,
+                       const MetaDb* meta) {
     if (running_) return false;
     if (thread_ != LWP_THREAD_NULL) {  // vorheriger Lauf beendet, aber noch nicht abgeholt
         LWP_JoinThread(thread_, nullptr);
@@ -22,6 +23,7 @@ bool ScanWorker::start(FileSystem& fs, std::string libRoot, const IndexData* pre
     }
     fs_ = &fs;
     root_ = std::move(libRoot);
+    rules_ = rules;
     hasPrevious_ = previous != nullptr;
     previous_ = hasPrevious_ ? *previous : IndexData{};
     meta_ = meta;
@@ -56,7 +58,7 @@ void ScanWorker::cancelAndJoin() {
 
 void* ScanWorker::entry(void* arg) {
     auto* self = static_cast<ScanWorker*>(arg);
-    Result<ScanResult> r = scanLibrary(*self->fs_, self->root_, self->hasPrevious_ ? &self->previous_ : nullptr,
+    Result<ScanResult> r = scanLibrary(*self->fs_, self->root_, self->rules_, self->hasPrevious_ ? &self->previous_ : nullptr,
                                        self->meta_, &ScanWorker::onProgress, self);
     LWP_MutexLock(self->mutex_);
     self->result_.emplace(std::move(r));

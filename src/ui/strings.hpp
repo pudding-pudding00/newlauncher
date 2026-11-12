@@ -60,7 +60,8 @@
     X(WhyNotMapped, "nicht zugeordnet", "not mapped") \
     X(WhyNotInstalled, "Kanal nicht installiert", "channel not installed") \
     X(WhyDolMissing, "DOL fehlt", "DOL missing") \
-    X(NinMissing, "Nintendont fehlt.\nNicht gefunden: %s\nInstallieren: Einstellungen → Emulatoren", \
+    X(NinFormat, "Nintendont startet dieses Format nicht: %s", "Nintendont cannot start this format: %s") \
+    X(NinMissing,"Nintendont fehlt.\nNicht gefunden: %s\nInstallieren: Einstellungen → Emulatoren", \
       "Nintendont missing.\nNot found: %s\nInstall: Settings → Emulators") \
     X(NinUnknown, "Nintendont nicht erkannt.\n%s enthält keine Versionsangabe.", \
       "Nintendont not recognized.\n%s contains no version string.") \

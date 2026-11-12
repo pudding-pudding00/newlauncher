@@ -42,7 +42,16 @@ Jeder Punkt bekommt PASS oder FAIL. Bei FAIL kommt eine kurze Notiz in die Zeile
   fehlendem USB erscheint wie in v1 der Dialog „Erneut versuchen / SD verwenden“.
 - **W2/W3:** Ist ein Gerät nicht beschreibbar, landen dessen `index.bin` und Cover unter
   `<data>/cache/<gerät>/`.
-- **W4:** Lässt die Platte keine zweite Partition zu, bekommt der Punkt „n/a“ mit Begründung.
+- **W4:** Lässt die Platte keine zweite Partition zu, bekommt der Punkt „n/a“ mit Begründung. GameCube-Spiele
+  und ROMs auf `usb2` starten absichtlich nicht: Der Dialog „Gerät nicht unterstützt … USB 2“ erscheint, weil
+  Nintendont und die GX-Emulatoren nur SD und die erste USB-Partition lesen.
+- **W2:** Liegt `newlauncher/` nur auf USB, findet der Launcher den Ordner auch beim Start von SD. Er versucht
+  dafür bis zu ~2,5 s, USB einzuhängen.
+- **Einstellungen:** Die Zeile „Bibliotheksgerät“ zeigt „Automatisch“, „USB“ oder „SD“. Bei einer eigenen Liste
+  zeigt sie den Text aus `config.ini`. „Nach Neustart“ erscheint nur, wenn sich die Quellen seit dem Start
+  geändert haben.
+- **Große Platten:** Eine Partition hinter der 32-Bit-Sektorgrenze (2 TiB) wird nicht eingehängt. Sie erscheint
+  im Log als `NL_DEV - fat skipped … (hinter der 32-Bit-Sektorgrenze (2 TiB))`.
 - **W5:** Welches Gerät gewinnt, entscheidet die Reihenfolge in `[library] sources`. Bei `auto` gilt die
   Gerätereihenfolge.
 - **W6:** `.zip` ist für NES, SNES, GB, GBC und GBA Standardendung. Eine eigene `[extensions]`-Zeile ersetzt

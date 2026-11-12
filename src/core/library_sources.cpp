@@ -161,4 +161,15 @@ std::vector<std::string> orderedSources(const SourceSpec& s, std::span<const std
     return out;
 }
 
+bool operator==(const SourceSpec& a, const SourceSpec& b) {
+    return a.autoMode == b.autoMode && (a.autoMode || a.devices == b.devices);
+}
+
+SourceChoice sourceChoice(const SourceSpec& s) {
+    if (s.autoMode) return SourceChoice::Auto;
+    if (s.devices.size() == 1 && s.devices[0] == "usb") return SourceChoice::Usb;
+    if (s.devices.size() == 1 && s.devices[0] == "sd") return SourceChoice::Sd;
+    return SourceChoice::Custom;
+}
+
 }  // namespace nl

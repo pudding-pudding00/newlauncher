@@ -163,7 +163,7 @@ TEST_CASE_FIXTURE(Fixture, "kein Umlauf am Listenrand") {
 }
 
 TEST_CASE_FIXTURE(Fixture, "draw in 640 und 854, beide Sprachen: keine verworfenen Quads, alles im Bild") {
-    cfg.library = Config::LibraryDevice::Sd;  // Hinweis „nach Neustart“ mitzeichnen
+    cfg.libraryRules.sources = SourceSpec{false, {"usb2", "sd"}};  // Hinweis „nach Neustart“ und eigene Liste mitzeichnen
     for (Lang lang : {Lang::De, Lang::En}) {
         setLanguage(lang);
         for (float w : {640.0f, 854.0f}) {
@@ -196,23 +196,31 @@ TEST_CASE_FIXTURE(Fixture, "Klänge: Wert ändern Confirm, Fokus runter Move, au
     CHECK(press(Action::Confirm).sound == UiSound::Confirm);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Hinweis „nach Neustart“ vergleicht mit dem Gerät beim Start, nicht beim Öffnen") {
-    CHECK_FALSE(s.restartHintShown());
+TEST_CASE_FIXTURE(Fixture, "Hinweis „nach Neustart“ vergleicht mit den Quellen beim Start, nicht beim Öffnen") {
+    CHECK_FALSE(s.restartHintShown());  // auto, gestartet mit auto
     focusRow(SettingRow::Library);
-    press(Action::Right);  // USB → SD
+    press(Action::Right);  // Auto → USB
     CHECK(s.restartHintShown());
     press(Action::Back);   // gespeichert, geschlossen
     s.onEnter();           // wieder geöffnet: Neustart steht weiter aus
     CHECK(s.restartHintShown());
     focusRow(SettingRow::Library);
-    press(Action::Left);   // zurück auf das laufende Gerät
+    press(Action::Left);   // zurück auf auto
     CHECK_FALSE(s.restartHintShown());
 }
 
 TEST_CASE_FIXTURE(Fixture, "Hinweis „nach Neustart“ nach USB-Rückfall auf SD") {
-    s.setActiveLibrary(Config::LibraryDevice::Sd);  // config.ini sagt USB, gestartet wurde mit SD
+    cfg.libraryRules.sources = SourceSpec{false, {"usb"}};
+    s.setActiveSources(SourceSpec{false, {"sd"}});  // config.ini sagt USB, gestartet wurde mit SD
     CHECK(s.restartHintShown());
     focusRow(SettingRow::Library);
-    press(Action::Right);  // → SD, also das laufende Gerät
+    press(Action::Right);  // USB → SD, also das laufende Gerät
     CHECK_FALSE(s.restartHintShown());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Bibliothekszeile zeigt Automatisch statt USB, wenn sources = auto") {
+    setLanguage(Lang::De);
+    CHECK(s.valueTextFor(SettingRow::Library) == "Automatisch");
+    cfg.libraryRules.sources = SourceSpec{false, {"usb2", "sd"}};
+    CHECK(s.valueTextFor(SettingRow::Library) == "usb2,sd");
 }

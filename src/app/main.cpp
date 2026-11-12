@@ -382,7 +382,8 @@ int main(int argc, char** argv) {
             if (d.mounted) mounted.push_back(d.slot.name);
         libDevices = nl::orderedSources(sources, mounted);
     }
-    if (libDevices.empty()) libDevices.push_back("sd");  // v1: Rückfall auf die SD-Karte
+    const bool libFellBack = libDevices.empty();
+    if (libFellBack) libDevices.push_back("sd");  // v1: Rückfall auf die SD-Karte
     {
         std::string list;
         for (const std::string& d : libDevices) list += (list.empty() ? "" : ",") + d + ":";
@@ -508,7 +509,7 @@ int main(int argc, char** argv) {
     mainScene.setHomeMenu(&homeMenu);
     nl::ui::SettingsScene settings;
     settings.setConfig(&config);
-    settings.setActiveLibrary(libDevices.front() == "sd" ? nl::Config::LibraryDevice::Sd : nl::Config::LibraryDevice::Usb);
+    settings.setActiveSources(libFellBack ? nl::SourceSpec{false, {"sd"}} : sources);
     // Wurzel des Geräts, auf dem ein Spiel liegt ("usb2:"); Game::device zählt in store.devices().
     auto rootOf = [&](const nl::Game& game) {
         return game.device < store.devices().size() ? store.devices()[game.device] + ":" : std::string("sd:");

@@ -24,7 +24,8 @@ const Str kLabels[SettingsScene::kCount] = {
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
 
 bool sameSettings(const Config& a, const Config& b) {
-    return a.language == b.language && a.library == b.library && a.usbTimeoutSec == b.usbTimeoutSec &&
+    return a.language == b.language && a.library == b.library && a.libraryRules.sources == b.libraryRules.sources &&
+           a.usbTimeoutSec == b.usbTimeoutSec &&
            a.themeMode == b.themeMode && a.darkFromMin == b.darkFromMin && a.darkToMin == b.darkToMin &&
            a.music == b.music && a.musicVolume == b.musicVolume && a.sounds == b.sounds &&
            a.coverRegion == b.coverRegion;
@@ -60,12 +61,21 @@ std::string valueText(const Config& c, SettingRow r) {
             return buf;
         }
         case SettingRow::Sounds: return tr(c.sounds ? Str::On : Str::Off);
-        case SettingRow::Library: return tr(c.library == Config::LibraryDevice::Sd ? Str::DeviceSd : Str::DeviceUsb);
+        case SettingRow::Library:
+            switch (sourceChoice(c.libraryRules.sources)) {
+                case SourceChoice::Auto: return std::string(tr(Str::LangAuto));
+                case SourceChoice::Usb: return std::string(tr(Str::DeviceUsb));
+                case SourceChoice::Sd: return std::string(tr(Str::DeviceSd));
+                case SourceChoice::Custom: break;
+            }
+            return sourcesToText(c.libraryRules.sources);
         case SettingRow::CoverRegion: return c.coverRegion == "auto" ? std::string(tr(Str::LangAuto)) : c.coverRegion;
         default: return {};
     }
 }
 }  // namespace
+
+std::string SettingsScene::valueTextFor(SettingRow row) const { return live_ != nullptr ? valueText(*live_, row) : std::string(); }
 
 void SettingsScene::onEnter() {
     focus_ = 0;

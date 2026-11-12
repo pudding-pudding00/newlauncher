@@ -40,6 +40,11 @@ LibraryRules libraryRulesFromIni(const IniDoc& ini);
 ConsolePaths defaultConsolePaths(Console c);
 
 std::string sourcesToText(const SourceSpec& s);  // "auto" bzw. "usb,usb2,sd"
+bool operator==(const SourceSpec& a, const SourceSpec& b);
+
+// Wert der Einstellungszeile „Bibliotheksgerät“: auto, nur usb, nur sd oder eine eigene Liste aus config.ini.
+enum class SourceChoice : u8 { Auto, Usb, Sd, Custom };
+SourceChoice sourceChoice(const SourceSpec& s);
 
 // Die zu scannenden Geräte in Scan-Reihenfolge: auto = alle eingehängten in Gerätereihenfolge, sonst die Liste,
 // soweit eingehängt. `mounted` darf „sd:“ oder „USB“ enthalten; zurück kommen die Namen aus der Quellenliste.

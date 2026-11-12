@@ -27,4 +27,8 @@ std::string deviceFromArgv0(std::string_view argv0);
 // Stufen 1–4 verlangen ein beschreibbares Gerät.
 DataDirChoice chooseDataDir(std::string_view argv0, std::span<const DataCandidate> devs);
 
+// Lohnt es, vor der Wahl USB einzuhängen? Ja, wenn das Startgerät ein USB-Gerät ist, das (noch) fehlt, oder
+// wenn kein eingehängtes Gerät newlauncher/ hat und noch kein USB-Gerät dabei ist (Ordner nur auf USB).
+bool wantUsbForData(std::string_view argv0, std::span<const DataCandidate> devs);
+
 }  // namespace nl

@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <malloc.h>
+#include <unistd.h>
 #include <memory>
 #include <optional>
 #include <string>
@@ -189,15 +190,27 @@ struct Frame {
     }
 };
 
+constexpr int kDataUsbTries = 6;           // höchstens ~2,5 s Wartezeit vor der Datenordner-Wahl
+constexpr u32 kDataUsbRetryUs = 500 * 1000;
+
 // Hängt bei Start von USB das USB-Gerät sofort ein (der Ordner kann dort liegen), wählt <data> und legt ihn an.
 DataDir chooseData(nl::FileSystem& fs, const char* argv0) {
     auto& table = nl::platform::deviceTable();
-    if (nl::deviceFromArgv0(argv0).rfind("usb", 0) == 0) static_cast<void>(table.mountUsb());
-    std::vector<nl::DataCandidate> candidates;
-    for (const nl::platform::Device& d : table.devices()) {
-        if (!d.mounted) continue;
-        const bool hasDir = fs.list(d.slot.name + ":/newlauncher").isOk();
-        candidates.push_back(nl::DataCandidate{d.slot.name, d.writable, hasDir});
+    auto collect = [&] {
+        std::vector<nl::DataCandidate> out;
+        for (const nl::platform::Device& d : table.devices()) {
+            if (!d.mounted) continue;
+            const bool hasDir = fs.list(d.slot.name + ":/newlauncher").isOk();
+            out.push_back(nl::DataCandidate{d.slot.name, d.writable, hasDir});
+        }
+        return out;
+    };
+    std::vector<nl::DataCandidate> candidates = collect();
+    // Ordner kann auf USB liegen (Start von USB oder nichts auf SD): kurz mehrmals versuchen, das Laufwerk
+    // braucht nach dem Einschalten etwas. SD-Nutzer mit newlauncher/ warten nie.
+    for (int attempt = 0; attempt < kDataUsbTries && nl::wantUsbForData(argv0, candidates); ++attempt) {
+        if (attempt > 0) usleep(kDataUsbRetryUs);
+        if (table.mountUsb()) candidates = collect();
     }
     const nl::DataDirChoice choice = nl::chooseDataDir(argv0, candidates);
     DataDir out{choice.path, !choice.path.empty(), !choice.path.empty() && !choice.readOnly};

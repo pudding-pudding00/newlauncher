@@ -57,4 +57,16 @@ DataDirChoice chooseDataDir(std::string_view argv0, std::span<const DataCandidat
     return DataDirChoice{"", false, true};
 }
 
+bool wantUsbForData(std::string_view argv0, std::span<const DataCandidate> devs) {
+    bool anyUsb = false;
+    bool anyDir = false;
+    for (const DataCandidate& d : devs) {
+        anyUsb = anyUsb || isUsb(d);
+        anyDir = anyDir || d.hasDataDir;
+    }
+    const std::string boot = deviceFromArgv0(argv0);
+    if (boot.rfind("usb", 0) == 0 && find(devs, boot) == nullptr) return true;
+    return !anyDir && !anyUsb;
+}
+
 }  // namespace nl

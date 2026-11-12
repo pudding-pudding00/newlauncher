@@ -72,3 +72,22 @@ TEST_CASE("data_dir: nichts beschreibbar → nur lesend") {
     CHECK(c.readOnly);
     CHECK(chooseDataDir("", {}).path.empty());
 }
+
+// M12-Review: <data> nur auf USB, Start von SD – USB muss vor der Wahl eingehängt werden.
+TEST_CASE("data_dir: wantUsbForData – Start von USB, USB aber noch nicht eingehängt") {
+    const std::vector<DataCandidate> sdOnly{{"sd", true, true}};
+    CHECK(wantUsbForData("usb:/apps/newlauncher/boot.dol", sdOnly));
+    CHECK(wantUsbForData("usb2:/apps/newlauncher/boot.dol", sdOnly));
+    const std::vector<DataCandidate> withUsb{{"sd", true, true}, {"usb", true, false}};
+    CHECK_FALSE(wantUsbForData("usb:/apps/newlauncher/boot.dol", withUsb));
+}
+
+TEST_CASE("data_dir: wantUsbForData – kein Gerät hat newlauncher/, USB könnte ihn haben") {
+    const std::vector<DataCandidate> sdEmpty{{"sd", true, false}};
+    CHECK(wantUsbForData("sd:/apps/newlauncher/boot.dol", sdEmpty));
+    CHECK(wantUsbForData("", {}));
+    const std::vector<DataCandidate> sdWithDir{{"sd", true, true}};
+    CHECK_FALSE(wantUsbForData("sd:/apps/newlauncher/boot.dol", sdWithDir));  // SD-Nutzer warten nie
+    const std::vector<DataCandidate> usbMounted{{"sd", true, false}, {"usb", true, false}};
+    CHECK_FALSE(wantUsbForData("", usbMounted));  // USB schon da: nichts zu holen
+}

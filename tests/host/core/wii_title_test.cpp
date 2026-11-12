@@ -29,6 +29,7 @@ std::vector<u8> tmd(u64 titleId, u16 bootIndex, const std::vector<TestContent>& 
     std::vector<u8> b(0x1E4 + 36 * room, 0);
     put32(b, 0, 0x00010001);
     put64(b, 0x18C, titleId);
+    put16(b, 0x1DC, 0xFF00);  // Titelversion (Stub-Kennung bei cIOS-Slots)
     put16(b, 0x1DE, static_cast<u16>(cs.size()));
     put16(b, 0x1E0, bootIndex);
     for (std::size_t i = 0; i < cs.size() && i < room; ++i) {
@@ -65,6 +66,7 @@ TEST_CASE("parseTmd liest Title-ID, Boot-Index und Contents") {
     const TmdInfo& t = r.value();
     CHECK(t.titleId == 0x000100014E4C5443ULL);
     CHECK(t.bootIndex == 1);
+    CHECK(t.titleVersion == 0xFF00);
     REQUIRE(t.contents.size() == 2);
     CHECK(t.contents[1].size == 0x1234);
     CHECK(t.contents[1].type == 1);

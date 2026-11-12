@@ -141,6 +141,7 @@ nl::Config loadConfig(nl::FileSystem& fs, const DataDir& dataDir, std::string& t
         text.assign(reinterpret_cast<const char*>(b.data()), b.size());
         nl::Config config = nl::configFromIni(nl::IniDoc::parse(text), kHasTls);
         for (const std::string& key : config.libraryRules.bad) nl::log::line("NL_CFG_BAD %s", key.c_str());
+        for (const std::string& key : config.badKeys) nl::log::line("NL_CFG_BAD %s", key.c_str());
         return config;
     }
     if (dataDir.writable) writeText(fs, configPath.c_str(), nl::defaultConfigText(kHasTls));
@@ -418,6 +419,7 @@ int main(int argc, char** argv) {
         store.loadFavorites(readIni(fs, favoritesPath.c_str()));
         store.loadHistory(readIni(fs, historyPath.c_str()));
         overrides = nl::GameOverrides::fromIni(readIni(fs, gamesPath.c_str()));
+        for (const std::string& key : overrides.badKeys()) nl::log::line("NL_OPT_BAD %s", key.c_str());
         vcMapText = readText(fs, vcMapPath.c_str());
         vcMapping = nl::VcMap::fromIni(nl::IniDoc::parse(vcMapText));
     }
@@ -552,12 +554,20 @@ int main(int argc, char** argv) {
     // Spec 9: Preflight, Verlauf, Chainload. Kehrt nur zurück, wenn der Start scheitert (dann mit Dialog).
     // Wii-Spiele (M9 Task 5): cIOS prüfen, Fragmentliste rechnen und gegenprüfen, dann preflightWii.
     auto prepareWii = [&](const nl::Game& game) {
-        const nl::CiosStatus cios = nl::platform::readCiosStatus();
+        // Spec v2 6.2: Slots 200–255 lesen, dann games.ini > config.ini > Automatik.
+        const std::vector<nl::CiosEntry> found = nl::platform::scanCios();
+        for (const nl::CiosEntry& e : found) {
+            nl::log::line("NL_CIOS_SLOT %u %s base=%u ver=%s", static_cast<unsigned>(e.slot), nl::ciosKindName(e.kind),
+                          static_cast<unsigned>(e.base), e.version.c_str());
+        }
+        const std::string id6 = game.key != nullptr ? std::string(game.key).substr(0, 6) : std::string();
+        const nl::CiosChoice choice = nl::chooseCios(found, overrides.wiiIos(id6), config.wiiIos);
+        const nl::CiosStatus cios = nl::ciosStatusFor(found, choice);
+        nl::log::line("NL_WII_IOS %u %s", static_cast<unsigned>(cios.slot), choice.forced ? "forced" : "auto");
         switch (cios.state) {
             case nl::CiosState::D2x: nl::log::line("NL_CIOS ok base=%u ver=%s", static_cast<unsigned>(cios.base), cios.version.c_str()); break;
             case nl::CiosState::Unverified: nl::log::line("NL_CIOS unverified"); break;
             case nl::CiosState::Missing: nl::log::line("NL_CIOS missing"); break;
-            case nl::CiosState::NotD2x: nl::log::line("NL_CIOS not_d2x %s", cios.version.c_str()); break;
         }
         u32 partLba = 0;
         const std::string libRoot = rootOf(game);
@@ -661,7 +671,7 @@ int main(int argc, char** argv) {
             input.shutdown();
             nl::platform::unmountAll();
             nl::platform::shutdownVideo();
-            nl::launch::bootWiiGame(booter.value());
+            nl::launch::bootWiiGame(booter.value(), target.value().wii->iosSlot);
         }
 
         const nl::LaunchPlan& plan = target.value().dol;

@@ -20,7 +20,6 @@ namespace nl::platform {
 namespace {
 
 constexpr u32 kBounceSectors = 64;
-constexpr u64 kCiosTitle = 0x00000001000000F9ull;
 
 struct AlignedFree {
     void operator()(void* p) const { std::free(p); }
@@ -161,29 +160,61 @@ Result<FragList, LaunchError> computeWiiFrags(FileSystem& fs, const Game& g, con
     return R::ok(std::move(list.value()));
 }
 
-CiosStatus readCiosStatus() {
+std::optional<CiosEntry> readCiosEntry(u8 slot) {
+    const u64 title = (u64{1} << 32) | slot;
     u32 size = 0;
-    if (ES_GetStoredTMDSize(kCiosTitle, &size) < 0 || size == 0) return classifyCios(false, std::nullopt);
-    std::optional<IosInfo> info;
+    if (ES_GetStoredTMDSize(title, &size) < 0 || size == 0) return std::nullopt;
     AlignedBuf tmdBuf = alignedAlloc(size);
-    if (tmdBuf && ES_GetStoredTMD(kCiosTitle, reinterpret_cast<signed_blob*>(tmdBuf.get()), size) >= 0) {
-        auto tmd = parseTmd(std::span<const u8>(tmdBuf.get(), size));
-        // Wie WiiFlow (IOS_GetInfo, TMD+0x1E4): d2x legt ios_info_t an den Anfang des ersten Content-Eintrags.
-        std::optional<u32> cid;
-        if (tmd.isOk() && !tmd.value().contents.empty()) cid = tmd.value().contents.front().id;
-        // nand_titles hält ISFS für die ganze Sitzung offen; ISFS_Initialize ist dann ein No-Op.
-        if (cid && ISFS_Initialize() >= 0) {
-            char path[64];
-            std::snprintf(path, sizeof path, "/title/00000001/000000f9/content/%08x.app", static_cast<unsigned>(*cid));
-            const s32 fd = ISFS_Open(path, ISFS_OPEN_READ);
-            if (fd >= 0) {
-                AlignedBuf head = alignedAlloc(0x40);
-                if (head && ISFS_Read(fd, head.get(), 0x40) == 0x40) info = parseIosInfo(std::span<const u8>(head.get(), 0x40));
-                ISFS_Close(fd);
-            }
+    if (!tmdBuf || ES_GetStoredTMD(title, reinterpret_cast<signed_blob*>(tmdBuf.get()), size) < 0) return std::nullopt;
+    auto tmd = parseTmd(std::span<const u8>(tmdBuf.get(), size));
+    if (!tmd.isOk()) return std::nullopt;
+    const TmdInfo& t = tmd.value();
+
+    // Wie WiiFlow (IOS_GetInfo, TMD+0x1E4): d2x legt ios_info_t an den Anfang des ersten Content-Eintrags.
+    std::optional<IosInfo> info;
+    // nand_titles hält ISFS für die ganze Sitzung offen; ISFS_Initialize ist dann ein No-Op.
+    if (!t.contents.empty() && ISFS_Initialize() >= 0) {
+        char path[64];
+        std::snprintf(path, sizeof path, "/title/00000001/%08x/content/%08x.app", static_cast<unsigned>(slot),
+                      static_cast<unsigned>(t.contents.front().id));
+        const s32 fd = ISFS_Open(path, ISFS_OPEN_READ);
+        if (fd >= 0) {
+            AlignedBuf head = alignedAlloc(0x40);
+            if (head && ISFS_Read(fd, head.get(), 0x40) == 0x40) info = parseIosInfo(std::span<const u8>(head.get(), 0x40));
+            ISFS_Close(fd);
         }
     }
-    return classifyCios(true, info);
+
+    CiosEntry e;
+    e.slot = slot;
+    e.titleVersion = t.titleVersion;
+    e.kind = classifySlot(t.titleVersion, static_cast<u32>(t.contents.size()), info);
+    if (e.kind == CiosKind::D2x) {
+        e.base = info->baseios;
+        e.name = info->name;
+        e.version = info->versionString;
+    }
+    return e;
+}
+
+std::vector<CiosEntry> scanCios() {
+    u32 count = 0;
+    if (ES_GetNumTitles(&count) < 0 || count == 0) return {};
+    AlignedBuf buf = alignedAlloc(count * sizeof(u64));
+    if (!buf) return {};
+    auto* ids = reinterpret_cast<u64*>(buf.get());
+    if (ES_GetTitles(ids, count) < 0) return {};
+    std::vector<u8> slots;
+    for (u32 i = 0; i < count; ++i) {
+        const u64 id = ids[i];
+        const u32 lo = static_cast<u32>(id);
+        if ((id >> 32) == 1 && lo >= kCiosFirstSlot && lo <= kCiosLastSlot) slots.push_back(static_cast<u8>(lo));
+    }
+    std::sort(slots.begin(), slots.end());
+    std::vector<CiosEntry> out;
+    for (u8 slot : slots)
+        if (auto e = readCiosEntry(slot)) out.push_back(std::move(*e));
+    return out;
 }
 
 }  // namespace nl::platform

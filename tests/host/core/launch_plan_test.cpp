@@ -1,6 +1,7 @@
 #include "core/launch_args.hpp"
 #include "core/launch_layout.hpp"
 #include "core/launch_plan.hpp"
+#include "core/cios_scan.hpp"
 #include "support/dol_images.hpp"
 #include "support/mem_fs.hpp"
 #include <doctest/doctest.h>
@@ -340,22 +341,34 @@ TEST_CASE("preflightWii: Wii fehlt cIOS") {
     auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::Missing, 56, ""}, goodFrags(), false);
     REQUIRE_FALSE(r.isOk());
     CHECK(r.error().kind == LaunchFailure::CiosMissing);
+    CHECK(r.error().context == "249");  // Dialog nennt den Slot
     CHECK(std::string(launchFailureName(LaunchFailure::CiosMissing)) == "CiosMissing");
 }
 
-TEST_CASE("preflightWii: falsches cIOS mit Namen") {
-    auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::NotD2x, 38, "cios"}, goodFrags(), false);
+TEST_CASE("preflightWii: festgelegter Slot fehlt → CiosMissing mit Slot, kein Rückfall") {
+    const std::vector<CiosEntry> found{CiosEntry{249, CiosKind::D2x, 56, 21, "d2x", "v10"}};
+    const CiosStatus st = ciosStatusFor(found, chooseCios(found, u8{222}, std::nullopt));
+    auto r = preflightWii(wiiGame(), "usb:", st, goodFrags(), false);
     REQUIRE_FALSE(r.isOk());
-    CHECK(r.error().kind == LaunchFailure::CiosNotD2x);
-    CHECK(r.error().context == "cios");
+    CHECK(r.error().kind == LaunchFailure::CiosMissing);
+    CHECK(r.error().context == "222");
 }
 
 TEST_CASE("preflightWii: Dry-Run trotz fehlendem cIOS") {
-    for (CiosState s : {CiosState::Missing, CiosState::NotD2x}) {
-        auto r = preflightWii(wiiGame(), "usb:", CiosStatus{s, 56, ""}, goodFrags(), true);
-        REQUIRE(r.isOk());
-        CHECK(r.value().cios.state == s);
-    }
+    auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::Missing, 56, ""}, goodFrags(), true);
+    REQUIRE(r.isOk());
+    CHECK(r.value().cios.state == CiosState::Missing);
+    CHECK(r.value().iosSlot == kDefaultCiosSlot);
+}
+
+TEST_CASE("preflightWii: Plan trägt den gewählten Slot") {
+    const std::vector<CiosEntry> found{CiosEntry{249, CiosKind::Stub, 56, 0xFF00, "", ""},
+                                       CiosEntry{250, CiosKind::D2x, 57, 21, "d2x", "v11"}};
+    auto r = preflightWii(wiiGame(), "usb:", ciosStatusFor(found, chooseCios(found, std::nullopt, std::nullopt)),
+                          goodFrags(), false);
+    REQUIRE(r.isOk());
+    CHECK(r.value().iosSlot == 250);
+    CHECK(r.value().cios.base == 57);
 }
 
 TEST_CASE("preflightWii: unbestätigtes cIOS startet") {
@@ -384,7 +397,6 @@ TEST_CASE("preflightWii: NTFS-Fehler wird WiiFsUnsupported") {
     CHECK(r.error().kind == LaunchFailure::WiiFsUnsupported);
     CHECK(std::string(launchFailureName(LaunchFailure::WiiFsUnsupported)) == "WiiFsUnsupported");
     CHECK(std::string(launchFailureName(LaunchFailure::WiiFileBroken)) == "WiiFileBroken");
-    CHECK(std::string(launchFailureName(LaunchFailure::CiosNotD2x)) == "CiosNotD2x");
 }
 
 TEST_CASE("preflightWii: Split-Teil fehlt wird RomMissing") {

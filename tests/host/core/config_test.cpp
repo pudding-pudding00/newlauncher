@@ -270,3 +270,16 @@ TEST_CASE("configToIniText schreibt [library] und bewahrt Kommentare und [paths]
     const Config r = configFromIni(IniDoc::parse(after));
     CHECK(r.libraryRules.sources.devices == std::vector<std::string>{"usb2", "sd"});
 }
+
+TEST_CASE("Config: [wii] ios (M13, Spec 6.2)") {
+    CHECK_FALSE(configFromIni(IniDoc::parse("")).wiiIos.has_value());
+    CHECK_FALSE(configFromIni(IniDoc::parse("[wii]\nios = auto\n")).wiiIos.has_value());
+    const Config c = configFromIni(IniDoc::parse("[wii]\nios = 250\n"));
+    CHECK(c.wiiIos == std::optional<u8>(250));
+    CHECK(c.badKeys.empty());
+    const Config bad = configFromIni(IniDoc::parse("[wii]\nios = 199\n"));
+    CHECK_FALSE(bad.wiiIos.has_value());
+    CHECK(bad.badKeys == std::vector<std::string>{"wii.ios"});
+    CHECK(configToIniText(c, "").find("[wii]\nios = 250\n") != std::string::npos);
+    CHECK(configToIniText(Config{}, "").find("[wii]\nios = auto\n") != std::string::npos);
+}

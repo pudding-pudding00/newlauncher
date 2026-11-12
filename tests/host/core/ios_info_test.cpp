@@ -32,16 +32,12 @@ TEST_CASE("ios_info: d2x v10 Basis 56") {
     CHECK(i->baseios == 56);
     CHECK(i->name == "d2x");
     CHECK(i->versionString == "v10");
-    const CiosStatus s = classifyCios(true, i);
-    CHECK(s.state == CiosState::D2x);
-    CHECK(s.base == 56);
-    CHECK(s.version == "v10");
 }
 
 TEST_CASE("ios_info: Basis 57 wird übernommen") {
-    const CiosStatus s = classifyCios(true, parseIosInfo(info(0x1EE7C105, 57, "d2x", "v11-beta1")));
-    CHECK(s.state == CiosState::D2x);
-    CHECK(s.base == 57);
+    const auto i = parseIosInfo(info(0x1EE7C105, 57, "d2x", "v11-beta1"));
+    REQUIRE(i.has_value());
+    CHECK(i->baseios == 57);
 }
 
 TEST_CASE("ios_info: falsche Magic") {
@@ -59,21 +55,4 @@ TEST_CASE("ios_info: Namen ohne NUL werden auf 16 Zeichen begrenzt") {
     REQUIRE(i.has_value());
     CHECK(i->name == std::string(16, 'A'));
     CHECK(i->versionString == std::string(16, 'B'));
-}
-
-TEST_CASE("ios_info: kein TMD") {
-    const CiosStatus s = classifyCios(false, parseIosInfo(info(0x1EE7C105, 56, "d2x", "v10")));
-    CHECK(s.state == CiosState::Missing);
-}
-
-TEST_CASE("ios_info: Info unlesbar") {
-    const CiosStatus s = classifyCios(true, std::nullopt);
-    CHECK(s.state == CiosState::Unverified);
-    CHECK(s.base == 56);
-}
-
-TEST_CASE("ios_info: Waninkoko") {
-    const CiosStatus s = classifyCios(true, parseIosInfo(info(0x1EE7C105, 38, "cios", "rev21")));
-    CHECK(s.state == CiosState::NotD2x);
-    CHECK(s.version == "cios");  // Kontext für den Dialog „Slot 249 enthält %s“
 }

@@ -92,3 +92,11 @@ TEST_CASE("entries liefert alle Paare in Dateireihenfolge, auch mit gleichem Sch
     CHECK(e[1].second == "b = c");
     CHECK(e[2].second == "d");
 }
+
+TEST_CASE("IniDoc::sectionNames in Dateireihenfolge") {
+    const IniDoc d = IniDoc::parse("a = 1\n[eins]\nx = 1\n[zwei]\n[eins]\ny = 2\n");
+    const auto names = d.sectionNames();
+    REQUIRE(names.size() == 2);  // Schlüssel vor dem ersten Abschnitt zählen nicht
+    CHECK(names[0] == "eins");
+    CHECK(names[1] == "zwei");
+}

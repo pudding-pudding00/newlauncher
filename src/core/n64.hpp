@@ -20,7 +20,8 @@ const char* n64MethodKey(N64Method m);    // "vc" | "not64" | "wii64" (Dateiwert
 const char* n64MethodLabel(N64Method m);  // "VC-Inject" | "Not64" | "Wii64" (Anzeige)
 std::optional<N64Method> parseN64Method(std::string_view s);  // getrimmt, Groß/klein egal
 
-// games.ini. Nur [n64_method] wird gelesen und geschrieben; andere Abschnitte gehen beim Speichern verloren.
+// games.ini. [n64_method] wird gelesen und geschrieben; aus [game <ID6>] liest M13 den Schlüssel ios (Spec v2
+// 6.2/7.1). Alle anderen Abschnitte und Schlüssel bleiben beim Speichern erhalten (ohne Kommentare).
 class GameOverrides {
 public:
     static GameOverrides fromIni(const IniDoc& doc);
@@ -29,8 +30,15 @@ public:
     IniDoc toIni() const;
     std::size_t size() const { return n64_.size(); }
 
+    // [game <id6>] ios: 200–255; "auto", fehlend oder ungültig → nullopt. Ungültige stehen in badKeys().
+    std::optional<u8> wiiIos(std::string_view id6) const;
+    const std::vector<std::string>& badKeys() const { return bad_; }  // "game <ID6>.ios" für NL_OPT_BAD
+
 private:
     std::vector<std::pair<std::string, N64Method>> n64_;  // Einfügereihenfolge
+    std::vector<std::pair<std::string, u8>> wiiIos_;      // ID6 → Slot
+    std::vector<std::pair<std::string, std::vector<std::string>>> others_;  // fremde Abschnitte, Rohzeilen
+    std::vector<std::string> bad_;
 };
 
 }  // namespace nl

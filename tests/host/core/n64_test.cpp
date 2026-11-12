@@ -48,3 +48,22 @@ TEST_CASE("GameOverrides setzen, löschen, serialisieren") {
     CHECK(text.find("n64/k2.z64") == text.rfind("n64/k2.z64"));
     CHECK(GameOverrides::fromIni(IniDoc::parse(text)).n64Method("n64/k2.z64") == N64Method::Not64);
 }
+
+TEST_CASE("GameOverrides: [game ID6] ios lesen, Fehler melden, beim Speichern erhalten (M13)") {
+    const GameOverrides o = GameOverrides::fromIni(IniDoc::parse(
+        "[n64_method]\nn64/a.z64 = vc\n[game RMCP01]\nios = 222\nvideo = pal60\n[game RSBP01]\nios = 300\n[game RZDP01]\nios = auto\n"));
+    CHECK(o.wiiIos("RMCP01") == std::optional<u8>(222));
+    CHECK_FALSE(o.wiiIos("RSBP01").has_value());
+    CHECK_FALSE(o.wiiIos("RZDP01").has_value());
+    CHECK_FALSE(o.wiiIos("RXXP01").has_value());
+    CHECK(o.badKeys() == std::vector<std::string>{"game RSBP01.ios"});
+
+    GameOverrides edit = o;
+    edit.setN64Method("n64/b.z64", N64Method::Not64);  // N64-Speichern darf [game …] nicht löschen
+    const GameOverrides back = GameOverrides::fromIni(edit.toIni());
+    CHECK(back.wiiIos("RMCP01") == std::optional<u8>(222));
+    CHECK(back.n64Method("n64/a.z64") == N64Method::Vc);
+    CHECK(back.n64Method("n64/b.z64") == N64Method::Not64);
+    CHECK(edit.toIni().get("game RMCP01", "video") == "pal60");  // unbekannte Schlüssel bleiben
+    CHECK(edit.toIni().get("game RSBP01", "ios") == "300");       // auch ungültige Werte schreibt nur der Nutzer um
+}

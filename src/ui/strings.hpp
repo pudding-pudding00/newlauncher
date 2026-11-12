@@ -73,10 +73,8 @@
       "Path too long.\nNintendont allows at most 254 characters: %s") \
     X(AhbProt, "Kein Hardwarezugriff.\nBitte den Launcher über den Homebrew Channel starten.", \
       "No hardware access.\nPlease start the launcher from the Homebrew Channel.") \
-    X(CiosMissing, "cIOS fehlt.\nFür Wii-Spiele wird d2x-cIOS in Slot 249 benötigt.", \
-      "cIOS missing.\nWii games need d2x cIOS in slot 249.") \
-    X(CiosNotD2x, "Falsches cIOS.\nSlot 249 enthält %s, benötigt wird d2x.", \
-      "Wrong cIOS.\nSlot 249 contains %s, d2x is required.") \
+    X(CiosMissing, "cIOS fehlt.\nFür dieses Spiel wird ein cIOS in Slot %s benötigt (d2x empfohlen).", \
+      "cIOS missing.\nThis game needs a cIOS in slot %s (d2x recommended).") \
     X(WiiFsUnsupported, "Dateisystem nicht unterstützt.\nWii-Spiele brauchen FAT32 mit 512-Byte-Sektoren (%s).", \
       "File system not supported.\nWii games need FAT32 with 512-byte sectors (%s).") \
     X(WiiFileBroken, "Spieldatei fehlerhaft.\n%s ist beschädigt oder zu stark fragmentiert.", \

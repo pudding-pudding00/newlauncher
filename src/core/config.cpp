@@ -4,6 +4,7 @@
 #include <cctype>
 #include <vector>
 
+#include "core/cios_scan.hpp"
 #include "core/emu_catalog.hpp"
 #include "core/http.hpp"
 
@@ -79,6 +80,9 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     c.emulatorRepo = sourceForBuild(repo, kDefaultEmuRepoHttp, kDefaultEmuRepoHttps, defaultEmuRepo(tls));
     const std::string_view coverBase = trim(ini.get("covers", "base"));
     c.coverBase = sourceForBuild(coverBase, kGametdbCoverBaseHttp, kGametdbCoverBaseHttps, defaultCoverBase(tls));
+    const std::string_view ios = ini.get("wii", "ios");
+    c.wiiIos = parseIosValue(ios);
+    if (isBadIosValue(ios)) c.badKeys.emplace_back("wii.ios");
     c.debugEmuRepo = std::string(trim(ini.get("debug", "emu_repo")));
     c.debugEmuInstall = std::string(trim(ini.get("debug", "emu_install")));
     c.debugAutostart = std::string(ini.get("debug", "autostart"));  // nur für Tests (Spec 9)
@@ -129,6 +133,7 @@ std::vector<IniValue> configValues(const Config& c) {
         {"audio", "sounds", c.sounds ? "1" : "0"},
         {"covers", "region", c.coverRegion},
         {"emulators", "repo", c.emulatorRepo},
+        {"wii", "ios", c.wiiIos ? std::to_string(static_cast<unsigned>(*c.wiiIos)) : std::string("auto")},
     };
 }
 
@@ -228,7 +233,9 @@ std::string defaultConfigText(bool tls) {
            "region = auto\n"
            "[emulators]\n"
            "repo = " +
-           std::string(defaultEmuRepo(tls)) + "\n";
+           std::string(defaultEmuRepo(tls)) + "\n" +
+           "[wii]\n"
+           "ios = auto\n";
 }
 
 }  // namespace nl

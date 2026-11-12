@@ -25,11 +25,4 @@ std::optional<IosInfo> parseIosInfo(std::span<const u8> b) {
     return i;
 }
 
-CiosStatus classifyCios(bool tmdPresent, const std::optional<IosInfo>& info) {
-    if (!tmdPresent) return {CiosState::Missing, kDefaultCiosBase, ""};
-    if (!info) return {CiosState::Unverified, kDefaultCiosBase, ""};
-    if (info->name.rfind("d2x", 0) == 0) return {CiosState::D2x, info->baseios, info->versionString};
-    return {CiosState::NotD2x, info->baseios, info->name};
-}
-
 }  // namespace nl

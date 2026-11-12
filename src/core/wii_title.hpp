@@ -25,11 +25,12 @@ struct TmdContent {
 
 struct TmdInfo {
     u64 titleId = 0;
+    u16 titleVersion = 0;  // 0x1DC; cIOS-Stubs: 0xFF00
     u16 bootIndex = 0;
     std::vector<TmdContent> contents;
 };
 
-// TMD mit RSA-2048-Signatur: Title-ID 0x18C, Anzahl 0x1DE, Boot-Index 0x1E0, Contents ab 0x1E4 je 36 Byte.
+// TMD mit RSA-2048-Signatur: Title-ID 0x18C, Titelversion 0x1DC, Anzahl 0x1DE, Boot-Index 0x1E0, Contents ab 0x1E4 je 36 Byte.
 Result<TmdInfo> parseTmd(std::span<const u8> data);
 std::optional<u32> contentIdForIndex(const TmdInfo& tmd, u16 index);
 

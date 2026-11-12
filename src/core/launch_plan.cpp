@@ -148,7 +148,6 @@ const char* launchFailureName(LaunchFailure f) {
         case LaunchFailure::AhbProt: return "AhbProt";
         case LaunchFailure::NinFormat: return "NinFormat";
         case LaunchFailure::CiosMissing: return "CiosMissing";
-        case LaunchFailure::CiosNotD2x: return "CiosNotD2x";
         case LaunchFailure::WiiFsUnsupported: return "WiiFsUnsupported";
         case LaunchFailure::WiiFileBroken: return "WiiFileBroken";
         case LaunchFailure::DeviceUnsupported: return "DeviceUnsupported";
@@ -176,8 +175,9 @@ LaunchError fromFragError(FragError e, std::string context) {
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
                                               const Result<FragList, LaunchError>& frags, bool dryRun) {
     using R = Result<WiiBootPlan, LaunchError>;
-    if (!dryRun && cios.state == CiosState::Missing) return R::err({LaunchFailure::CiosMissing, ""});
-    if (!dryRun && cios.state == CiosState::NotD2x) return R::err({LaunchFailure::CiosNotD2x, cios.version});
+    if (!dryRun && cios.state == CiosState::Missing) {
+        return R::err({LaunchFailure::CiosMissing, std::to_string(static_cast<unsigned>(cios.slot))});
+    }
     if (!frags.isOk()) return R::err(frags.error());
     const std::string_view key = g.key != nullptr ? g.key : "";
     if (key.size() < 6) return R::err({LaunchFailure::Unsupported, consoleInfo(g.console).name});  // Scanner liefert immer ID6
@@ -186,6 +186,7 @@ Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view li
     p.id6 = std::string(key.substr(0, 6));
     p.usb = onUsb(libRoot);
     p.cios = cios;
+    p.iosSlot = cios.slot;
     p.fragBytes = serializeFragList(frags.value());
     return R::ok(std::move(p));
 }

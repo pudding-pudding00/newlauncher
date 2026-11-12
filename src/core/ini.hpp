@@ -22,6 +22,8 @@ public:
     // Alle Schlüssel-Wert-Paare in Dateireihenfolge, gleiche Schlüssel mehrfach.
     std::span<const std::pair<std::string, std::string>> entries(std::string_view section) const;
     void addLine(std::string_view section, std::string_view line);
+    // Namen aller Abschnitte in Dateireihenfolge (gleichnamige zusammengefasst); gilt, solange das Dokument lebt.
+    std::vector<std::string_view> sectionNames() const;
     std::string serialize() const;
 
 private:

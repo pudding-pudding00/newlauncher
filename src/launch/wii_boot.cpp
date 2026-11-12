@@ -16,7 +16,6 @@ namespace nl::launch {
 
 namespace {
 
-constexpr u32 kCiosSlot = 249;
 inline void* at(u32 addr) { return reinterpret_cast<void*>(addr); }
 
 static_assert(NL_WII_CFG_ADDR > kDolBufferAddr && NL_FRAG_LIST_ADDR + sizeof(::FragList) <= kBooterAddr,
@@ -43,7 +42,7 @@ Result<LaunchPlan> prepareWiiBoot(const WiiBootPlan& plan, std::string_view titl
     cfg.wbfsPart = 0;
     cfg.GameBootType = TYPE_WII_WBFS_EXT;
     cfg.JustDanceGame = title.find("Just Dance") != std::string_view::npos;
-    cfg.IOS.Version = kCiosSlot;
+    cfg.IOS.Version = plan.iosSlot;
     cfg.IOS.Type = IOS_TYPE_D2X;  // auch bei Unverified: der Booter versucht nur BlockIOSReload
     cfg.IOS.Base = static_cast<u8>(plan.cios.base);
     cfg.BootType = TYPE_WII_GAME;
@@ -74,12 +73,12 @@ Result<LaunchPlan> prepareWiiBoot(const WiiBootPlan& plan, std::string_view titl
     return Result<LaunchPlan>::ok(std::move(booter));
 }
 
-void bootWiiGame(const LaunchPlan& booter) {
+void bootWiiGame(const LaunchPlan& booter, u8 iosSlot) {
     ISFS_Deinitialize();  // nand_titles hält ISFS offen; vor dem IOS-Wechsel schließen
-    log::line("NL_IOS_RELOAD %u", static_cast<unsigned>(kCiosSlot));
-    IOS_ReloadIOS(kCiosSlot);
-    if (IOS_GetVersion() != static_cast<s32>(kCiosSlot)) SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
-    chainload(booter);  // SYS_SHUTDOWN darin lädt kein IOS nach: 249 bleibt aktiv
+    log::line("NL_IOS_RELOAD %u", static_cast<unsigned>(iosSlot));
+    IOS_ReloadIOS(iosSlot);
+    if (IOS_GetVersion() != static_cast<s32>(iosSlot)) SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
+    chainload(booter);  // SYS_SHUTDOWN darin lädt kein IOS nach: das cIOS bleibt aktiv
 }
 
 }  // namespace nl::launch

@@ -76,6 +76,13 @@ std::span<const std::string> IniDoc::lines(std::string_view section) const {
     return s != nullptr ? std::span<const std::string>(s->lines) : std::span<const std::string>{};
 }
 
+std::vector<std::string_view> IniDoc::sectionNames() const {
+    std::vector<std::string_view> out;
+    out.reserve(sections_.size());
+    for (const Section& s : sections_) out.emplace_back(s.name);
+    return out;
+}
+
 void IniDoc::addLine(std::string_view section, std::string_view line) {
     Section& s = findOrAdd(section);
     s.lines.emplace_back(line);

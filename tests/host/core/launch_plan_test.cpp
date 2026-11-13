@@ -375,6 +375,49 @@ TEST_CASE("preflightWii: unbestätigtes cIOS startet") {
     CHECK(preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::Unverified, 56, ""}, goodFrags(), false).isOk());
 }
 
+TEST_CASE("preflightWii: Cheats (M15) – GCT und Hook im Plan, ohne Cheats hooktype 0") {
+    WiiOptions o;
+    o.cheats = true;
+    o.hookType = 3;
+    const std::vector<u8> gct(24, 0xAB);
+    auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::D2x, 56, "v10"}, goodFrags(), false, o, gct);
+    REQUIRE(r.isOk());
+    CHECK(r.value().gct == gct);
+    CHECK(r.value().hookType == 3);
+
+    auto none = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::D2x, 56, "v10"}, goodFrags(), false, o);
+    REQUIRE(none.isOk());
+    CHECK(none.value().gct.empty());
+    CHECK(none.value().hookType == 0);  // keine gewählten Codes → kein Hook
+}
+
+TEST_CASE("preflightWii: Plan trägt die WIP-Einträge, unabhängig von Cheats") {
+    const std::vector<WipEntry> wip = {{0x1000, 1, 2}, {0x2001, 3, 4}, {0x3000, 5, 6}};
+    auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::D2x, 249, "v11"}, goodFrags(), false, {}, {}, wip);
+    REQUIRE(r.isOk());
+    REQUIRE(r.value().wip.size() == 3);
+    CHECK(r.value().wip[1].offset == 0x2001u);
+    CHECK(r.value().wip[2].replacement == 6u);
+    CHECK(r.value().hookType == 0);  // WIP braucht keinen Codehandler
+    auto none = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::D2x, 249, "v11"}, goodFrags(), false);
+    REQUIRE(none.isOk());
+    CHECK(none.value().wip.empty());
+}
+
+TEST_CASE("preflightWii: GCT über der Codelisten-Grenze → CheatsTooLarge mit Größe") {
+    WiiOptions o;
+    o.cheats = true;
+    CHECK(kWiiCodelistBytes == 0x80003000u - 0x80002338u);  // Codelistenbereich hinter dem Codehandler
+    const std::vector<u8> fits(kWiiCodelistBytes, 0);
+    CHECK(preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::D2x, 56, "v10"}, goodFrags(), false, o, fits).isOk());
+    const std::vector<u8> big(kWiiCodelistBytes + 8, 0);
+    auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::D2x, 56, "v10"}, goodFrags(), true, o, big);
+    REQUIRE_FALSE(r.isOk());
+    CHECK(r.error().kind == LaunchFailure::CheatsTooLarge);
+    CHECK(r.error().context == std::to_string(kWiiCodelistBytes + 8));
+    CHECK(std::string(launchFailureName(LaunchFailure::CheatsTooLarge)) == "CheatsTooLarge");
+}
+
 TEST_CASE("preflightWii: cIOS-Fehler vor Fragmentfehler") {
     auto frags = Result<FragList, LaunchError>::err(fromFatError(FatError::NotFat32, "usb:"));
     auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::Missing, 56, ""}, frags, false);
@@ -501,6 +544,57 @@ TEST_CASE("preflightGame: GC mit [gc] force_wide = 1 setzt das Bit in NIN_CFG") 
     REQUIRE(r.value().gc.has_value());
     CHECK(r.value().gc->nin.extraFlags == kNinCfgForceWide);
     CHECK(r.value().warnings.empty());
+}
+
+TEST_CASE("preflightGame: GC-Cheats (M15) – Flags, CheatPath und GCT auf dem Spielgerät") {
+    const IniDoc config = IniDoc::parse("[gc]\ncheats = 1\n");
+    const IniDoc games;
+    const std::vector<u8> gct(24, 0x11);
+    GameOptionInputs opts{config, games, true};
+    opts.gcCheats = gct;
+    for (const char* root : {"sd:", "usb:"}) {
+        auto fs = gcFs(root);
+        auto r = preflightGame(fs, gcGame(), root, emus(), nullptr, true, &opts);
+        REQUIRE(r.isOk());
+        const std::string& blob = r.value().dol.args[1];
+        CHECK((static_cast<u8>(blob[0x00B]) & 0x11) == 0x11);  // CHEATS | CHEAT_PATH
+        CHECK(std::string(blob.c_str() + 0x113) == "/newlauncher/cache/GM8P01.gct");
+        CHECK(r.value().gct == gct);
+        CHECK(r.value().gctPath == std::string(root) + "/newlauncher/cache/GM8P01.gct");
+    }
+}
+
+TEST_CASE("preflightGame: GC-Cheats nur mit Option und Codes") {
+    auto fs = gcFs();
+    const IniDoc on = IniDoc::parse("[gc]\ncheats = 1\n");
+    const IniDoc off;
+    const std::vector<u8> gct(24, 0x11);
+    GameOptionInputs noCodes{on, off, true};
+    GameOptionInputs noOption{off, off, true};
+    noOption.gcCheats = gct;
+    for (const GameOptionInputs* o : {&noCodes, &noOption}) {
+        auto r = preflightGame(fs, gcGame(), "sd:", emus(), nullptr, true, o);
+        REQUIRE(r.isOk());
+        CHECK((static_cast<u8>(r.value().dol.args[1][0x00B]) & 0x11) == 0);
+        CHECK(r.value().gct.empty());
+        CHECK(r.value().gctPath.empty());
+    }
+}
+
+TEST_CASE("preflightGame: GC-GCT über der Nintendont-Grenze → CheatsTooLarge mit Größe") {
+    auto fs = gcFs();
+    const IniDoc config = IniDoc::parse("[gc]\ncheats = 1\n");
+    const IniDoc games;
+    const std::vector<u8> fits(kNinCheatBytes, 0);
+    const std::vector<u8> big(kNinCheatBytes + 8, 0);
+    GameOptionInputs opts{config, games, true};
+    opts.gcCheats = fits;
+    CHECK(preflightGame(fs, gcGame(), "sd:", emus(), nullptr, true, &opts).isOk());
+    opts.gcCheats = big;
+    auto r = preflightGame(fs, gcGame(), "sd:", emus(), nullptr, true, &opts);
+    REQUIRE_FALSE(r.isOk());
+    CHECK(r.error().kind == LaunchFailure::CheatsTooLarge);
+    CHECK(r.error().context == std::to_string(big.size()));
 }
 
 TEST_CASE("preflightGame: GC ohne Optionen bleibt beim M8-Block") {

@@ -100,6 +100,7 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
     std::optional<GcOptions> gc;
     std::vector<LaunchWarning> warnings;
     NinConfigInput in{gamePath, key, usb};
+    std::string cheatPath;  // muss bis buildNinCfg leben (in.cheatPath ist eine Sicht)
     if (opts != nullptr) {
         gc = resolveGcOptions(opts->config, opts->games, key.substr(0, std::min<std::size_t>(6, key.size())), *ver);
         in = gc->nin;
@@ -108,6 +109,11 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
         in.usb = usb;
         if (!opts->gcPorts && gc->memcardReal) warnings.push_back(LaunchWarning::MemcardRealNoPorts);
         if (!opts->gcPorts && gc->nativeSi) warnings.push_back(LaunchWarning::NativeSiNoPorts);
+        if (gc->cheats && !opts->gcCheats.empty()) {
+            if (opts->gcCheats.size() > kNinCheatBytes) return err(LaunchFailure::CheatsTooLarge, std::to_string(opts->gcCheats.size()));
+            cheatPath = ninCheatPath(key.substr(0, std::min<std::size_t>(6, key.size())));
+            in.cheatPath = cheatPath;
+        }
     }
     auto cfg = buildNinCfg(in);
     if (!cfg.isOk()) {
@@ -126,6 +132,11 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
     t.nintendont = ver;
     t.gc = std::move(gc);
     t.warnings = std::move(warnings);
+    if (!cheatPath.empty()) {
+        // Nintendont mountet nur das Spielgerät: die GCT liegt dort, nicht im Datenordner (Spec v2 8).
+        t.gct.assign(opts->gcCheats.begin(), opts->gcCheats.end());
+        t.gctPath = joinPath(libRoot.substr(0, libRoot.find(':') + 1), cheatPath.substr(1));
+    }
     return TargetResult::ok(std::move(t));
 }
 TargetResult dolTarget(PlanResult plan, std::optional<N64Method> n64) {
@@ -176,6 +187,7 @@ const char* launchFailureName(LaunchFailure f) {
         case LaunchFailure::WiiFsUnsupported: return "WiiFsUnsupported";
         case LaunchFailure::WiiFileBroken: return "WiiFileBroken";
         case LaunchFailure::DeviceUnsupported: return "DeviceUnsupported";
+        case LaunchFailure::CheatsTooLarge: return "CheatsTooLarge";
     }
     return "?";
 }
@@ -199,7 +211,8 @@ LaunchError fromFragError(FragError e, std::string context) {
 
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
                                               const Result<FragList, LaunchError>& frags, bool dryRun,
-                                              const WiiOptions& options) {
+                                              const WiiOptions& options, std::span<const u8> gct,
+                                              std::span<const WipEntry> wip) {
     using R = Result<WiiBootPlan, LaunchError>;
     if (!dryRun && cios.state == CiosState::Missing) {
         return R::err({LaunchFailure::CiosMissing, std::to_string(static_cast<unsigned>(cios.slot))});
@@ -207,6 +220,7 @@ Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view li
     if (!frags.isOk()) return R::err(frags.error());
     const std::string_view key = g.key != nullptr ? g.key : "";
     if (key.size() < 6) return R::err({LaunchFailure::Unsupported, consoleInfo(g.console).name});  // Scanner liefert immer ID6
+    if (gct.size() > kWiiCodelistBytes) return R::err({LaunchFailure::CheatsTooLarge, std::to_string(gct.size())});
 
     WiiBootPlan p;
     p.id6 = std::string(key.substr(0, 6));
@@ -215,6 +229,9 @@ Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view li
     p.iosSlot = cios.slot;
     p.fragBytes = serializeFragList(frags.value());
     p.options = options;
+    p.gct.assign(gct.begin(), gct.end());
+    p.hookType = gct.empty() ? 0 : options.hookType;  // Spec v2 8: ohne Codes kein Hook
+    p.wip.assign(wip.begin(), wip.begin() + static_cast<std::ptrdiff_t>(std::min(wip.size(), kWipMaxEntries)));
     if (cios.state != CiosState::D2x) p.options.cfg.returnTo = 0;  // Spec 7.2: Rückkehr nur mit d2x
     return R::ok(std::move(p));
 }

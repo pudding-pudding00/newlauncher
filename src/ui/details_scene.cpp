@@ -156,6 +156,7 @@ void DetailsScene::open(const Game& game, bool favorite, u32 lastPlayedUnix) {
     focus_ = 0;
     keysSincePointerMove_ = false;
     hasN64_ = false;
+    hasCheats_ = game.console == Console::Wii || game.console == Console::Gc;
     n64_ = N64Decision{};
     choice_ = 0;
     method_[0] = '\0';
@@ -166,6 +167,11 @@ void DetailsScene::open(const Game& game, bool favorite, u32 lastPlayedUnix) {
 Rect DetailsScene::buttonRect([[maybe_unused]] const UiContext& ctx, int index) const {
     const float x = kMargin + kCoverW + 32.0f + static_cast<float>(index) * (kButtonW + 16.0f);
     return Rect{x, kTop + kCoverH - kButtonH, kButtonW, kButtonH};
+}
+
+Rect DetailsScene::cheatsRect(const UiContext& ctx) const {
+    const Rect b0 = buttonRect(ctx, 0);
+    return Rect{b0.x, b0.y - kMethodGap - kMethodH, kButtonW, kMethodH};
 }
 
 void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
@@ -179,6 +185,7 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, Sce
     if (in.pointerValid) {
         for (int i = 0; i < 2; ++i)
             if (contains(buttonRect(ctx, i), in.pointerX, in.pointerY)) hit = i;
+        if (hasCheats_ && contains(cheatsRect(ctx), in.pointerX, in.pointerY)) hit = kFocusCheats;
         if (in.pointerMoved) {
             if (hit >= 0) focus_ = hit;
             keysSincePointerMove_ = false;
@@ -202,10 +209,16 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, Sce
             focus_ = 0;
             keysSincePointerMove_ = true;
         }
+    } else if (focus_ == kFocusCheats) {
+        if (in.pressed(Action::Down)) {
+            focus_ = 0;
+            keysSincePointerMove_ = true;
+        }
     } else {
         if (in.pressed(Action::Left) && focus_ > 0) --focus_;
         if (in.pressed(Action::Right) && focus_ < 1) ++focus_;
         if (in.pressed(Action::Up) && hasN64_) focus_ = kFocusMethod;
+        if (in.pressed(Action::Up) && hasCheats_) focus_ = kFocusCheats;
         if (in.pressed(Action::Left) || in.pressed(Action::Right) || in.pressed(Action::Up)) keysSincePointerMove_ = true;
     }
 
@@ -224,6 +237,11 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, Sce
         return;
     }
     const bool pointerOff = in.pointerValid && hit < 0 && !keysSincePointerMove_;
+    if (in.pressed(Action::Confirm) && !pointerOff && focus_ == kFocusCheats && hasGame_) {
+        out.command = AppCommand::OpenCheats;
+        out.game = &game_;
+        return;
+    }
     if (in.pressed(Action::Confirm) && !pointerOff && hasGame_ && focus_ != kFocusMethod) {
         out.command = focus_ == 0 ? AppCommand::Launch : AppCommand::ToggleFavorite;
         out.game = &game_;
@@ -272,7 +290,7 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     }
     y += 12.0f;
     const std::string_view desc(description_);
-    const int descLines = (hasN64_ ? 2 : 3) - (device_.empty() ? 0 : 1);
+    const int descLines = (hasN64_ || hasCheats_ ? 2 : 3) - (device_.empty() ? 0 : 1);
     n = gfx::wrapText(body, desc, w, std::span<gfx::Line>(lines, static_cast<std::size_t>(descLines)));
     for (int i = 0; i < n; ++i) {
         gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, desc.substr(lines[i].start, lines[i].length), t.text);
@@ -289,6 +307,16 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         gfx::drawTextEllipsis(dl, body, row.x + 16, row.y + row.h / 2 + (body.ascent - body.descent) / 2, row.w - 32, method_, t.text);
         if (hint_[0] != '\0')
             gfx::drawTextEllipsis(dl, body, b0.x, b0.y + kButtonH + 12 + body.ascent, w, hint_, t.text2);
+    }
+
+    // Wii/GC: Zeile „Cheats“ an der Stelle der N64-Startmethode (M15)
+    if (hasCheats_) {
+        const Rect row = cheatsRect(ctx);
+        const bool focused = focus_ == kFocusCheats;
+        if (focused) gfx::roundRect(dl, s, Rect{row.x - 3, row.y - 3, row.w + 6, row.h + 6}, kMethodH / 2 + 3, t.accent);
+        gfx::roundRect(dl, s, row, kMethodH / 2, t.tile);
+        gfx::drawTextEllipsis(dl, body, row.x + 16, row.y + row.h / 2 + (body.ascent - body.descent) / 2, row.w - 32,
+                              tr(Str::DetailsCheats), t.text);
     }
 
     // Knöpfe

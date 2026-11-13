@@ -13,23 +13,26 @@ void put32(std::array<u8, kNinCfgSize>& b, std::size_t off, u32 v) {
     b[off + 3] = static_cast<u8>(v);
 }
 
-constexpr std::size_t kOffConfig = 0x008, kOffVideo = 0x00C, kOffLang = 0x010, kOffPath = 0x014,
+constexpr std::size_t kOffConfig = 0x008, kOffVideo = 0x00C, kOffLang = 0x010, kOffPath = 0x014, kOffCheatPath = 0x113,
                       kOffMaxPads = 0x214, kOffGameId = 0x218, kOffMemCardBlocks = 0x21C;
 
 }  // namespace
 
 Result<std::array<u8, kNinCfgSize>, NinCfgError> buildNinCfg(const NinConfigInput& in) {
     using R = Result<std::array<u8, kNinCfgSize>, NinCfgError>;
-    if (in.gamePath.size() > kNinMaxGamePath) return R::err(NinCfgError::PathTooLong);
+    if (in.gamePath.size() > kNinMaxGamePath || in.cheatPath.size() > kNinMaxCheatPath) return R::err(NinCfgError::PathTooLong);
     if (in.id6.size() < 4) return R::err(NinCfgError::BadId);
 
     std::array<u8, kNinCfgSize> b{};
     put32(b, 0x000, kNinCfgMagic);
     put32(b, 0x004, kNinCfgVersion);
-    put32(b, kOffConfig, (in.memcardEmu ? kNinCfgMemcardEmu : 0) | kNinCfgAutoBoot | (in.usb ? kNinCfgUsb : 0) | in.extraFlags);
+    const u32 cheats = in.cheatPath.empty() ? 0 : (kNinCfgCheats | kNinCfgCheatPath);
+    put32(b, kOffConfig,
+          (in.memcardEmu ? kNinCfgMemcardEmu : 0) | kNinCfgAutoBoot | (in.usb ? kNinCfgUsb : 0) | in.extraFlags | cheats);
     put32(b, kOffVideo, in.videoMode);
     put32(b, kOffLang, in.language);
     std::copy(in.gamePath.begin(), in.gamePath.end(), b.begin() + kOffPath);
+    std::copy(in.cheatPath.begin(), in.cheatPath.end(), b.begin() + kOffCheatPath);
     put32(b, kOffMaxPads, in.maxPads);
     for (std::size_t i = 0; i < 4; ++i) b[kOffGameId + i] = static_cast<u8>(in.id6[i]);
     b[kOffMemCardBlocks] = static_cast<u8>(in.memcardBlocks);
@@ -42,6 +45,8 @@ std::string ninGamePath(std::string_view relPath) {
     const auto first = out.find_first_not_of('/');
     return "/" + (first == std::string::npos ? std::string() : out.substr(first));
 }
+
+std::string ninCheatPath(std::string_view id6) { return "/newlauncher/cache/" + std::string(id6) + ".gct"; }
 
 namespace {
 

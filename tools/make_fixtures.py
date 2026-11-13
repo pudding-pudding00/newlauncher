@@ -70,6 +70,25 @@ def wbfs_file(id6: str, title: str) -> bytes:
     return bytes(data)
 
 
+# Selbst erzeugte Gecko-Liste für die Cheat-Szene (M15): 3 Codes, davon einer mit Platzhalter, und ein
+# kaputter Block ohne Codezeilen (NL_CHEAT_SKIP 1). Keine Codes aus fremden Listen.
+CHEATS_GM8P01 = ("GM8P01\nMetroid Prime\n\n"
+                 "Unendlich Energie [Fixture]\n04001000 00000063\n\n"
+                 "Nur Name\n\n"
+                 "Wert waehlen\n0400XXXX 00000001\nXXXX = Adresse anpassen\n\n"
+                 "Alle Raketen\n04001004 000000FF\n")
+# Wii (M15 Task 5): ein gewählter Code → GCT mit 24 Bytes im Dry-Run-Smoke
+CHEATS_RMGP01 = ("RMGP01\nSuper Mario Galaxy\n\n"
+                 "Sternenbits [Fixture]\n04001000 0000270F\n\n"
+                 "Leben [Fixture]\n04001004 00000063\n")
+# WIP (M15 Task 7): drei gültige Zeilen, ein Kommentar, eine kaputte Zeile (NL_WIP_SKIP line=5). Werte frei erfunden.
+WIP_RMGP01 = ("# Fixture, selbst erzeugt\n"
+              "00001000 00000000 00000001\n"
+              "00001005 11111111 22222222\n"
+              "0000200A 33333333 44444444\n"
+              "0000300G 00000000 00000001\n")
+
+
 def write(out: Path, rel: str, data: bytes | str) -> None:
     path = out / rel
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -97,6 +116,11 @@ def main(out: Path) -> int:
     write(out, "roms/nes/readme.txt", "Keine ROM – wird vom Scanner ignoriert.\n")
     write(out, "roms/gbc/.keep", b"")
     write(out, "games/Metroid Prime [GM8P01]/game.iso", bytes(disc_header("GM8P01", "Metroid Prime", wii=False)))
+    write(out, "newlauncher/codes/GM8P01.txt", CHEATS_GM8P01)
+    write(out, "newlauncher/codes/GM8P01.sel", "Alle Raketen\n")  # M15 Task 6: GC-Smoke mit Cheats
+    write(out, "newlauncher/codes/RMGP01.txt", CHEATS_RMGP01)
+    write(out, "newlauncher/codes/RMGP01.sel", "Sternenbits\n")  # Name ohne Autor-Tag
+    write(out, "newlauncher/codes/RMGP01.wip", WIP_RMGP01)
     write(out, "wbfs/Mario Kart Wii [RMCP01]/RMCP01.wbfs", wbfs_file("RMCP01", "MARIO KART WII"))
     write(out, "wbfs/Super Mario Galaxy [RMGP01]/RMGP01.iso",
           bytes(disc_header("RMGP01", "Super Mario Galaxy", wii=True)))

@@ -22,6 +22,7 @@ constexpr std::string_view kWiiWidth[] = {"auto", "framebuffer"};
 constexpr std::string_view kWiiOnline[] = {"off", "nossl", "wiimmfi"};
 constexpr std::string_view kWiiIos[] = {"auto"};             // dazu 200–255
 constexpr std::string_view kWiiReturnTo[] = {"none", "hbc"};  // dazu 16 Hexziffern
+constexpr std::string_view kWiiHook[] = {"vbi", "kpad", "joypad", "gxdraw", "gxflush", "ossleep", "axframe"};
 
 constexpr std::string_view kGcVideo[] = {"auto", "pal50", "pal60", "ntsc", "mpal", "none"};
 constexpr std::string_view kGcMemcard[] = {"emu", "multi", "real"};
@@ -38,7 +39,7 @@ struct Def {
     Special special = Special::None;
 };
 
-constexpr std::array<Def, 13> kWiiDefs{{
+constexpr std::array<Def, 15> kWiiDefs{{
     {"video", kWiiVideo, 1},
     {"video_patch", kWiiVideoPatch, 0},
     {"vipatch", kSwitch, 0},
@@ -50,11 +51,13 @@ constexpr std::array<Def, 13> kWiiDefs{{
     {"width", kWiiWidth, 0},
     {"fix480p", kSwitch, 0},
     {"online", kWiiOnline, 0},
+    {"cheats", kSwitch, 0},
+    {"hook", kWiiHook, 0},
     {"ios", kWiiIos, 0, Special::Ios},
     {"return_to", kWiiReturnTo, 0, Special::ReturnTo},
 }};
 
-constexpr std::array<Def, 10> kGcDefs{{
+constexpr std::array<Def, 11> kGcDefs{{
     {"video", kGcVideo, 0},
     {"progressive", kSwitch, 0},
     {"force_wide", kSwitch, 0},
@@ -65,6 +68,7 @@ constexpr std::array<Def, 10> kGcDefs{{
     {"language", kGcLanguage, 0},
     {"max_pads", kGcPads, 3},
     {"skip_ipl", kSwitch, 0},
+    {"cheats", kSwitch, 0},
 }};
 
 constexpr std::string_view kGamePrefix = "game ";
@@ -183,6 +187,8 @@ WiiOptions resolveWiiOptions(const IniDoc& config, const IniDoc& games, std::str
         else if (d.key == "width") c.videoWidth = i;
         else if (d.key == "fix480p") c.patchFix480p = i;
         else if (d.key == "online") c.privateServer = i;
+        else if (d.key == "cheats") o.cheats = i == 1;
+        else if (d.key == "hook") o.hookType = static_cast<u8>(i + 1);
         else if (d.key == "ios") o.ios = parseIosValue(r.value);
         else if (d.key == "return_to") {
             if (r.value == "hbc") {
@@ -230,6 +236,7 @@ GcOptions resolveGcOptions(const IniDoc& config, const IniDoc& games, std::strin
         } else if (d.key == "language") n.language = static_cast<u32>(i - 1);
         else if (d.key == "max_pads") n.maxPads = static_cast<u32>(i + 1);
         else if (d.key == "skip_ipl") n.extraFlags |= kNinCfgSkipIpl;
+        else if (d.key == "cheats") o.cheats = true;
     }
     return o;
 }

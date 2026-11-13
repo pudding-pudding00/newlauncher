@@ -75,6 +75,50 @@ TEST_CASE("nin_cfg: ninGamePath") {
     CHECK(ninGamePath("//games/x/game.iso") == "/games/x/game.iso");
 }
 
+// --- M15: Cheats (Nintendont c683db3 kernel/Patch.c Check_Cheats: CheatPath ohne Gerät, auf dem Spielgerät) ---
+namespace {
+std::string cheatPathAt(const std::array<u8, kNinCfgSize>& b) {
+    std::string s;
+    for (std::size_t i = 0x113; i < 0x212 && b[i] != 0; ++i) s.push_back(static_cast<char>(b[i]));
+    return s;
+}
+}  // namespace
+
+TEST_CASE("nin_cfg: CheatPath setzt CHEATS und CHEAT_PATH und steht hinter GamePath") {
+    NinConfigInput in{"/games/x [GM8P01]/game.iso", "GM8P01", false};
+    in.cheatPath = "/newlauncher/cache/GM8P01.gct";
+    auto r = buildNinCfg(in);
+    REQUIRE(r.isOk());
+    CHECK(be32(r.value(), 0x008) == (0x00000088u | kNinCfgCheats | kNinCfgCheatPath));
+    CHECK(cheatPathAt(r.value()) == "/newlauncher/cache/GM8P01.gct");
+    CHECK(pathAt(r.value()) == "/games/x [GM8P01]/game.iso");
+    // ohne CheatPath keine Cheat-Bits, Feld bleibt leer
+    auto none = buildNinCfg({"/games/x [GM8P01]/game.iso", "GM8P01", false});
+    REQUIRE(none.isOk());
+    CHECK((be32(none.value(), 0x008) & (kNinCfgCheats | kNinCfgCheatPath)) == 0);
+    CHECK(cheatPathAt(none.value()).empty());
+}
+
+TEST_CASE("nin_cfg: CheatPath mit 254 Byte geht, 255 → PathTooLong") {
+    NinConfigInput in{"/g.iso", "GM8P01", false};
+    const std::string p254 = "/" + std::string(253, 'c');
+    const std::string p255 = "/" + std::string(254, 'c');
+    in.cheatPath = p254;
+    auto ok = buildNinCfg(in);
+    REQUIRE(ok.isOk());
+    CHECK(cheatPathAt(ok.value()) == p254);
+    CHECK(ok.value()[0x113 + 254] == 0);
+    CHECK(be32(ok.value(), 0x214) == 4u);  // MaxPads unberührt
+    in.cheatPath = p255;
+    auto bad = buildNinCfg(in);
+    REQUIRE_FALSE(bad.isOk());
+    CHECK(bad.error() == NinCfgError::PathTooLong);
+}
+
+TEST_CASE("nin_cfg: ninCheatPath liegt im Cache des Spielgeräts") {
+    CHECK(ninCheatPath("GM8P01") == "/newlauncher/cache/GM8P01.gct");
+}
+
 // --- Task 2: Version aus der Nintendont-DOL ---
 #include "support/mem_fs.hpp"
 

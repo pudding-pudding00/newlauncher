@@ -21,6 +21,7 @@ public:
     void setN64(const N64Decision& decision, std::optional<N64Method> override_);
     int methodChoice() const { return choice_; }  // 0 = Automatisch, sonst 1 + N64Method
     static constexpr int kFocusMethod = 2;
+    static constexpr int kFocusCheats = 3;  // Zeile „Cheats“ über den Knöpfen (Wii, GC; M15)
     int focusedButton() const { return focus_; }
     void setDeviceLine(std::string line) { device_ = std::move(line); }  // nach open(); leer = keine Zeile
     const std::string& deviceLine() const { return device_; }
@@ -45,12 +46,14 @@ private:
     char clock_[8] = "";
     int clockMinute_ = -1;
     bool hasN64_ = false;
+    bool hasCheats_ = false;  // Wii/GC
     N64Decision n64_{};
     int choice_ = 0;
     char method_[96] = "";
     char hint_[256] = "";
 
     bool choiceAllowed(int c) const;
+    gfx::Rect cheatsRect(const UiContext& ctx) const;
     void refreshN64Text();
 };
 

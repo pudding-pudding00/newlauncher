@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "booter_cfg.h"
+#include "codehandler_info.h"
 #include "core/dol.hpp"
 #include "core/launch_args.hpp"
 #include "core/launch_layout.hpp"
@@ -20,6 +21,13 @@ inline void* at(u32 addr) { return reinterpret_cast<void*>(addr); }
 
 static_assert(NL_WII_CFG_ADDR > kDolBufferAddr && NL_FRAG_LIST_ADDR + sizeof(::FragList) <= kBooterAddr,
               "the_CFG und Liste müssen im reservierten DOL-Puffer liegen");
+static_assert(NL_GCT_ADDR + NL_GCT_MAX <= kBooterAddr, "GCT-Puffer überlappt den App-Booter");
+// M15: Preflight-Grenze (core) = Codeliste des gebauten Handlers (codelist…codelistend).
+static_assert(NL_CH_CODELIST_END - NL_CH_CODELIST == kWiiCodelistBytes, "kWiiCodelistBytes passt nicht zum Codehandler");
+static_assert(kWiiCodelistBytes <= NL_GCT_MAX, "GCT-Puffer kleiner als die Codeliste");
+static_assert(NL_WIP_ADDR + NL_WIP_MAX * sizeof(::WIP_Code) <= kBooterAddr, "WIP-Liste überlappt den App-Booter");
+static_assert(NL_WIP_MAX == kWipMaxEntries, "kWipMaxEntries passt nicht zu NL_WIP_MAX");
+static_assert(sizeof(::WIP_Code) == 12, "WIP_Code-Layout weicht von upstream ab");
 
 }  // namespace
 
@@ -61,6 +69,31 @@ Result<LaunchPlan> prepareWiiBoot(const WiiBootPlan& plan, std::string_view titl
     cfg.patchFix480p = o.patchFix480p != 0;
     cfg.private_server = o.privateServer;
     cfg.returnTo = o.returnTo;
+    // M15: gewählte Codes; ohne Codes bleiben cheats/codelist leer und hooktype 0 (kein Sprung in den Handler).
+    if (!plan.gct.empty()) {
+        if (plan.gct.size() > kWiiCodelistBytes) return Result<LaunchPlan>::err({ErrorCode::InvalidData, "GCT"});
+        std::memcpy(at(NL_GCT_ADDR), plan.gct.data(), plan.gct.size());
+        DCFlushRange(at(NL_GCT_ADDR), plan.gct.size());
+        cfg.cheats = static_cast<u8*>(at(NL_GCT_ADDR));
+        cfg.cheatSize = static_cast<u32>(plan.gct.size());
+        cfg.codelist = at(NL_CH_CODELIST);
+        cfg.codelistend = static_cast<u8*>(at(NL_CH_CODELIST_END));
+        cfg.hooktype = plan.hookType;
+    }
+    // M15: WIP-Patches; leer → wip_list NULL, set_wip_list() im Booter tut dann nichts.
+    if (!plan.wip.empty()) {
+        if (plan.wip.size() > NL_WIP_MAX) return Result<LaunchPlan>::err({ErrorCode::InvalidData, "WIP"});
+        auto* list = static_cast<::WIP_Code*>(at(NL_WIP_ADDR));
+        for (std::size_t i = 0; i < plan.wip.size(); ++i) {
+            list[i].offset = plan.wip[i].offset;
+            list[i].srcaddress = plan.wip[i].original;
+            list[i].dstaddress = plan.wip[i].replacement;
+        }
+        DCFlushRange(list, static_cast<u32>(plan.wip.size() * sizeof(::WIP_Code)));
+        cfg.wip_list = list;
+        cfg.wip_count = static_cast<u32>(plan.wip.size());
+    }
+    cfg.debugger = 0;
 
     std::memcpy(at(NL_WII_CFG_ADDR), &cfg, sizeof cfg);
     std::memcpy(at(NL_FRAG_LIST_ADDR), plan.fragBytes.data(), plan.fragBytes.size());

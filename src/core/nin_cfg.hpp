@@ -44,6 +44,11 @@ inline constexpr u32 kNinVidProg = 1u << 4;
 inline constexpr u32 kNinLangAuto = 0xFFFFFFFFu;
 inline constexpr u32 kNinLangEn = 0, kNinLangDe = 1, kNinLangFr = 2, kNinLangEs = 3, kNinLangIt = 4, kNinLangNl = 5;
 inline constexpr std::size_t kNinMaxGamePath = 254;  // GamePath[255] mit NUL
+inline constexpr std::size_t kNinMaxCheatPath = 254;  // CheatPath[255] mit NUL
+// M15: Nintendont lädt die GCT zwischen sein Codehandler-Ende (0x1AA0) und den Patch-Bereich unter 0x3000, dessen
+// Größe je Spiel wächst (kernel/Patch.c, c683db3). Zu große Dateien ignoriert er still; der Preflight lässt deshalb
+// konservativ Platz für die Spiel-Patches.
+inline constexpr u32 kNinCheatBytes = 3072;
 
 struct NinConfigInput {
     std::string_view gamePath;  // mit führendem "/", relativ zum Bibliotheksgerät
@@ -55,6 +60,7 @@ struct NinConfigInput {
     u32 maxPads = 4;
     u32 memcardBlocks = 2;            // Index 0–5: (1 << (i + 6)) - 5 Blöcke, 2 = 251
     bool memcardEmu = true;           // false bei memcard = real (Spec 7.3)
+    std::string_view cheatPath = {};  // M15: leer = keine Cheats; sonst CHEATS|CHEAT_PATH, Pfad ohne Gerät
 };
 
 enum class NinCfgError : u8 { PathTooLong, BadId };
@@ -63,6 +69,9 @@ Result<std::array<u8, kNinCfgSize>, NinCfgError> buildNinCfg(const NinConfigInpu
 
 // Genau ein führendes "/", "\" wird zu "/".
 std::string ninGamePath(std::string_view relPath);
+
+// M15: "/newlauncher/cache/<ID6>.gct" – Nintendont öffnet CheatPath auf dem Gerät des Spiels (Check_Cheats).
+std::string ninCheatPath(std::string_view id6);
 
 // Version aus der Nintendont-DOL: ASCII "$$Version:<major>.<minor>" (Spec 10, Risiko NIN_CFG-Version).
 struct NinVersion {

@@ -20,7 +20,7 @@ wendet die Standard-Patches an und springt ins Spiel.
 |---|---|
 | `main.cpp` | Ablauf: CFG lesen, Disc öffnen, Apploader, Patches, Sprung |
 | `apploader.c/h`, `disc.c/h`, `wdvd.c/h`, `fst.c/h` | Apploader, Disc-Zugriff über `/dev/di` des cIOS, Fragmentliste an das cIOS |
-| `patchcode.c/h`, `videopatch.c/h`, `kirbypatch.c/h`, `patchhook.S`, `codehandler*.h`, `multidol.c/h`, `wip.c/h` | Spiel-Patches (Video, Sprache, Hooks; Cheats und WIP werden vom Launcher nicht genutzt) |
+| `patchcode.c/h`, `videopatch.c/h`, `kirbypatch.c/h`, `patchhook.S`, `multidol.c/h`, `wip.c/h` | Spiel-Patches (Video, Sprache, Hooks, Cheats seit M15) |
 | `cios.c/h` | IOS-Informationen (`CurrentIOS` kommt aus `the_CFG`) |
 | `ChannelHandler.cpp/hpp`, `fs.c/h` (LZ77 seit M11 über `nl/lz77_bridge`) | Kanalstart (`TYPE_CHANNEL`). Nicht genutzt, aber `main.cpp` verzweigt dorthin; Entfernen hätte `main.cpp` stärker verändert, als das Behalten kostet. |
 | `gecko.c/h`, `memory.h`, `utils.h`, `types.h`, `frag.h`, `Config.hpp` | Hilfen und Typen |
@@ -108,14 +108,17 @@ mehr, die nur unter GPLv2 („ohne oder später“) steht, und keinen Binärblob
 
 Angepasst sind nur die Includes in `main.cpp`, `apploader.c`, `disc.c` und `ChannelHandler.cpp`.
 
-### Codehandler-Blob
+### Codehandler
 
-`codehandler.h` und `codehandleronly.h` sind Binärdaten (raw2c) ohne nachvollziehbare Quelle. Sie bleiben im Quellbaum,
-werden aber nicht mehr gebaut:
+Die WiiFlow-Header `codehandler.h` und `codehandleronly.h` waren Binärdaten (raw2c) ohne nachvollziehbare Quelle.
+M11 hat sie stillgelegt, M15 hat sie gelöscht und ersetzt:
 
-- CMake setzt `NL_BOOTER_CHEATS=0`.
-- `fst.c` bindet die beiden Header und den Kopierteil von `load_handler()` nur bei `NL_BOOTER_CHEATS` ein.
-- `main.cpp` setzt `hooktype = 0`, damit kein Spiel auf einen Hook ohne Codehandler springt.
-- `tools/tests/test_booter_dol.py` prüft, dass keine Bytes der Blobs im DOL stehen.
-
-M15 baut den Codehandler aus belegter GPL-Quelle neu oder lässt Wii-Cheats aus (Spec v2 3.2).
+- Quelle ist jetzt `nl/codehandler/codehandler.s` (Dolphin, MIT, siehe README dort). CMake assembliert sie und
+  erzeugt `codehandler.h`/`codehandler_info.h` im Build-Verzeichnis (`cmake/NlCodehandler.cmake`).
+- `fst.c`: `load_handler()` kennt nur noch den Handler ohne Debugger; die Debugger-Variante hatte keine Quelle.
+  Adressen und Patch-Stellen kommen aus `codehandler_info.h`, zwei `_Static_assert` sichern Einsprung und Größe.
+- CMake setzt `NL_BOOTER_CHEATS=1`; `main.cpp` übernimmt `hooktype` wieder aus `the_CFG` (0 ohne Cheats).
+- Die Codeliste liegt in MEM1 hinter dem Handler (`codelist`…0x80003000), wie upstream. Der Launcher legt die GCT
+  nur als Übergabepuffer in MEM2 ab (`NL_GCT_ADDR`); `ocarina_set_codes()` kopiert sie früh.
+- `tools/tests/test_booter_dol.py` prüft, dass keine Bytes der alten Blobs im DOL stehen und der selbst
+  assemblierte Handler unverändert enthalten ist.

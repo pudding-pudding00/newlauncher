@@ -73,6 +73,32 @@ class MakeFixturesTest(unittest.TestCase):
         hist = (self.out / "newlauncher/history.ini").read_text(encoding="utf-8")
         self.assertIn("1762700000 = n64/Super Mario 64 (Europe) (En,Fr,De).z64", hist)
 
+    def test_cheat_list_for_gc_game(self):
+        # Selbst erzeugte Gecko-Liste (M15): 3 Codes (einer mit Platzhalter), 1 kaputter Block ohne Codezeilen.
+        text = (self.out / "newlauncher/codes/GM8P01.txt").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("GM8P01\nMetroid Prime\n\n"))
+        self.assertIn("Unendlich Energie [Fixture]\n04001000 00000063\n", text)
+        self.assertIn("0400XXXX", text)
+        self.assertIn("\nNur Name\n\n", text)
+        # M15 Task 6: Auswahl für den GC-Smoke (ein wählbarer Code → GCT mit 24 Bytes)
+        self.assertEqual((self.out / "newlauncher/codes/GM8P01.sel").read_text(encoding="utf-8"), "Alle Raketen\n")
+
+    def test_cheat_selection_for_wii_game(self):
+        # M15 Task 5: Wii-Spiel mit Liste und Auswahl, damit der Dry-Run-Smoke eine GCT bauen kann.
+        text = (self.out / "newlauncher/codes/RMGP01.txt").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("RMGP01\nSuper Mario Galaxy\n\n"))
+        self.assertIn("Sternenbits [Fixture]\n04001000 0000270F\n", text)
+        sel = (self.out / "newlauncher/codes/RMGP01.sel").read_text(encoding="utf-8")
+        self.assertEqual(sel, "Sternenbits\n")  # .sel nennt den Namen ohne Autor-Tag „[Fixture]“
+
+    def test_wip_for_wii_game(self):
+        # M15 Task 7: drei gültige WIP-Zeilen, ein Kommentar, eine kaputte Zeile (kein Hex) für NL_WIP_SKIP.
+        lines = (self.out / "newlauncher/codes/RMGP01.wip").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 5)
+        self.assertTrue(lines[0].startswith("#"))
+        self.assertEqual(lines[1], "00001000 00000000 00000001")
+        self.assertIn("G", lines[4])
+
     def test_deploy_copies_fixtures(self):
         sd = Path(self._tmp.name) / "deployed"
         dist = Path(self._tmp.name) / "dist"

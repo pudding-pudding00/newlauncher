@@ -13,6 +13,7 @@ import sys
 import tempfile
 import shutil
 import threading
+import time
 import zipfile
 from pathlib import Path
 
@@ -84,6 +85,21 @@ def write_cover_server_files(root: Path) -> None:
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(solid_png(w, h, color))
+
+
+# Selbst erzeugte Gecko-Codeliste (M15); "html" simuliert eine Fehlerseite statt einer Liste.
+CHEAT_SERVER_ID6 = "RMCP01"
+CHEAT_TXT_REL = f"newlauncher/codes/{CHEAT_SERVER_ID6}.txt"
+SD_SETTLE_SECONDS = 3.0  # Wartezeit nach dem Marker, bis Dolphin die SD-Schreibzugriffe abgelegt hat
+
+
+def write_cheat_server_files(root: Path, mode: str) -> None:
+    path = root / "codes" / f"{CHEAT_SERVER_ID6}.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if mode == "html":
+        path.write_bytes(b"<!DOCTYPE html>\n<html><body>Fehler</body></html>\n")
+    else:
+        path.write_bytes(f"{CHEAT_SERVER_ID6}\nTestliste\n\nTestcode [Smoke]\n04001234 00000063\n".encode())
 
 
 # Test-Repository im OSC-Format (Spec 6.9): eine App fceugx, deren boot.dol die argv_echo-Test-DOL ist.
@@ -174,6 +190,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="lokales OSC-Test-Repository starten und fceugx nach NL_READY installieren")
     parser.add_argument("--expect-frag", metavar="REL_PATH",
                         help="NL_FRAG-Zeile für diese ISO (relativ zur SD) aus Load/WiiSD.raw berechnen und im Log verlangen")
+    parser.add_argument("--cheat-server", choices=["ok", "html"],
+                        help="Gecko-Codeliste (ok) oder HTML-Fehlerseite (html) ausliefern und nach NL_READY laden")
     parser.add_argument("--tls", action="store_true",
                         help="Server per HTTPS auf localhost mit einer Test-CA (braucht --cover-server/--emu-server)")
     parser.add_argument("--tls-wrong-ca", action="store_true",
@@ -196,8 +214,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="Text, der vor dem [debug]-Block an config.ini angehängt wird (M14); \\n trennt Zeilen")
     args = parser.parse_args(argv)
     tls = args.tls or args.tls_wrong_ca
-    if tls and not (args.cover_server or args.emu_server):
-        parser.error("--tls/--tls-wrong-ca braucht --cover-server oder --emu-server")
+    if tls and not (args.cover_server or args.emu_server or args.cheat_server):
+        parser.error("--tls/--tls-wrong-ca braucht --cover-server, --emu-server oder --cheat-server")
     markers = args.markers or DEFAULT_MARKERS
 
     for name, path in (("Dolphin", args.dolphin), ("DOL", args.dol)):
@@ -251,6 +269,13 @@ def main(argv: list[str] | None = None) -> int:
         server, port = start_cover_server(Path(server_dirs[-1].name), ssl_context)
         servers.append(server)
         debug_lines += [f"emu_repo = {scheme_host}:{port}/hbb", f"emu_install = {EMU_SERVER_APP}"]
+    if args.cheat_server:
+        server_dirs.append(tempfile.TemporaryDirectory(prefix="nl_cheats_"))
+        write_cheat_server_files(Path(server_dirs[-1].name), args.cheat_server)
+        server, port = start_cover_server(Path(server_dirs[-1].name), ssl_context)
+        servers.append(server)
+        debug_lines += [f"cheat_url = {scheme_host}:{port}/codes/{{id6}}.txt", f"cheat_fetch = {CHEAT_SERVER_ID6}"]
+        markers = markers + ["NL_CHEAT_FETCH " + ("ok" if args.cheat_server == "ok" else "nocodes")]
     if args.expect_sysinfo:
         debug_lines.append("sysinfo_save = 1")
         markers = markers + ["NL_SYSINFO_SAVED"]
@@ -301,6 +326,8 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             shutil.copyfile(ARGV_ECHO_DOL, sd / f"apps/{EMU_SERVER_APP}/boot.dol")
             (sd / f"apps/{EMU_SERVER_APP}/meta.xml").write_text(
                 "<app><name>FCE Ultra GX</name></app>", encoding="utf-8")
+        if getattr(args, "cheat_server", None):
+            (sd / CHEAT_TXT_REL).unlink(missing_ok=True)  # sonst endet der Lauf mit „exists“
         if getattr(args, "sd_ca", None) is not None:
             shutil.copyfile(args.sd_ca, sd / SD_TEST_CA)
         if args.sd_layout == "multi":
@@ -344,6 +371,9 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
     try:
         missing = wait_for_markers(log_path(user_dir), markers, args.timeout,
                                    is_alive=lambda: proc.poll() is None)
+        if not missing and getattr(args, "cheat_server", None):
+            # Dolphin puffert SD-Schreibzugriffe; ein sofortiges Beenden verliert die gerade geschriebene Datei.
+            time.sleep(SD_SETTLE_SECONDS)
     finally:
         proc.terminate()
         try:
@@ -358,6 +388,8 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
         missing = _check_sysinfo(user_dir)
     if not missing and getattr(args, "expect_games_ini", None):
         missing = _check_games_ini(user_dir, args.expect_games_ini)
+    if not missing and getattr(args, "cheat_server", None):
+        missing = _check_cheat_file(user_dir, args.cheat_server == "ok")
     if not missing and getattr(args, "fresh_data", False):
         missing = _check_second_start(args, user_dir)
     if not missing:
@@ -379,6 +411,22 @@ def _check_frag(user_dir: Path, rel_path: str) -> list[str]:
         return ["NL_FRAG (Abgleich)"]
     log = log_path(user_dir).read_text(encoding="utf-8", errors="replace")
     return [] if line in log else [line]
+
+
+def _check_cheat_file(user_dir: Path, expected: bool) -> list[str]:
+    """Codeliste im SD-Image: bei „ok“ vorhanden und mit ID6, bei „html“ nicht angelegt."""
+    try:
+        text = read_file(user_dir / "Load/WiiSD.raw", CHEAT_TXT_REL)
+    except NotFat32Error:
+        print("SMOKE HINWEIS: SD-Image nicht FAT32, Codelisten-Prüfung übersprungen")
+        return []
+    except (OSError, ValueError):
+        text = None
+    if expected and (text is None or not text.startswith(CHEAT_SERVER_ID6.encode())):
+        return [CHEAT_TXT_REL + " (fehlt)"]
+    if not expected and text is not None:
+        return [CHEAT_TXT_REL + " (darf nicht entstehen)"]
+    return []
 
 
 def _check_second_start(args: argparse.Namespace, user_dir: Path) -> list[str]:

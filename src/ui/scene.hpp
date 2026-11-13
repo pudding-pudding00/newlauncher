@@ -48,6 +48,9 @@ enum class AppCommand : u8 {
     FinishSetup,      // Assistent: config.ini (und emulators.ini) schreiben, Szene schließen
     OpenOptions,      // Spieloptionen öffnen (M14): game gesetzt = pro Spiel, sonst global für console
     SaveOptions,      // Options-Szene geschlossen mit Änderungen: OptionsScene::model() schreiben
+    OpenCheats,       // Cheat-Auswahl öffnen (M15): game = Wii- oder GC-Spiel
+    FetchCheats,      // Codeliste laden: CheatsScene::id6(), overwrite()
+    SaveCheats,       // Cheat-Szene geschlossen mit Änderungen: CheatsScene::model().selText() als .sel schreiben
 };
 const char* appCommandName(AppCommand c);
 

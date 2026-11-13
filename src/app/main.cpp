@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <cstdlib>
+#include <array>
 #include <ctime>
 #include <malloc.h>
 #include <unistd.h>
@@ -32,11 +33,14 @@
 #include "core/n64.hpp"
 #include "core/options_model.hpp"
 #include "core/nin_cfg.hpp"
+#include "core/cheat_select.hpp"
+#include "core/cheat_source.hpp"
 #include "core/cios_scan.hpp"
 #include "core/n64_choice.hpp"
 #include "core/perf_stats.hpp"
 #include "core/theme.hpp"
 #include "core/vc_map.hpp"
+#include "core/wip_patch.hpp"
 #include "gfx/draw_list.hpp"
 #include "gfx/font_loader.hpp"
 #include "gfx/renderer.hpp"
@@ -44,6 +48,7 @@
 #include "launch/channel.hpp"
 #include "launch/wii_boot.hpp"
 #include "platform/crash.hpp"
+#include "platform/cheat_worker.hpp"
 #include "platform/emu_worker.hpp"
 #include "platform/audio.hpp"
 #include "platform/log.hpp"
@@ -59,6 +64,11 @@
 #include "platform/system_probe.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_disc.hpp"
+
+// M15: 1, wenn der Game-Booter den Codehandler aus Quelltext mitbringt (CMake setzt es zusammen mit NL_BOOTER_CHEATS).
+#ifndef NL_WII_CHEATS
+#define NL_WII_CHEATS 0
+#endif
 #include "platform/wii_input.hpp"
 #include "ui/settings_scene.hpp"
 #include "ui/debug_overlay.hpp"
@@ -66,6 +76,7 @@
 #include "ui/dialog_scene.hpp"
 #include "ui/emulators_scene.hpp"
 #include "ui/about_scene.hpp"
+#include "ui/cheats_scene.hpp"
 #include "ui/options_scene.hpp"
 #include "ui/setup_scene.hpp"
 #include "ui/sysinfo_scene.hpp"
@@ -573,9 +584,12 @@ int main(int argc, char** argv) {
     nl::ui::DialogScene dialog;
     nl::ui::VcMapScene vcMapScene;
     nl::platform::EmuWorker emu(netService);
+    nl::platform::CheatWorker cheatWorker(netService);  // M15: Gecko-Codes laden
     nl::ui::EmulatorsScene emuScene;
     nl::ui::AboutScene aboutScene;
     nl::ui::OptionsScene optionsScene;
+    nl::ui::CheatsScene cheatsScene;
+    nl::Console cheatsConsole = nl::Console::Wii;  // Konsole des Spiels in der Cheat-Szene
 #if defined(NL_TLS) && NL_TLS  // ab M11 Task 4 vom CMake-Schalter gesetzt
     aboutScene.setBuildInfo(NL_VERSION, true);
 #else
@@ -705,6 +719,21 @@ int main(int argc, char** argv) {
         details.setN64(nl::decideN64(n64Inputs(*g)), overrides.n64Method(g->key));
     };
 
+    // M15: <ID6>.txt und <ID6>.sel lesen (fehlend oder zu groß → leer); true, wenn die .txt vorliegt.
+    auto readCheatFiles = [&](const std::string& id6, std::string& txt, std::string& sel) {
+        txt.clear();
+        sel.clear();
+        if (!data.readable) return false;
+        const std::string txtPath = nl::cheatTxtPath(data.dir, id6);
+        std::array<u8, 1> probe{};
+        const bool exists = fs.read(txtPath, 0, probe).isOk();
+        if (auto r = fs.readAll(txtPath, nl::kMaxCheatTxtBytes); r.isOk())
+            txt.assign(reinterpret_cast<const char*>(r.value().data()), r.value().size());
+        if (auto r = fs.readAll(nl::cheatSelPath(data.dir, id6), kMaxIniBytes); r.isOk())
+            sel.assign(reinterpret_cast<const char*>(r.value().data()), r.value().size());
+        return exists;
+    };
+
     // Spec 9: Preflight, Verlauf, Chainload. Kehrt nur zurück, wenn der Start scheitert (dann mit Dialog).
     // Wii-Spiele (M9 Task 5): cIOS prüfen, Fragmentliste rechnen und gegenprüfen, dann preflightWii.
     auto prepareWii = [&](const nl::Game& game, const nl::IniDoc& configDoc, const nl::IniDoc& gamesDoc) {
@@ -745,7 +774,28 @@ int main(int argc, char** argv) {
                           static_cast<unsigned>(partLba), static_cast<unsigned>(f.entries.size()), static_cast<unsigned>(f.size),
                           static_cast<unsigned>(nl::fragListCrc(bytes)), first);
         }
-        auto plan = nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options);
+        // M15: Cheats nur mit Codehandler im Build und Option „Cheats“ (Spec v2 8); sonst leere GCT, hooktype 0.
+        std::vector<u8> gct;
+        if (NL_WII_CHEATS != 0 && options.cheats) {
+            std::string txt, sel;
+            readCheatFiles(id6, txt, sel);
+            gct = nl::gctForSelection(txt, sel);
+        }
+        // M15: WIP-Patches aus <data>/codes/<ID6>.wip (wie WiiFlow ohne eigene Option); kaputte Zeilen nur ins Log.
+        nl::WipFile wip;
+        if (data.readable) {
+            if (auto r = fs.readAll(nl::wipPath(data.dir, id6), nl::kMaxWipBytes); r.isOk()) {
+                wip = nl::parseWip(std::string_view(reinterpret_cast<const char*>(r.value().data()), r.value().size()));
+                for (u32 line : wip.badLines) nl::log::line("NL_WIP_SKIP line=%u", static_cast<unsigned>(line));
+                nl::log::line("NL_WII_WIP n=%u skipped=%u", static_cast<unsigned>(wip.entries.size()),
+                              static_cast<unsigned>(wip.skipped));
+            }
+        }
+        auto plan = nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options, gct, wip.entries);
+        if (plan.isOk() && !plan.value().gct.empty()) {
+            nl::log::line("NL_WII_CHEATS bytes=%u hook=%u", static_cast<unsigned>(plan.value().gct.size()),
+                          static_cast<unsigned>(plan.value().hookType));
+        }
         if (plan.isOk()) {
             const nl::WiiCfgFields& c = plan.value().options.cfg;
             nl::log::line("NL_WII_CFG vid=%u vpatch=%u lang=%02x aspect=%d defl=%u width=%u online=%u ios=%u ret=%08x",
@@ -785,9 +835,17 @@ int main(int argc, char** argv) {
         // Spieloptionen (Spec v2 7) bei jedem Start frisch lesen: die Options-Szene ändert games.ini/config.ini.
         const nl::IniDoc configDoc = data.readable ? readIni(fs, configPath.c_str()) : nl::IniDoc{};
         const nl::IniDoc gamesDoc = data.readable ? readIni(fs, gamesPath.c_str()) : nl::IniDoc{};
+        // M15: GC-Cheats gehen über Nintendont; die GCT entsteht hier, wirksam nur mit Option „cheats“.
+        std::vector<u8> gcGct;
+        if (game.console == nl::Console::Gc && game.key != nullptr) {
+            std::string txt, sel;
+            readCheatFiles(std::string(game.key).substr(0, 6), txt, sel);
+            gcGct = nl::gctForSelection(txt, sel);
+        }
         const nl::GameOptionInputs optionInputs{
             configDoc, gamesDoc,
-            nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected()) != nl::Platform::VWii};
+            nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected()) != nl::Platform::VWii,
+            gcGct};
         auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, hwAccess, &optionInputs);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
             if (auto plan = prepareWii(game, configDoc, gamesDoc); plan.isOk()) {
@@ -841,6 +899,17 @@ int main(int argc, char** argv) {
             return;
         }
         warnedLaunch.clear();
+        if (const std::string& gctPath = target.value().gctPath; !gctPath.empty()) {
+            // Nintendont liest CheatPath auf dem Spielgerät. Schlägt das Schreiben fehl, darf keine alte Auswahl
+            // liegen bleiben: Datei entfernen, Start ohne Codes (Nintendont meldet die fehlende Datei nur im Log).
+            const std::string dir = gctPath.substr(0, gctPath.rfind('/'));
+            if (fs.makeDirs(dir).isOk() && fs.writeAtomic(gctPath, target.value().gct).isOk()) {
+                nl::log::line("NL_NIN_CHEAT %s bytes=%u", gctPath.c_str(), static_cast<unsigned>(target.value().gct.size()));
+            } else {
+                static_cast<void>(fs.removeFile(gctPath));
+                nl::log::line("NL_WARN GCT nicht geschrieben: %s", gctPath.c_str());
+            }
+        }
         store.recordPlayed(key, static_cast<u32>(std::time(nullptr)));
         if (data.writable && writeText(fs, historyPath.c_str(), store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
         else nl::log::line("NL_WARN history.ini nicht gespeichert");
@@ -848,6 +917,7 @@ int main(int argc, char** argv) {
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
         net.join();
         emu.join();
+        cheatWorker.join();
         netService.shutdown();  // wtls_shutdown im Netz-Thread, dann Thread beendet
         covers.shutdown();
 
@@ -934,8 +1004,68 @@ int main(int argc, char** argv) {
         }
         coverToastDone = ~0u;
     };
+    // Gecko-Codes eines Spiels laden (M15): nur auf Knopfdruck, Ziel <data>/codes/<ID6>.txt.
+    const std::string cheatSourceTmpl = config.debugCheatUrl.empty() ? config.cheatSource : config.debugCheatUrl;
+    std::string cheatFetchId6;  // Spiel des laufenden bzw. letzten Auftrags
+    auto startCheatFetch = [&](const std::string& id6, bool overwrite) {
+        if (cheatSourceTmpl.empty() || !data.writable || cheatWorker.running()) return false;
+        cheatFetchId6 = id6;
+        if (!cheatWorker.start(fs, nl::cheatUrl(cheatSourceTmpl, id6), id6, nl::cheatTxtPath(data.dir, id6), overwrite)) {
+            nl::log::line("NL_WARN Cheat-Auftrag nicht angenommen");
+            return false;
+        }
+        return true;
+    };
+    // Codeliste und Auswahl eines Spiels lesen; exists: <ID6>.txt liegt vor (auch wenn zu groß oder kaputt).
+    auto loadCheatModel = [&](nl::Console c, const std::string& id6, bool& exists) {
+        std::string txt, sel;
+        exists = readCheatFiles(id6, txt, sel);
+        nl::CheatModel m(c, txt, sel, NL_WII_CHEATS != 0);
+        if (m.status() == nl::CheatStatus::Ready && m.skipped() > 0)
+            nl::log::line("NL_CHEAT_SKIP %u", static_cast<unsigned>(m.skipped()));
+        return m;
+    };
+    auto openCheats = [&](const nl::Game& g) {
+        const std::string id6 = g.key != nullptr ? g.key : "";
+        bool exists = false;
+        nl::CheatModel m = loadCheatModel(g.console, id6, exists);
+        std::optional<nl::ui::Str> blocked;
+        if (cheatSourceTmpl.empty()) blocked = nl::ui::Str::CheatsNoSource;
+        else if (!data.writable) blocked = nl::ui::Str::CheatsReadOnly;
+        const unsigned rows = static_cast<unsigned>(m.rows());
+        cheatsScene.open(std::move(m), id6, g.title != nullptr ? g.title : id6, exists, blocked);
+        if (!scenes.contains(&cheatsScene)) scenes.push(&cheatsScene);
+        nl::log::line("NL_SCENE cheats rows=%u", rows);
+    };
+    auto saveCheats = [&]() {
+        if (!cheatsScene.hasModel()) return;
+        const std::string& id6 = cheatsScene.id6();
+        const std::string dir = data.path("codes");
+        if (data.writable && fs.makeDirs(dir).isOk() &&
+            writeText(fs, nl::cheatSelPath(data.dir, id6).c_str(), cheatsScene.model().selText())) {
+            nl::log::line("NL_CHEATS_SAVED %s n=%u", id6.c_str(), static_cast<unsigned>(cheatsScene.model().selection().size()));
+        } else {
+            nl::log::line("NL_WARN %s.sel nicht gespeichert", id6.c_str());
+        }
+    };
+    auto pumpCheats = [&]() {
+        for (const std::string& line : cheatWorker.takeLogLines()) nl::log::line("%s", line.c_str());
+        if (const auto r = cheatWorker.takeResult()) {
+            nl::log::line("NL_CHEAT_FETCH %.*s", static_cast<int>(nl::cheatFetchTag(*r).size()), nl::cheatFetchTag(*r).data());
+            // Die Szene zeigt noch dasselbe Spiel: Ergebnis melden, bei Erfolg neu einlesen.
+            if (cheatsScene.hasModel() && cheatsScene.fetching() && cheatsScene.id6() == cheatFetchId6) {
+                std::optional<nl::CheatModel> reloaded;
+                if (*r == nl::CheatFetchResult::Ok || *r == nl::CheatFetchResult::Exists) {
+                    bool exists = false;
+                    reloaded.emplace(loadCheatModel(cheatsConsole, cheatFetchId6, exists));
+                }
+                cheatsScene.fetchDone(*r, std::move(reloaded));
+            }
+        }
+    };
     // Fortschritt, Marker und Ergebnis des Netz-Threads übernehmen (Haupt-Thread).
     auto pumpNet = [&]() {
+        pumpCheats();
         for (const std::string& line : net.takeLogLines()) nl::log::line("%s", line.c_str());
         for (const std::string& stem : net.takeFinishedStems()) covers.invalidate(stem);
         if (net.running()) {
@@ -1280,6 +1410,7 @@ int main(int argc, char** argv) {
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
                 net.join();
                 emu.join();
+                cheatWorker.join();
                 netService.shutdown();
                 covers.shutdown();
                 stopAudio();
@@ -1316,6 +1447,22 @@ int main(int argc, char** argv) {
             case nl::ui::AppCommand::SaveOptions:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 saveOptions();
+                break;
+            case nl::ui::AppCommand::OpenCheats:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (req.game != nullptr) {
+                    cheatsConsole = req.game->console;
+                    openCheats(*req.game);
+                }
+                break;
+            case nl::ui::AppCommand::FetchCheats:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (!startCheatFetch(cheatsScene.id6(), cheatsScene.overwrite()))
+                    cheatsScene.fetchDone(nl::CheatFetchResult::NetError, std::nullopt);
+                break;
+            case nl::ui::AppCommand::SaveCheats:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                saveCheats();
                 break;
             case nl::ui::AppCommand::OpenAbout:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
@@ -1392,11 +1539,25 @@ int main(int argc, char** argv) {
                 runPendingAutostart();
             }
             if (config.debugFetchCovers) fetchCovers();  // nur für Tests
+            if (!config.debugCheatFetch.empty() && !startCheatFetch(config.debugCheatFetch, false))  // nur für Tests (M15)
+                nl::log::line("NL_CHEAT_FETCH nosource");
             if (config.debugOpenScene == "about") {   // nur für Tests (M11)
                 scenes.push(&aboutScene);
                 nl::log::line("NL_SCENE about");
             }
             if (config.debugOpenScene == "sysinfo") openSysInfo();  // nur für Tests (M13)
+            if (config.debugOpenScene.rfind("cheats:", 0) == 0) {  // nur für Tests (M15): cheats:<ID6>
+                const std::string id = config.debugOpenScene.substr(7);
+                const nl::Game* found = nullptr;
+                for (const nl::Game& g : store.games())
+                    if (id == g.key) found = &g;
+                if (found != nullptr) {
+                    cheatsConsole = found->console;
+                    openCheats(*found);
+                } else {
+                    nl::log::line("NL_WARN cheats %s fehlt", id.c_str());
+                }
+            }
             if (config.debugOpenScene.rfind("options:", 0) == 0) {  // nur für Tests (M14): options:<ID6>|wii|gc
                 const std::string id = config.debugOpenScene.substr(8);
                 const nl::Game* found = nullptr;
@@ -1441,6 +1602,7 @@ int main(int argc, char** argv) {
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
     net.join();
     emu.join();
+    cheatWorker.join();
     netService.shutdown();
     covers.shutdown();
     stopAudio();

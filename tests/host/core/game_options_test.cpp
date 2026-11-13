@@ -122,6 +122,17 @@ TEST_CASE("game_options: Wii return_to") {
     CHECK(wiiGame("return_to = none").cfg.returnTo == 0u);
 }
 
+TEST_CASE("game_options: Wii cheats und hook (M15)") {
+    const WiiOptions none = wiiGame("");
+    CHECK_FALSE(none.cheats);
+    CHECK(none.hookType == 1);  // vbi
+    CHECK(wiiGame("cheats = 1").cheats);
+    const char* hooks[] = {"vbi", "kpad", "joypad", "gxdraw", "gxflush", "ossleep", "axframe"};
+    for (u8 i = 0; i < 7; ++i) CHECK(wiiGame(std::string("hook = ") + hooks[i]).hookType == i + 1);
+    CHECK(has(wiiGame("hook = foo").bad, "hook"));
+    CHECK(wiiGame("hook = foo").hookType == 1);
+}
+
 // --- GC-Tabelle (Spec 7.3) --------------------------------------------------------------------
 
 TEST_CASE("game_options: GC video") {
@@ -142,6 +153,12 @@ TEST_CASE("game_options: GC Schalter setzen ihre Bits") {
     CHECK(si.nin.extraFlags == kNinCfgNativeSi);
     CHECK(si.nativeSi);
     CHECK(gcGame("progressive = 0\nforce_wide = 0").nin.extraFlags == 0u);
+}
+
+TEST_CASE("game_options: GC cheats (M15)") {
+    CHECK_FALSE(gcGame("").cheats);
+    CHECK(gcGame("cheats = 1").cheats);
+    CHECK_FALSE(gcGame("cheats = 0").cheats);
 }
 
 TEST_CASE("game_options: GC memcard") {
@@ -235,7 +252,7 @@ TEST_CASE("game_options: listOptions markiert geerbte Werte") {
     const IniDoc cfg = IniDoc::parse("[wii]\nvideo = pal50\n");
     const IniDoc games = IniDoc::parse("[game RMGP01]\nlanguage = DE\nvideo = default\n");
     const auto rows = listOptions(Console::Wii, cfg, games, kId);
-    REQUIRE(rows.size() == 13);
+    REQUIRE(rows.size() == 15);
     CHECK(rows[0].key == "video");
     CHECK(rows[0].inherited);
     CHECK(rows[0].value == "pal50");
@@ -250,10 +267,10 @@ TEST_CASE("game_options: listOptions markiert geerbte Werte") {
 
 TEST_CASE("game_options: listOptions global und GC") {
     const auto global = listOptions(Console::Wii, IniDoc::parse("[wii]\naspect = 16:9\n"), IniDoc{}, "");
-    REQUIRE(global.size() == 13);
+    REQUIRE(global.size() == 15);
     for (const OptionValue& r : global) CHECK_FALSE(r.inherited);
     const auto gc = listOptions(Console::Gc, IniDoc{}, IniDoc{}, "GM8P01");
-    REQUIRE(gc.size() == 10);
+    REQUIRE(gc.size() == 11);
     CHECK(gc[0].key == "video");
     CHECK(gc[0].value == "auto");
     CHECK(gc[0].inherited);

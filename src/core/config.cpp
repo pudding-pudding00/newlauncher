@@ -57,6 +57,8 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     c.debugEmuInstall = std::string(trim(ini.get("debug", "emu_install")));
     c.debugAutostart = std::string(ini.get("debug", "autostart"));  // nur für Tests (Spec 9)
     c.debugCoverUrl = std::string(ini.get("debug", "cover_url"));
+    c.debugCheatUrl = std::string(trim(ini.get("debug", "cheat_url")));
+    c.debugCheatFetch = std::string(trim(ini.get("debug", "cheat_fetch")));
     c.debugFetchCovers = parseIntIn(ini.get("debug", "fetch_covers"), 0, 1, 0) == 1;
     c.debugSysinfoSave = parseIntIn(ini.get("debug", "sysinfo_save"), 0, 1, 0) == 1;
     c.debugLogSounds = parseIntIn(ini.get("debug", "log_sounds"), 0, 1, 0) == 1;
@@ -98,6 +100,9 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     c.emulatorRepo = sourceForBuild(repo, kDefaultEmuRepoHttp, kDefaultEmuRepoHttps, defaultEmuRepo(tls));
     const std::string_view coverBase = trim(ini.get("covers", "base"));
     c.coverBase = sourceForBuild(coverBase, kGametdbCoverBaseHttp, kGametdbCoverBaseHttps, defaultCoverBase(tls));
+    const std::string_view cheatSource = trim(ini.get("cheats", "source"));
+    const bool cheatSourceOk = cheatSource.starts_with("https://") || cheatSource.starts_with("http://");
+    c.cheatSource = std::string(cheatSourceOk ? cheatSource : defaultCheatSource(tls));
     const std::string_view ios = ini.get("wii", "ios");
     c.wiiIos = parseIosValue(ios);
     if (isBadIosValue(ios)) c.badKeys.emplace_back("wii.ios");

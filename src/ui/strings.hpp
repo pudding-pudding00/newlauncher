@@ -85,6 +85,8 @@
       "Game file damaged.\n%s is damaged or too fragmented.") \
     X(DeviceUnsupported, "Gerät nicht unterstützt.\nDas Spiel liegt auf %s. Nintendont und die Emulatoren lesen nur SD und die erste USB-Partition.", \
       "Device not supported.\nThe game is on %s. Nintendont and the emulators only read SD and the first USB partition.") \
+    X(CheatsTooLarge, "Zu viele Cheats.\nDie gewählten Codes belegen %s Bytes, zu viel für die Codeliste. Bitte weniger Codes wählen.", \
+      "Too many cheats.\nThe selected codes take %s bytes, too much for the code list. Please select fewer codes.") \
     X(OverrideIgnored,"Gewählter Weg nicht verfügbar – automatisch gewählt.", "Chosen method unavailable – picked automatically.") \
     X(VcMapTitle, "VC-Injects zuordnen", "Map VC injects") \
     X(VcNone, "—", "—") \
@@ -149,6 +151,20 @@
     X(OptNativeSi, "Native Controller", "Native controllers") \
     X(OptMaxPads, "Max. Controller", "Max controllers") \
     X(OptSkipIpl, "IPL überspringen", "Skip IPL") \
+    X(OptCheats, "Cheats", "Cheats") \
+    X(OptHook, "Cheat-Hook", "Cheat hook") \
+    X(CheatsTitle, "Cheats – %s", "Cheats – %s") \
+    X(DetailsCheats, "Cheats …", "Cheats …") \
+    X(CheatsNoFile, "Keine Codeliste. +/R lädt Codes.", "No code list. +/R loads codes.") \
+    X(CheatsLoading, "Lade Codes …", "Loading codes …") \
+    X(CheatsNoCodes, "Keine Codes für dieses Spiel gefunden", "No codes found for this game") \
+    X(CheatsNetError, "Codes konnten nicht geladen werden", "Could not load codes") \
+    X(CheatsNoSource, "Keine Codequelle (HTTPS nötig)", "No code source (HTTPS required)") \
+    X(CheatsReadOnly, "Datenordner nicht beschreibbar", "Data folder is read-only") \
+    X(CheatsWiiUnavailable, "Wii-Cheats in dieser Version nicht verfügbar", "Wii cheats not available in this version") \
+    X(CheatsOverwrite, "Vorhandene Codeliste ersetzen? A Ja · B Nein", "Replace the existing code list? A Yes · B No") \
+    X(CheatsUnselectable, "nicht wählbar", "not selectable") \
+    X(CheatsHelp, "A An/Aus · ◀▶ Seite · +/R Codes laden · B Speichern", "A On/Off · ◀▶ Page · +/R Load codes · B Save") \
     X(ValGame, "Spiel", "Game") \
     X(ValSystem, "System", "System") \
     X(ValNoChange, "Keine Änderung", "No change") \

@@ -29,9 +29,10 @@
 #include "gecko.h"
 #include "memory.h"
 #include "patchcode.h"
-#if NL_BOOTER_CHEATS // newlauncher: Codehandler-Blob nur mit Cheats (M11, boot/UPSTREAM.md)
+#if NL_BOOTER_CHEATS // newlauncher (M15): Codehandler aus boot/nl/codehandler/codehandler.s, im Build erzeugt
 #include "codehandler.h"
-#include "codehandleronly.h"
+_Static_assert(NL_CH_ENTRY == 0x800018A8u, "Hooks in patchhook.S springen nach 0x800018A8 (_start)");
+_Static_assert(NL_CH_LOAD_ADDR + NL_CH_SIZE <= NL_CH_CODELIST_END, "Codehandler ragt in die OS-Globals");
 #endif
 #include "multidol.h"
 
@@ -148,41 +149,19 @@ void load_handler()
 {
 	memset((void*)0x80001800, 0, 0x1800);
 #if NL_BOOTER_CHEATS
-	if(debuggerselect == 0x01)
+	// newlauncher (M15): nur der Handler ohne Debugger; die Debugger-Variante hatte keine belegte Quelle.
+	gprintf("Ocarina: No Debugger selected.\n");
+	memcpy((void*)NL_CH_LOAD_ADDR, nl_codehandler, NL_CH_SIZE);
+	if(code_size > 0 && code_buf)
 	{
-		gprintf("Ocarina: Debugger selected.\n");
-		memcpy((void*)0x80001800, codehandler, codehandler_size);
-		if(code_size > 0 && code_buf)
-		{
-			gprintf("Ocarina: Codes found.\n");
-			memcpy((void*)0x80001CDE, &codelist, 2);
-			memcpy((void*)0x80001CE2, ((u8*) &codelist) + 2, 2);
-			memcpy((void*)0x80001F5A, &codelist, 2);
-			memcpy((void*)0x80001F5E, ((u8*) &codelist) + 2, 2);
-		}
-		else
-		{
-			gprintf("Ocarina: No Codes found.\n");
-			*(u32*)0x80002774 = 1; //pause for debugger
-		}
-		DCFlushRange((void*)0x80001800, codehandler_size);
-		ICInvalidateRange((void*)0x80001800, codehandler_size);
+		gprintf("Ocarina: Codes found.\n");
+		memcpy((void*)NL_CH_PATCH_HI, &codelist, 2);
+		memcpy((void*)NL_CH_PATCH_LO, ((u8*) &codelist) + 2, 2);
 	}
 	else
-	{
-		gprintf("Ocarina: No Debugger selected.\n");
-		memcpy((void*)0x80001800, codehandleronly, codehandleronly_size);
-		if(code_size > 0 && code_buf)
-		{
-			gprintf("Ocarina: Codes found.\n");
-			memcpy((void*)0x80001906, &codelist, 2);
-			memcpy((void*)0x8000190A, ((u8*) &codelist) + 2, 2);
-		}
-		else
-			gprintf("Ocarina: No Codes found.\n");
-		DCFlushRange((void*)0x80001800, codehandleronly_size);
-		ICInvalidateRange((void*)0x80001800, codehandleronly_size);
-	}
+		gprintf("Ocarina: No Codes found.\n");
+	DCFlushRange((void*)NL_CH_LOAD_ADDR, NL_CH_SIZE);
+	ICInvalidateRange((void*)NL_CH_LOAD_ADDR, NL_CH_SIZE);
 
 #endif
 	// Load multidol handler

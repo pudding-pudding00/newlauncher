@@ -281,3 +281,12 @@ TEST_CASE("game_options: optionValues für die Szene") {
     CHECK(optionValues(Console::Gc, "gibt_es_nicht").empty());
     CHECK(optionValues(Console::Nes, "video").empty());
 }
+
+TEST_CASE("game_options: hbcReturnTo nimmt LULZ, sonst JODI, sonst nichts") {
+    const std::vector<u64> both{0x000100014C554C5Aull, 0x000100014A4F4449ull};
+    const std::vector<u64> old{0x0001000148415858ull, 0x000100014A4F4449ull};
+    const std::vector<u64> none{0x0001000148415858ull};
+    CHECK(hbcReturnTo(both) == kReturnToHbc);
+    CHECK(hbcReturnTo(old) == kReturnToHbcOld);
+    CHECK(hbcReturnTo(none) == 0u);
+}

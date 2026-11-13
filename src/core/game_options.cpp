@@ -228,6 +228,16 @@ GcOptions resolveGcOptions(const IniDoc& config, const IniDoc& games, std::strin
     return o;
 }
 
+u32 hbcReturnTo(std::span<const u64> installedTitles) {
+    constexpr u64 kChannel = 0x0001000100000000ull;
+    bool old = false;
+    for (u64 t : installedTitles) {
+        if (t == (kChannel | kReturnToHbc)) return kReturnToHbc;
+        old = old || t == (kChannel | kReturnToHbcOld);
+    }
+    return old ? kReturnToHbcOld : 0;
+}
+
 std::vector<OptionValue> listOptions(Console c, const IniDoc& config, const IniDoc& games, std::string_view id6) {
     std::vector<OptionValue> out;
     std::vector<std::string> ignored;

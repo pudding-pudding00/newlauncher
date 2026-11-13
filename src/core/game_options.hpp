@@ -5,6 +5,7 @@
 // Standard und landen in `bad` (der Aufrufer loggt NL_OPT_BAD <schlüssel>).
 
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -34,6 +35,9 @@ struct WiiCfgFields {
 
 inline constexpr u32 kReturnToHbc = 0x4C554C5A;   // "LULZ", HBC ≥ 1.1
 inline constexpr u32 kReturnToHbcOld = 0x4A4F4449;  // "JODI", ältere HBC
+
+// return_to = hbc: LULZ, wenn installiert, sonst JODI, sonst 0 (keine Rückkehr).
+u32 hbcReturnTo(std::span<const u64> installedTitles);
 
 struct WiiOptions {
     WiiCfgFields cfg;

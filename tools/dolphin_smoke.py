@@ -28,6 +28,7 @@ DEFAULT_MARKERS = ["NL_READY"]
 # --expect-sysinfo (M13): die Datei zum Weitergeben darf keine MAC- und keine IPv4-Adresse enthalten.
 SYSINFO_REL = "newlauncher/sysinfo.txt"
 CONFIG_REL = "newlauncher/config.ini"
+GAMES_REL = "newlauncher/games.ini"  # Spieloptionen pro Spiel (M14)
 DEBUG_INI_REL = "newlauncher/debug.ini"  # [debug] ohne config.ini (--fresh-data, M13)
 _MAC_RE = re.compile(r"[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}")
 _IPV4_RE = re.compile(r"\b\d{1,3}(\.\d{1,3}){3}\b")
@@ -174,6 +175,11 @@ def main(argv: list[str] | None = None) -> int:
                              "config.ini im SD-Image und einen zweiten Start ohne Assistent (M13)")
     parser.add_argument("--sd-layout", choices=["default", "multi"], default="default",
                         help="multi: zusätzlicher NES-Ordner emu/nes mit [paths] und ein ZIP-ROM (M12)")
+    parser.add_argument("--games-ini", metavar="TEXT",
+                        help="Inhalt für newlauncher/games.ini (Spieloptionen, M14); ein wörtliches \\n trennt Zeilen. "
+                             "Ohne die Option wird eine alte games.ini entfernt")
+    parser.add_argument("--config-append", metavar="TEXT",
+                        help="Text, der vor dem [debug]-Block an config.ini angehängt wird (M14); \\n trennt Zeilen")
     args = parser.parse_args(argv)
     tls = args.tls or args.tls_wrong_ca
     if tls and not (args.cover_server or args.emu_server):
@@ -247,6 +253,12 @@ def main(argv: list[str] | None = None) -> int:
             server_dir.cleanup()
 
 
+def _cli_text(text: str) -> str:
+    """Kommandozeilentext: wörtliches \\n wird zum Zeilenumbruch; endet immer mit einem Zeilenumbruch."""
+    text = text.replace("\\n", "\n")
+    return text if text.endswith("\n") else text + "\n"
+
+
 def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -> int:
     user_dir = args.user_dir.resolve()
     try:
@@ -282,6 +294,13 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
         (sd / SYSINFO_REL).unlink(missing_ok=True)  # alte Datei darf die Prüfung nicht bestehen lassen
         (sd / DEBUG_INI_REL).unlink(missing_ok=True)  # Rest eines --fresh-data-Laufs
         (sd / (CONFIG_REL + ".bak")).unlink(missing_ok=True)
+        if args.games_ini is not None:
+            (sd / GAMES_REL).write_text(_cli_text(args.games_ini), encoding="utf-8", newline="\n")
+        else:
+            (sd / GAMES_REL).unlink(missing_ok=True)  # Optionen eines früheren Laufs dürfen nicht nachwirken
+        if args.config_append and not args.fresh_data:
+            with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
+                f.write(_cli_text(args.config_append))
         if args.fresh_data:
             # Erster Start (Spec v2 6.4): keine config.ini; [debug] kommt aus debug.ini.
             (sd / CONFIG_REL).unlink(missing_ok=True)

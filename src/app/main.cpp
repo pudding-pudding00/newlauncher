@@ -702,7 +702,7 @@ int main(int argc, char** argv) {
 
     // Spec 9: Preflight, Verlauf, Chainload. Kehrt nur zurück, wenn der Start scheitert (dann mit Dialog).
     // Wii-Spiele (M9 Task 5): cIOS prüfen, Fragmentliste rechnen und gegenprüfen, dann preflightWii.
-    auto prepareWii = [&](const nl::Game& game) {
+    auto prepareWii = [&](const nl::Game& game, const nl::IniDoc& configDoc, const nl::IniDoc& gamesDoc) {
         // Spec v2 6.2: Slots 200–255 lesen, dann games.ini > config.ini > Automatik.
         const std::vector<nl::CiosEntry> found = nl::platform::scanCios();
         for (const nl::CiosEntry& e : found) {
@@ -710,7 +710,11 @@ int main(int argc, char** argv) {
                           static_cast<unsigned>(e.base), e.version.c_str());
         }
         const std::string id6 = game.key != nullptr ? std::string(game.key).substr(0, 6) : std::string();
-        const nl::CiosChoice choice = nl::chooseCios(found, overrides.wiiIos(id6), config.wiiIos);
+        // Spec v2 7: Spieloptionen; ios aus [game]/[wii] geht als Spielwahl an chooseCios.
+        nl::WiiOptions options = nl::resolveWiiOptions(configDoc, gamesDoc, id6);
+        for (const std::string& k : options.bad) nl::log::line("NL_OPT_BAD %s", k.c_str());
+        if (options.returnToHbc) options.cfg.returnTo = nl::hbcReturnTo(installedTitles);
+        const nl::CiosChoice choice = nl::chooseCios(found, options.ios ? options.ios : overrides.wiiIos(id6), config.wiiIos);
         const nl::CiosStatus cios = nl::ciosStatusFor(found, choice);
         nl::log::line("NL_WII_IOS %u %s", static_cast<unsigned>(cios.slot), choice.forced ? "forced" : "auto");
         switch (cios.state) {
@@ -736,7 +740,16 @@ int main(int argc, char** argv) {
                           static_cast<unsigned>(partLba), static_cast<unsigned>(f.entries.size()), static_cast<unsigned>(f.size),
                           static_cast<unsigned>(nl::fragListCrc(bytes)), first);
         }
-        return nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun);
+        auto plan = nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options);
+        if (plan.isOk()) {
+            const nl::WiiCfgFields& c = plan.value().options.cfg;
+            nl::log::line("NL_WII_CFG vid=%u vpatch=%u lang=%02x aspect=%d defl=%u width=%u online=%u ios=%u ret=%08x",
+                          static_cast<unsigned>(c.vidMode), static_cast<unsigned>(c.patchVidMode),
+                          static_cast<unsigned>(c.language), static_cast<int>(c.aspectRatio), static_cast<unsigned>(c.deflicker),
+                          static_cast<unsigned>(c.videoWidth), static_cast<unsigned>(c.privateServer),
+                          static_cast<unsigned>(plan.value().iosSlot), static_cast<unsigned>(c.returnTo));
+        }
+        return plan;
     };
 
     auto launchGame = [&](const nl::Game& game) {
@@ -763,9 +776,15 @@ int main(int argc, char** argv) {
                 gameEmus.set(nl::consoleInfo(game.console).key, nl::EmulatorEntry{r->dol, r->args, r->fromIni, r->profile});
             }
         }
-        auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, hwAccess);
+        // Spieloptionen (Spec v2 7) bei jedem Start frisch lesen: die Options-Szene ändert games.ini/config.ini.
+        const nl::IniDoc configDoc = data.readable ? readIni(fs, configPath.c_str()) : nl::IniDoc{};
+        const nl::IniDoc gamesDoc = data.readable ? readIni(fs, gamesPath.c_str()) : nl::IniDoc{};
+        const nl::GameOptionInputs optionInputs{
+            configDoc, gamesDoc,
+            nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected()) != nl::Platform::VWii};
+        auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, hwAccess, &optionInputs);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
-            if (auto plan = prepareWii(game); plan.isOk()) {
+            if (auto plan = prepareWii(game, configDoc, gamesDoc); plan.isOk()) {
                 if (config.debugWiiDryRun) {
                     nl::log::line("NL_WII_DRYRUN %s", plan.value().id6.c_str());
                     return;
@@ -790,6 +809,19 @@ int main(int argc, char** argv) {
             nl::log::line("NL_NIN ver=%s path=%s usb=%d", nl::formatNinVersion(*nin).c_str(), cfg.c_str() + 0x14,
                           (static_cast<unsigned char>(cfg[0x0A]) & 0x04) != 0 ? 1 : 0);
         }
+        if (const auto& gc = target.value().gc) {
+            for (const std::string& k : gc->bad) nl::log::line("NL_OPT_BAD %s", k.c_str());
+            for (const std::string& k : gc->unsupported) nl::log::line("NL_OPT_UNSUPPORTED %s", k.c_str());
+            const nl::NinConfigInput& n = gc->nin;
+            const std::string& cfg = target.value().dol.args[1];
+            const unsigned flags = (static_cast<unsigned>(static_cast<unsigned char>(cfg[0x08])) << 24) |
+                                   (static_cast<unsigned>(static_cast<unsigned char>(cfg[0x09])) << 16) |
+                                   (static_cast<unsigned>(static_cast<unsigned char>(cfg[0x0A])) << 8) |
+                                   static_cast<unsigned>(static_cast<unsigned char>(cfg[0x0B]));
+            nl::log::line("NL_NIN_CFG flags=%08x vid=%08x lang=%u blocks=%u pads=%u", flags, static_cast<unsigned>(n.videoMode),
+                          static_cast<unsigned>(n.language), static_cast<unsigned>(n.memcardBlocks), static_cast<unsigned>(n.maxPads));
+        }
+        for (nl::LaunchWarning w : target.value().warnings) nl::log::line("NL_PREFLIGHT_WARN %s", nl::launchWarningName(w));
         store.recordPlayed(key, static_cast<u32>(std::time(nullptr)));
         if (data.writable && writeText(fs, historyPath.c_str(), store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
         else nl::log::line("NL_WARN history.ini nicht gespeichert");

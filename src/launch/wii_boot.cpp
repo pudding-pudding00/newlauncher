@@ -46,14 +46,21 @@ Result<LaunchPlan> prepareWiiBoot(const WiiBootPlan& plan, std::string_view titl
     cfg.IOS.Type = IOS_TYPE_D2X;  // auch bei Unverified: der Booter versucht nur BlockIOSReload
     cfg.IOS.Base = static_cast<u8>(plan.cios.base);
     cfg.BootType = TYPE_WII_GAME;
-    cfg.configbytes[0] = kNlConfigByteUnpatched;
+    // M14: Spieloptionen; ohne Optionen sind das die kNl*-Standards aus booter_cfg.h (Test game_options).
+    const WiiCfgFields& o = plan.options.cfg;
+    cfg.configbytes[0] = o.language;
     cfg.configbytes[1] = kNlConfigByteUnpatched;
-    cfg.vidMode = kNlVidModeSystem;
-    cfg.patchVidMode = 0;
-    cfg.aspectRatio = kNlAspectRatioGame;
-    cfg.deflicker = kNlDeflickerGame;
-    cfg.videoWidth = kNlVideoWidthGame;
-    cfg.returnTo = 0;
+    cfg.vidMode = o.vidMode;
+    cfg.patchVidMode = o.patchVidMode;
+    cfg.vipatch = o.vipatch;
+    cfg.countryString = o.countryString;
+    cfg.patchregion = o.patchregion != 0;
+    cfg.aspectRatio = o.aspectRatio;
+    cfg.deflicker = o.deflicker;
+    cfg.videoWidth = o.videoWidth;
+    cfg.patchFix480p = o.patchFix480p != 0;
+    cfg.private_server = o.privateServer;
+    cfg.returnTo = o.returnTo;
 
     std::memcpy(at(NL_WII_CFG_ADDR), &cfg, sizeof cfg);
     std::memcpy(at(NL_FRAG_LIST_ADDR), plan.fragBytes.data(), plan.fragBytes.size());

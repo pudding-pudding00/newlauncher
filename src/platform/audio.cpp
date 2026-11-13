@@ -91,6 +91,8 @@ void Audio::playBanner() {
                   static_cast<s32>(banner_.bytes), 255, 255, bannerLoop_ ? loopCallback : nullptr);
 }
 
+bool Audio::bannerVoiceIdle() const { return started_ && ASND_StatusVoice(kBannerVoice) == SND_UNUSED; }
+
 void Audio::stopBanner() {
     gLoopData = nullptr;  // zuerst: der Rückruf hängt danach nichts mehr an
     if (started_) ASND_StopVoice(kBannerVoice);

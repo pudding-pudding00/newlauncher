@@ -1,5 +1,6 @@
 #include "core/brlyt.hpp"
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstring>
@@ -44,8 +45,9 @@ bool readTxl1(std::span<const u8> s, Layout& l) {
     for (u32 i = 0; i < count; ++i) {
         const std::size_t at = 0x0C + std::size_t{be32(s, 0x0C + std::size_t{i} * 8)};
         if (at >= s.size()) return false;
-        const std::size_t len = std::string_view(reinterpret_cast<const char*>(&s[at]), s.size() - at).find('\0');
-        if (len == std::string_view::npos) return false;
+        const std::size_t avail = std::min<std::size_t>(s.size() - at, kLytNameMax + 1);
+        const std::size_t len = std::string_view(reinterpret_cast<const char*>(&s[at]), avail).find('\0');
+        if (len == std::string_view::npos) return false;  // ohne Ende oder länger als kLytNameMax
         l.textures.emplace_back(reinterpret_cast<const char*>(&s[at]), len);
     }
     return true;

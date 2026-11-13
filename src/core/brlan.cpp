@@ -27,8 +27,9 @@ std::string fixedName(std::span<const u8> b, std::size_t at, std::size_t n) {
 // Nullterminierter Name ab at innerhalb von s.
 bool cName(std::span<const u8> s, std::size_t at, std::string& out) {
     if (at >= s.size()) return false;
-    const std::size_t len = std::string_view(reinterpret_cast<const char*>(&s[at]), s.size() - at).find('\0');
-    if (len == std::string_view::npos) return false;
+    const std::size_t avail = std::min<std::size_t>(s.size() - at, kAnimNameMax + 1);
+    const std::size_t len = std::string_view(reinterpret_cast<const char*>(&s[at]), avail).find('\0');
+    if (len == std::string_view::npos) return false;  // ohne Ende oder länger als kAnimNameMax
     out.assign(reinterpret_cast<const char*>(&s[at]), len);
     return true;
 }
@@ -93,13 +94,14 @@ bool readPai1(std::span<const u8> s, Anim& a) {
     const u32 patterns = be16(s, 0x0C);
     const u32 entries = be16(s, 0x0E);
     const std::size_t table = be32(s, 0x10);
-    if ((s.size() - 0x14) / 4 < patterns) return false;
+    if (patterns > kLytMaxTextures || (s.size() - 0x14) / 4 < patterns) return false;
     for (u32 i = 0; i < patterns; ++i) {
         std::string name;
         if (!cName(s, 0x14 + std::size_t{be32(s, 0x14 + std::size_t{i} * 4)}, name)) return false;
         a.patternTextures.push_back(std::move(name));
     }
     if (table > s.size() || (s.size() - table) / 4 < entries) return false;
+    u32 totalKeys = 0;
     for (u32 e = 0; e < entries; ++e) {
         const std::size_t en = be32(s, table + std::size_t{e} * 4);
         if (en > s.size() || s.size() - en < 0x18) return false;
@@ -124,6 +126,8 @@ bool readPai1(std::span<const u8> s, Anim& a) {
                     ++a.skipped;
                     continue;
                 }
+                totalKeys += static_cast<u32>(tr.keys.size());
+                if (totalKeys > kAnimMaxTotalKeys) return false;
                 a.tracks.push_back(std::move(tr));
             }
         }
@@ -238,6 +242,21 @@ void applyAnim(const Layout& l, const Anim& a, float frame, std::vector<PaneStat
                 if (l.panes[p].name == t.pane) applyPane(t.target, v, state[p]);
         }
     }
+}
+
+u64 animWork(const Layout& l, const Anim& a) {
+    u64 work = 0;
+    for (const Track& t : a.tracks) {
+        if (t.keys.empty()) continue;
+        if (!t.material) {
+            work += l.panes.size();
+            continue;
+        }
+        work += l.materials.size();
+        for (const LytMaterial& m : l.materials)
+            if (m.name == t.pane) work += l.panes.size();
+    }
+    return work;
 }
 
 void AnimPlayer::reset(const Anim* start, const Anim* loop) {

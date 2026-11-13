@@ -101,3 +101,9 @@ TEST_CASE("brlyt: Bild mit Materialindex außerhalb behält material = -1") {
     REQUIRE(r.isOk());
     CHECK(r.value().panes[0].material == -1);
 }
+
+TEST_CASE("brlyt: Texturname über 255 Zeichen wird abgelehnt") {
+    test::PaneSpec root = test::pane("pan1", "root", 0, 0, 608, 456);
+    CHECK_FALSE(parseBrlyt(test::buildBrlyt(608, 456, {std::string(300, 't')}, {}, {root})).isOk());
+    CHECK(parseBrlyt(test::buildBrlyt(608, 456, {std::string(255, 't')}, {}, {root})).isOk());
+}

@@ -14,6 +14,8 @@
 namespace nl {
 
 inline constexpr u32 kU8MaxNodes = 4096;
+inline constexpr u32 kU8MaxName = 255;   // je Knoten; mehrere Knoten dürfen auf denselben Namen zeigen
+inline constexpr u32 kU8MaxPath = 1024;  // ganzer Pfad samt Ordnern
 
 class U8Archive {
 public:

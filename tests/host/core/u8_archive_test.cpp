@@ -61,3 +61,22 @@ TEST_CASE("u8: imetArchiveOffset findet das U8 hinter dem IMET-Kopf") {
     CHECK(imetArchiveOffset(d) == 0x640u);
     CHECK_FALSE(imetArchiveOffset(std::vector<u8>(0x700, 0)).has_value());
 }
+
+TEST_CASE("u8: überlange Namen und Pfade werden abgelehnt (kein Speicher-Aufblähen)") {
+    SUBCASE("Name über 255 Zeichen") {
+        auto r = U8Archive::parse(test::buildU8({FstSpec{std::string(300, 'a'), {1, 2}, false, {}}}));
+        REQUIRE_FALSE(r.isOk());
+        CHECK(r.error().code == ErrorCode::InvalidData);
+    }
+    SUBCASE("Pfad über 1024 Zeichen") {
+        FstSpec leaf{"f", {1}, false, {}};
+        for (int d = 0; d < 6; ++d) leaf = FstSpec{std::string(200, static_cast<char>('a' + d)), {}, true, {leaf}};
+        auto r = U8Archive::parse(test::buildU8({leaf}));
+        REQUIRE_FALSE(r.isOk());
+        CHECK(r.error().code == ErrorCode::InvalidData);
+    }
+    SUBCASE("255 Zeichen gehen noch") {
+        auto r = U8Archive::parse(test::buildU8({FstSpec{std::string(255, 'a'), {1, 2}, false, {}}}));
+        CHECK(r.isOk());
+    }
+}

@@ -46,7 +46,8 @@ void BannerService::updateSound() {
     if (audio_ == nullptr) return;
     const u64 ms = ticks_to_millisecs(gettime() - focusTicks_);
     const u32 focusMs = ms > 0xFFFFFFFFu ? 0xFFFFFFFFu : static_cast<u32>(ms);
-    switch (gate_.update(audio_->bannerLoaded(), audio_->sounds(), focusMs)) {
+    const bool ended = gate_.playing() && audio_->bannerVoiceIdle();  // Ton ohne Schleife zu Ende
+    switch (gate_.update(audio_->bannerLoaded(), audio_->sounds(), focusMs, ended)) {
         case BannerSoundGate::Action::Start:
             audio_->playBanner();
             if (music_ != nullptr) music_->duck(true);

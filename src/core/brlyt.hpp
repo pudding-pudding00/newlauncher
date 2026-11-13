@@ -28,6 +28,7 @@ using Rgba = Color;
 inline constexpr u32 kLytMaxPanes = 1024;
 inline constexpr u32 kLytMaxMaterials = 1024;
 inline constexpr u32 kLytMaxTextures = 256;
+inline constexpr u32 kLytNameMax = 255;  // Texturnamen in txl1
 
 struct LytMaterial {
     std::string name;

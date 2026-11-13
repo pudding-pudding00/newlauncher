@@ -156,3 +156,36 @@ TEST_CASE("brlan: AnimPlayer spielt Start einmal, dann Loop in Schleife") {
     p.reset(nullptr, nullptr);
     CHECK(p.current() == nullptr);
 }
+
+TEST_CASE("brlan: Grenzen gegen Speicher-Aufblähen") {
+    SUBCASE("Mustername über 255 Zeichen") {
+        CHECK_FALSE(parseBrlan(test::buildBrlan(10, true, {std::string(300, 'p')}, {})).isOk());
+    }
+    SUBCASE("mehr Mustertexturen als Layout-Texturen") {
+        std::vector<std::string> many(kLytMaxTextures + 1, "x.tpl");
+        CHECK_FALSE(parseBrlan(test::buildBrlan(10, true, many, {})).isOk());
+    }
+    SUBCASE("mehr Keys insgesamt als kAnimMaxTotalKeys") {
+        InfoSpec info;
+        for (u32 k = 0; k < kAnimMaxKeys; ++k) info.keys.push_back({static_cast<float>(k), 0, 0});
+        TagSpec tag{"RLPA", {}};
+        for (u32 i = 0; i <= kAnimMaxTotalKeys / kAnimMaxKeys; ++i) tag.infos.push_back(info);
+        CHECK_FALSE(parseBrlan(test::buildBrlan(10, true, {}, {EntrySpec{"logo", false, {tag}}})).isOk());
+    }
+}
+
+TEST_CASE("brlan: animWork zählt die Arbeit je Bild wie applyAnim") {
+    const Layout l = layout();  // 2 Panes, 1 Material „m“
+    Anim a;
+    Track pane;
+    pane.pane = "logo";
+    pane.keys = {Key{0, 1, 0}};
+    Track mat;
+    mat.pane = "m";
+    mat.material = true;
+    mat.keys = {Key{0, 1, 0}};
+    Track empty;
+    empty.pane = "logo";
+    a.tracks = {pane, mat, empty};
+    CHECK(animWork(l, a) == 2 + (1 + 1 * 2) + 0);
+}

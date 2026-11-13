@@ -24,6 +24,8 @@ public:
     bool bannerLoaded() const { return banner_.data != nullptr; }
     u32 bannerBytes() const { return banner_.bytes; }
     void playBanner();
+    // Stimme 4 ist frei, obwohl ein Banner-Ton geladen ist: ein Ton ohne Schleife ist zu Ende.
+    bool bannerVoiceIdle() const;
     void stopBanner();
     void freeBanner();
     void shutdown();            // idempotent; vor Chainload, Kanalstart, Wii-Menü und Beenden; loggt NL_AUDIO_STOP

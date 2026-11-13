@@ -145,3 +145,19 @@ TEST_CASE("channel_banner: ohne oder mit kaputtem sound.bin bleibt das Banner st
     REQUIRE(r.isOk());
     CHECK(r.value().soundInvalid);
 }
+
+TEST_CASE("channel_banner: Animation über kAnimMaxWork je Bild → stehendes Bild") {
+    test::PaneSpec root = test::pane("pan1", "root", 0, 0, 608, 456);
+    for (u32 i = 0; i < kLytMaxPanes - 1; ++i) root.children.push_back(test::pane("pic1", "p", 0, 0, 8, 8));
+    const auto brlyt = test::buildBrlyt(608, 456, {"logo.tpl"}, {test::MatSpec{"m", {0}, {}, {}}}, {root});
+    test::TagSpec tag{"RLPA", {}};
+    const u32 tracks = kAnimMaxWork / (kLytMaxPanes - 1) + 1;
+    for (u32 i = 0; i < tracks; ++i) tag.infos.push_back(test::InfoSpec{0, 0, false, {{0, 0, 0}, {10, 5, 0}}});
+    const auto anim = test::buildBrlan(60, true, {}, {test::EntrySpec{"p", false, {tag}}});
+    const auto inner = test::buildU8({dir("arc", {dir("anim", {file("banner_Loop.brlan", anim)}), dir("blyt", {file("banner.brlyt", brlyt)}),
+                                                  dir("timg", {file("logo.tpl", tplOf(255))})})});
+    auto r = loadChannelBanner(content0(test::imd5(inner)));
+    REQUIRE(r.isOk());
+    CHECK_FALSE(r.value().loop);
+    CHECK(r.value().animInvalid);
+}

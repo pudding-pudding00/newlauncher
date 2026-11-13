@@ -76,7 +76,11 @@ Result<ChannelBanner> loadChannelBanner(std::span<const u8> content0) {
     if (!b.loop && !b.animInvalid) b.loop = loadAnim(inner.value(), "arc/anim/banner.brlan", b.animInvalid);
     const std::size_t baseTextures = b.textures.size();
     b.baseTextures = baseTextures;
-    if (b.animInvalid || (b.start && !addPatterns(inner.value(), *b.start, b)) || (b.loop && !addPatterns(inner.value(), *b.loop, b))) {
+    // Arbeit je Bild begrenzen: eine feindliche Datei soll den Haupt-Thread nicht anhalten (Review M18).
+    const bool tooHeavy = (b.start && animWork(b.layout, *b.start) > kAnimMaxWork) ||
+                          (b.loop && animWork(b.layout, *b.loop) > kAnimMaxWork);
+    if (b.animInvalid || tooHeavy || (b.start && !addPatterns(inner.value(), *b.start, b)) ||
+        (b.loop && !addPatterns(inner.value(), *b.loop, b))) {
         b.animInvalid = true;
         b.start.reset();
         b.loop.reset();

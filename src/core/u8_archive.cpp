@@ -1,5 +1,7 @@
 #include "core/u8_archive.hpp"
 
+#include <algorithm>
+
 namespace nl {
 
 namespace {
@@ -39,8 +41,11 @@ Result<U8Archive> U8Archive::parse(std::span<const u8> data) {
         const std::size_t nameAt = strings + (w0 & 0x00FFFFFFu);
         if (nameAt >= data.size()) return invalid("U8: Namensoffset");
         std::size_t end = nameAt;
-        while (end < data.size() && data[end] != 0) ++end;
+        const std::size_t limit = std::min(data.size(), nameAt + kU8MaxName + 1);
+        while (end < limit && data[end] != 0) ++end;
         if (end == data.size()) return invalid("U8: Name ohne Ende");
+        if (end == limit) return invalid("U8: Name zu lang");
+        if (path.size() + (end - nameAt) + 1 > kU8MaxPath) return invalid("U8: Pfad zu lang");
         if (end == nameAt) return invalid("U8: leerer Name");
         for (std::size_t k = nameAt; k < end; ++k) path += lower(static_cast<char>(data[k]));
         if (type == 1) {

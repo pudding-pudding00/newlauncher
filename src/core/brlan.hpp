@@ -43,6 +43,10 @@ struct Anim {
 
 inline constexpr u32 kAnimMaxTracks = 4096;
 inline constexpr u32 kAnimMaxKeys = 4096;  // je Spur
+inline constexpr u32 kAnimMaxTotalKeys = 65536;  // je Animation: Spuren dürfen nicht denselben Key-Block teilen und so aufblähen
+inline constexpr u32 kAnimNameMax = 255;  // Mustertexturnamen
+// Obergrenze für applyAnim je Bild (Vergleiche/Zuweisungen); echte Banner liegen weit darunter.
+inline constexpr u32 kAnimMaxWork = 200000;
 
 Result<Anim> parseBrlan(std::span<const u8> file);
 
@@ -53,6 +57,9 @@ float evalTrack(const Track& t, float frame);
 // Spuren auf den Zustand anwenden. Material-Spuren wirken auf alle Panes mit diesem Material; RLTP-Werte
 // werden über patternTextures auf l.textures abgebildet (unbekannter Name → Spur wirkungslos).
 void applyAnim(const Layout& l, const Anim& a, float frame, std::vector<PaneState>& state);
+// Schleifendurchläufe, die applyAnim je Bild braucht: Pane-Spur = Panes; Material-Spur = Materialien +
+// passende Materialien × Panes; Spuren ohne Keys = 0.
+u64 animWork(const Layout& l, const Anim& a);
 
 // Abspielfolge: start einmal, danach loop in Schleife; fehlt start, sofort loop. 60 Bilder je Sekunde.
 class AnimPlayer {

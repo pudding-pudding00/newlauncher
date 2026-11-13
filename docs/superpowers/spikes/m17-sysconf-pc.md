@@ -2,7 +2,7 @@
 
 **Frage (Spec v2 10.5):** Lässt sich die Jugendschutz-Stufe und die PIN der Wii aus `/shared2/sys/SYSCONF` lesen, damit die Option „Wii-Jugendschutz übernehmen“ (`[parental] use_wii = 1`) möglich ist?
 
-**Ergebnis: positiv, mit einer offenen Hardware-Prüfung.** Layout und PIN sind öffentlich dokumentiert; die Zuordnung des Organisations-Bytes ist nur aus der DSi-Spezifikation abgeleitet und wird in der Abnahme W6b auf echter Hardware bestätigt.
+**Ergebnis: positiv, mit einer offenen Hardware-Prüfung.** Layout und PIN sind öffentlich dokumentiert; die Zuordnung des Organisations-Bytes ist nur aus der DSi-Spezifikation abgeleitet und wird in der Abnahme W7 auf echter Hardware bestätigt.
 
 ## Quellen (öffentlich)
 
@@ -48,7 +48,7 @@
 - Mit `use_wii = 1` gelten Stufe und PIN der Wii; die Wii-PIN wird nur im Speicher mit dem Salz aus `config.ini` gehasht und nie geloggt. Ist der Jugendschutz der Wii aus, ist auch die Kindersicherung des Launchers aus.
 - Altersstufe 20 = keine Einschränkung → `maxAge = 255`.
 
-## Offen für die Hardware-Abnahme (W6b)
+## Offen für die Hardware-Abnahme (W7)
 
 - Organisations-Byte auf einer PAL-Wii mit PEGI und, falls verfügbar, einer US-Wii mit ESRB prüfen.
 - Bedeutung des Alters-Bytes bestätigen (höchste erlaubte Stufe, nicht „ab dieser Stufe gesperrt“).

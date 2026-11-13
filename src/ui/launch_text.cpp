@@ -40,6 +40,18 @@ std::size_t copyEllipsized(char* out, std::size_t cap, std::string_view src) {
     return cut + kEllipsis.size();
 }
 
+int launchWarningText(const std::vector<LaunchWarning>& warnings, char* title, std::size_t titleCap, char* text,
+                      std::size_t textCap) {
+    copyEllipsized(title, titleCap, tr(Str::LaunchNote));
+    std::string msg;
+    for (LaunchWarning w : warnings) {
+        msg += tr(w == LaunchWarning::MemcardRealNoPorts ? Str::WarnMemcardNoPorts : Str::WarnNativeSiNoPorts);
+        msg += '\n';
+    }
+    msg += tr(Str::WarnLaunchAgain);
+    return static_cast<int>(copyEllipsized(text, textCap, msg));
+}
+
 int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, char* text, std::size_t textCap) {
     copyEllipsized(title, titleCap, tr(Str::LaunchFailed));
     std::string msg;

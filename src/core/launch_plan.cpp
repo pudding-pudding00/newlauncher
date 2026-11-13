@@ -1,5 +1,6 @@
 #include "core/launch_plan.hpp"
 
+#include <algorithm>
 #include <array>
 
 #include "core/dol.hpp"
@@ -67,7 +68,8 @@ PlanResult planFor(FileSystem& fs, const Game& g, std::string_view libRoot, cons
     return finish(std::move(plan));
 }
 
-TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorEntry& nin, bool ahbprotOff) {
+TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorEntry& nin, bool ahbprotOff,
+                      const GameOptionInputs* opts) {
     auto err = [](LaunchFailure k, std::string c) { return TargetResult::err({k, std::move(c)}); };
     if (auto dev = secondaryUsb(libRoot)) return err(LaunchFailure::DeviceUnsupported, std::move(*dev));
     if (!ahbprotOff) return err(LaunchFailure::AhbProt, "");
@@ -94,7 +96,20 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
     }
     const std::string gamePath = fst ? ninGamePath(rel) + "/" : ninGamePath(rel);
     const bool usb = onUsb(libRoot);
-    auto cfg = buildNinCfg({gamePath, g.key != nullptr ? g.key : "", usb});
+    const std::string_view key = g.key != nullptr ? g.key : "";
+    std::optional<GcOptions> gc;
+    std::vector<LaunchWarning> warnings;
+    NinConfigInput in{gamePath, key, usb};
+    if (opts != nullptr) {
+        gc = resolveGcOptions(opts->config, opts->games, key.substr(0, std::min<std::size_t>(6, key.size())), *ver);
+        in = gc->nin;
+        in.gamePath = gamePath;
+        in.id6 = key;
+        in.usb = usb;
+        if (!opts->gcPorts && gc->memcardReal) warnings.push_back(LaunchWarning::MemcardRealNoPorts);
+        if (!opts->gcPorts && gc->nativeSi) warnings.push_back(LaunchWarning::NativeSiNoPorts);
+    }
+    auto cfg = buildNinCfg(in);
     if (!cfg.isOk()) {
         if (cfg.error() == NinCfgError::PathTooLong) return err(LaunchFailure::NinPathTooLong, gamePath);
         return err(LaunchFailure::Unsupported, consoleInfo(g.console).name);  // Schlüssel ohne ID6 (Scanner liefert immer ID6)
@@ -109,6 +124,8 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
     LaunchTarget t;
     t.dol = std::move(done).value();
     t.nintendont = ver;
+    t.gc = std::move(gc);
+    t.warnings = std::move(warnings);
     return TargetResult::ok(std::move(t));
 }
 TargetResult dolTarget(PlanResult plan, std::optional<N64Method> n64) {
@@ -130,6 +147,14 @@ std::optional<u64> fileSize(FileSystem& fs, std::string_view path) {
     for (const DirEntry& e : entries.value())
         if (!e.isDir && e.name == name) return e.size;
     return std::nullopt;
+}
+
+const char* launchWarningName(LaunchWarning w) {
+    switch (w) {
+        case LaunchWarning::MemcardRealNoPorts: return "memcard_real_no_ports";
+        case LaunchWarning::NativeSiNoPorts: return "native_si_no_ports";
+    }
+    return "?";
 }
 
 const char* launchFailureName(LaunchFailure f) {
@@ -173,7 +198,8 @@ LaunchError fromFragError(FragError e, std::string context) {
 }
 
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
-                                              const Result<FragList, LaunchError>& frags, bool dryRun) {
+                                              const Result<FragList, LaunchError>& frags, bool dryRun,
+                                              const WiiOptions& options) {
     using R = Result<WiiBootPlan, LaunchError>;
     if (!dryRun && cios.state == CiosState::Missing) {
         return R::err({LaunchFailure::CiosMissing, std::to_string(static_cast<unsigned>(cios.slot))});
@@ -188,6 +214,8 @@ Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view li
     p.cios = cios;
     p.iosSlot = cios.slot;
     p.fragBytes = serializeFragList(frags.value());
+    p.options = options;
+    if (cios.state != CiosState::D2x) p.options.cfg.returnTo = 0;  // Spec 7.2: Rückkehr nur mit d2x
     return R::ok(std::move(p));
 }
 
@@ -198,8 +226,8 @@ Result<LaunchPlan, LaunchError> preflightEmulator(FileSystem& fs, const Game& g,
 }
 
 Result<LaunchTarget, LaunchError> preflightGame(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus,
-                                                const N64Inputs* n64, bool ahbprotOff) {
-    if (g.console == Console::Gc) return gcTarget(fs, g, libRoot, emus.nintendont(), ahbprotOff);
+                                                const N64Inputs* n64, bool ahbprotOff, const GameOptionInputs* opts) {
+    if (g.console == Console::Gc) return gcTarget(fs, g, libRoot, emus.nintendont(), ahbprotOff, opts);
     if (g.console == Console::Wii) {
         LaunchTarget t;
         t.kind = LaunchTarget::Kind::Wii;

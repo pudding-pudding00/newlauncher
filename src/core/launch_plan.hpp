@@ -13,6 +13,7 @@
 #include "core/ios_info.hpp"
 #include "core/fs.hpp"
 #include "core/game.hpp"
+#include "core/game_options.hpp"
 #include "core/n64_choice.hpp"
 #include "core/nin_cfg.hpp"
 #include "core/result.hpp"
@@ -27,6 +28,17 @@ enum class LaunchFailure : u8 {
     DeviceUnsupported,  // M12: GC/ROM auf usb2…usb8 – Nintendont und GX-Emulatoren sehen nur sd: und usb:
 };
 const char* launchFailureName(LaunchFailure f);  // Log-Marker NL_PREFLIGHT_FAIL
+
+// M14: Hinweise, die den Start nicht verhindern (Spec 7.3).
+enum class LaunchWarning : u8 { MemcardRealNoPorts, NativeSiNoPorts };
+const char* launchWarningName(LaunchWarning w);  // Log-Marker NL_PREFLIGHT_WARN
+
+// M14: Quellen der Spieloptionen; gcPorts = false auf vWii/Wii mini.
+struct GameOptionInputs {
+    const IniDoc& config;
+    const IniDoc& games;
+    bool gcPorts = true;
+};
 
 struct LaunchError {
     LaunchFailure kind;
@@ -59,13 +71,15 @@ struct WiiBootPlan {
     CiosStatus cios;
     u8 iosSlot = kDefaultCiosSlot;  // M13: IOS_ReloadIOS und the_CFG.IOS.Version (= cios.slot)
     std::vector<u8> fragBytes;  // serializeFragList, genau kFragListBytes
+    WiiOptions options;         // M14: the_CFG-Felder, ios und Rückkehr
 };
 
 // Reihenfolge: cIOS Missing → CiosMissing (Kontext Slot, z. B. "222"); bei dryRun nur durchgelassen (die
 // Plattform loggt es); dann Fragmentfehler durchreichen; Schlüssel ohne ID6 → Unsupported; sonst Plan.
 // cios kommt aus ciosStatusFor (core/cios_scan); usb folgt aus libRoot („usb:“).
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
-                                              const Result<FragList, LaunchError>& frags, bool dryRun);
+                                              const Result<FragList, LaunchError>& frags, bool dryRun,
+                                              const WiiOptions& options = {});
 
 // Ziel eines Starts: ein DOL über den Chainloader, ein Kanal im NAND (VC-Inject) oder ein Wii-Spiel.
 struct LaunchTarget {
@@ -75,6 +89,8 @@ struct LaunchTarget {
     std::optional<N64Method> n64;  // gewählter Weg bei N64-Spielen
     std::optional<NinVersion> nintendont;  // GC: erkannte Version (Marker NL_NIN)
     std::optional<WiiBootPlan> wii;        // Kind::Wii: erst nach preflightWii gesetzt
+    std::optional<GcOptions> gc;           // GC mit opts: aufgelöste Optionen (Marker NL_NIN_CFG, NL_OPT_*)
+    std::vector<LaunchWarning> warnings;   // M14: Hinweise, Start trotzdem möglich
 };
 
 // Wie preflightEmulator, N64 zusätzlich über die Auto-Wahl (n64 == nullptr zählt als „kein Weg“).
@@ -84,6 +100,7 @@ struct LaunchTarget {
 // RomMissing; Pfad > 254 → NinPathTooLong; sonst args = {DOL, NIN_CFG}. Andere Konsolen ignorieren ahbprotOff.
 // Wii (M9): immer Kind::Wii ohne Plan; die Plattform rechnet die Fragmente und ruft preflightWii.
 Result<LaunchTarget, LaunchError> preflightGame(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus,
-                                                const N64Inputs* n64, bool ahbprotOff);
+                                                const N64Inputs* n64, bool ahbprotOff,
+                                                const GameOptionInputs* opts = nullptr);
 
 }  // namespace nl

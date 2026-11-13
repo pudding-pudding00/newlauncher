@@ -39,6 +39,7 @@ private:
     Config saved_;       // Stand bei onEnter bzw. nach dem letzten SaveSettings
     SourceSpec bootSources_;  // beim Start gültige Bibliotheksquellen
     AppCommand pendingAction_ = AppCommand::None;  // Aktion nach SaveSettings im nächsten Frame
+    Console pendingConsole_ = Console::Wii;        // OpenOptions: Wii- oder GameCube-Spiele
     int focus_ = 0;
     bool keysSincePointerMove_ = false;
 };

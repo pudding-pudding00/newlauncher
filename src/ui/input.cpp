@@ -48,7 +48,7 @@ InputFrame InputMapper::update(const RawInput& raw, float dtMs) {
     if (down & (B::A | B::GcA)) f.actions |= bit(Action::Confirm);
     if (down & (B::B | B::GcB)) f.actions |= bit(Action::Back);
     if (down & (B::Minus | B::GcL)) f.actions |= bit(Action::PrevConsole);
-    if (down & (B::Plus | B::GcR)) f.actions |= bit(Action::NextConsole);
+    if (down & (B::Plus | B::GcR)) f.actions |= bit(Action::NextConsole) | bit(Action::Options);
     if (down & B::GcY) f.actions |= bit(Action::Favorite);
     if (down & B::GcX) f.actions |= bit(Action::Search);
     if (down & B::HomeBtn) f.actions |= bit(Action::Home);

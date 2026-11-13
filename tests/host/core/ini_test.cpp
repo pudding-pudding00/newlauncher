@@ -100,3 +100,32 @@ TEST_CASE("IniDoc::sectionNames in Dateireihenfolge") {
     CHECK(names[0] == "eins");
     CHECK(names[1] == "zwei");
 }
+
+// M14: Textbearbeitung, die alles außerhalb der berührten Zeilen Byte für Byte erhält.
+TEST_CASE("iniTextSet ersetzt den Wert an Ort und Stelle, Kommentare bleiben") {
+    const std::string in = "; Kopf\r\n[Game RMGP01]\r\n# Notiz\r\nvideo = pal50\r\naspect = 16:9\r\n";
+    CHECK(nl::iniTextSet(in, "game RMGP01", "VIDEO", "pal60") ==
+          "; Kopf\r\n[Game RMGP01]\r\n# Notiz\r\nVIDEO = pal60\r\naspect = 16:9\r\n");
+}
+
+TEST_CASE("iniTextSet: doppelte Schlüssel werden zu einem, nullopt löscht") {
+    const std::string in = "[gc]\nvideo = ntsc\nmemcard = multi\nvideo = pal50\n";
+    CHECK(nl::iniTextSet(in, "gc", "video", "auto") == "[gc]\nmemcard = multi\nvideo = auto\n");
+    CHECK(nl::iniTextSet(in, "gc", "video", std::nullopt) == "[gc]\nmemcard = multi\n");
+}
+
+TEST_CASE("iniTextSet hängt hinter der letzten Inhaltszeile an, sonst einen neuen Abschnitt") {
+    CHECK(nl::iniTextSet("[wii]\nvideo = game\n\n[gc]\nx = 1\n", "wii", "aspect", "4:3") ==
+          "[wii]\nvideo = game\naspect = 4:3\n\n[gc]\nx = 1\n");
+    CHECK(nl::iniTextSet("[n64_method]\nn64/a.z64 = vc", "game RMGP01", "video", "pal60") ==
+          "[n64_method]\nn64/a.z64 = vc\n\n[game RMGP01]\nvideo = pal60\n");
+    CHECK(nl::iniTextSet("", "game RMGP01", "video", "pal60") == "[game RMGP01]\nvideo = pal60\n");
+    CHECK(nl::iniTextSet("[a]\nb = 1\n", "game X", "video", std::nullopt) == "[a]\nb = 1\n");
+}
+
+TEST_CASE("iniTextRemoveSection entfernt alle gleichnamigen Abschnitte, der Rest bleibt") {
+    const std::string in = "[n64_method]\r\nn64/a.z64 = vc\r\n\r\n[game  rmgp01]\r\nvideo = pal60\r\n; weg\r\n"
+                           "[emulator]\r\nnes/a.nes = fceugx\r\n[GAME RMGP01]\r\nios = 249\r\n";
+    CHECK(nl::iniTextRemoveSection(in, "game RMGP01") ==
+          "[n64_method]\r\nn64/a.z64 = vc\r\n\r\n[emulator]\r\nnes/a.nes = fceugx\r\n");
+}

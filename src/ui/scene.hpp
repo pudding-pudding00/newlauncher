@@ -46,6 +46,8 @@ enum class AppCommand : u8 {
     OpenSetup,        // Einrichtungs-Assistent öffnen (M13, Spec v2 6.4)
     SetupNetTest,     // Assistent: Verbindungstest (mit Zeitabgleich bei TLS) im NetService
     FinishSetup,      // Assistent: config.ini (und emulators.ini) schreiben, Szene schließen
+    OpenOptions,      // Spieloptionen öffnen (M14): game gesetzt = pro Spiel, sonst global für console
+    SaveOptions,      // Options-Szene geschlossen mit Änderungen: OptionsScene::model() schreiben
 };
 const char* appCommandName(AppCommand c);
 
@@ -56,6 +58,7 @@ struct SceneRequests {
     AppCommand command = AppCommand::None;
     const Game* game = nullptr;  // Ziel von ToggleFavorite, Launch und SetN64Method
     u8 n64Choice = 0;            // SetN64Method: 0 = Automatisch, sonst 1 + N64Method
+    Console console = Console::Wii;  // OpenOptions ohne game: Wii oder Gc
     UiSound sound = UiSound::None;  // main spielt ihn nach dem Update
 };
 

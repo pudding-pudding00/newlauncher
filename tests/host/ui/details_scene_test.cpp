@@ -279,3 +279,16 @@ TEST_CASE_FIXTURE(Fixture, "Klänge: A auf Cover öffnet Details mit Open; Detai
     CHECK(step(d, action(Action::Confirm)).sound == UiSound::Confirm);
     CHECK(step(d, action(Action::Back)).sound == UiSound::Back);
 }
+
+TEST_CASE_FIXTURE(Fixture, "Details: + öffnet die Optionen nur für Wii und GameCube (M14)") {
+    DetailsScene d;
+    const Game wii{Console::Wii, "RMGP01", "Super Mario Galaxy", 2007, 1};
+    d.open(wii, false, 0);
+    SceneRequests r = step(d, action(Action::Options));
+    CHECK(r.command == AppCommand::OpenOptions);
+    REQUIRE(r.game != nullptr);
+    CHECK(std::string(r.game->key) == "RMGP01");
+    const Game nes{Console::Nes, "nes/a.nes", "A", 0, 0};
+    d.open(nes, false, 0);
+    CHECK(step(d, action(Action::Options)).command == AppCommand::None);
+}

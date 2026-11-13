@@ -26,13 +26,13 @@ Result<std::array<u8, kNinCfgSize>, NinCfgError> buildNinCfg(const NinConfigInpu
     std::array<u8, kNinCfgSize> b{};
     put32(b, 0x000, kNinCfgMagic);
     put32(b, 0x004, kNinCfgVersion);
-    put32(b, kOffConfig, kNinCfgMemcardEmu | kNinCfgAutoBoot | (in.usb ? kNinCfgUsb : 0));
-    put32(b, kOffVideo, 0);            // NIN_VID_AUTO
-    put32(b, kOffLang, 0xFFFFFFFFu);   // NIN_LAN_AUTO
+    put32(b, kOffConfig, (in.memcardEmu ? kNinCfgMemcardEmu : 0) | kNinCfgAutoBoot | (in.usb ? kNinCfgUsb : 0) | in.extraFlags);
+    put32(b, kOffVideo, in.videoMode);
+    put32(b, kOffLang, in.language);
     std::copy(in.gamePath.begin(), in.gamePath.end(), b.begin() + kOffPath);
-    put32(b, kOffMaxPads, 4);
+    put32(b, kOffMaxPads, in.maxPads);
     for (std::size_t i = 0; i < 4; ++i) b[kOffGameId + i] = static_cast<u8>(in.id6[i]);
-    b[kOffMemCardBlocks] = 2;  // 251 Blöcke
+    b[kOffMemCardBlocks] = static_cast<u8>(in.memcardBlocks);
     return R::ok(b);
 }
 
@@ -81,6 +81,15 @@ std::optional<NinVersion> findNintendontVersion(FileSystem& fs, std::string_view
         }
         if (got.value() < kScanBlock) return std::nullopt;
     }
+}
+
+std::span<const NinOptionGate> ninOptionGates() {
+    static constexpr NinOptionGate kGates[] = {
+        {"video", {1, 109}},     {"progressive", {1, 109}},    {"force_wide", {1, 109}}, {"wiiu_wide", {2, 258}},
+        {"memcard", {1, 135}},   {"memcard_blocks", {1, 135}}, {"native_si", {2, 189}},  {"language", {1, 0}},
+        {"max_pads", {1, 0}},    {"skip_ipl", {4, 434}},
+    };
+    return kGates;
 }
 
 std::string formatNinVersion(NinVersion v) { return std::to_string(v.major) + "." + std::to_string(v.minor); }

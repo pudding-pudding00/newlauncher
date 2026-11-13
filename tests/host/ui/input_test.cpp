@@ -1,5 +1,6 @@
 #include "ui/input.hpp"
 #include <doctest/doctest.h>
+#include <initializer_list>
 using namespace nl::ui;
 
 namespace {
@@ -183,4 +184,15 @@ TEST_CASE("dt 0 und sehr großes dt lösen höchstens eine Wiederholung pro Fram
     CHECK(m.update(held(RawInput::DUp), 5000.0f).pressed(Action::Up));
     CHECK_FALSE(m.update(held(RawInput::DUp), 0.0f).pressed(Action::Up));
     CHECK(countAction(m, held(RawInput::DUp), Action::Up, 5, 80.0f) == 5);
+}
+
+TEST_CASE("Wiimote + und GC R lösen zusätzlich Options aus (M14)") {
+    for (const nl::u32 bit : {nl::u32{RawInput::Plus}, nl::u32{RawInput::GcR}}) {
+        InputMapper m;
+        const InputFrame f = m.update(held(bit), kDt);
+        CHECK(f.pressed(Action::Options));
+        CHECK(f.pressed(Action::NextConsole));
+    }
+    InputMapper m;
+    CHECK_FALSE(m.update(held(RawInput::Minus), kDt).pressed(Action::Options));
 }

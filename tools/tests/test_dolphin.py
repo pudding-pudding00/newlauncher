@@ -15,7 +15,7 @@ from deploy_dolphin import main as deploy_main  # noqa: E402
 from dolphin import (dolphin_command, log_path, reset_log, wait_for_markers,  # noqa: E402
                      write_dev_config)
 from dolphin_smoke import main as smoke_main  # noqa: E402
-from dolphin_smoke import sysinfo_problems  # noqa: E402
+from dolphin_smoke import missing_ini_lines, sysinfo_problems  # noqa: E402
 
 
 def process_alive(pid: int) -> bool:
@@ -201,6 +201,11 @@ class DolphinToolsTest(unittest.TestCase):
         self.assertEqual(sysinfo_problems(text), [])
         self.assertEqual(sysinfo_problems("Platform: vWii\n"), [])
 
+    def test_missing_ini_lines_ignores_spacing_and_reports_absent(self):
+        text = "[game RMGP01]\r\n  video =   pal60 \r\n"
+        self.assertEqual(missing_ini_lines(text, ["[game RMGP01]", "video = pal60"]), [])
+        self.assertEqual(missing_ini_lines(text, ["video = ntsc"]), ["video = ntsc"])
+
     def test_sysinfo_problems_flags_mac_ip_and_missing_platform(self):
         self.assertTrue(sysinfo_problems("Plattform: Wii\nMAC 00:17:AB:00:00:01\n"))
         self.assertTrue(sysinfo_problems("Plattform: Wii\nIP 192.168.0.12\n"))
@@ -232,6 +237,26 @@ class DolphinToolsTest(unittest.TestCase):
                     "--timeout", "2"])
         self.assertFalse((data / "debug.ini").exists())
         self.assertTrue((data / "config.ini").exists())
+
+    def test_smoke_games_ini_and_config_append(self):
+        # M14: Spieloptionen für Smokes; ein wörtliches \n im Argument wird zum Zeilenumbruch.
+        self._fake_dolphin("raise SystemExit(0)\n")
+        smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                    "--timeout", "2", "--games-ini", "[game RMCP01]\\nvideo = pal60",
+                    "--config-append", "[gc]\\nprogressive = 1", "--debug", "perf=1"])
+        data = self.user / "SDSync/newlauncher"
+        self.assertEqual((data / "games.ini").read_text(encoding="utf-8"), "[game RMCP01]\nvideo = pal60\n")
+        text = (data / "config.ini").read_text(encoding="utf-8")
+        self.assertTrue(text.endswith("\n[gc]\nprogressive = 1\n[debug]\nperf = 1\n"), text[-80:])
+
+    def test_smoke_without_games_ini_removes_stale_one(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        data = self.user / "SDSync/newlauncher"
+        data.mkdir(parents=True, exist_ok=True)
+        (data / "games.ini").write_text("[game RMCP01]\nvideo = pal60\n", encoding="utf-8")
+        smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                    "--timeout", "2"])
+        self.assertFalse((data / "games.ini").exists())
 
     def test_smoke_tls_requires_a_server(self):
         with mock.patch("sys.stderr"), self.assertRaises(SystemExit) as cm:

@@ -486,3 +486,70 @@ TEST_CASE("preflightGame: ROM auf usb3 → DeviceUnsupported, die GX-Emulatoren 
     CHECK(r.error().context == "USB 3");
     CHECK(std::string(launchFailureName(LaunchFailure::DeviceUnsupported)) == "DeviceUnsupported");
 }
+
+// --- M14: Start mit Spieloptionen ---
+#include "core/game_options.hpp"
+
+TEST_CASE("preflightGame: GC mit [gc] force_wide = 1 setzt das Bit in NIN_CFG") {
+    auto fs = gcFs();
+    const IniDoc config = IniDoc::parse("[gc]\nforce_wide = 1\n");
+    const IniDoc games;
+    const GameOptionInputs opts{config, games, true};
+    auto r = preflightGame(fs, gcGame(), "sd:", emus(), nullptr, true, &opts);
+    REQUIRE(r.isOk());
+    CHECK(static_cast<u8>(r.value().dol.args[1][0x00B]) == (0x88 | 0x20));
+    REQUIRE(r.value().gc.has_value());
+    CHECK(r.value().gc->nin.extraFlags == kNinCfgForceWide);
+    CHECK(r.value().warnings.empty());
+}
+
+TEST_CASE("preflightGame: GC ohne Optionen bleibt beim M8-Block") {
+    auto fs = gcFs();
+    const IniDoc empty;
+    const GameOptionInputs opts{empty, empty, true};
+    auto with = preflightGame(fs, gcGame(), "sd:", emus(), nullptr, true, &opts);
+    auto without = preflightGame(fs, gcGame(), "sd:", emus(), nullptr, true);
+    REQUIRE(with.isOk());
+    REQUIRE(without.isOk());
+    CHECK(with.value().dol.args[1] == without.value().dol.args[1]);
+}
+
+TEST_CASE("preflightGame: memcard = real ohne GC-Ports warnt, startet trotzdem") {
+    auto fs = gcFs();
+    const IniDoc config = IniDoc::parse("[gc]\nmemcard = real\nnative_si = 1\n");
+    const IniDoc games;
+    const GameOptionInputs opts{config, games, false};
+    auto r = preflightGame(fs, gcGame(), "sd:", emus(), nullptr, true, &opts);
+    REQUIRE(r.isOk());
+    REQUIRE(r.value().warnings.size() == 2);
+    CHECK(r.value().warnings[0] == LaunchWarning::MemcardRealNoPorts);
+    CHECK(r.value().warnings[1] == LaunchWarning::NativeSiNoPorts);
+    CHECK((static_cast<u8>(r.value().dol.args[1][0x00B]) & 0x08) == 0);  // kein MEMCARDEMU
+    const GameOptionInputs ports{config, games, true};
+    auto ok = preflightGame(fs, gcGame(), "sd:", emus(), nullptr, true, &ports);
+    REQUIRE(ok.isOk());
+    CHECK(ok.value().warnings.empty());
+}
+
+TEST_CASE("preflightWii: [game] ios = 250 wählt 250 und der Plan trägt die Optionen") {
+    const std::vector<CiosEntry> found{CiosEntry{249, CiosKind::D2x, 56, 21, "d2x", "v11"},
+                                       CiosEntry{250, CiosKind::D2x, 57, 21, "d2x", "v11"}};
+    const Game g = wiiGame();
+    const std::string id6 = std::string(g.key).substr(0, 6);
+    const WiiOptions o = resolveWiiOptions(IniDoc{}, IniDoc::parse("[game " + id6 + "]\nios = 250\nvideo = pal60\n"), id6);
+    auto r = preflightWii(g, "usb:", ciosStatusFor(found, chooseCios(found, o.ios, std::nullopt)), goodFrags(), false, o);
+    REQUIRE(r.isOk());
+    CHECK(r.value().iosSlot == 250);
+    CHECK(r.value().options.cfg.vidMode == 3);
+}
+
+TEST_CASE("preflightWii: return_to nur mit d2x") {
+    WiiOptions o;
+    o.cfg.returnTo = 0x48415858;
+    auto d2x = preflightWii(wiiGame(), "usb:", kD2x, goodFrags(), false, o);
+    REQUIRE(d2x.isOk());
+    CHECK(d2x.value().options.cfg.returnTo == 0x48415858u);
+    auto other = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::Unverified, 56, ""}, goodFrags(), false, o);
+    REQUIRE(other.isOk());
+    CHECK(other.value().options.cfg.returnTo == 0u);
+}

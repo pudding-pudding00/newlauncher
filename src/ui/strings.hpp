@@ -45,6 +45,10 @@
     X(FavAdded, "Zu Favoriten hinzugefügt", "Added to favorites") \
     X(FavRemoved, "Aus Favoriten entfernt", "Removed from favorites") \
     X(LaunchFailed, "Start nicht möglich", "Cannot start") \
+    X(LaunchNote, "Hinweis", "Note") \
+    X(WarnMemcardNoPorts, "Echte Speicherkarte gewählt, aber diese Konsole hat keine GameCube-Ports: Spielstände gehen verloren.", "Real memory card selected, but this console has no GameCube ports: saves will be lost.") \
+    X(WarnNativeSiNoPorts, "Native Controller gewählt, aber diese Konsole hat keine GameCube-Ports.", "Native controllers selected, but this console has no GameCube ports.") \
+    X(WarnLaunchAgain, "A erneut drücken, um trotzdem zu starten.", "Press A again to start anyway.") \
     X(EmuMissing, "Emulator nicht gefunden:\n%s", "Emulator not found:\n%s") \
     X(EmuInvalid, "Emulator-Datei ist ungültig:\n%s", "Emulator file is invalid:\n%s") \
     X(RomMissing, "Spieldatei nicht gefunden:\n%s", "Game file not found:\n%s") \
@@ -115,6 +119,61 @@
     X(SettingsHelp, "◀▶ Ändern · A Auswählen · B Zurück", "◀▶ Change · A Select · B Back") \
     X(Rescanning, "Bibliothek wird neu durchsucht …", "Rescanning library …") \
     X(Emulators, "Emulatoren", "Emulators") \
+    X(WiiGames, "Wii-Spiele", "Wii games") \
+    X(GcGames, "GameCube-Spiele", "GameCube games") \
+    X(DetailsHelpOptions, "A Starten · B Zurück · 1 Favorit · + Optionen", "A Start · B Back · 1 Favorite · + Options") \
+    X(OptionsHelp, "◀▶ Ändern · B Speichern und zurück", "◀▶ Change · B Save and back") \
+    X(OptResetGame, "Auf Standard zurücksetzen", "Reset to defaults") \
+    X(OptResetGlobal, "Zurücksetzen", "Reset") \
+    X(OptDefault, "Standard (%s)", "Default (%s)") \
+    X(OptNeedsNin, "ab Nintendont %s", "needs Nintendont %s") \
+    X(OptBlocks, "%s Blöcke", "%s blocks") \
+    X(OptCios, "cIOS %s", "cIOS %s") \
+    X(OptVideo, "Videomodus", "Video mode") \
+    X(OptVideoPatch, "Videopatch", "Video patch") \
+    X(OptVipatch, "VIDTV-Patch", "VIDTV patch") \
+    X(OptCountryPatch, "Länder-Patch", "Country patch") \
+    X(OptRegionPatch, "Regions-Patch", "Region patch") \
+    X(OptAspect, "Seitenverhältnis", "Aspect ratio") \
+    X(OptDeflicker, "Entflimmern", "Deflicker") \
+    X(OptWidth, "Bildbreite", "Video width") \
+    X(OptFix480p, "480p-Fix", "480p fix") \
+    X(OptOnline, "Online-Dienst", "Online service") \
+    X(OptIos, "IOS", "IOS") \
+    X(OptReturnTo, "Rückkehr zu", "Return to") \
+    X(OptProgressive, "Progressiv (480p)", "Progressive (480p)") \
+    X(OptForceWide, "Breitbild erzwingen", "Force widescreen") \
+    X(OptWiiuWide, "Wii-U-Breitbild", "Wii U widescreen") \
+    X(OptMemcard, "Speicherkarte", "Memory card") \
+    X(OptMemcardBlocks, "Kartengröße", "Card size") \
+    X(OptNativeSi, "Native Controller", "Native controllers") \
+    X(OptMaxPads, "Max. Controller", "Max controllers") \
+    X(OptSkipIpl, "IPL überspringen", "Skip IPL") \
+    X(ValGame, "Spiel", "Game") \
+    X(ValSystem, "System", "System") \
+    X(ValNoChange, "Keine Änderung", "No change") \
+    X(ValNormal, "Normal", "Normal") \
+    X(ValMore, "Mehr", "More") \
+    X(ValAll, "Alle", "All") \
+    X(ValOffExt, "Aus (erweitert)", "Off (extended)") \
+    X(ValLow, "Niedrig", "Low") \
+    X(ValMedium, "Mittel", "Medium") \
+    X(ValHigh, "Hoch", "High") \
+    X(ValNoSsl, "Ohne SSL", "No SSL") \
+    X(ValNone, "Keine", "None") \
+    X(ValEmulated, "Emuliert", "Emulated") \
+    X(ValEmulatedMulti, "Emuliert (mehrere)", "Emulated (multi)") \
+    X(ValReal, "Echt", "Real") \
+    X(ValLangJa, "Japanisch", "Japanese") \
+    X(ValLangFr, "Französisch", "French") \
+    X(ValLangEs, "Spanisch", "Spanish") \
+    X(ValLangIt, "Italienisch", "Italian") \
+    X(ValLangNl, "Niederländisch", "Dutch") \
+    X(ValLangZhS, "Chinesisch (vereinfacht)", "Chinese (simplified)") \
+    X(ValLangZhT, "Chinesisch (traditionell)", "Chinese (traditional)") \
+    X(ValLangKo, "Koreanisch", "Korean") \
+    X(ValLangEn, "Englisch", "English") \
+    X(ValLangDe, "Deutsch", "German") \
     X(EmuCheckUpdates, "Nach Updates suchen", "Check for updates") \
     X(EmuUpdateAll, "Alle aktualisieren", "Update all") \
     X(EmuNotInstalled, "nicht installiert", "not installed") \

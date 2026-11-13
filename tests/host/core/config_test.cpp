@@ -299,3 +299,8 @@ TEST_CASE("applyDebugIni: nur [debug] aus debug.ini, wizard-Schlüssel (M13 Task
     CHECK(c.language == Config::Language::De);
     CHECK(configFromIni(IniDoc::parse("[debug]\nwizard = accept\n")).debugWizard == "accept");
 }
+
+TEST_CASE("configFromIni: [debug] option_set (M14)") {
+    CHECK(configFromIni(IniDoc::parse("")).debugOptionSet.empty());
+    CHECK(configFromIni(IniDoc::parse("[debug]\noption_set = video=pal60\n")).debugOptionSet == "video=pal60");
+}

@@ -45,6 +45,8 @@ add_library(nl_core STATIC
     src/core/launch_args.cpp
     src/core/launch_plan.cpp
     src/core/n64.cpp
+    src/core/game_options.cpp
+    src/core/options_model.cpp
     src/core/n64_choice.cpp
     src/core/vc_map.cpp
     src/core/wii_title.cpp
@@ -98,6 +100,7 @@ add_library(nl_core STATIC
     src/ui/jump_bar.cpp
     src/ui/keyboard.cpp
     src/ui/details_scene.cpp
+    src/ui/options_scene.cpp
     src/ui/vc_map_scene.cpp
     src/ui/dialog_scene.cpp
     src/ui/launch_text.cpp

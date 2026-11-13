@@ -139,3 +139,19 @@ TEST_CASE("tpl: Fehler bei Größe 0/4096, Daten hinter dem Ende, C8 ohne Palett
     CHECK(parseTpl(magic).error().code == ErrorCode::InvalidData);
     CHECK(parseTpl(std::vector<u8>(8, 0)).error().code == ErrorCode::InvalidData);
 }
+
+TEST_CASE("tpl: Palettenbild → RGB5A3-Kacheln mit gleichen Pixeln (M18, ohne TLUT)") {
+    // Farben, die RGB5A3 exakt darstellt: Kanäle 0 oder 255, Alpha 255.
+    TplSpec c8{TexFmt::C8, 12, 6, {}, [](int x, int y) { return static_cast<u16>((x + y) % 3); }, TexFmt::RGB5A3,
+               {0xFC00, 0x83E0, 0x801F}};
+    auto r = parseTpl(test::tplFile({c8}));
+    REQUIRE(r.isOk());
+    const TplImage& src = r.value()[0];
+    const std::vector<u8> tiles = toRgb5a3Tiles(src);
+    REQUIRE(tiles.size() == texBytes(TexFmt::RGB5A3, 12, 6));
+    TplImage conv{TexFmt::RGB5A3, 12, 6, tiles, TexFmt::RGB5A3, {}, 0};
+    CHECK(decodeToRgba(conv) == decodeToRgba(src));
+    TplImage direct = src;
+    direct.fmt = TexFmt::RGB565;
+    CHECK(toRgb5a3Tiles(direct).empty());  // nur Palettenformate
+}

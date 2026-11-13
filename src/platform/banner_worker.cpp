@@ -1,6 +1,7 @@
 #include "platform/banner_worker.hpp"
 
 #include "core/gc_disc.hpp"
+#include "platform/banner_source.hpp"
 
 namespace nl::platform {
 
@@ -24,6 +25,22 @@ bool BannerWorker::startGc(FileSystem& fs, std::string key, std::string gamePath
     path_ = std::move(gamePath);
     lang_ = langIndex;
     shiftJis_ = shiftJis;
+    channel_ = false;
+    return launch();
+}
+
+bool BannerWorker::startChannel(FileSystem& fs, std::string key, u64 titleId, std::string filePath) {
+    if (running_) return false;
+    join();
+    fs_ = &fs;
+    key_ = std::move(key);
+    path_ = std::move(filePath);
+    titleId_ = titleId;
+    channel_ = true;
+    return launch();
+}
+
+bool BannerWorker::launch() {
     running_ = true;
     if (LWP_CreateThread(&thread_, &BannerWorker::entry, this, nullptr, kStackBytes, kPriority) != 0) {
         running_ = false;
@@ -44,8 +61,9 @@ void* BannerWorker::entry(void* arg) {
     auto* self = static_cast<BannerWorker*>(arg);
     BannerResult r;
     r.key = self->key_;
-    auto loaded = loadGcBanner(*self->fs_, self->path_, self->lang_, self->shiftJis_);
-    if (loaded.isOk()) {
+    if (self->channel_) {
+        self->runChannel(r);
+    } else if (auto loaded = loadGcBanner(*self->fs_, self->path_, self->lang_, self->shiftJis_); loaded.isOk()) {
         r.gc.emplace(std::move(loaded).value());
     } else {
         r.error = loaded.error().code;
@@ -56,6 +74,22 @@ void* BannerWorker::entry(void* arg) {
     self->running_ = false;
     LWP_MutexUnlock(self->mutex_);
     return nullptr;
+}
+
+void BannerWorker::runChannel(BannerResult& r) {
+    auto content = path_.empty() ? readChannelContent0(titleId_) : fs_->readAll(path_, kChannelContent0Max);
+    if (!content.isOk()) {
+        r.error = content.error().code;
+        r.context = content.error().context;
+        return;
+    }
+    auto banner = loadChannelBanner(content.value());
+    if (!banner.isOk()) {
+        r.error = banner.error().code;
+        r.context = banner.error().context;
+        return;
+    }
+    r.channel.emplace(std::move(banner).value());
 }
 
 std::optional<BannerResult> BannerWorker::take() {

@@ -4,12 +4,14 @@
 
 #include "core/game.hpp"
 #include "gfx/draw_list.hpp"
+#include "ui/banner_view.hpp"
 
 namespace nl::ui {
 
 struct BannerView {
     gfx::TextureId texture = 0;  // 0 = kein Banner (noch nicht geladen oder Rückfall aufs Cover)
-    float width = 0.0f, height = 0.0f;  // Größe in Texeln
+    float width = 0.0f, height = 0.0f;  // Größe in Texeln (GC) bzw. Layout-Größe (Kanal)
+    const BannerFrame* frame = nullptr;  // Kanal-Banner (M18 Task 5): Bild aus Quads statt einer Textur
 };
 
 class BannerProvider {

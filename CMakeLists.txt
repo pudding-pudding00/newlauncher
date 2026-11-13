@@ -98,6 +98,9 @@ add_library(nl_core STATIC
     src/core/u8_archive.cpp
     src/core/imd5.cpp
     src/core/tpl.cpp
+    src/core/brlyt.cpp
+    src/core/banner_scene.cpp
+    src/core/channel_banner.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp
@@ -120,6 +123,7 @@ add_library(nl_core STATIC
     src/ui/startup_scene.cpp
     src/ui/jump_bar.cpp
     src/ui/keyboard.cpp
+    src/ui/banner_view.cpp
     src/ui/details_scene.cpp
     src/ui/options_scene.cpp
     src/ui/cheats_scene.cpp
@@ -268,6 +272,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/theme_loader.cpp
         src/platform/cover_worker.cpp
         src/platform/banner_source.cpp
+    src/platform/banner_tex.cpp
         src/platform/banner_worker.cpp
         src/platform/http_client.cpp
         src/platform/net_service.cpp

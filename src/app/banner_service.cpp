@@ -34,8 +34,34 @@ void BannerService::freeTexels() {
     texels_ = nullptr;
 }
 
+void BannerService::freeFrame() {
+    textures_.release();
+    quads_.clear();
+    layout_ = Layout{};
+    frame_ = ui::BannerFrame{};
+    haveFrame_ = false;
+}
+
+void BannerService::takeChannel(ChannelBanner& banner) {
+    if (!textures_.upload(banner, renderer_)) {
+        log::line("NL_BANNER_FALLBACK cover memory");
+        return;
+    }
+    layout_ = std::move(banner.layout);
+    quads_ = buildQuads(layout_, initialState(layout_));
+    u32 pictures = 0;
+    for (const LytPane& p : layout_.panes) pictures += p.isPicture ? 1 : 0;
+    frame_ = ui::BannerFrame{layout_.width, layout_.height, quads_};
+    haveFrame_ = true;
+    log::line("NL_BANNER panes=%u/%u skipped=%u tex=%u bytes=%u", static_cast<unsigned>(pictures),
+              static_cast<unsigned>(layout_.panes.size()), static_cast<unsigned>(layout_.skipped),
+              static_cast<unsigned>(layout_.textures.size()), static_cast<unsigned>(textures_.bytes()));
+    log::line("NL_BANNER static quads=%u", static_cast<unsigned>(quads_.size()));
+}
+
 void BannerService::release() {
     freeTexels();
+    freeFrame();
     key_.clear();
     requested_ = false;
 }
@@ -51,7 +77,9 @@ void BannerService::want(const Game& game) {
 }
 
 ui::BannerView BannerService::view(const Game& game) const {
-    if (texels_ == nullptr || game.key == nullptr || key_ != game.key) return {};
+    if (game.key == nullptr || key_ != game.key) return {};
+    if (haveFrame_) return ui::BannerView{0, layout_.width, layout_.height, &frame_};
+    if (texels_ == nullptr) return {};
     return ui::BannerView{gfx::kBannerTextureBase, kGcBannerWidth, kGcBannerHeight};
 }
 
@@ -59,7 +87,10 @@ void BannerService::pump() {
     if (auto r = worker_.take()) {
         if (r->key == key_) {
             freeTexels();
-            if (r->gc) {
+            freeFrame();
+            if (r->channel) {
+                takeChannel(*r->channel);
+            } else if (r->gc) {
                 void* p = memalign(32, r->gc->rgb5a3.size());
                 if (p != nullptr) {
                     std::memcpy(p, r->gc->rgb5a3.data(), r->gc->rgb5a3.size());
@@ -78,6 +109,11 @@ void BannerService::pump() {
     if (key_.empty() || requested_ || worker_.running()) return;
     requested_ = true;
     freeTexels();  // altes Spiel: Renderer hat den Vorframe mit GX_DrawDone beendet
+    freeFrame();
+    if (!debugFile_.empty()) {
+        if (!worker_.startChannel(fs_, key_, 0, debugFile_)) log::line("NL_BANNER_FALLBACK cover thread");
+        return;
+    }
     if (path_.empty()) {
         log::line("NL_BANNER_FALLBACK cover missing");
         return;

@@ -69,6 +69,7 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     c.debugIgnoreAhbprot = parseIntIn(ini.get("debug", "ignore_ahbprot"), 0, 1, 0) == 1;
     c.debugWiiDryRun = parseIntIn(ini.get("debug", "wii_dry_run"), 0, 1, 0) == 1;
     c.debugOpenScene = std::string(trim(ini.get("debug", "open_scene")));
+    c.debugBannerFile = std::string(trim(ini.get("debug", "banner_file")));
     c.debugOptionSet = std::string(trim(ini.get("debug", "option_set")));
     c.debugTlsCa = std::string(trim(ini.get("debug", "tls_ca")));
     c.debugWizard = std::string(trim(ini.get("debug", "wizard")));

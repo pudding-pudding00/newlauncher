@@ -6,8 +6,10 @@
 #include <string>
 #include <vector>
 
+#include "core/banner_scene.hpp"
 #include "core/fs.hpp"
 #include "gfx/renderer.hpp"
+#include "platform/banner_tex.hpp"
 #include "platform/banner_worker.hpp"
 #include "ui/banner_provider.hpp"
 
@@ -20,6 +22,8 @@ public:
     // roots[d] = Gerätewurzel ("sd:") des Bibliotheksgeräts d, Index wie Game::device.
     void setRoots(std::vector<std::string> roots) { roots_ = std::move(roots); }
     void setGerman(bool german) { german_ = german; }
+    // [debug] banner_file: dieses Kanal-content0 statt des GC-Banners laden (Smoke, M18).
+    void setDebugFile(std::string path) { debugFile_ = std::move(path); }
     void pump();      // Ergebnis übernehmen, nächsten Auftrag starten
     void release();   // Banner freigeben (Bibliothek neu, Szene verlassen)
     void shutdown();  // vor dem Aushängen der Laufwerke
@@ -30,6 +34,8 @@ public:
 
 private:
     void freeTexels();
+    void freeFrame();
+    void takeChannel(ChannelBanner& banner);
 
     FileSystem& fs_;
     gfx::Renderer& renderer_;
@@ -39,6 +45,12 @@ private:
     std::string key_, path_;   // gewünschtes Spiel
     bool requested_ = false;   // Auftrag für key_ gestartet
     void* texels_ = nullptr;   // RGB5A3 96×32 für key_, 32-Byte-ausgerichtet
+    std::string debugFile_;
+    platform::BannerTextures textures_;  // Kanal-Banner für key_
+    Layout layout_;
+    std::vector<Quad> quads_;
+    ui::BannerFrame frame_{};
+    bool haveFrame_ = false;
 };
 
 }  // namespace nl::app

@@ -26,7 +26,8 @@ class MakeFixturesTest(unittest.TestCase):
                     "newlauncher/cache/meta.bin", "roms/nes/Super Mario Bros. (World).nes",
                     "roms/nes/readme.txt", "roms/snes/F-Zero (Europe).SMC", "roms/gbc/.keep",
                     "games/Metroid Prime [GM8P01]/game.iso", "wbfs/Mario Kart Wii [RMCP01]/RMCP01.wbfs",
-                    "wbfs/Super Mario Galaxy [RMGP01]/RMGP01.iso", "wbfs/Kaputt [XXXX01]/XXXX01.wbfs"]:
+                    "wbfs/Super Mario Galaxy [RMGP01]/RMGP01.iso", "wbfs/Kaputt [XXXX01]/XXXX01.wbfs",
+                    "newlauncher/fixtures/banner.app"]:
             self.assertTrue((self.out / rel).is_file(), rel)
         roms = [p for p in (self.out / "roms").rglob("*") if p.is_file() and p.suffix.lower() not in (".txt", ".keep", "")]
         self.assertEqual(len(roms), 9)

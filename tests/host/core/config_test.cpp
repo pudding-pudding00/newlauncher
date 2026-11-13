@@ -232,6 +232,12 @@ TEST_CASE("configFromIni: [debug] open_scene (M11)") {
     CHECK(configFromIni(IniDoc::parse("[debug]\nopen_scene = about\n")).debugOpenScene == "about");
 }
 
+TEST_CASE("configFromIni: [debug] banner_file (M18)") {
+    CHECK(configFromIni(IniDoc::parse("")).debugBannerFile.empty());
+    CHECK(configFromIni(IniDoc::parse("[debug]\nbanner_file =  sd:/x/banner.app \n")).debugBannerFile ==
+          "sd:/x/banner.app");
+}
+
 TEST_CASE("configFromIni: [debug] filter (M17)") {
     CHECK(configFromIni(IniDoc::parse("")).debugFilter.empty());
     CHECK(configFromIni(IniDoc::parse("[debug]\nfilter = category:Party \n")).debugFilter == "category:Party");

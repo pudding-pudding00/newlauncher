@@ -35,10 +35,13 @@ public:
     u32 textureBytes() const { return textureBytes_; }
 
 private:
+    void setClip(const Batch& b);
+
     platform::Video* video_ = nullptr;
     void* fifo_ = nullptr;
     float logicalWidth_ = 640.0f;
     float pixelScaleX_ = 1.0f;
+    u16 fbWidth_ = 640, efbHeight_ = 480;  // Pixelgröße des EFB für den Scissor (M18)
     int next_ = 1;
     bool efbCleared_ = false;
     u32 coverGeneration_ = 0;

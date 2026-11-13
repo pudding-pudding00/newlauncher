@@ -226,9 +226,94 @@ def sample_bnr() -> bytes:
     return gc_bnr([en, de, en, en, en, en])
 
 
+def pane(kind: str, name: str, x: float, y: float, w: float, h: float, *, rot: float = 0.0, alpha: int = 255,
+         flags: int = 0x03, origin: int = 4, material: int = 0, vtx=None, uvs=None, children=None) -> dict:
+    """Pane-Beschreibung für brlyt(); kind pan1 oder pic1, Drehung um z in Grad."""
+    return {"kind": kind, "name": name, "f": (x, y, 0.0, 0.0, 0.0, rot, 1.0, 1.0, w, h), "alpha": alpha,
+            "flags": flags, "origin": origin, "material": material, "vtx": vtx or [(255, 255, 255, 255)] * 4,
+            "uvs": uvs or [], "children": children or []}
+
+
+def _section(magic: str, body: bytes) -> bytes:
+    body += bytes(-(8 + len(body)) % 4)
+    return magic.encode("ascii") + struct.pack(">I", 8 + len(body)) + body
+
+
+def _fixed(text: str, n: int) -> bytes:
+    raw = text.encode("ascii")[:n]
+    return raw + bytes(n - len(raw))
+
+
+def _pane_sections(p: dict) -> list:
+    body = bytes([p["flags"], p["origin"], p["alpha"], 0]) + _fixed(p["name"], 16) + bytes(8)
+    body += struct.pack(">10f", *p["f"])
+    if p["kind"] == "pic1":
+        body += b"".join(bytes(c) for c in p["vtx"])
+        body += struct.pack(">HBx", p["material"], len(p["uvs"]))
+        body += b"".join(struct.pack(">8f", *uv) for uv in p["uvs"])
+    out = [_section(p["kind"], body)]
+    if p["children"]:
+        out.append(_section("pas1", b""))
+        for c in p["children"]:
+            out += _pane_sections(c)
+        out.append(_section("pae1", b""))
+    return out
+
+
+def brlyt(w: float, h: float, textures: list, materials: list, roots: list) -> bytes:
+    """BRLYT (Version 0x0A) aus lyt1, txl1, mat1 und Pane-Baum.
+
+    materials: (Name, Texturindex oder None, Materialfarbe (r, g, b, a) oder None)."""
+    secs = [_section("lyt1", bytes([1, 0, 0, 0]) + struct.pack(">ff", w, h))]
+    names = b"".join(t.encode("ascii") + bytes(1) for t in textures)
+    table, at = bytearray(), len(textures) * 8
+    for t in textures:
+        table += struct.pack(">II", at, 0)
+        at += len(t) + 1
+    secs.append(_section("txl1", struct.pack(">Hxx", len(textures)) + bytes(table) + names))
+    mats = bytearray(struct.pack(">Hxx", len(materials)) + bytes(4 * len(materials)))
+    for i, (name, tex, color) in enumerate(materials):
+        struct.pack_into(">I", mats, 4 + 4 * i, 8 + len(mats))
+        flags = (1 if tex is not None else 0) | (1 << 27 if color is not None else 0)
+        mats += _fixed(name, 20) + bytes(24) + bytes(16) + struct.pack(">I", flags)
+        if tex is not None:
+            mats += struct.pack(">Hxx", tex)
+        if color is not None:
+            mats += bytes(color)
+    secs.append(_section("mat1", bytes(mats)))
+    for r in roots:
+        secs += _pane_sections(r)
+    body = b"".join(secs)
+    return b"RLYT" + bytes([0xFE, 0xFF, 0x00, 0x0A]) + struct.pack(">IHH", 0x10 + len(body), 0x10, len(secs)) + body
+
+
+def channel_banner_app() -> bytes:
+    """Kanal-content0 wie auf der NAND: 0x40 Byte frei, IMET-Kopf bis 0x640, dann U8 mit meta/banner.bin.
+
+    Szene: Hintergrund (RGB5A3), gedrehtes Logo (C8 mit Palette), ungetextureter Balken → drei Quads."""
+    bg = tpl([(5, 64, 48, lambda x, y: (30, 40 + y * 3, 120 + x, 255), None)])
+    palette = [rgb5a3_pixel(250, 200, 40), rgb5a3_pixel(250, 250, 250)]
+    logo = tpl([(9, 32, 16, lambda x, y: (x // 4 + y // 4) % 2, palette)])
+    root = pane("pan1", "RootPane", 0, 0, 608, 456, children=[
+        pane("pic1", "bg", 0, 0, 608, 456, material=0),
+        pane("pic1", "logo", 0, 40, 320, 160, rot=15, material=1),
+        pane("pic1", "bar", 0, -170, 560, 40, alpha=200, material=2,
+             vtx=[(255, 80, 80, 255), (255, 80, 80, 255), (120, 20, 20, 255), (120, 20, 20, 255)]),
+    ])
+    layout = brlyt(608, 456, ["bg.tpl", "logo.tpl"],
+                   [("bg", 0, None), ("logo", 1, None), ("bar", None, (255, 255, 255, 255))], [root])
+    inner = u8_archive({"arc": {"blyt": {"banner.brlyt": layout}, "timg": {"bg.tpl": bg, "logo.tpl": logo}}})
+    outer = u8_archive({"meta": {"banner.bin": imd5(inner)}})
+    head = bytearray(0x640)
+    head[0x80:0x84] = b"IMET"
+    struct.pack_into(">II", head, 0x84, 0x600, 3)
+    return bytes(head) + outer
+
+
 def main(out: Path) -> int:
     out.mkdir(parents=True, exist_ok=True)
     (out / "opening.bnr").write_bytes(sample_bnr())
+    (out / "banner.app").write_bytes(channel_banner_app())
     return 0
 
 

@@ -438,3 +438,35 @@ TEST_CASE_FIXTURE(Fixture, "Details: andere Konsolen fragen kein Banner an") {
     step(d, InputFrame{});
     CHECK(b.wanted.empty());
 }
+
+TEST_CASE_FIXTURE(Fixture, "Details: Kanal-Banner-Bild ersetzt das Cover, 4:3 im Cover-Feld, mit Clip (M18)") {
+    FakeBanners b;
+    DetailsScene d;
+    d.setBanners(&b);
+    d.open(Game{Console::Gc, "GM8P01", "Metroid Prime", 0, 1}, false, 0);
+    step(d, InputFrame{});
+    Quad q;
+    q.pos = {Vec2{-304, 228}, Vec2{304, 228}, Vec2{-304, -228}, Vec2{304, -228}};  // ganzes Layout
+    q.uv = {Vec2{0, 0}, Vec2{1, 0}, Vec2{0, 1}, Vec2{1, 1}};
+    q.color = {Color{255, 255, 255, 255}, Color{255, 255, 255, 255}, Color{255, 255, 255, 255}, Color{255, 255, 255, 255}};
+    q.texIndex = 2;
+    const Quad quads[1] = {q};
+    const BannerFrame frame{608, 456, quads};
+    b.v = BannerView{0, 608, 456, &frame};
+    ctx.width = 640;
+    ctx.height = 480;
+    dl.clear();
+    d.draw(ctx, dl);
+    bool found = false;
+    for (const gfx::Batch& bt : dl.batches()) {
+        if (bt.texture != gfx::kBannerTextureBase + 2) continue;
+        found = true;
+        CHECK(bt.clipped);
+        const gfx::Vertex* v = &dl.vertices()[bt.firstVertex];
+        CHECK(v[0].x == doctest::Approx(32));           // Cover-Feld links (kMargin)
+        CHECK(v[1].x - v[0].x == doctest::Approx(200));  // Breite des Cover-Felds
+        CHECK(v[2].y - v[0].y == doctest::Approx(150));  // 4:3
+        CHECK(v[0].y == doctest::Approx(32 + 65));       // senkrecht mittig: (280 − 150) / 2
+    }
+    CHECK(found);
+}

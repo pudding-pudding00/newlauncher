@@ -648,6 +648,7 @@ int main(int argc, char** argv) {
     };
     banners.setRoots(bannerRootsOf(store.devices()));
     banners.setGerman(nl::ui::language() == nl::ui::Lang::De);
+    banners.setDebugFile(config.debugBannerFile);
     details.setBanners(&banners);
     nl::ui::DialogScene dialog;
     // Kindersicherung (M17, Spec v2 10.5): wirksam ist config.parental oder, mit use_wii, der Wii-Jugendschutz.

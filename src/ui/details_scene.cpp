@@ -338,7 +338,12 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const char* label = consoleInfo(game_.console).label;
     const float lw = gfx::measureText(big, label);
     gfx::drawText(dl, big, cover.x + (cover.w - lw) / 2, cover.y + cover.h / 2, label, t.accentSoftText);
-    if (covers_ != nullptr) {
+    const BannerView bv = banners_ != nullptr && game_.console == Console::Gc ? banners_->view(game_) : BannerView{};
+    if (bv.frame != nullptr) {
+        // Kanal-Banner (M18) statt des Covers: 4:3 in Cover-Breite, senkrecht mittig, außen abgeschnitten.
+        const float bh = cover.w * 3.0f / 4.0f;
+        drawBanner(dl, s, Rect{cover.x, cover.y + (cover.h - bh) / 2.0f, cover.w, bh}, *bv.frame);
+    } else if (covers_ != nullptr) {
         const CoverView cv = covers_->view(game_);
         if (cv.texture != 0 && cv.alpha > 0.0f) {
             const u8 a = static_cast<u8>(std::min(cv.alpha, 1.0f) * 255.0f);
@@ -346,9 +351,8 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         }
     }
     // Banner (M18) 2× unter dem Cover: dort ist bis zur Infoleiste Platz, die Beschreibung behält ihre Zeilen.
-    if (banners_ != nullptr && game_.console == Console::Gc) {
-        const BannerView bv = banners_->view(game_);
-        if (bv.texture != 0) {
+    {
+        if (bv.frame == nullptr && bv.texture != 0) {
             const float bw = bv.width * 2.0f, bh = bv.height * 2.0f;
             dl.quad(bv.texture, Rect{cover.x + (cover.w - bw) / 2, cover.y + cover.h + 16.0f, bw, bh}, gfx::UvRect{0, 0, 1, 1},
                     Color{255, 255, 255, 255});

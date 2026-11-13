@@ -175,4 +175,24 @@ std::vector<u8> decodeToRgba(const TplImage& img) {
     return out;
 }
 
+std::vector<u8> toRgb5a3Tiles(const TplImage& img) {
+    if (!isPaletted(img.fmt)) return {};
+    const std::vector<u8> rgba = decodeToRgba(img);
+    if (rgba.empty()) return {};
+    std::vector<u8> out(texBytes(TexFmt::RGB5A3, img.w, img.h), 0);
+    std::size_t at = 0;
+    for (u32 ty = 0; ty < img.h; ty += 4)
+        for (u32 tx = 0; tx < img.w; tx += 4)
+            for (u32 k = 0; k < 16; ++k, at += 2) {
+                const u32 x = tx + k % 4, y = ty + k / 4;
+                if (x >= img.w || y >= img.h) continue;  // Kachelrand bleibt 0
+                const u8* p = &rgba[(std::size_t{y} * img.w + x) * 4];
+                const u16 v = p[3] == 255 ? static_cast<u16>(0x8000 | (p[0] >> 3) << 10 | (p[1] >> 3) << 5 | (p[2] >> 3))
+                                          : static_cast<u16>((p[3] >> 5) << 12 | (p[0] >> 4) << 8 | (p[1] >> 4) << 4 | (p[2] >> 4));
+                out[at] = static_cast<u8>(v >> 8);
+                out[at + 1] = static_cast<u8>(v);
+            }
+    return out;
+}
+
 }  // namespace nl

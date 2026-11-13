@@ -6,8 +6,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from make_banner_fixtures import (TEX_BYTES, gc_bnr, gc_iso, imd5, main, rgb5a3_pixel,  # noqa: E402
-                                  sample_bnr, tex_bytes, tile_rgb5a3, tpl, u8_archive)
+from make_banner_fixtures import (TEX_BYTES, brlyt, channel_banner_app, gc_bnr, gc_iso, imd5,  # noqa: E402
+                                  main, pane, rgb5a3_pixel, sample_bnr, tex_bytes, tile_rgb5a3, tpl,
+                                  u8_archive)
+
+
+def sections(data: bytes) -> list:
+    """(Magic, Länge) je Abschnitt einer BRLYT-Datei."""
+    out, at = [], struct.unpack_from(">H", data, 0x0C)[0]
+    for _ in range(struct.unpack_from(">H", data, 0x0E)[0]):
+        magic, size = data[at:at + 4], struct.unpack_from(">I", data, at + 4)[0]
+        out.append((magic, size))
+        at += size
+    return out
 
 
 class MakeBannerFixturesTest(unittest.TestCase):
@@ -85,10 +96,33 @@ class MakeBannerFixturesTest(unittest.TestCase):
         names = image[fst_at + count * 12:fst_at + fst_size]
         self.assertEqual(names, b"opening.bnr\0")
 
+    def test_brlyt_sections_and_tree(self):
+        root = pane("pan1", "RootPane", 0, 0, 608, 456, children=[pane("pic1", "logo", 10, 20, 40, 20, material=1)])
+        data = brlyt(608, 456, ["a.tpl", "b.tpl"], [("bg", 0, None), ("logo", 1, (10, 20, 30, 40))], [root])
+        self.assertEqual(data[:6], b"RLYT" + bytes([0xFE, 0xFF]))
+        self.assertEqual(struct.unpack_from(">I", data, 8)[0], len(data))
+        magics = [m for m, _ in sections(data)]
+        self.assertEqual(magics, [b"lyt1", b"txl1", b"mat1", b"pan1", b"pas1", b"pic1", b"pae1"])
+        self.assertTrue(all(size % 4 == 0 for _, size in sections(data)))
+        self.assertEqual(struct.unpack_from(">ff", data, 0x10 + 0x0C), (608.0, 456.0))
+        pic_at = data.index(b"pic1")
+        self.assertEqual(struct.unpack_from(">I", data, pic_at + 4)[0], 0x60)
+        self.assertEqual(struct.unpack_from(">H", data, pic_at + 0x5C)[0], 1)
+
+    def test_channel_banner_app(self):
+        data = channel_banner_app()
+        self.assertEqual(data[0x80:0x84], b"IMET")
+        self.assertEqual(data[0x640:0x644], bytes([0x55, 0xAA, 0x38, 0x2D]))
+        inner_at = data.index(b"IMD5") + 32
+        self.assertEqual(data[inner_at:inner_at + 4], bytes([0x55, 0xAA, 0x38, 0x2D]))
+        for name in (b"banner.brlyt\0", b"bg.tpl\0", b"logo.tpl\0", b"RLYT"):
+            self.assertIn(name, data[inner_at:])
+
     def test_main_writes_bnr(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(main(Path(d)), 0)
             self.assertEqual((Path(d) / "opening.bnr").read_bytes(), sample_bnr())
+            self.assertEqual((Path(d) / "banner.app").read_bytes(), channel_banner_app())
 
 
 if __name__ == "__main__":

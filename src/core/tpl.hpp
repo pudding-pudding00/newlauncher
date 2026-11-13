@@ -33,5 +33,8 @@ u32 texBytes(TexFmt f, u16 w, u16 h);
 
 // RGBA8, zeilenweise, w*h*4 Byte. Palettenindizes außerhalb der Palette werden transparent schwarz.
 std::vector<u8> decodeToRgba(const TplImage& img);
+// Palettenbild (C4, C8, C14X2) → GX-Kacheln in RGB5A3 gleicher Größe (M18): der Renderer braucht so keine
+// TLUT-Slots. Andere Formate oder kaputte Daten → leer.
+std::vector<u8> toRgb5a3Tiles(const TplImage& img);
 
 }  // namespace nl

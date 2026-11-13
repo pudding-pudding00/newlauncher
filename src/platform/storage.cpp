@@ -87,6 +87,12 @@ bool DeviceTable::mountSd() {
     return ok;
 }
 
+bool DeviceTable::setSdAsDisk(bool on) {
+    if (on != sdAsDisk_ && isUsbMounted(devices_)) return false;
+    sdAsDisk_ = on;
+    return true;
+}
+
 bool DeviceTable::mountUsb() {
     if (isUsbMounted(devices_)) return true;
     const DISC_INTERFACE* io = sdAsDisk_ ? &__io_wiisd : &__io_usbstorage;
@@ -103,6 +109,7 @@ bool DeviceTable::mountUsb() {
     for (const DeviceSlot& s : assignDevices(false, FsKind::Unknown, parts.value(), kFsSupport)) {
         Device d{s, false, false, 0, 0};
         if (s.mount) d.mounted = mountSlot(s, io);
+        if (s.mount && !d.mounted) d.slot.skip = SkipReason::MountFailed;  // Systeminfo zeigt den Grund (DE/EN)
         // NTFS ist immer nur lesend; sd_as_disk hängt die FAT-Partition der SD ein zweites Mal ein und darf
         // deshalb nie schreiben.
         d.writable = d.mounted && !s.readOnly && !sdAsDisk_;

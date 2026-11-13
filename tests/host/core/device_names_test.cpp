@@ -119,19 +119,57 @@ TEST_CASE("device_names: NTFS ohne Unterstützung bleibt ohne Namen, Grund DE/EN
     CHECK_FALSE(old[1].mount);
 }
 
-TEST_CASE("device_names: ext4 vor FAT → usb (ext), usb2 (fat); ohne ext-Unterstützung usb (fat)") {
+// Spec v2 5.2: "usb:" ist die erste FAT-Partition, wie bisher; NTFS/ext/WBFS zählen danach weiter.
+TEST_CASE("device_names: ext4 vor FAT → usb (fat), usb2 (ext); ohne ext-Unterstützung usb (fat)") {
     const std::vector<PartitionInfo> usb{part(2048, FsKind::Ext), part(9000, FsKind::Fat)};
     const auto on = assignDevices(false, FsKind::Unknown, usb, FsSupport{false, true, false});
     REQUIRE(on.size() == 2);
-    CHECK(on[0].name == "usb");
+    CHECK(on[0].name == "usb2");
     CHECK(on[0].readOnly);
-    CHECK(on[1].name == "usb2");
+    CHECK(on[1].name == "usb");
+    CHECK_FALSE(on[1].readOnly);
     const auto off = assignDevices(false, FsKind::Unknown, usb, FsSupport{true, false, false});
     CHECK(off[0].name.empty());
     CHECK(off[0].skip == SkipReason::ExtUnsupported);
     CHECK(std::string(skipReasonText(off[0].skip, true)) == "ext wird nicht unterstützt");
     CHECK(std::string(skipReasonText(off[0].skip, false)) == "ext is not supported");
     CHECK(off[1].name == "usb");
+}
+
+// Review M16 Critical 1: klassische USB-Loader-Platte (WBFS zuerst, dann FAT32) – FAT bleibt "usb" wie vor M16.
+TEST_CASE("device_names: WBFS vor FAT → usb (fat), usb2 (wbfs)") {
+    const std::vector<PartitionInfo> usb{part(2048, FsKind::Wbfs), part(9000, FsKind::Fat), part(20000, FsKind::Fat)};
+    const auto s = assignDevices(false, FsKind::Unknown, usb, FsSupport{true, false, true});
+    REQUIRE(s.size() == 3);
+    CHECK(s[1].name == "usb");
+    CHECK(s[2].name == "usb2");
+    CHECK(s[0].name == "usb3");
+    CHECK(s[0].readOnly);
+    CHECK(s[0].mount);
+}
+
+TEST_CASE("device_names: NTFS vor FAT → usb (fat), usb2 (ntfs)") {
+    const std::vector<PartitionInfo> usb{part(2048, FsKind::Ntfs), part(9000, FsKind::Fat)};
+    const auto s = assignDevices(false, FsKind::Unknown, usb, FsSupport{true, false, false});
+    REQUIRE(s.size() == 2);
+    CHECK(s[1].name == "usb");
+    CHECK(s[0].name == "usb2");
+}
+
+TEST_CASE("device_names: acht FAT + NTFS → FAT behält alle acht Namen, NTFS zu viele") {
+    std::vector<PartitionInfo> usb{part(1000, FsKind::Ntfs)};
+    for (u32 i = 0; i < 8; ++i) usb.push_back(part(2048 + i * 4096, FsKind::Fat));
+    const auto s = assignDevices(false, FsKind::Unknown, usb, FsSupport{true, false, false});
+    CHECK(s[1].name == "usb");
+    CHECK(s[8].name == "usb8");
+    CHECK_FALSE(s[0].mount);
+    CHECK(s[0].skip == SkipReason::TooMany);
+}
+
+// Review M16 Important 3: eingehängt werden sollte, Mount scheiterte → Grund DE/EN in der Systeminfo.
+TEST_CASE("device_names: MountFailed hat einen Grund DE/EN") {
+    CHECK(std::string(skipReasonText(SkipReason::MountFailed, true)) == "Einhängen fehlgeschlagen");
+    CHECK(std::string(skipReasonText(SkipReason::MountFailed, false)) == "mount failed");
 }
 
 TEST_CASE("device_names: exFAT bleibt auch mit voller Unterstützung ohne Namen") {

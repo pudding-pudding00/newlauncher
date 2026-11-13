@@ -20,7 +20,8 @@ struct FsSupport {
 };
 
 // Warum eine Partition keinen Namen bekommt (Log deutsch, Systeminfo DE/EN).
-enum class SkipReason : u8 { None, ExFat, NtfsUnsupported, ExtUnsupported, WbfsUnsupported, UnknownFs, BeyondLimit, TooMany };
+enum class SkipReason : u8 { None, ExFat, NtfsUnsupported, ExtUnsupported, WbfsUnsupported, UnknownFs, BeyondLimit, TooMany,
+                              MountFailed };
 
 struct DeviceSlot {
     std::string name;    // ohne Doppelpunkt; leer, wenn die Partition nicht eingehängt wird
@@ -32,8 +33,9 @@ struct DeviceSlot {
     bool readOnly = false;  // NTFS/ext: nur lesend eingehängt
 };
 
-// SD (falls vorhanden) → "sd"; USB-Partitionen in Tabellenreihenfolge: jede einhängbare Partition (FAT, dazu
-// NTFS/ext laut support) bekommt den nächsten Namen "usb", "usb2"…"usb8". Andere bleiben ohne Namen, mit Grund.
+// SD (falls vorhanden) → "sd"; USB: zuerst die FAT-Partitionen in Tabellenreihenfolge ("usb" ist die erste FAT-Partition,
+// Spec v2 5.2, wie vor M16), danach die übrigen einhängbaren (NTFS/WBFS laut support) – zusammen höchstens
+// "usb8". Andere bleiben ohne Namen, mit Grund.
 std::vector<DeviceSlot> assignDevices(bool sdPresent, FsKind sdKind, std::span<const PartitionInfo> usbParts,
                                       FsSupport support = {});
 

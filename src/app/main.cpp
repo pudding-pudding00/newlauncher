@@ -273,7 +273,8 @@ int main(int argc, char** argv) {
             nl::log::line("NL_DEBUG_INI");
         }
     }
-    nl::platform::deviceTable().setSdAsDisk(config.debugSdAsDisk);  // vor dem ersten mountUsb (M16-Smoke)
+    // M16-Smoke: Liegt der Datenordner schon auf USB, bleibt die echte USB-Platte eingehängt.
+    if (!nl::platform::deviceTable().setSdAsDisk(config.debugSdAsDisk)) nl::log::line("NL_DEV sd_as_disk ignoriert");
     const bool systemGerman = CONF_GetLanguage() == CONF_LANG_GERMAN;
     nl::ui::setLanguage(nl::ui::resolveLanguage(config.language, systemGerman));
     nl::log::line("NL_LANG %s", nl::ui::langKey(nl::ui::language()));

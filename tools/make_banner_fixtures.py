@@ -5,6 +5,7 @@ Formatbeschreibungen stehen an den Parsern in src/core (gc_banner, gc_fst, spät
     python tools/make_banner_fixtures.py <ausgabeordner>
 """
 
+import hashlib
 import struct
 import sys
 from pathlib import Path
@@ -84,6 +85,48 @@ def gc_iso(header: bytes, files: list[tuple[str, bytes]]) -> bytes:
     for (_, payload), off in zip(files, offsets):
         image[off:off + len(payload)] = payload
     return bytes(image)
+
+
+def u8_archive(tree: dict) -> bytes:
+    """U8-Archiv aus einem verschachtelten dict (Name -> bytes oder dict); Daten 32-Byte-ausgerichtet."""
+    nodes = [[0x01000000, 0, 0]]
+    names = bytearray(b"\0")
+    files = []
+
+    def add(d: dict, parent: int) -> None:
+        for name, value in d.items():
+            off = len(names)
+            names.extend(name.encode("ascii") + b"\0")
+            idx = len(nodes)
+            if isinstance(value, dict):
+                nodes.append([0x01000000 | off, parent, 0])
+                add(value, idx)
+                nodes[idx][2] = len(nodes)
+            else:
+                nodes.append([off, 0, len(value)])
+                files.append((idx, value))
+
+    add(tree, 0)
+    nodes[0][2] = len(nodes)
+    header = len(nodes) * 12 + len(names)
+    at = (0x20 + header + 31) & ~31
+    data_start = at
+    for idx, payload in files:
+        nodes[idx][1] = at
+        at = (at + len(payload) + 31) & ~31
+    out = bytearray(at)
+    struct.pack_into(">IIII", out, 0, 0x55AA382D, 0x20, header, data_start)
+    for i, n in enumerate(nodes):
+        struct.pack_into(">III", out, 0x20 + i * 12, *n)
+    out[0x20 + len(nodes) * 12:0x20 + header] = names
+    for idx, payload in files:
+        out[nodes[idx][1]:nodes[idx][1] + len(payload)] = payload
+    return bytes(out)
+
+
+def imd5(payload: bytes) -> bytes:
+    """IMD5-Hülle: Magic, Größe, 8 Byte frei, MD5 der Nutzdaten, dann die Nutzdaten."""
+    return b"IMD5" + struct.pack(">I", len(payload)) + bytes(8) + hashlib.md5(payload).digest() + payload
 
 
 def sample_bnr() -> bytes:

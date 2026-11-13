@@ -6,11 +6,30 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from make_banner_fixtures import (gc_bnr, gc_iso, main, rgb5a3_pixel, sample_bnr,  # noqa: E402
-                                  tile_rgb5a3)
+from make_banner_fixtures import (gc_bnr, gc_iso, imd5, main, rgb5a3_pixel, sample_bnr,  # noqa: E402
+                                  tile_rgb5a3, u8_archive)
 
 
 class MakeBannerFixturesTest(unittest.TestCase):
+    def test_u8_layout(self):
+        arc = u8_archive({"meta": {"banner.bin": b""}, "icon.bin": b"	"})
+        self.assertEqual(arc[:4], bytes([0x55, 0xAA, 0x38, 0x2D]))
+        root, header, data = struct.unpack_from(">III", arc, 4)
+        self.assertEqual(root, 0x20)
+        self.assertEqual(data % 32, 0)
+        self.assertEqual(struct.unpack_from(">I", arc, 0x20 + 8)[0], 4)  # Wurzel, meta, banner.bin, icon.bin
+        typ_meta, parent, nxt = struct.unpack_from(">III", arc, 0x20 + 12)
+        self.assertEqual((typ_meta >> 24, parent, nxt), (1, 0, 3))
+        _, off, size = struct.unpack_from(">III", arc, 0x20 + 24)
+        self.assertEqual(arc[off:off + size], b"")
+
+    def test_imd5_header(self):
+        wrapped = imd5(b"abc")
+        self.assertEqual(wrapped[:4], b"IMD5")
+        self.assertEqual(struct.unpack_from(">I", wrapped, 4)[0], 3)
+        self.assertEqual(wrapped[32:], b"abc")
+        self.assertEqual(len(wrapped[16:32]), 16)
+
     def test_bnr2_layout(self):
         bnr = sample_bnr()
         self.assertEqual(bnr[:4], b"BNR2")

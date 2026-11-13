@@ -42,4 +42,8 @@ inline constexpr std::size_t kImetReadBytes = 0x600;  // so viel liest platform/
 // Name in `lang`, sonst Englisch, sonst der erste nicht leere; "" ohne IMET oder bei abgeschnittenen Daten.
 std::string imetChannelName(std::span<const u8> content0, BannerLang lang);
 
+// Offset des U8-Archivs hinter dem IMET-Kopf: "IMET" bei 0x40 (Disc-opening.bnr, Kanal) → 0x600,
+// bei 0x80 (Kanal-Content mit 0x40 Byte Build-Tag davor) → 0x640; sonst leer.
+std::optional<u32> imetArchiveOffset(std::span<const u8> content0);
+
 }  // namespace nl

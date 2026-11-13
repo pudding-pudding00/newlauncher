@@ -95,6 +95,8 @@ add_library(nl_core STATIC
     src/core/gc_fst.cpp
     src/core/gc_banner.cpp
     src/core/gc_disc.cpp
+    src/core/u8_archive.cpp
+    src/core/imd5.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp
@@ -264,6 +266,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/png_decode.cpp
         src/platform/theme_loader.cpp
         src/platform/cover_worker.cpp
+        src/platform/banner_source.cpp
         src/platform/banner_worker.cpp
         src/platform/http_client.cpp
         src/platform/net_service.cpp

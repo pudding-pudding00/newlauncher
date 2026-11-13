@@ -114,8 +114,14 @@ bool OptionsModel::set(std::string_view key, std::string_view value) {
 }
 
 void OptionsModel::reset() {
-    if (perGame()) games_ = iniTextRemoveSection(games_, section());
-    else config_ = iniTextRemoveSection(config_, section());
+    if (perGame()) {
+        // locked = 1 ist eine Sperre der Kindersicherung, keine Spieloption: „Zurücksetzen" darf sie nicht löschen.
+        const bool locked = trim(IniDoc::parse(games_).get(section(), "locked")) == "1";
+        games_ = iniTextRemoveSection(games_, section());
+        if (locked) games_ = iniTextSet(games_, section(), "locked", std::string_view("1"));
+    } else {
+        config_ = iniTextRemoveSection(config_, section());
+    }
     refresh();
 }
 

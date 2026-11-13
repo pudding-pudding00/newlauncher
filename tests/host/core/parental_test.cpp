@@ -62,16 +62,18 @@ TEST_CASE("Kindersicherung: withPin + checkPin; nur genau 4 Ziffern") {
     CHECK(checkPin(same, "1234"));
 }
 
-TEST_CASE("isLocked: Alter im gewählten System, anderes System = unbewertet, Sperre pro Spiel") {
+TEST_CASE("isLocked: Alter in Jahren über alle Systeme, unbewertet nur ohne Bewertung, Sperre pro Spiel") {
     ParentalConfig c = pegi12();
     CHECK(isLocked(c, Rating{RatingSystem::Pegi, 16}, false));
     CHECK_FALSE(isLocked(c, Rating{RatingSystem::Pegi, 12}, false));
-    CHECK_FALSE(isLocked(c, Rating{RatingSystem::Usk, 18}, false));  // USK bei PEGI → unbewertet → frei
+    CHECK(isLocked(c, Rating{RatingSystem::Usk, 18}, false));   // fremdes System zählt nach Jahren (Review M17)
+    CHECK(isLocked(c, Rating{RatingSystem::Esrb, 17}, false));  // ESRB M bei PEGI 12
+    CHECK_FALSE(isLocked(c, Rating{RatingSystem::Cero, 12}, false));
     CHECK_FALSE(isLocked(c, Rating{}, false));
     CHECK(isLocked(c, Rating{}, true));  // locked = 1
     c.lockUnrated = true;
     CHECK(isLocked(c, Rating{}, false));
-    CHECK(isLocked(c, Rating{RatingSystem::Usk, 0}, false));
+    CHECK_FALSE(isLocked(c, Rating{RatingSystem::Usk, 0}, false));  // bewertet, ab 0
     ParentalConfig off = c;
     off.enabled = false;
     CHECK_FALSE(isLocked(off, Rating{RatingSystem::Pegi, 18}, true));  // ohne PIN keine Sperre

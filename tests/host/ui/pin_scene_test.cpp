@@ -1,4 +1,5 @@
 #include "ui/pin_scene.hpp"
+#include "ui/scene.hpp"
 #include "support/fake_font.hpp"
 #include <doctest/doctest.h>
 #include <string>
@@ -120,4 +121,18 @@ TEST_CASE_FIXTURE(Fixture, "PIN-Eingabe: accept(next) schließt und öffnet die 
     s.open(PinMode::Verify);  // open vergisst eine alte Folgeszene
     s.accept();
     CHECK(step(s, Action::Up).push == nullptr);
+}
+
+TEST_CASE_FIXTURE(Fixture, "PIN-Eingabe auf dem Szenenstapel: accept(next) ersetzt die PIN-Szene durch next (M17-Review)") {
+    PinScene base, pin, next;  // base steht für die Hauptszene; die unterste Szene bleibt immer liegen
+    SceneStack st;
+    st.push(&base);
+    st.push(&pin);
+    pin.open(PinMode::Verify);
+    for (int i = 0; i < 30; ++i) st.update(ctx, InputFrame{}, 16);  // einblenden
+    pin.accept(&next);
+    for (int i = 0; i < 60 && st.top() != &next; ++i) st.update(ctx, InputFrame{}, 16);
+    CHECK(st.top() == &next);
+    CHECK(st.depth() == 2);
+    CHECK_FALSE(st.contains(&pin));
 }

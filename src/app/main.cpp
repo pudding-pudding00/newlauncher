@@ -117,6 +117,7 @@ struct DataDir {
     std::string path(const char* name) const { return dir + "/" + name; }
 };
 constexpr std::size_t kMaxIniBytes = 256 * 1024;
+constexpr std::size_t kMaxStatsBytes = 2 * 1024 * 1024;  // 5000 Spiele mit langen Pfadschlüsseln ≈ 400 KiB
 constexpr std::size_t kMaxIndexBytes = 16 * 1024 * 1024;
 constexpr std::size_t kMaxMetaBytes = 8 * 1024 * 1024;
 
@@ -131,8 +132,12 @@ void fillClock(nl::ui::UiContext& ctx) {
     ctx.weekday = (t->tm_wday + 6) % 7;  // tm: 0 = Sonntag → 0 = Montag
 }
 
-std::string readText(nl::FileSystem& fs, const char* path) {
-    auto data = nl::readAllWithFallback(fs, path, kMaxIniBytes);
+// unreadable (optional): true, wenn die Datei da ist, aber nicht gelesen werden konnte (zu groß, Lesefehler). Wer den
+// Text danach komplett neu schreibt, darf das dann nicht tun, sonst ist der alte Inhalt weg.
+std::string readText(nl::FileSystem& fs, const char* path, std::size_t maxBytes = kMaxIniBytes,
+                     bool* unreadable = nullptr) {
+    auto data = nl::readAllWithFallback(fs, path, maxBytes);
+    if (unreadable != nullptr) *unreadable = !data.isOk() && data.error().code != nl::ErrorCode::NotFound;
     if (!data.isOk()) return {};
     const auto& bytes = data.value();
     return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
@@ -504,11 +509,17 @@ int main(int argc, char** argv) {
     }
     // Eigene Kategorien (M17, Spec 10.3): Rohtext bleibt mit Kommentaren erhalten, nur geänderte Zeilen kommen dazu.
     const std::string categoriesPath = data.path("categories.ini");
-    nl::Categories categories = nl::Categories::fromText(data.readable ? readText(fs, categoriesPath.c_str()) : std::string());
+    bool categoriesUnreadable = false;
+    nl::Categories categories = nl::Categories::fromText(
+        data.readable ? readText(fs, categoriesPath.c_str(), kMaxIniBytes, &categoriesUnreadable) : std::string());
+    if (categoriesUnreadable) nl::log::line("NL_WARN categories.ini nicht lesbar, wird nicht überschrieben");
     nl::log::line("NL_CATEGORIES n=%u", static_cast<unsigned>(categories.names().size()));
     // M17: Spielstatistik, unabhängig von history.ini
     const std::string statsPath = data.path("stats.ini");
-    nl::PlayStats playStats = nl::PlayStats::fromText(data.readable ? readText(fs, statsPath.c_str()) : std::string());
+    bool statsUnreadable = false;
+    nl::PlayStats playStats = nl::PlayStats::fromText(
+        data.readable ? readText(fs, statsPath.c_str(), kMaxStatsBytes, &statsUnreadable) : std::string());
+    if (statsUnreadable) nl::log::line("NL_WARN stats.ini nicht lesbar, wird nicht überschrieben");
     nl::log::line("NL_STATS n=%u", static_cast<unsigned>(playStats.size()));
 
     // N64-Startwege (Spec 6.6): Kanäle im NAND und die beiden Emulator-DOLs, einmal pro Sitzung.
@@ -897,7 +908,7 @@ int main(int argc, char** argv) {
     auto recordStats = [&](const std::string& key) {
         playStats.record(key, static_cast<u32>(std::time(nullptr)));
         const nl::PlayStat st = playStats.get(key);
-        if (data.writable && writeText(fs, statsPath.c_str(), playStats.toText()))
+        if (data.writable && !statsUnreadable && writeText(fs, statsPath.c_str(), playStats.toText()))
             nl::log::line("NL_STATS_SAVED %s starts=%u", key.c_str(), static_cast<unsigned>(st.starts));
         else
             nl::log::line("NL_WARN stats.ini nicht gespeichert");
@@ -1536,7 +1547,7 @@ int main(int argc, char** argv) {
                     nl::log::line("NL_WARN Kategorie nicht geändert");
                     break;
                 }
-                if (data.writable && writeText(fs, categoriesPath.c_str(), categories.toText()))
+                if (data.writable && !categoriesUnreadable && writeText(fs, categoriesPath.c_str(), categories.toText()))
                     nl::log::line("NL_CAT_SAVED %s %s %d", name.c_str(), key.c_str(), on ? 1 : 0);
                 else nl::log::line("NL_WARN categories.ini nicht gespeichert");
                 mainScene.syncDetailsCategories(key);

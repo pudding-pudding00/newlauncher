@@ -42,7 +42,9 @@ ParentalConfig withoutPin(ParentalConfig c) {
 bool isLocked(const ParentalConfig& c, const Rating& r, bool lockedFlag) {
     if (!c.enabled) return false;
     if (lockedFlag) return true;
-    if (r.system != RatingSystem::None && r.system == c.system) return r.age > c.maxAge;
+    // Alter in Jahren (prepare_meta normiert ESRB/CERO), daher über alle Systeme vergleichbar: GameTDB hat z. B. keine
+    // USK-Werte, ein deutsches Wii-Menü (USK) soll PEGI-16-Spiele trotzdem sperren.
+    if (r.system != RatingSystem::None) return r.age > c.maxAge;
     return c.lockUnrated;
 }
 

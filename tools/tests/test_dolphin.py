@@ -328,7 +328,7 @@ class DolphinToolsTest(unittest.TestCase):
         ini = (data / "themes/smoke/theme.ini").read_text(encoding="utf-8")
         self.assertIn("bar = #123456", ini)
         self.assertIn("bar_border = fff", ini)
-        self.assertIn("[theme]\npack = smoke\n", (data / "config.ini").read_text(encoding="utf-8"))
+        self.assertIn("[theme]\nname = smoke\n", (data / "config.ini").read_text(encoding="utf-8"))
 
     def test_smoke_without_theme_pack_removes_stale_themes(self):
         self._fake_dolphin("raise SystemExit(0)\n")

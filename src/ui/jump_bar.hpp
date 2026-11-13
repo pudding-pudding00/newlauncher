@@ -2,24 +2,17 @@
 // A–Z-Sprungleiste (Spec 3.5): Overlay mit "#", "A"–"Z" und "Suche" in einer Reihe über der Infoleiste.
 // Darüber die Filterzeile (M17, Spec 10.3): Hoch/Runter wechselt die Reihe, Links/Rechts/A blättern den Filter.
 
-#include <string>
-
+#include "ui/filter_source.hpp"
 #include "ui/scene.hpp"
 
 namespace nl::ui {
 
-class JumpTarget {
+class JumpTarget : public FilterSource {
 public:
-    virtual ~JumpTarget() = default;
     virtual void jumpToBucket(char bucket) = 0;  // '#' oder 'A'–'Z'
     virtual Scene* openSearch() = 0;  // Szene, die nach dem Schließen der Leiste geöffnet wird (Tastatur)
     virtual bool hasBucket(char bucket) const = 0;
     virtual char currentBucket() const = 0;  // Buchstabe des fokussierten Spiels, sonst '#'
-    // Filterzeile: 0 Filter = keine Zeile. setFilterIndex wirkt sofort auf die Liste.
-    virtual int filterCount() const { return 0; }
-    virtual int filterIndex() const { return 0; }
-    virtual std::string filterLabel(int) const { return {}; }
-    virtual void setFilterIndex(int) {}
 };
 
 class JumpBar final : public Scene {

@@ -111,6 +111,23 @@ TEST_CASE_FIXTURE(Fixture, "PIN-Eingabe zeichnet in beiden Sprachen") {
     setLanguage(Lang::De);
 }
 
+TEST_CASE_FIXTURE(Fixture, "PIN-Eingabe: HOME bricht ab und öffnet das HOME-Menü (M17-Review)") {
+    PinScene s, home;
+    s.open(PinMode::Verify);
+    CHECK(step(s, Action::Home).push == nullptr);  // ohne HOME-Menü nur abbrechen
+    s.open(PinMode::Verify);
+    s.setHomeMenu(&home);
+    CHECK(step(s, Action::Back).push == nullptr);  // B öffnet nichts
+    s.open(PinMode::Verify);
+    s.setHomeMenu(&home);
+    const SceneRequests r = step(s, Action::Home);
+    CHECK(r.pop);
+    CHECK(r.push == &home);
+    CHECK(r.command == AppCommand::None);
+    s.open(PinMode::Set);  // open vergisst das HOME-Ziel (z. B. neue PIN aus der Kindersicherung)
+    CHECK(step(s, Action::Home).push == nullptr);
+}
+
 TEST_CASE_FIXTURE(Fixture, "PIN-Eingabe: accept(next) schließt und öffnet die Folgeszene einmal") {
     PinScene s, next;
     s.open(PinMode::Verify);

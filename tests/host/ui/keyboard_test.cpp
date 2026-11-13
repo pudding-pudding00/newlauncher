@@ -17,6 +17,15 @@ struct SpySearch final : SearchTarget {
     void setQuery(std::string_view q) override { queries.emplace_back(q); }
 };
 
+struct SpyFilter final : FilterSource {
+    int count = 3;
+    int index = 0;
+    int filterCount() const override { return count; }
+    int filterIndex() const override { return index; }
+    std::string filterLabel(int i) const override { return i == 0 ? "Alle" : i == 1 ? "Favoriten" : "Party"; }
+    void setFilterIndex(int i) override { index = i; }
+};
+
 struct Fixture {
     gfx::FontSet fonts = test::fakeFontSet(8, 16);
     UiContext ctx;
@@ -124,6 +133,79 @@ TEST_CASE_FIXTURE(Fixture, "Keyboard: draw in 640 und 854 ohne verworfene Quads,
             CHECK(r.x + r.w <= w);
             CHECK(r.y + r.h <= ctx.height - 72);
         }
+    }
+}
+
+// --- M17-Review: Filterzeile auch im Such-Overlay (Spec v2 10.3) ---
+TEST_CASE_FIXTURE(Fixture, "Keyboard: Hoch aus der obersten Reihe wählt die Filterzeile, ◀▶ und A blättern mit Umlauf") {
+    SpySearch t;
+    SpyFilter f;
+    Keyboard k(t);
+    k.setFilter(&f);
+    k.onEnter();
+    step(k, action(Action::Up));
+    CHECK(k.filterRowFocused());
+    step(k, action(Action::Right));
+    CHECK(f.index == 1);
+    step(k, action(Action::Left));
+    step(k, action(Action::Left));
+    CHECK(f.index == 2);  // Umlauf
+    const SceneRequests r = step(k, action(Action::Confirm));
+    CHECK(f.index == 0);  // A blättert weiter, die Tastatur bleibt offen
+    CHECK_FALSE(r.pop);
+    CHECK(k.text().empty());
+    CHECK(t.queries.empty());
+    step(k, action(Action::Down));
+    CHECK_FALSE(k.filterRowFocused());
+    CHECK(k.focusedKey() == k.keyIndex('1'));
+    step(k, action(Action::Up));
+    k.onEnter();  // neue Suche beginnt auf den Tasten
+    CHECK_FALSE(k.filterRowFocused());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: ohne Filter keine Filterzeile, Hoch bleibt auf den Tasten") {
+    SpySearch t;
+    SpyFilter f;
+    f.count = 0;
+    Keyboard k(t);
+    k.onEnter();
+    step(k, action(Action::Up));
+    CHECK_FALSE(k.filterRowFocused());
+    k.setFilter(&f);
+    step(k, action(Action::Up));
+    CHECK_FALSE(k.filterRowFocused());
+    CHECK(k.focusedKey() == k.keyIndex('1'));
+}
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: Zeiger auf der Filterzeile, A blättert") {
+    SpySearch t;
+    SpyFilter f;
+    Keyboard k(t);
+    k.setFilter(&f);
+    k.onEnter();
+    tap(k, k.filterRect(ctx));
+    CHECK(k.filterRowFocused());
+    CHECK(f.index == 1);
+    CHECK(k.text().empty());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: Filterzeile in 640 und 854 über den Tasten im Bild, ohne verworfene Quads") {
+    for (float w : {640.0f, 854.0f}) {
+        ctx.width = w;
+        SpySearch t;
+        SpyFilter f;
+        Keyboard k(t);
+        k.setFilter(&f);
+        k.onEnter();
+        step(k, action(Action::Up));
+        dl.clear();
+        k.draw(ctx, dl);
+        CHECK(dl.droppedQuads() == 0);
+        const gfx::Rect r = k.filterRect(ctx);
+        CHECK(r.x >= 0);
+        CHECK(r.x + r.w <= w);
+        CHECK(r.y >= 0);
+        CHECK(r.y + r.h <= k.keyRect(ctx, 0).y);
     }
 }
 

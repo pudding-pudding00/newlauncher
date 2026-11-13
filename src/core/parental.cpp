@@ -52,6 +52,12 @@ bool PinGate::blocked(u32 nowMs) const { return active_ && static_cast<s32>(unti
 
 u32 PinGate::remainingMs(u32 nowMs) const { return blocked(nowMs) ? until_ - nowMs : 0; }
 
+void PinGate::blockFor(u32 ms, u32 nowMs) {
+    fails_ = 0;
+    active_ = ms != 0;
+    until_ = nowMs + ms;
+}
+
 bool PinGate::submit(bool ok, u32 nowMs) {
     if (blocked(nowMs)) return false;
     active_ = false;
@@ -146,6 +152,10 @@ ParentalConfig parentalFromIni(const IniDoc& ini) {
     if (ec == std::errc{} && p == age.data() + age.size() && v <= 18) c.maxAge = static_cast<u8>(v);
     c.lockUnrated = trim(ini.get("parental", "lock_unrated")) == "1";
     c.useWii = trim(ini.get("parental", "use_wii")) == "1";
+    const std::string_view lock = trim(ini.get("parental", "lock_until"));
+    u32 until = 0;
+    const auto [lp, lec] = std::from_chars(lock.data(), lock.data() + lock.size(), until);
+    if (lec == std::errc{} && lp == lock.data() + lock.size()) c.lockUntil = until;
     return c;
 }
 
@@ -157,6 +167,7 @@ std::vector<std::pair<std::string, std::string>> parentalIniValues(const Parenta
         {"max_age", std::to_string(std::min<unsigned>(c.maxAge, 18))},
         {"lock_unrated", c.lockUnrated ? "1" : "0"},
         {"use_wii", c.useWii ? "1" : "0"},
+        {"lock_until", c.lockUntil != 0 ? std::to_string(c.lockUntil) : std::string()},
     };
 }
 

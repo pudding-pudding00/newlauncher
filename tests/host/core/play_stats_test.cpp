@@ -31,20 +31,23 @@ TEST_CASE("PlayStats: Text-Rundreise; Schlüssel mit = und ] bleiben erhalten") 
     CHECK(r.size() == 2);
 }
 
-TEST_CASE("PlayStats: kaputte Werte → Eintrag ignoriert; Zeit in der Zukunft bleibt") {
+TEST_CASE("PlayStats: kaputte Zeile → nur diese Zeile ignoriert; Zeit in der Zukunft bleibt") {
     const PlayStats s = PlayStats::fromText(
         "; Kommentar\r\n[nes/a]\r\nstarts = abc\r\nlast = 5\r\n"
         "[nes/b]\nstarts = 3\nlast = 4102444800\n"  // 2100-01-01: keine Korrektur
         "[nes/c]\nstarts = 1\nlast = -7\n"
         "[nes/d]\nstarts = 2\n"
+        "[nes/e]\nstarts = 12\nlast = abc\n"
         "lose Zeile vor nichts\n[]\nstarts = 9\n");
-    CHECK(s.get("nes/a").starts == 0);
+    CHECK(s.get("nes/a").starts == 0);  // ohne gültiges starts kein Eintrag
     CHECK(s.get("nes/b").starts == 3);
     CHECK(s.get("nes/b").last == 4102444800u);
-    CHECK(s.get("nes/c").starts == 0);
+    CHECK(s.get("nes/c").starts == 1);  // kaputtes last kostet nur die Zeit, nicht die Starts
+    CHECK(s.get("nes/c").last == 0);
     CHECK(s.get("nes/d").starts == 2);  // fehlendes last = nie mit Zeit
     CHECK(s.get("nes/d").last == 0);
-    CHECK(s.size() == 2);
+    CHECK(s.get("nes/e").starts == 12);
+    CHECK(s.size() == 4);
 }
 
 namespace {
@@ -97,6 +100,19 @@ TEST_CASE("sortOrderName/parseSortOrder") {
     CHECK(parseSortOrder("recent") == SortOrder::Recent);
     CHECK(parseSortOrder("year") == SortOrder::Year);
     CHECK_FALSE(parseSortOrder("zufall").has_value());
+}
+
+// Der Host-Lauf baut ohne NDEBUG; dieses Limit ist großzügig, fängt aber quadratisches Verhalten
+// (5000² Vergleiche) auch ohne Release-Build ab.
+TEST_CASE("PlayStats: 5000 Einträge laden < 1 s (jeder Build)") {
+    PlayStats s;
+    for (u32 i = 0; i < 5000; ++i) s.record("nes/Spiel Nummer " + std::to_string(i) + " (Europe).nes", 1762700000 + i);
+    const std::string text = s.toText();
+    const auto t0 = std::chrono::steady_clock::now();
+    const PlayStats r = PlayStats::fromText(text);
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    CHECK(r.size() == 5000);
+    CHECK(ms < 1000);
 }
 
 #ifdef NDEBUG

@@ -583,6 +583,33 @@ TEST_CASE("MainScene: Kategorie-Filter zeigt nur deren Spiele; Konsolenwechsel s
     CHECK(m.grid().count() == 1);
 }
 
+TEST_CASE("MainScene: die Suche übernimmt den Filter des Eintrags davor (Filterzeile im Such-Overlay)") {
+    FilterLib fl;
+    MainScene m(fl.lib());
+    const Categories cats = Categories::fromText("[Party]\nnes/a\nsnes/d\n");
+    m.setCategories(&cats);
+    m.selectBarForTest(barOf(m, "NES"));
+    REQUIRE(m.filterLabel(3) == "Party");
+    m.setFilterIndex(3);
+    m.setQuery("a");  // Alpha, Beta, Gamma, Delta; Party davon: Alpha, Delta
+    CHECK(m.filterLabel(m.filterIndex()) == "Party");
+    CHECK(m.grid().count() == 2);
+    m.setQuery("al");
+    CHECK(m.grid().count() == 1);  // gleicher Eintrag: Filter bleibt
+    CHECK(m.filterLabel(m.filterIndex()) == "Party");
+}
+
+TEST_CASE("MainScene: ein Genre ohne Treffer bleibt als Filter sichtbar statt „Alle“ anzuzeigen") {
+    FilterLib fl;
+    MainScene m(fl.lib());
+    m.selectBarForTest(barOf(m, "NES"));
+    const std::string sport = m.filterLabel(2);  // Genre von Beta
+    m.setFilterIndex(2);
+    m.setQuery("gamma");
+    CHECK(m.grid().count() == 0);
+    CHECK(m.filterLabel(m.filterIndex()) == sport);
+}
+
 TEST_CASE("MainScene::setFilter liefert die Trefferzahl; unbekannte Kategorie → 0 Spiele") {
     FilterLib fl;
     MainScene m(fl.lib());

@@ -33,6 +33,12 @@ void readSection(const IniDoc& ini, std::string_view section, Theme& t, std::vec
             bad->push_back(std::string(section) + "." + kThemeTokenNames[i]);
         }
     }
+    if (bad == nullptr) return;
+    for (const auto& [key, value] : ini.entries(section)) {
+        bool known = false;
+        for (std::size_t i = 0; i < kThemeTokenCount && !known; ++i) known = key == kThemeTokenNames[i];
+        if (!known) bad->push_back(std::string(section) + "." + key);
+    }
 }
 }  // namespace
 
@@ -55,6 +61,10 @@ ThemePair themeFromIni(const IniDoc& ini, std::vector<std::string>* bad) {
     ThemePair p;
     readSection(ini, "light", p.light, bad);
     readSection(ini, "dark", p.dark, bad);
+    if (bad != nullptr) {
+        for (const std::string_view name : ini.sectionNames())
+            if (!name.empty() && name != "light" && name != "dark") bad->push_back(std::string(name));
+    }
     return p;
 }
 

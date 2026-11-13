@@ -95,6 +95,18 @@ TEST_CASE("PinGate: drei Fehler sperren die Eingabe 30 s, danach frei") {
     CHECK_FALSE(g.blocked(30400));
 }
 
+TEST_CASE("PinGate: blockFor sperrt für die Restzeit (Sperre über Neustart), 0 sperrt nicht") {
+    PinGate g;
+    g.blockFor(0, 100);
+    CHECK_FALSE(g.blocked(100));
+    g.blockFor(12000, 100);
+    CHECK(g.blocked(100));
+    CHECK(g.remainingMs(100) == 12000);
+    CHECK_FALSE(g.submit(true, 5000));
+    CHECK_FALSE(g.blocked(12100));
+    CHECK(g.submit(true, 12100));
+}
+
 TEST_CASE("PinGate: Umlauf der Millisekunden-Uhr") {
     PinGate g;
     const u32 t = 0xFFFFF000u;

@@ -33,7 +33,7 @@ Für jeden Punkt wird PASS, FAIL oder n/a eingetragen. Bei FAIL kommen eine kurz
 
 ### Hinweise zu den Punkten
 
-- **W6:** Die 30-s-Sperre zählt ab dem dritten Fehlversuch. Ein Neustart des Launchers hebt sie auf. Das ist bewusst so: Die Kindersicherung ist ein Kinderschloss, kein Tresor.
+- **W6:** Die 30-s-Sperre zählt ab dem dritten Fehlversuch. Sie steht als `lock_until` in `config.ini` und gilt nach einem Neustart des Launchers weiter (Log `NL_PARENTAL locked <s>`). Wer die Uhr der Wii verstellt, wartet trotzdem höchstens 30 s.
 - **W7:** Die Zuordnung des Organisations-Bytes stammt aus der DSi-Spezifikation (Spike `docs/superpowers/spikes/m17-sysconf-pc.md`). Stimmt `system=` nicht mit der Wii-Einstellung überein, bitte den Rohwert aus dem Wii-Menü und die Logzeile unter Befunde eintragen. Zeigt das Log `NL_PARENTAL_WII none` trotz gesetzter Wii-PIN, ist das ein FAIL.
 - **Nach der Abnahme** die gesicherten Dateien zurückspielen. Den Wii-Jugendschutz bei Bedarf im Wii-Menü wieder ausschalten.
 

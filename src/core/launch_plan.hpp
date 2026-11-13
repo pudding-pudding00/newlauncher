@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "core/emulators.hpp"
+#include "core/partition_table.hpp"
 #include "core/extent_units.hpp"
 #include "core/fat_chain.hpp"
 #include "core/frag_list.hpp"
@@ -31,11 +32,15 @@ enum class LaunchFailure : u8 {
     DeviceUnsupported,  // M12: GC/ROM auf usb2…usb8 – Nintendont und GX-Emulatoren sehen nur sd: und usb:
     CheatsTooLarge,     // M15: GCT passt nicht in die Codeliste; Kontext Größe in Bytes
     FileNotContiguousReadable,  // M16: NTFS-Datei komprimiert, sparse oder resident; Kontext Pfad
+    NintendontNeedsFat,         // M16: GC-Spiel nicht auf FAT; Kontext Gerätename („USB 2“)
 };
 const char* launchFailureName(LaunchFailure f);  // Log-Marker NL_PREFLIGHT_FAIL
 
 // M14: Hinweise, die den Start nicht verhindern (Spec 7.3).
-enum class LaunchWarning : u8 { MemcardRealNoPorts, NativeSiNoPorts };
+enum class LaunchWarning : u8 {
+    MemcardRealNoPorts, NativeSiNoPorts,
+    EmulatorFs,  // M16: ROM auf einem Dateisystem außerhalb von fsMask; Name in LaunchTarget::emuName
+};
 const char* launchWarningName(LaunchWarning w);  // Log-Marker NL_PREFLIGHT_WARN
 
 // M14: Quellen der Spieloptionen; gcPorts = false auf vWii/Wii mini.
@@ -109,6 +114,7 @@ struct LaunchTarget {
     std::vector<LaunchWarning> warnings;   // M14: Hinweise, Start trotzdem möglich
     std::vector<u8> gct;                   // M15 GC: vor dem Start nach gctPath schreiben (Nintendont CheatPath)
     std::string gctPath;                   // <spielgerät>:/newlauncher/cache/<ID6>.gct
+    std::string emuName;                   // M16: Emulator für den Hinweis EmulatorFs
 };
 
 // Wie preflightEmulator, N64 zusätzlich über die Auto-Wahl (n64 == nullptr zählt als „kein Weg“).
@@ -117,8 +123,10 @@ struct LaunchTarget {
 // EmuInvalid; keine Version → NinUnknown; zu alt → NinTooOld (Kontext gefundene Version); Spiel fehlt →
 // RomMissing; Pfad > 254 → NinPathTooLong; sonst args = {DOL, NIN_CFG}. Andere Konsolen ignorieren ahbprotOff.
 // Wii (M9): immer Kind::Wii ohne Plan; die Plattform rechnet die Fragmente und ruft preflightWii.
+// M16, deviceFs = Dateisystem des Spielgeräts: GC nicht auf FAT → NintendontNeedsFat (vor allen anderen
+// GC-Prüfungen); ROM/N64-DOL außerhalb von emulatorFsMask → Hinweis EmulatorFs; Wii: jedes Dateisystem.
 Result<LaunchTarget, LaunchError> preflightGame(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus,
                                                 const N64Inputs* n64, bool ahbprotOff,
-                                                const GameOptionInputs* opts = nullptr);
+                                                const GameOptionInputs* opts = nullptr, FsKind deviceFs = FsKind::Fat);
 
 }  // namespace nl

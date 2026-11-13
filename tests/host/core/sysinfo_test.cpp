@@ -134,9 +134,9 @@ TEST_CASE("sysInfoLines: dieselben Zeilen wie die Datei") {
 
 TEST_CASE("emuSummaries: feste Reihenfolge, Herkunft ini/detected/default, leere Pfade fehlen") {
     EmulatorTable t;
-    t.set("snes", EmulatorEntry{"sd:/apps/eigen/boot.dol", "", true, ""});
-    t.set("nes", EmulatorEntry{"usb2:/apps/fceugx/boot.dol", "", false, "fceugx"});
-    t.set("gba", EmulatorEntry{"sd:/apps/vbagx/boot.dol", "", false, ""});
+    t.set("snes", EmulatorEntry{"sd:/apps/eigen/boot.dol", "", true, "", 0});
+    t.set("nes", EmulatorEntry{"usb2:/apps/fceugx/boot.dol", "", false, "fceugx", 0});
+    t.set("gba", EmulatorEntry{"sd:/apps/vbagx/boot.dol", "", false, "", 0});
     const auto v = emuSummaries(t);
     REQUIRE(v.size() == 3);
     CHECK(v[0].section == "nes");

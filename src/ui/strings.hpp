@@ -89,6 +89,9 @@
       "Too many cheats.\nThe selected codes take %s bytes, too much for the code list. Please select fewer codes.") \
     X(FileNotContiguousReadable, "Datei nicht direkt lesbar.\nDatei ist komprimiert oder lückenhaft – bitte unkomprimiert kopieren (%s).", \
       "File not directly readable.\nThe file is compressed or sparse – please copy it uncompressed (%s).") \
+    X(NintendontNeedsFat, "Nintendont braucht FAT32.\nGameCube-Spiele auf eine FAT32-Partition kopieren (%s).", \
+      "Nintendont needs FAT32.\nCopy GameCube games to a FAT32 partition (%s).") \
+    X(WarnEmulatorFs, "%s liest dieses Dateisystem eventuell nicht.", "%s may not read this file system.") \
     X(OverrideIgnored,"Gewählter Weg nicht verfügbar – automatisch gewählt.", "Chosen method unavailable – picked automatically.") \
     X(VcMapTitle, "VC-Injects zuordnen", "Map VC injects") \
     X(VcNone, "—", "—") \

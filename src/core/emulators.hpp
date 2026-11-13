@@ -10,6 +10,7 @@
 #include "core/console.hpp"
 #include "core/ini.hpp"
 #include "core/n64.hpp"
+#include "core/partition_table.hpp"
 
 namespace nl {
 
@@ -18,7 +19,11 @@ struct EmulatorEntry {
     std::string args;
     bool fromFile = false;  // dol stand in emulators.ini (sonst v1-Vorgabe)
     std::string profile;    // nach resolveTable: erkanntes Profil; sonst leer
+    u8 fsMask = 0;          // M16: fs = fat,ntfs,ext (Bits fsBit); 0 = Vorgabe des Profils
 };
+
+// M16: „fat, ntfs“ → Bits; Namen ohne Groß/klein, durch Komma getrennt; Unbekanntes zählt nicht.
+u8 parseFsMask(std::string_view text);
 
 class EmulatorTable {
 public:

@@ -655,3 +655,61 @@ TEST_CASE("preflightWii: return_to nur mit d2x") {
     REQUIRE(other.isOk());
     CHECK(other.value().options.cfg.returnTo == 0u);
 }
+
+// --- M16: Preflight je Dateisystem ---
+namespace {
+test::MemFileSystem usbNesFs() {
+    test::MemFileSystem fs;
+    fs.addFile(kDol, goodDol());
+    fs.addFile("usb:/roms/nes/Zelda (Europe) (Rev 1).nes", {});
+    return fs;
+}
+}  // namespace
+
+TEST_CASE("preflightGame: GC auf NTFS → NintendontNeedsFat, noch vor der Geräteprüfung") {
+    auto fs = gcFs("usb2:");
+    auto r = preflightGame(fs, gcGame(), "usb2:", emus(), nullptr, true, nullptr, FsKind::Ntfs);
+    REQUIRE_FALSE(r.isOk());
+    CHECK(r.error().kind == LaunchFailure::NintendontNeedsFat);
+    CHECK(r.error().context == "USB 2");
+    CHECK(std::string(launchFailureName(LaunchFailure::NintendontNeedsFat)) == "NintendontNeedsFat");
+    auto first = gcFs("usb:");
+    auto onUsb = preflightGame(first, gcGame(), "usb:", emus(), nullptr, true, nullptr, FsKind::Ntfs);
+    REQUIRE_FALSE(onUsb.isOk());
+    CHECK(onUsb.error().kind == LaunchFailure::NintendontNeedsFat);
+    CHECK(onUsb.error().context == "USB 1");
+}
+
+TEST_CASE("preflightGame: ROM auf ext mit Standardprofil → Warnung EmulatorFs, Start bleibt möglich") {
+    auto fs = usbNesFs();
+    auto r = preflightGame(fs, nesGame(), "usb:", emus(), nullptr, true, nullptr, FsKind::Ext);
+    REQUIRE(r.isOk());
+    REQUIRE(r.value().warnings.size() == 1);
+    CHECK(r.value().warnings[0] == LaunchWarning::EmulatorFs);
+    CHECK(r.value().emuName == "fceugx");
+    CHECK(std::string(launchWarningName(LaunchWarning::EmulatorFs)) == "emulator_fs");
+    auto fat = preflightGame(fs, nesGame(), "usb:", emus(), nullptr, true, nullptr, FsKind::Fat);
+    REQUIRE(fat.isOk());
+    CHECK(fat.value().warnings.empty());
+}
+
+TEST_CASE("preflightGame: emulators.ini fs = fat,ntfs → keine Warnung auf NTFS, auf ext weiter") {
+    auto fs = usbNesFs();
+    const EmulatorTable ini = EmulatorTable::fromIni(IniDoc::parse("[nes]\nfs = fat, NTFS\n"));
+    auto r = preflightGame(fs, nesGame(), "usb:", ini, nullptr, true, nullptr, FsKind::Ntfs);
+    REQUIRE(r.isOk());
+    CHECK(r.value().warnings.empty());
+    auto ext = preflightGame(fs, nesGame(), "usb:", ini, nullptr, true, nullptr, FsKind::Ext);
+    REQUIRE(ext.isOk());
+    CHECK(ext.value().warnings.size() == 1);
+}
+
+TEST_CASE("preflightGame: Wii auf ext oder NTFS → kein Fehler, kein Hinweis") {
+    test::MemFileSystem fs;
+    for (FsKind k : {FsKind::Ext, FsKind::Ntfs, FsKind::Wbfs}) {
+        auto r = preflightGame(fs, wiiGame(), "usb2:", emus(), nullptr, true, nullptr, k);
+        REQUIRE(r.isOk());
+        CHECK(r.value().kind == LaunchTarget::Kind::Wii);
+        CHECK(r.value().warnings.empty());
+    }
+}

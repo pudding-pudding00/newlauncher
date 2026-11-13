@@ -240,3 +240,22 @@ TEST_CASE("scanApps: höchstens 256 Ordner, meta.xml über 64 KiB wird ignoriert
     REQUIRE(apps.size() == 1);
     CHECK(apps[0].name.empty());
 }
+
+TEST_CASE("fsMask: eingebaute Profile lesen nur FAT; emulators.ini fs überschreibt, Unbekanntes zählt nicht") {
+    for (const EmuProfile& p : builtinProfiles()) CHECK(p.fsMask == fsBit(FsKind::Fat));
+    CHECK(parseFsMask("fat,ntfs") == (fsBit(FsKind::Fat) | fsBit(FsKind::Ntfs)));
+    CHECK(parseFsMask(" Ext ; quark") == 0);  // nur Komma trennt; „ext ; quark“ ist kein Name
+    CHECK(parseFsMask("ext, quark") == fsBit(FsKind::Ext));
+    CHECK(parseFsMask("") == 0);
+    EmulatorEntry e;
+    CHECK(emulatorFsMask(e) == fsBit(FsKind::Fat));  // ohne Profil und ohne fs: nur FAT
+    e.fsMask = fsBit(FsKind::Ntfs);
+    CHECK(emulatorFsMask(e) == fsBit(FsKind::Ntfs));
+    const EmulatorTable t = EmulatorTable::fromIni(IniDoc::parse("[snes]\nfs = fat,ntfs\n"));
+    CHECK(t.forConsole(Console::Snes)->fsMask == (fsBit(FsKind::Fat) | fsBit(FsKind::Ntfs)));
+    const EmulatorTable resolved = resolveTable(t, {});
+    CHECK(resolved.forConsole(Console::Snes)->fsMask == (fsBit(FsKind::Fat) | fsBit(FsKind::Ntfs)));
+    auto r = resolveEmulator(Console::Snes, t, {}, std::nullopt);
+    REQUIRE(r);
+    CHECK(r->fsMask == (fsBit(FsKind::Fat) | fsBit(FsKind::Ntfs)));
+}

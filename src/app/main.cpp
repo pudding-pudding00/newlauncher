@@ -842,7 +842,7 @@ int main(int argc, char** argv) {
         if (const auto profile = overrides.emulatorProfile(game.key)) {
             if (const auto r = nl::resolveEmulator(game.console, emulatorIni, foundApps, *profile)) {
                 if (r->badProfile) nl::log::line("NL_OPT_BAD emulator %s", game.key);
-                gameEmus.set(nl::consoleInfo(game.console).key, nl::EmulatorEntry{r->dol, r->args, r->fromIni, r->profile});
+                gameEmus.set(nl::consoleInfo(game.console).key, nl::EmulatorEntry{r->dol, r->args, r->fromIni, r->profile, r->fsMask});
             }
         }
         // Spieloptionen (Spec v2 7) bei jedem Start frisch lesen: die Options-Szene ändert games.ini/config.ini.
@@ -859,7 +859,10 @@ int main(int argc, char** argv) {
             configDoc, gamesDoc,
             nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected()) != nl::Platform::VWii,
             gcGct};
-        auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, hwAccess, &optionInputs);
+        // M16: Dateisystem des Spielgeräts (Nintendont nur FAT, Emulatoren laut fsMask).
+        const nl::platform::Device* gameDev = nl::platform::deviceTable().byName(rootOf(game));
+        const nl::FsKind gameFs = gameDev != nullptr ? gameDev->slot.kind : nl::FsKind::Fat;
+        auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, hwAccess, &optionInputs, gameFs);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
             if (auto plan = prepareWii(game, configDoc, gamesDoc); plan.isOk()) {
                 if (config.debugWiiDryRun) {
@@ -904,7 +907,7 @@ int main(int argc, char** argv) {
             warnedLaunch = key;
             char title[64];
             char text[320];
-            nl::ui::launchWarningText(warnings, title, sizeof title, text, sizeof text);
+            nl::ui::launchWarningText(warnings, title, sizeof title, text, sizeof text, target.value().emuName);
             dialog.open(title, text);
             scenes.push(&dialog);
             audio.play(nl::UiSound::Error);

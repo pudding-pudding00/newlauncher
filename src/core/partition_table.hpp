@@ -12,6 +12,7 @@
 namespace nl {
 
 enum class FsKind : u8 { Fat, ExFat, Ntfs, Ext, Wbfs, Unknown };
+inline constexpr u8 fsBit(FsKind k) { return static_cast<u8>(1u << static_cast<unsigned>(k)); }  // M16: fsMask
 
 struct PartitionInfo {
     u64 lba;       // erster Sektor, in Gerätesektoren

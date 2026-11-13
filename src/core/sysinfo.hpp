@@ -21,8 +21,8 @@ struct DeviceSummary {
     u32 games = 0;
     bool readOnly = false;  // NTFS (M16): nur lesend eingehängt
     bool mounted = true;    // false: Partition erkannt, aber nicht eingehängt (name dann leer)
-    std::string reasonDe;   // Grund bei mounted == false
-    std::string reasonEn;
+    std::string reasonDe{};  // Grund bei mounted == false ({}: Aggregate ohne Grund bleiben warnungsfrei)
+    std::string reasonEn{};
 };
 
 struct ResolvedEmuSummary {

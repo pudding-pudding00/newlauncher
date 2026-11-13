@@ -18,6 +18,6 @@ int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, cha
 
 // Titel „Hinweis“ und Text zu Preflight-Hinweisen (Spec 7.3): je Hinweis eine Zeile, dann „A erneut …“.
 int launchWarningText(const std::vector<LaunchWarning>& warnings, char* title, std::size_t titleCap, char* text,
-                      std::size_t textCap);
+                      std::size_t textCap, std::string_view emuName = {});  // emuName: Hinweis EmulatorFs (M16)
 
 }  // namespace nl::ui

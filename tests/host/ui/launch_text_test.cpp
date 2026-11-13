@@ -153,3 +153,20 @@ TEST_CASE("launchWarningText: GC-Ports fehlen, Hinweis vor dem Start in DE und E
     CHECK(std::string(text).find("Press A again") != std::string::npos);
     setLanguage(saved);
 }
+
+TEST_CASE("M16: NintendontNeedsFat und Hinweis EmulatorFs mit Emulatorname (DE/EN)") {
+    const Lang saved = language();
+    char title[64];
+    char text[320];
+    setLanguage(Lang::De);
+    CHECK(std::string(render(LaunchFailure::NintendontNeedsFat, "USB 2").text) ==
+          "Nintendont braucht FAT32.\nGameCube-Spiele auf eine FAT32-Partition kopieren (USB 2).");
+    launchWarningText({LaunchWarning::EmulatorFs}, title, sizeof title, text, sizeof text, "Snes9x GX");
+    CHECK(std::string(text).find("Snes9x GX liest dieses Dateisystem eventuell nicht.") == 0);
+    setLanguage(Lang::En);
+    CHECK(std::string(render(LaunchFailure::NintendontNeedsFat, "USB 1").text) ==
+          "Nintendont needs FAT32.\nCopy GameCube games to a FAT32 partition (USB 1).");
+    launchWarningText({LaunchWarning::EmulatorFs}, title, sizeof title, text, sizeof text, "Snes9x GX");
+    CHECK(std::string(text).find("Snes9x GX may not read this file system.") == 0);
+    setLanguage(saved);
+}

@@ -6,8 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from make_banner_fixtures import (gc_bnr, gc_iso, imd5, main, rgb5a3_pixel, sample_bnr,  # noqa: E402
-                                  tile_rgb5a3, u8_archive)
+from make_banner_fixtures import (TEX_BYTES, gc_bnr, gc_iso, imd5, main, rgb5a3_pixel,  # noqa: E402
+                                  sample_bnr, tex_bytes, tile_rgb5a3, tpl, u8_archive)
 
 
 class MakeBannerFixturesTest(unittest.TestCase):
@@ -22,6 +22,32 @@ class MakeBannerFixturesTest(unittest.TestCase):
         self.assertEqual((typ_meta >> 24, parent, nxt), (1, 0, 3))
         _, off, size = struct.unpack_from(">III", arc, 0x20 + 24)
         self.assertEqual(arc[off:off + size], b"")
+
+    def test_tpl_all_formats(self):
+        def px(x, y):
+            return (x * 36, y * 36, 128, 255)
+        for fmt in TEX_BYTES:
+            pal = list(range(16)) if fmt in (8, 9, 10) else None
+            fn = (lambda x, y: (x + y) % 16) if pal else px
+            data = tpl([(fmt, 8, 8, fn, pal)])
+            self.assertEqual(struct.unpack_from(">III", data, 0), (0x0020AF30, 1, 0x0C))
+            hdr, pal_hdr = struct.unpack_from(">II", data, 0x0C)
+            h, w, f, at = struct.unpack_from(">HHII", data, hdr)
+            self.assertEqual((h, w, f), (8, 8, fmt))
+            self.assertEqual(at % 32, 0)
+            self.assertEqual(len(data), at + tex_bytes(fmt, 8, 8), fmt)
+            self.assertEqual(pal_hdr != 0, pal is not None)
+
+    def test_tpl_rgba8_and_i8_bytes(self):
+        data = tpl([(6, 4, 4, lambda x, y: (1, 2, 3, 4), None)])
+        at = struct.unpack_from(">I", data, struct.unpack_from(">I", data, 0x0C)[0] + 8)[0]
+        self.assertEqual(data[at:at + 2], bytes([4, 1]))         # A, R
+        self.assertEqual(data[at + 32:at + 34], bytes([2, 3]))   # G, B
+        data = tpl([(1, 8, 4, lambda x, y: (x * 10 + y, 0, 0, 255), None)])
+        at = struct.unpack_from(">I", data, struct.unpack_from(">I", data, 0x0C)[0] + 8)[0]
+        self.assertEqual(data[at + 9], 11)                       # (1, 1) in der Kachel 8×4
+        self.assertEqual(tex_bytes(0, 10, 6), 64)
+        self.assertEqual(tex_bytes(6, 10, 6), 384)
 
     def test_imd5_header(self):
         wrapped = imd5(b"abc")

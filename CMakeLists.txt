@@ -97,6 +97,7 @@ add_library(nl_core STATIC
     src/core/gc_disc.cpp
     src/core/u8_archive.cpp
     src/core/imd5.cpp
+    src/core/tpl.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp

@@ -129,6 +129,97 @@ def imd5(payload: bytes) -> bytes:
     return b"IMD5" + struct.pack(">I", len(payload)) + bytes(8) + hashlib.md5(payload).digest() + payload
 
 
+# GX-Formate: Kachelbreite, Kachelhöhe, Bytes je Kachel (Wii-Banner, M18).
+TEX_BYTES = {0: (8, 8, 32), 1: (8, 4, 32), 2: (8, 4, 32), 3: (4, 4, 32), 4: (4, 4, 32), 5: (4, 4, 32),
+             6: (4, 4, 64), 8: (8, 8, 32), 9: (8, 4, 32), 10: (4, 4, 32), 14: (8, 8, 32)}
+_BITS = {0: 4, 1: 8, 2: 8, 3: 16, 4: 16, 5: 16, 8: 4, 9: 8, 10: 16}
+
+
+def tex_bytes(fmt: int, w: int, h: int) -> int:
+    bw, bh, tb = TEX_BYTES[fmt]
+    return ((w + bw - 1) // bw) * ((h + bh - 1) // bh) * tb
+
+
+def _rgb565(r: int, g: int, b: int) -> int:
+    return (r >> 3) << 11 | (g >> 2) << 5 | (b >> 3)
+
+
+def _texel(fmt: int, v) -> int:
+    if fmt in (8, 9, 10):
+        return v
+    r, g, b, a = v
+    return {0: r >> 4, 1: r, 2: (a >> 4) << 4 | (r >> 4), 3: a << 8 | r, 4: _rgb565(r, g, b),
+            5: rgb5a3_pixel(r, g, b) if a == 255 else (a >> 5) << 12 | (r >> 4) << 8 | (g >> 4) << 4 | (b >> 4)}[fmt]
+
+
+def _cmpr_block(colors: list) -> bytes:
+    """Ein 4×4-Unterblock: Durchschnittsfarbe, alle Indizes 0; bei Alpha < 128 überall transparent."""
+    if all(c[3] < 128 for c in colors):
+        return struct.pack(">HH", 0, 0) + bytes([0xFF] * 4)
+    n = len(colors)
+    avg = tuple(sum(c[i] for c in colors) // n for i in range(3))
+    c = _rgb565(*avg)
+    return struct.pack(">HH", c, c) + bytes(4)
+
+
+def encode_tex(fmt: int, w: int, h: int, px) -> bytes:
+    """Bild im GX-Kachelformat. px(x, y) liefert (r, g, b, a) oder bei C4/C8/C14X2 den Palettenindex."""
+    bw, bh, _ = TEX_BYTES[fmt]
+    blank = 0 if fmt in (8, 9, 10) else (0, 0, 0, 0)
+
+    def get(x, y):
+        return px(x, y) if x < w and y < h else blank
+
+    out = bytearray()
+    for ty in range(0, h, bh):
+        for tx in range(0, w, bw):
+            if fmt == 14:
+                for sy, sx in ((0, 0), (0, 4), (4, 0), (4, 4)):
+                    out += _cmpr_block([get(tx + sx + x, ty + sy + y) for y in range(4) for x in range(4)])
+                continue
+            pixels = [get(tx + x, ty + y) for y in range(bh) for x in range(bw)]
+            if fmt == 6:
+                out += bytes(v for p in pixels for v in (p[3], p[0]))
+                out += bytes(v for p in pixels for v in (p[1], p[2]))
+                continue
+            bits = _BITS[fmt]
+            vals = [_texel(fmt, p) for p in pixels]
+            if bits == 4:
+                out += bytes(vals[i] << 4 | vals[i + 1] for i in range(0, len(vals), 2))
+            elif bits == 8:
+                out += bytes(vals)
+            else:
+                out += b"".join(struct.pack(">H", v) for v in vals)
+    return bytes(out)
+
+
+def tpl(images: list) -> bytes:
+    """TPL aus (fmt, w, h, px, palette); palette: Liste von RGB5A3-Werten für C4/C8/C14X2, sonst None."""
+    out = bytearray(0x0C + 8 * len(images))
+    struct.pack_into(">III", out, 0, 0x0020AF30, len(images), 0x0C)
+
+    def align():
+        out.extend(bytes(-len(out) % 32))
+
+    for i, (fmt, w, h, px, palette) in enumerate(images):
+        pal_hdr = 0
+        if palette is not None:
+            align()
+            pal_hdr = len(out)
+            out.extend(bytes(0x0C))
+            align()
+            struct.pack_into(">HxxII", out, pal_hdr, len(palette), 2, len(out))
+            out.extend(b"".join(struct.pack(">H", v) for v in palette))
+        align()
+        hdr = len(out)
+        out.extend(bytes(0x24))
+        align()
+        struct.pack_into(">HHII", out, hdr, h, w, fmt, len(out))
+        out.extend(encode_tex(fmt, w, h, px))
+        struct.pack_into(">II", out, 0x0C + 8 * i, hdr, pal_hdr)
+    return bytes(out)
+
+
 def sample_bnr() -> bytes:
     en = ("Fixture", "NL", "Fixture Banner", "newlauncher", "Test banner made by make_banner_fixtures.py")
     de = ("Fixture", "NL", "Fixture-Banner", "newlauncher", "Testbanner aus make_banner_fixtures.py")

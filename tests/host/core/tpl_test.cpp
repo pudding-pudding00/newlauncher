@@ -101,7 +101,8 @@ TEST_CASE("tpl: texBytes rundet auf ganze Kacheln") {
 }
 
 TEST_CASE("tpl: Bild, dessen Größe kein Kachelvielfaches ist, dekodiert nur die sichtbaren Pixel") {
-    auto r = parseTpl(test::tplFile({{TexFmt::RGBA8, 6, 3, color}}));
+    const auto file = test::tplFile({{TexFmt::RGBA8, 6, 3, color}});  // TplImage hält nur Spans darauf
+    auto r = parseTpl(file);
     REQUIRE(r.isOk());
     const auto rgba = decodeToRgba(r.value()[0]);
     REQUIRE(rgba.size() == 6u * 3 * 4);
@@ -109,7 +110,8 @@ TEST_CASE("tpl: Bild, dessen Größe kein Kachelvielfaches ist, dekodiert nur di
 }
 
 TEST_CASE("tpl: mehrere Bilder in einer Datei") {
-    auto r = parseTpl(test::tplFile({{TexFmt::I8, 8, 4, intensity}, {TexFmt::RGB5A3, 4, 4, color}}));
+    const auto file = test::tplFile({{TexFmt::I8, 8, 4, intensity}, {TexFmt::RGB5A3, 4, 4, color}});
+    auto r = parseTpl(file);
     REQUIRE(r.isOk());
     REQUIRE(r.value().size() == 2);
     CHECK(r.value()[1].fmt == TexFmt::RGB5A3);
@@ -144,7 +146,8 @@ TEST_CASE("tpl: Palettenbild → RGB5A3-Kacheln mit gleichen Pixeln (M18, ohne T
     // Farben, die RGB5A3 exakt darstellt: Kanäle 0 oder 255, Alpha 255.
     TplSpec c8{TexFmt::C8, 12, 6, {}, [](int x, int y) { return static_cast<u16>((x + y) % 3); }, TexFmt::RGB5A3,
                {0xFC00, 0x83E0, 0x801F}};
-    auto r = parseTpl(test::tplFile({c8}));
+    const auto file = test::tplFile({c8});  // TplImage hält nur Spans darauf
+    auto r = parseTpl(file);
     REQUIRE(r.isOk());
     const TplImage& src = r.value()[0];
     const std::vector<u8> tiles = toRgb5a3Tiles(src);

@@ -29,6 +29,11 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::OpenCheats: return "open_cheats";
         case AppCommand::FetchCheats: return "fetch_cheats";
         case AppCommand::SaveCheats: return "save_cheats";
+        case AppCommand::ToggleCategory: return "toggle_category";
+        case AppCommand::OpenParental: return "open_parental";
+        case AppCommand::ChangePin: return "change_pin";
+        case AppCommand::RemovePin: return "remove_pin";
+        case AppCommand::PinEntered: return "pin_entered";
         case AppCommand::EmuFetchList: return "emu_fetch_list";
         case AppCommand::EmuInstall: return "emu_install";
         case AppCommand::EmuInstallAll: return "emu_install_all";

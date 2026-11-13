@@ -20,6 +20,13 @@ include(cmake/NlAboutEntries.cmake)
 add_library(nl_core STATIC
     src/core/assert.cpp
     src/core/theme.cpp
+    src/core/theme_file.cpp
+    src/core/categories.cpp
+    src/core/game_filter.cpp
+    src/core/play_stats.cpp
+    src/core/sha256.cpp
+    src/core/parental.cpp
+    src/core/rgb5a3.cpp
     src/core/console.cpp
     src/core/frame_stats.cpp
     src/core/crash_report.cpp
@@ -113,6 +120,8 @@ add_library(nl_core STATIC
     src/ui/vc_map_scene.cpp
     src/ui/dialog_scene.cpp
     src/ui/launch_text.cpp
+    src/ui/pin_scene.cpp
+    src/ui/parental_scene.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # Komponentenliste der Seite „Über“ aus THIRD_PARTY.md (Spec v2 3.4), nicht doppelt gepflegt.
@@ -250,6 +259,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/std_fs.cpp
         src/platform/scan_worker.cpp
         src/platform/png_decode.cpp
+        src/platform/theme_loader.cpp
         src/platform/cover_worker.cpp
         src/platform/http_client.cpp
         src/platform/net_service.cpp

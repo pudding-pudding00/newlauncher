@@ -70,6 +70,7 @@ void MainScene::setLibrary(const Library& lib, std::string_view focusKey) {
     const BarEntry oldEntry = bar_[barIndex_];
     const int oldIndex = barIndex_;
     games_ = {};
+    base_ = {};
 
     lib_ = lib;
     scratch_.assign(lib_.games.size(), nullptr);
@@ -101,13 +102,50 @@ void MainScene::showToast(const char* text) {
 
 void MainScene::selectBar(int index, float width, float height) {
     if (index < 0 || index >= barCount_) return;
+    const bool sameEntry = filterEntryKnown_ && bar_[index].kind == filterEntry_.kind &&
+                           (bar_[index].kind != BarKind::ConsoleEntry || bar_[index].console == filterEntry_.console);
+    if (!sameEntry) filter_ = GameFilter{};  // Filter gilt je Leisten-Eintrag
+    filterEntry_ = bar_[index];
+    filterEntryKnown_ = true;
     barIndex_ = index;
-    games_ = bar_[index].kind == BarKind::Search ? std::span<const Game* const>(searchResults_)
-                                                  : gamesFor(lib_, bar_[index], scratch_);
-    const GridMetrics m = gridMetrics(width);
-    grid_.reset(static_cast<int>(games_.size()), m, height - m.topBarH - m.infoBarH);
+    loadBase(index);
     gridWidth_ = width;
     gridHeight_ = height;
+    applyCurrentFilter({});
+}
+
+void MainScene::loadBase(int index) {
+    if (bar_[index].kind == BarKind::Search) {
+        base_ = searchResults_;
+        return;
+    }
+    base_ = gamesFor(lib_, bar_[index], scratch_);
+    if (bar_[index].kind == BarKind::ConsoleEntry && sort_ != SortOrder::Title) {
+        static const PlayStats kNoStats;
+        // Konsolen-Einträge liegen in scratch_ (gamesFor), also dort sortieren.
+        sortGames(std::span<const Game*>(scratch_.data(), base_.size()), sort_,
+                  playStats_ != nullptr ? *playStats_ : kNoStats);
+    }
+}
+
+void MainScene::setSort(SortOrder order, const PlayStats* stats) {
+    sort_ = order;
+    playStats_ = stats;
+    if (barIndex_ < 0 || barIndex_ >= barCount_ || bar_[barIndex_].kind != BarKind::ConsoleEntry) return;
+    const std::string key = focusedKey();
+    loadBase(barIndex_);
+    applyCurrentFilter(key);
+}
+
+void MainScene::applyCurrentFilter(std::string_view keepKey) {
+    static const Categories kNoCategories;
+    const Categories& cats = cats_ != nullptr ? *cats_ : kNoCategories;
+    const LibraryStore* favs = store_ != nullptr ? store_ : detailsStore_;
+    choices_ = filterChoices(base_, cats);
+    filtered_ = applyFilter(base_, filter_, favs, cats);
+    games_ = filtered_;
+    const GridMetrics m = gridMetrics(gridWidth_);
+    grid_.reset(static_cast<int>(games_.size()), m, gridHeight_ - m.topBarH - m.infoBarH);
     scroll_.snap(0.0f);
     animFocus_ = -1;
     bucketMask_ = 0;
@@ -115,6 +153,64 @@ void MainScene::selectBar(int index, float width, float height) {
         const char b = letterBucket(g->title);
         bucketMask_ |= 1u << (b == '#' ? 0 : b - 'A' + 1);
     }
+    for (std::size_t i = 0; i < games_.size() && !keepKey.empty(); ++i) {
+        if (keepKey == games_[i]->key) {
+            grid_.setFocus(static_cast<int>(i));
+            scroll_.snap(grid_.targetScroll());
+            break;
+        }
+    }
+    infoGame_ = nullptr;
+}
+
+int MainScene::filterIndex() const {
+    for (std::size_t i = 0; i < choices_.size(); ++i)
+        if (choices_[i] == filter_) return static_cast<int>(i);
+    return 0;
+}
+
+std::string MainScene::filterLabel(int index) const {
+    if (index < 0 || index >= static_cast<int>(choices_.size())) return {};
+    const GameFilter& f = choices_[static_cast<std::size_t>(index)];
+    switch (f.kind) {
+    case GameFilter::All: return tr(Str::FilterAll);
+    case GameFilter::Favorites: return tr(Str::Favorites);
+    case GameFilter::Genre: return genreLabel(f.genre);
+    case GameFilter::Category: return f.category;
+    }
+    return {};
+}
+
+void MainScene::setFilterIndex(int index) {
+    if (index < 0 || index >= static_cast<int>(choices_.size())) return;
+    filter_ = choices_[static_cast<std::size_t>(index)];
+    applyCurrentFilter(focusedKey());
+}
+
+void MainScene::setCategories(const Categories* cats) {
+    cats_ = cats;
+    refreshFilter();
+}
+
+int MainScene::setFilter(const GameFilter& f) {
+    filter_ = f;
+    applyCurrentFilter({});
+    return static_cast<int>(games_.size());
+}
+
+void MainScene::refreshFilter() { applyCurrentFilter(focusedKey()); }
+
+void MainScene::syncDetailsCategories(std::string_view key) {
+    if (details_ == nullptr) return;
+    std::vector<std::string> names;
+    std::vector<bool> checked;
+    if (cats_ != nullptr) {
+        for (const std::string& name : cats_->names()) {
+            names.push_back(name);
+            checked.push_back(cats_->contains(name, key));
+        }
+    }
+    details_->setCategories(std::move(names), std::move(checked));
 }
 
 void MainScene::rebuildBar() {
@@ -346,8 +442,10 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
             const bool fav = detailsStore_ != nullptr && detailsStore_->isFavorite(g->key);
             const u32 last = detailsStore_ != nullptr ? detailsStore_->lastPlayed(g->key) : 0;
             details_->open(*g, fav, last);
+            if (playStats_ != nullptr) details_->setStats(playStats_->get(g->key));
             if (detailsStore_ != nullptr)
                 details_->setDeviceLine(detailsDeviceLine(detailsStore_->devices(), g->device, detailsStore_->alsoOn(*g)));
+            syncDetailsCategories(g->key);
             out.push = details_;
         }
     }
@@ -380,6 +478,11 @@ void MainScene::requestCovers() {
         const bool visible = r.y + r.h >= top && r.y <= bottom;
         covers_->want(*games_[i], visible ? CoverPriority::Visible : CoverPriority::Prefetch);
     }
+}
+
+bool MainScene::isGameLocked(const Game& g) const {
+    if (parental_ == nullptr) return false;
+    return isLocked(*parental_, g.rating, overrides_ != nullptr && overrides_->locked(g.key));
 }
 
 void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rect r, bool focused) const {
@@ -417,6 +520,13 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
     const float tagW = gfx::measureText(label, tag) + 12.0f;
     gfx::roundRect(dl, s, Rect{r.x + 8, r.y + 8, tagW, 18}, 9, t.accentSoft);
     if (store_ != nullptr && store_->isFavorite(g.key)) gfx::circle(dl, s, r.x + r.w - 14, r.y + 17, 4, t.accent);
+    if (isGameLocked(g)) {  // Schloss: Bügel als Ring, Körper als Rechteck, auf einer Plakette links vom Favoritenpunkt
+        const float cx = r.x + r.w - 34, cy = r.y + 17;
+        gfx::roundRect(dl, s, Rect{cx - 9, cy - 9, 18, 18}, 9, t.accentSoft);
+        gfx::circle(dl, s, cx, cy - 2, 3.5f, t.accentSoftText);
+        gfx::circle(dl, s, cx, cy - 2, 2.0f, t.accentSoft);
+        gfx::fillRect(dl, s, Rect{cx - 4, cy - 1, 8, 6}, t.accentSoftText);
+    }
     gfx::drawText(dl, label, r.x + 14, r.y + 8 + 9 + (label.ascent - label.descent) / 2, tag, t.accentSoftText);
 }
 
@@ -478,6 +588,9 @@ void MainScene::drawInfoBar(const UiContext& ctx, gfx::DrawList& dl) const {
 void MainScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const Theme& t = *ctx.theme;
     gfx::fillRect(dl, *ctx.shapes, Rect{0, 0, ctx.width, ctx.height}, t.bg);
+    if (ctx.background)  // Hintergrundbild unter allem, auf den ganzen Bildschirm gestreckt
+        dl.quad(gfx::kBackgroundTexture, Rect{0, 0, ctx.width, ctx.height},
+                gfx::UvRect{0.0f, 0.0f, ctx.backgroundU1, ctx.backgroundV1}, Color{255, 255, 255, 255});
 
     const float scroll = scroll_.value();
     const float viewTop = grid_.viewTop(), viewBottom = viewTop + grid_.viewHeight();

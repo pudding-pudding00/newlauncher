@@ -12,6 +12,7 @@ constexpr u32 kFifoSize = 256 * 1024;
 GXTexObj g_atlasTex;
 
 GXTexObj g_coverTex;
+GXTexObj g_backgroundTex;
 
 GXColor toGx(Color c) { return GXColor{c.r, c.g, c.b, c.a}; }
 
@@ -100,6 +101,16 @@ void Renderer::beginFrame(Color clear) {
     drawCalls_ = 0;
 }
 
+void Renderer::setBackground(const void* texels, u16 width, u16 height) {
+    background_ = texels;
+    if (texels != nullptr) {
+        GX_InitTexObj(&g_backgroundTex, const_cast<void*>(texels), width, height, GX_TF_RGB5A3, GX_CLAMP, GX_CLAMP,
+                      GX_FALSE);
+        GX_InitTexObjLOD(&g_backgroundTex, GX_LINEAR, GX_LINEAR, 0.0f, 0.0f, 0.0f, GX_FALSE, GX_FALSE, GX_ANISO_1);
+    }
+    GX_InvalidateTexAll();  // gleiche Adresse kann jetzt ein anderes Bild sein
+}
+
 void Renderer::submit(const DrawList& list, const CoverTextures* covers) {
     // Cover-Slots wurden neu belegt oder freigegeben: gleiche Adresse kann jetzt anderes Bild sein.
     if (covers != nullptr && covers->generation() != coverGeneration_) {
@@ -114,6 +125,10 @@ void Renderer::submit(const DrawList& list, const CoverTextures* covers) {
             if (b.texture == 0) {
                 GX_LoadTexObj(&g_atlasTex, GX_TEXMAP0);
                 useAtlasTev();
+            } else if (b.texture == kBackgroundTexture) {
+                if (background_ == nullptr) continue;
+                GX_LoadTexObj(&g_backgroundTex, GX_TEXMAP0);
+                GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
             } else {
                 const void* texels = covers != nullptr ? covers->texels(b.texture) : nullptr;
                 if (texels == nullptr) continue;

@@ -104,3 +104,14 @@ TEST_CASE("optionsFileText: fehlende Datei ist leer, Lesefehler sperrt das Speic
     CHECK_FALSE(optionsFileText(Result<std::vector<u8>>::err({ErrorCode::IoError, "games.ini"})).has_value());
     CHECK_FALSE(optionsFileText(Result<std::vector<u8>>::err({ErrorCode::InvalidData, "zu groß"})).has_value());
 }
+
+TEST_CASE("OptionsModel: reset behält die Kindersicherungs-Sperre locked = 1 (M17-Review)") {
+    OptionsModel m(Console::Wii, "RMGP01", "", "[game RMGP01]\nvideo = pal60\nlocked = 1\n");
+    m.reset();
+    CHECK(m.gamesIniText().find("locked = 1") != std::string::npos);
+    CHECK(m.gamesIniText().find("video") == std::string::npos);
+    CHECK(m.inherited(rowOf(m, "video")));
+    OptionsModel plain(Console::Wii, "RMGP01", "", "[game RMGP01]\nvideo = pal60\n");
+    plain.reset();
+    CHECK(plain.gamesIniText().find("RMGP01") == std::string::npos);  // ohne Sperre: Abschnitt ganz weg
+}

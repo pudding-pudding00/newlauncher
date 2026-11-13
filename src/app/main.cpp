@@ -39,6 +39,7 @@
 #include "core/n64_choice.hpp"
 #include "core/perf_stats.hpp"
 #include "core/theme.hpp"
+#include "core/theme_file.hpp"
 #include "core/vc_map.hpp"
 #include "core/wip_patch.hpp"
 #include "gfx/draw_list.hpp"
@@ -62,6 +63,7 @@
 #include "platform/storage.hpp"
 #include "platform/system.hpp"
 #include "platform/system_probe.hpp"
+#include "platform/theme_loader.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_disc.hpp"
 
@@ -78,6 +80,8 @@
 #include "ui/about_scene.hpp"
 #include "ui/cheats_scene.hpp"
 #include "ui/options_scene.hpp"
+#include "ui/parental_scene.hpp"
+#include "ui/pin_scene.hpp"
 #include "ui/setup_scene.hpp"
 #include "ui/sysinfo_scene.hpp"
 #include "core/sysinfo.hpp"
@@ -113,6 +117,7 @@ struct DataDir {
     std::string path(const char* name) const { return dir + "/" + name; }
 };
 constexpr std::size_t kMaxIniBytes = 256 * 1024;
+constexpr std::size_t kMaxStatsBytes = 2 * 1024 * 1024;  // 5000 Spiele mit langen Pfadschlüsseln ≈ 400 KiB
 constexpr std::size_t kMaxIndexBytes = 16 * 1024 * 1024;
 constexpr std::size_t kMaxMetaBytes = 8 * 1024 * 1024;
 
@@ -127,8 +132,12 @@ void fillClock(nl::ui::UiContext& ctx) {
     ctx.weekday = (t->tm_wday + 6) % 7;  // tm: 0 = Sonntag → 0 = Montag
 }
 
-std::string readText(nl::FileSystem& fs, const char* path) {
-    auto data = nl::readAllWithFallback(fs, path, kMaxIniBytes);
+// unreadable (optional): true, wenn die Datei da ist, aber nicht gelesen werden konnte (zu groß, Lesefehler). Wer den
+// Text danach komplett neu schreibt, darf das dann nicht tun, sonst ist der alte Inhalt weg.
+std::string readText(nl::FileSystem& fs, const char* path, std::size_t maxBytes = kMaxIniBytes,
+                     bool* unreadable = nullptr) {
+    auto data = nl::readAllWithFallback(fs, path, maxBytes);
+    if (unreadable != nullptr) *unreadable = !data.isOk() && data.error().code != nl::ErrorCode::NotFound;
     if (!data.isOk()) return {};
     const auto& bytes = data.value();
     return std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size());
@@ -350,6 +359,28 @@ int main(int argc, char** argv) {
     theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, config.darkFromMin, config.darkToMin), false);
     ctx.theme = &theme.current();
 
+    // Theme-Paket (M17, Spec v2 10.2): kaputte Werte nehmen den Standard und stehen als NL_THEME_BAD im Log.
+    nl::platform::ThemeBackground themeBackground;
+    std::string appliedThemePack;
+    auto applyThemePack = [&]() {
+        appliedThemePack = config.themePack;
+        renderer.setBackground(nullptr, 0, 0);  // alte Texel nicht mehr zeichnen, bevor sie freigegeben werden
+        const nl::platform::LoadedTheme loaded = data.readable
+            ? nl::platform::loadThemePack(fs, data.dir, config.themePack, themeBackground)
+            : nl::platform::LoadedTheme{};
+        if (!data.readable) themeBackground.reset();
+        theme.setThemes(loaded.pair.light, loaded.pair.dark);
+        renderer.setBackground(themeBackground.texels(), themeBackground.width(), themeBackground.height());
+        ctx.background = themeBackground.texels() != nullptr;
+        ctx.backgroundU1 = themeBackground.u1();
+        ctx.backgroundV1 = themeBackground.v1();
+        if (config.themePack.empty()) return;
+        const nl::Color bar = loaded.pair.light.bar;
+        nl::log::line("NL_THEME %s light.bar=#%02X%02X%02X", config.themePack.c_str(), bar.r, bar.g, bar.b);
+        for (const std::string& b : loaded.bad) nl::log::line("NL_THEME_BAD %s", b.c_str());
+    };
+    applyThemePack();
+
     // Perf (M7, [debug] perf): nur bei Bedarf angelegt; der Ring hält 2 × 4 KiB.
     std::unique_ptr<nl::PerfStats> perf;
     if (config.debugPerf) perf = std::make_unique<nl::PerfStats>(video.refreshHz());
@@ -476,6 +507,20 @@ int main(int argc, char** argv) {
         vcMapText = readText(fs, vcMapPath.c_str());
         vcMapping = nl::VcMap::fromIni(nl::IniDoc::parse(vcMapText));
     }
+    // Eigene Kategorien (M17, Spec 10.3): Rohtext bleibt mit Kommentaren erhalten, nur geänderte Zeilen kommen dazu.
+    const std::string categoriesPath = data.path("categories.ini");
+    bool categoriesUnreadable = false;
+    nl::Categories categories = nl::Categories::fromText(
+        data.readable ? readText(fs, categoriesPath.c_str(), kMaxIniBytes, &categoriesUnreadable) : std::string());
+    if (categoriesUnreadable) nl::log::line("NL_WARN categories.ini nicht lesbar, wird nicht überschrieben");
+    nl::log::line("NL_CATEGORIES n=%u", static_cast<unsigned>(categories.names().size()));
+    // M17: Spielstatistik, unabhängig von history.ini
+    const std::string statsPath = data.path("stats.ini");
+    bool statsUnreadable = false;
+    nl::PlayStats playStats = nl::PlayStats::fromText(
+        data.readable ? readText(fs, statsPath.c_str(), kMaxStatsBytes, &statsUnreadable) : std::string());
+    if (statsUnreadable) nl::log::line("NL_WARN stats.ini nicht lesbar, wird nicht überschrieben");
+    nl::log::line("NL_STATS n=%u", static_cast<unsigned>(playStats.size()));
 
     // N64-Startwege (Spec 6.6): Kanäle im NAND und die beiden Emulator-DOLs, einmal pro Sitzung.
     const std::vector<u64> installedTitles = nl::platform::installedTitleIds();
@@ -572,6 +617,7 @@ int main(int argc, char** argv) {
     mainScene.setHomeMenu(&homeMenu);
     nl::ui::SettingsScene settings;
     settings.setConfig(&config);
+    if (data.readable) settings.setThemePacks(nl::listThemePacks(fs, data.dir));
     settings.setActiveSources(libFellBack ? nl::SourceSpec{false, {"sd"}} : sources);
     // Wurzel des Geräts, auf dem ein Spiel liegt ("usb2:"); Game::device zählt in store.devices().
     auto rootOf = [&](const nl::Game& game) {
@@ -583,6 +629,8 @@ int main(int argc, char** argv) {
     nl::platform::NetService netService;  // ein Netz-Thread für Cover und Emulatoren (M11); lebt länger als die Worker
     nl::platform::NetWorker net(netService);
     mainScene.setFavoriteKeys(&store);
+    mainScene.setCategories(&categories);
+    mainScene.setSort(config.sortOrder, &playStats);
     nl::ui::JumpBar jumpBar(mainScene);
     mainScene.setJumpBar(&jumpBar);
     nl::ui::Keyboard keyboard(mainScene);
@@ -591,6 +639,32 @@ int main(int argc, char** argv) {
     mainScene.setDetails(&details, &store);
     details.setCovers(&covers);
     nl::ui::DialogScene dialog;
+    // Kindersicherung (M17, Spec v2 10.5): wirksam ist config.parental oder, mit use_wii, der Wii-Jugendschutz.
+    // Die PIN steht nie im Log; SYSCONF wird nur gelesen.
+    nl::ui::PinScene pinScene;
+    nl::ui::ParentalScene parentalScene;
+    parentalScene.setConfig(&config.parental);
+    nl::PinGate pinGate;
+    nl::ParentalConfig parental;
+    std::optional<nl::WiiParental> wiiParental;
+    bool wiiParentalRead = false;
+    std::array<u8, 16> wiiSalt{};
+    nl::platform::randomBytes(wiiSalt);
+    auto refreshParental = [&]() {
+        if (config.parental.useWii && !wiiParentalRead) {
+            wiiParental = nl::platform::readWiiParental();
+            wiiParentalRead = true;
+            if (wiiParental)
+                nl::log::line("NL_PARENTAL_WII %s system=%s age=%u", wiiParental->enabled ? "on" : "off",
+                              nl::ratingSystemName(wiiParental->system), static_cast<unsigned>(wiiParental->maxAge));
+            else nl::log::line("NL_PARENTAL_WII none");
+        }
+        parental = config.parental.useWii && wiiParental ? nl::applyWiiParental(config.parental, *wiiParental, wiiSalt)
+                                                          : config.parental;
+    };
+    refreshParental();
+    nl::log::line("NL_PARENTAL %s", parental.enabled ? "on" : "off");
+    mainScene.setParental(&parental, &overrides);
     nl::ui::VcMapScene vcMapScene;
     nl::platform::EmuWorker emu(netService);
     nl::platform::CheatWorker cheatWorker(netService);  // M15: Gecko-Codes laden
@@ -829,6 +903,17 @@ int main(int argc, char** argv) {
     };
 
     std::string warnedLaunch;  // Spec 7.3: Spiel, dessen Preflight-Hinweis schon gezeigt wurde; nächstes A startet
+    // M17: vor jedem Start (auch im Wii-Dry-Run) zählen und sofort schreiben: nach dem Start kommt der Launcher
+    // nicht mehr zurück.
+    auto recordStats = [&](const std::string& key) {
+        playStats.record(key, static_cast<u32>(std::time(nullptr)));
+        const nl::PlayStat st = playStats.get(key);
+        if (data.writable && !statsUnreadable && writeText(fs, statsPath.c_str(), playStats.toText()))
+            nl::log::line("NL_STATS_SAVED %s starts=%u", key.c_str(), static_cast<unsigned>(st.starts));
+        else
+            nl::log::line("NL_WARN stats.ini nicht gespeichert");
+    };
+
     auto launchGame = [&](const nl::Game& game) {
         const std::string key = game.key;  // game kann auf Bibliotheksdaten zeigen
         auto showError = [&](const nl::LaunchError& e) {
@@ -874,6 +959,7 @@ int main(int argc, char** argv) {
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
             if (auto plan = prepareWii(game, configDoc, gamesDoc); plan.isOk()) {
                 if (config.debugWiiDryRun) {
+                    recordStats(key);
                     nl::log::line("NL_WII_DRYRUN %s", plan.value().id6.c_str());
                     return;
                 }
@@ -934,6 +1020,7 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_WARN GCT nicht geschrieben: %s", gctPath.c_str());
             }
         }
+        recordStats(key);
         store.recordPlayed(key, static_cast<u32>(std::time(nullptr)));
         if (data.writable && writeText(fs, historyPath.c_str(), store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
         else nl::log::line("NL_WARN history.ini nicht gespeichert");
@@ -1242,6 +1329,65 @@ int main(int argc, char** argv) {
             nl::log::line("NL_WARN config.ini nicht gespeichert");
         }
     };
+    // PIN-Abfrage: Zweck merken, PIN prüfen (3 Fehler → 30 s Pause), danach den Zweck ausführen.
+    enum class PinPurpose : u8 { Launch, Parental, Setup };
+    PinPurpose pinPurpose = PinPurpose::Launch;
+    std::string pinGameKey, pendingLaunchKey;
+    auto launchByKey = [&](const std::string& key) {
+        for (const nl::Game& g : store.games())
+            if (key == g.key) {
+                launchGame(g);
+                return;
+            }
+        nl::log::line("NL_WARN %s fehlt", key.c_str());
+    };
+    auto submitPin = [&](std::string_view pin) {
+        const u32 now = msSince(bootTicks);
+        if (pinGate.blocked(now)) {
+            nl::log::line("NL_PARENTAL blocked");
+            return false;
+        }
+        const bool ok = pinGate.submit(nl::checkPin(parental, pin), now);
+        nl::log::line(ok ? "NL_PARENTAL ok" : "NL_PARENTAL denied");
+        return ok;
+    };
+    // fromScene: die PIN-Szene ist offen und schließt erst im nächsten Frame; Folgeszenen öffnen danach.
+    auto runPinPurpose = [&](bool fromScene) {
+        switch (pinPurpose) {
+            case PinPurpose::Launch:
+                if (fromScene) {
+                    pendingLaunchKey = pinGameKey;  // startet, sobald die PIN-Szene weg ist
+                    pinScene.accept();
+                } else {
+                    launchByKey(pinGameKey);
+                }
+                break;
+            case PinPurpose::Parental:
+                if (fromScene) pinScene.accept(&parentalScene);
+                else scenes.push(&parentalScene);
+                break;
+            case PinPurpose::Setup:
+                openSetup();
+                if (fromScene) pinScene.accept(&setupScene);
+                else scenes.push(&setupScene);
+                break;
+        }
+    };
+    auto askPin = [&](PinPurpose purpose, std::string gameKey) {
+        pinPurpose = purpose;
+        pinGameKey = std::move(gameKey);
+        if (!config.debugPinInput.empty()) {  // nur für Tests (M17): PIN ohne Szene beantworten
+            if (submitPin(config.debugPinInput)) runPinPurpose(false);
+            return;
+        }
+        pinScene.open(nl::ui::PinMode::Verify);
+        scenes.push(&pinScene);
+        nl::log::line("NL_PARENTAL ask");
+    };
+    auto requestLaunch = [&](const nl::Game& game) {
+        if (mainScene.isGameLocked(game)) askPin(PinPurpose::Launch, game.key);
+        else launchGame(game);
+    };
     auto runPendingAutostart = [&]() {
         if (!autostartPending) return;
         autostartPending = false;
@@ -1252,7 +1398,7 @@ int main(int argc, char** argv) {
         }
         if (found != nullptr) {
             nl::log::line("NL_AUTOSTART %s", key.c_str());
-            launchGame(*found);
+            requestLaunch(*found);
         } else {
             nl::log::line("NL_WARN autostart %s fehlt", key.c_str());
         }
@@ -1391,6 +1537,23 @@ int main(int argc, char** argv) {
                 if (details.game() != nullptr && key == details.game()->key) details.setFavorite(nowFavorite);
                 break;
             }
+            case nl::ui::AppCommand::ToggleCategory: {
+                const auto names = categories.names();
+                if (req.game == nullptr || req.category >= names.size()) break;
+                const std::string key = req.game->key;
+                const std::string name = names[req.category];
+                const bool on = !categories.contains(name, key);
+                if (!categories.set(name, key, on)) {
+                    nl::log::line("NL_WARN Kategorie nicht geändert");
+                    break;
+                }
+                if (data.writable && !categoriesUnreadable && writeText(fs, categoriesPath.c_str(), categories.toText()))
+                    nl::log::line("NL_CAT_SAVED %s %s %d", name.c_str(), key.c_str(), on ? 1 : 0);
+                else nl::log::line("NL_WARN categories.ini nicht gespeichert");
+                mainScene.syncDetailsCategories(key);
+                mainScene.refreshFilter();
+                break;
+            }
             case nl::ui::AppCommand::CycleTheme:
                 ctx.themeMode = nl::nextMode(ctx.themeMode);
                 config.themeMode = ctx.themeMode;
@@ -1406,15 +1569,50 @@ int main(int argc, char** argv) {
                 }
                 ctx.themeMode = config.themeMode;
                 theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, config.darkFromMin, config.darkToMin), true);
+                if (config.themePack != appliedThemePack) applyThemePack();
+                mainScene.setSort(config.sortOrder, &playStats);
                 audio.setSounds(config.sounds);
                 music.setEnabled(config.music);
                 music.setVolume(config.musicVolume);
                 if (config.music) startMusic();  // beim Start ausgeschaltet gewesen
+                refreshParental();
                 break;
             }
             case nl::ui::AppCommand::SaveSettings:
                 config.themeMode = ctx.themeMode;
                 saveConfig();
+                refreshParental();
+                break;
+            case nl::ui::AppCommand::OpenParental:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (parental.enabled) askPin(PinPurpose::Parental, {});
+                else scenes.push(&parentalScene);
+                break;
+            case nl::ui::AppCommand::ChangePin:
+                pinScene.open(nl::ui::PinMode::Set);
+                scenes.push(&pinScene);
+                break;
+            case nl::ui::AppCommand::RemovePin:
+                config.parental = nl::withoutPin(config.parental);
+                saveConfig();
+                refreshParental();
+                nl::log::line("NL_PARENTAL removed");
+                break;
+            case nl::ui::AppCommand::PinEntered:  // kein NL_CMD: nichts von der Eingabe ins Log
+                if (pinScene.mode() == nl::ui::PinMode::Set) {
+                    std::array<u8, 16> salt{};
+                    nl::platform::randomBytes(salt);
+                    config.parental = nl::withPin(config.parental, pinScene.pinText(), salt);
+                    saveConfig();
+                    refreshParental();
+                    nl::log::line("NL_PARENTAL pin_set");
+                    pinScene.accept();
+                } else if (submitPin(pinScene.pinText())) {
+                    runPinPurpose(true);
+                } else {
+                    pinScene.reject(pinGate.blocked(msSince(bootTicks)) ? nl::ui::Str::PinBlocked : nl::ui::Str::PinWrong);
+                    audio.play(nl::UiSound::Error);
+                }
                 break;
             case nl::ui::AppCommand::Rescan:
                 if (worker.running()) break;  // läuft schon, das Ergebnis kommt über den Scan-Pfad unten
@@ -1446,7 +1644,7 @@ int main(int argc, char** argv) {
                 SYS_ResetSystem(cmd == nl::ui::AppCommand::WiiMenu ? SYS_RETURNTOMENU : SYS_POWEROFF, 0, 0);
                 break;
             case nl::ui::AppCommand::Launch:
-                if (req.game != nullptr) launchGame(*req.game);
+                if (req.game != nullptr) requestLaunch(*req.game);
                 break;
             case nl::ui::AppCommand::FetchCovers:
                 fetchCovers();
@@ -1504,6 +1702,10 @@ int main(int argc, char** argv) {
                 break;
             case nl::ui::AppCommand::OpenSetup:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (parental.enabled) {  // Spec v2 10.5: Einrichtung nur mit PIN
+                    askPin(PinPurpose::Setup, {});
+                    break;
+                }
                 openSetup();
                 scenes.push(&setupScene);
                 break;
@@ -1523,6 +1725,11 @@ int main(int argc, char** argv) {
                 break;
         }
         if (!running) break;
+        if (!pendingLaunchKey.empty() && !scenes.contains(&pinScene)) {  // PIN angenommen, Szene ausgeblendet
+            const std::string key = std::move(pendingLaunchKey);
+            pendingLaunchKey.clear();
+            launchByKey(key);
+        }
         pumpNet();
         pumpEmu(runPendingAutostart);
         pumpMusic();
@@ -1566,6 +1773,12 @@ int main(int argc, char** argv) {
             if (config.debugFetchCovers) fetchCovers();  // nur für Tests
             if (!config.debugCheatFetch.empty() && !startCheatFetch(config.debugCheatFetch, false))  // nur für Tests (M15)
                 nl::log::line("NL_CHEAT_FETCH nosource");
+            if (!config.debugFilter.empty()) {  // nur für Tests (M17)
+                if (const auto f = nl::parseFilter(config.debugFilter))
+                    nl::log::line("NL_FILTER %s n=%d bar=%s", nl::filterSpec(*f).c_str(), mainScene.setFilter(*f),
+                                  mainScene.barLabelText(mainScene.barIndex()));
+                else nl::log::line("NL_FILTER bad %s", config.debugFilter.c_str());
+            }
             if (config.debugOpenScene == "about") {   // nur für Tests (M11)
                 scenes.push(&aboutScene);
                 nl::log::line("NL_SCENE about");

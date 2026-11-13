@@ -4,8 +4,13 @@
 #include <string>
 #include <vector>
 
+#include "core/categories.hpp"
 #include "core/easing.hpp"
+#include "core/game_filter.hpp"
 #include "core/library_store.hpp"
+#include "core/n64.hpp"
+#include "core/parental.hpp"
+#include "core/play_stats.hpp"
 #include "ui/cover_provider.hpp"
 #include "ui/details_scene.hpp"
 #include "ui/jump_bar.hpp"
@@ -45,6 +50,28 @@ public:
     Scene* openSearch() override { return keyboard_; }
     bool hasBucket(char bucket) const override;
     char currentBucket() const override;
+    // Filterzeile (M17): Alle, Favoriten, vorhandene Genres, Kategorien. Gilt je Leisten-Eintrag;
+    // ein Wechsel des Eintrags setzt auf Alle zurück.
+    int filterCount() const override { return static_cast<int>(choices_.size()); }
+    int filterIndex() const override;
+    std::string filterLabel(int index) const override;
+    void setFilterIndex(int index) override;
+    void setCategories(const Categories* cats);  // nullptr = keine Kategorien
+    int setFilter(const GameFilter& f);          // für [debug] filter; liefert die Trefferzahl
+    void refreshFilter();                        // nach Änderung an Kategorien/Favoriten; Fokus bleibt am Spiel
+    void syncDetailsCategories(std::string_view key);  // Kategorienzeile der Detailansicht für dieses Spiel
+    const GameFilter& filter() const { return filter_; }
+    void selectBarForTest(int index) { selectBar(index, gridWidth_, gridHeight_); }
+    // Sortierung der Konsolenleisten (M17); Favoriten, Verlauf und Suche behalten ihre Reihenfolge.
+    // Wirkt sofort; stats == nullptr = keine Statistik. Der Fokus bleibt am Spiel.
+    void setSort(SortOrder order, const PlayStats* stats);
+    // Kindersicherung (M17): gesperrte Spiele zeigen ein Schloss. nullptr = keine Sperren. Beide Zeiger bleiben gültig,
+    // solange sie gesetzt sind.
+    void setParental(const ParentalConfig* parental, const GameOverrides* overrides) {
+        parental_ = parental;
+        overrides_ = overrides;
+    }
+    bool isGameLocked(const Game& g) const;
 
     // SearchTarget: nicht leere Anfrage → Such-Eintrag vorn in der Leiste mit Treffern aus allen Konsolen;
     // leere Anfrage → Suchmodus aus, vorheriger Eintrag wieder aktiv.
@@ -68,6 +95,7 @@ private:
     enum class Hover : u8 { None, Home, Gear, Bar };
 
     void selectBar(int index, float width, float height);
+    void applyCurrentFilter(std::string_view keepKey);
     void layoutBar(const UiContext& ctx);
     void refreshTexts(const UiContext& ctx);
     void handlePointer(const UiContext& ctx, const InputFrame& in);
@@ -82,7 +110,19 @@ private:
     int barCount_ = 0, barIndex_ = 0;
     gfx::Rect barRects_[kMaxBarEntries + 1]{};
     std::vector<const Game*> scratch_;
-    std::span<const Game* const> games_;
+    std::span<const Game* const> games_;  // gefilterte Liste (zeigt in filtered_)
+    std::span<const Game* const> base_;   // ungefilterte Liste des Leisten-Eintrags
+    std::vector<const Game*> filtered_;
+    std::vector<GameFilter> choices_;
+    GameFilter filter_;
+    const Categories* cats_ = nullptr;
+    SortOrder sort_ = SortOrder::Title;
+    const PlayStats* playStats_ = nullptr;
+    const ParentalConfig* parental_ = nullptr;
+    const GameOverrides* overrides_ = nullptr;
+    void loadBase(int index);  // base_ für den Leisten-Eintrag, Konsolen sortiert
+    BarEntry filterEntry_{};
+    bool filterEntryKnown_ = false;
     GridModel grid_;
     float gridWidth_ = 0.0f, gridHeight_ = 0.0f;
     Tween scroll_, barScroll_, focusAnim_;

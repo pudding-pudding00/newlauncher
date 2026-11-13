@@ -2,6 +2,7 @@
 // Ein Spiel, wie die UI es sieht. In M1 aus Testdaten, ab M2 vom Scanner.
 
 #include "core/console.hpp"
+#include "core/rating.hpp"
 #include "core/types.hpp"
 
 namespace nl {
@@ -17,6 +18,8 @@ struct Game {
     u64 size = 0;
     u8 flags = 0;                       // IndexFlags
     u8 device = 0;                      // Index in die Geräteliste der Sitzung (LibraryStore::devices)
+    u32 genres = 0;                     // Bitmaske über kGenres, aus meta.bin v2 (M17)
+    Rating rating{};                    // Altersfreigabe, aus meta.bin v2 (M17)
 };
 
 }  // namespace nl

@@ -7,6 +7,7 @@
 #include "core/cios_scan.hpp"
 #include "core/emu_catalog.hpp"
 #include "core/http.hpp"
+#include "core/theme_file.hpp"
 
 namespace nl {
 
@@ -71,6 +72,8 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     c.debugOptionSet = std::string(trim(ini.get("debug", "option_set")));
     c.debugTlsCa = std::string(trim(ini.get("debug", "tls_ca")));
     c.debugWizard = std::string(trim(ini.get("debug", "wizard")));
+    c.debugFilter = std::string(trim(ini.get("debug", "filter")));
+    c.debugPinInput = std::string(trim(ini.get("debug", "pin_input")));
 }
 
 Config configFromIni(const IniDoc& ini, bool tls) {
@@ -81,6 +84,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
 
     if (ini.get("general", "library") == "sd") c.library = Config::LibraryDevice::Sd;
     c.libraryRules = libraryRulesFromIni(ini);
+    c.sortOrder = parseSortOrder(ini.get("library", "sort")).value_or(SortOrder::Title);
     c.usbTimeoutSec = parseIntIn(ini.get("general", "usb_timeout"), 1, 120, c.usbTimeoutSec);
 
     const std::string_view mode = ini.get("theme", "mode");
@@ -88,6 +92,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     else if (mode == "auto") c.themeMode = ThemeMode::Auto;
     c.darkFromMin = parseClock(ini.get("theme", "dark_from"), c.darkFromMin);
     c.darkToMin = parseClock(ini.get("theme", "dark_to"), c.darkToMin);
+    if (const std::string_view pack = trim(ini.get("theme", "pack")); isThemePackName(pack)) c.themePack = std::string(pack);
 
     c.music = parseIntIn(ini.get("audio", "music"), 0, 1, 1) == 1;
     c.musicVolume = parseIntIn(ini.get("audio", "music_volume"), 0, 100, c.musicVolume);
@@ -104,6 +109,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     const std::string_view cheatSource = trim(ini.get("cheats", "source"));
     const bool cheatSourceOk = cheatSource.starts_with("https://") || cheatSource.starts_with("http://");
     c.cheatSource = std::string(cheatSourceOk ? cheatSource : defaultCheatSource(tls));
+    c.parental = parentalFromIni(ini);
     const std::string_view ios = ini.get("wii", "ios");
     c.wiiIos = parseIosValue(ios);
     if (isBadIosValue(ios)) c.badKeys.emplace_back("wii.ios");
@@ -125,7 +131,7 @@ namespace {
 
 struct IniValue {
     const char* section;
-    const char* key;
+    std::string key;
     std::string value;
     bool written = false;
 };
@@ -133,14 +139,16 @@ struct IniValue {
 std::vector<IniValue> configValues(const Config& c) {
     const char* lang = c.language == Config::Language::De ? "de" : c.language == Config::Language::En ? "en" : "auto";
     const char* mode = c.themeMode == ThemeMode::Dark ? "dark" : c.themeMode == ThemeMode::Auto ? "auto" : "light";
-    return {
+    std::vector<IniValue> v = {
         {"general", "language", lang},
         {"general", "library", c.library == Config::LibraryDevice::Sd ? "sd" : "usb"},
         {"general", "usb_timeout", std::to_string(c.usbTimeoutSec)},
         {"library", "sources", sourcesToText(c.libraryRules.sources)},
+        {"library", "sort", sortOrderName(c.sortOrder)},
         {"theme", "mode", mode},
         {"theme", "dark_from", formatClock(c.darkFromMin)},
         {"theme", "dark_to", formatClock(c.darkToMin)},
+        {"theme", "pack", c.themePack},
         {"audio", "music", c.music ? "1" : "0"},
         {"audio", "music_volume", std::to_string(std::clamp(c.musicVolume, 0, 100))},
         {"audio", "sounds", c.sounds ? "1" : "0"},
@@ -148,6 +156,8 @@ std::vector<IniValue> configValues(const Config& c) {
         {"emulators", "repo", c.emulatorRepo},
         {"wii", "ios", c.wiiIos ? std::to_string(static_cast<unsigned>(*c.wiiIos)) : std::string("auto")},
     };
+    for (auto& [key, value] : parentalIniValues(c.parental)) v.push_back({"parental", std::move(key), std::move(value)});
+    return v;
 }
 
 }  // namespace

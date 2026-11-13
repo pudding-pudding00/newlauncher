@@ -1,4 +1,6 @@
 #include "core/library_store.hpp"
+#include "core/n64.hpp"
+#include "core/parental.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/test_library.hpp"
@@ -514,4 +516,165 @@ TEST_CASE_FIXTURE(Fixture, "Klänge: rechts → Move, ohne Wirkung still, HOME �
     HomeMenu home;
     s.setHomeMenu(&home);
     CHECK(step(s, action(Action::Home)).sound == UiSound::Open);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Hintergrundbild: ein Quad mit kBackgroundTexture über den ganzen Bildschirm, ohne Bild keiner") {
+    const Library lib = testLibrary();
+    MainScene s(lib);
+    step(s, InputFrame{});
+    auto countBg = [&]() {
+        dl.clear();
+        s.draw(ctx, dl);
+        int n = 0;
+        for (const gfx::Batch& b : dl.batches())
+            if (b.texture == gfx::kBackgroundTexture) n += static_cast<int>(b.vertexCount);
+        return n;
+    };
+    CHECK(countBg() == 0);
+    ctx.background = true;
+    ctx.backgroundU1 = 0.5f;
+    ctx.backgroundV1 = 1.0f;
+    CHECK(countBg() == 4);
+    const gfx::Batch& first = dl.batches()[1];  // direkt nach der Grundfläche
+    CHECK(first.texture == gfx::kBackgroundTexture);
+    CHECK(dl.vertices()[first.firstVertex + 2].u == doctest::Approx(0.5f));
+}
+
+// --- M17: Filter je Leiste ---
+namespace {
+struct FilterLib {
+    Game games[4] = {
+        Game{Console::Nes, "nes/a", "Alpha", 0, 0},
+        Game{Console::Nes, "nes/b", "Beta", 0, 0},
+        Game{Console::Nes, "nes/c", "Gamma", 0, 0},
+        Game{Console::Snes, "snes/d", "Delta", 0, 0},
+    };
+    FilterLib() { games[1].genres = 1u << 3; }
+    Library lib() const { return Library{games, {}, {}}; }
+};
+int barOf(const MainScene& m, const char* label) {
+    for (int i = 0; i < 16; ++i)
+        if (std::string(m.barLabelText(i)) == label) return i;
+    return -1;
+}
+}  // namespace
+
+TEST_CASE("MainScene: Kategorie-Filter zeigt nur deren Spiele; Konsolenwechsel setzt auf Alle zurück") {
+    FilterLib fl;
+    MainScene m(fl.lib());
+    Categories cats = Categories::fromText("[Party]\nnes/c\nnes/a\n");
+    m.setCategories(&cats);
+    const int nes = barOf(m, "NES"), snes = barOf(m, "SNES");
+    REQUIRE(nes >= 0);
+    REQUIRE(snes >= 0);
+    m.selectBarForTest(nes);
+    REQUIRE(m.filterCount() == 4);  // Alle, Favoriten, Sport, Party
+    CHECK(m.filterLabel(3) == "Party");
+    m.setFilterIndex(3);
+    CHECK(m.grid().count() == 2);
+    m.setFocusForTest(1);
+    CHECK(m.focusedKey() == "nes/c");
+    cats.set("Party", "nes/b", true);
+    m.refreshFilter();
+    CHECK(m.grid().count() == 3);
+    CHECK(m.focusedKey() == "nes/c");  // Fokus bleibt auf dem Spiel
+    m.selectBarForTest(snes);
+    CHECK(m.filterIndex() == 0);
+    CHECK(m.grid().count() == 1);
+}
+
+TEST_CASE("MainScene::setFilter liefert die Trefferzahl; unbekannte Kategorie → 0 Spiele") {
+    FilterLib fl;
+    MainScene m(fl.lib());
+    const Categories cats = Categories::fromText("[Party]\nnes/a\n");
+    m.setCategories(&cats);
+    m.selectBarForTest(barOf(m, "NES"));
+    CHECK(m.setFilter(*parseFilter("genre:sports")) == 1);
+    CHECK(m.focusedKey() == "nes/b");
+    CHECK(m.setFilter(*parseFilter("category:Fehlt")) == 0);
+    CHECK(m.setFilter(GameFilter{}) == 3);
+}
+
+TEST_CASE_FIXTURE(Fixture, "MainScene: Details öffnen setzt die Kategorien mit Häkchen fürs Spiel") {
+    FilterLib fl;
+    MainScene m(fl.lib());
+    DetailsScene d;
+    m.setDetails(&d, nullptr);
+    const Categories cats = Categories::fromText("[Party]\nnes/b\n[Retro]\nnes/a\n");
+    m.setCategories(&cats);
+    m.selectBarForTest(barOf(m, "NES"));
+    m.setFocusForTest(0);  // Alpha = nes/a
+    const SceneRequests r = step(m, action(Action::Confirm));
+    REQUIRE(r.push == &d);
+    CHECK_FALSE(d.categoryChecked(0));
+    CHECK(d.categoryChecked(1));
+    SceneRequests out;
+    d.update(ctx, action(Action::Up), 16, out);
+    CHECK(d.focusedButton() == DetailsScene::kFocusCategories);
+}
+
+TEST_CASE("MainScene::setSort sortiert Konsoleneinträge sofort; Favoriten bleiben in ihrer Reihenfolge") {
+    FilterLib fl;
+    MainScene m(fl.lib());
+    PlayStats stats;
+    stats.record("nes/c", 10);
+    stats.record("nes/c", 20);
+    stats.record("nes/b", 30);
+    const int nes = barOf(m, "NES");
+    REQUIRE(nes >= 0);
+    m.selectBarForTest(nes);
+    m.setFocusForTest(0);
+    CHECK(m.focusedKey() == "nes/a");
+    m.setSort(SortOrder::Most, &stats);
+    m.setFocusForTest(0);
+    CHECK(m.focusedKey() == "nes/c");
+    m.setFocusForTest(2);
+    CHECK(m.focusedKey() == "nes/a");
+    m.setSort(SortOrder::Recent, &stats);
+    m.setFocusForTest(0);
+    CHECK(m.focusedKey() == "nes/b");
+    m.setSort(SortOrder::Title, nullptr);
+    m.setFocusForTest(0);
+    CHECK(m.focusedKey() == "nes/a");
+}
+
+TEST_CASE_FIXTURE(Fixture, "MainScene: Details öffnen zeigt die Statistik des Spiels (M17)") {
+    FilterLib fl;
+    MainScene m(fl.lib());
+    DetailsScene d;
+    m.setDetails(&d, nullptr);
+    PlayStats stats;
+    stats.record("nes/a", 1762128000u);
+    stats.record("nes/a", 1762128000u);
+    m.setSort(SortOrder::Title, &stats);
+    m.selectBarForTest(barOf(m, "NES"));
+    m.setFocusForTest(0);  // Alpha = nes/a
+    REQUIRE(step(m, action(Action::Confirm)).push == &d);
+    CHECK(std::string(d.statsText()) == "2-mal gestartet, zuletzt am 03.11.2025");
+}
+
+TEST_CASE_FIXTURE(Fixture, "MainScene: gesperrte Spiele tragen ein Schloss (M17)") {
+    FilterLib fl;
+    fl.games[2].rating = Rating{RatingSystem::Pegi, 16};
+    MainScene m(fl.lib());
+    m.selectBarForTest(barOf(m, "NES"));
+    m.setFocusForTest(0);
+    CHECK_FALSE(m.isGameLocked(fl.games[1]));  // ohne Kindersicherung nie
+    dl.clear();
+    m.draw(ctx, dl);
+    const u32 unlockedQuads = dl.quadCount();
+
+    constexpr std::array<u8, 16> salt{};
+    ParentalConfig p = withPin(ParentalConfig{}, "1234", salt);
+    p.maxAge = 12;
+    const GameOverrides o = GameOverrides::fromIni(IniDoc::parse("[game nes/b]\nlocked = 1\n"));
+    m.setParental(&p, &o);
+    CHECK_FALSE(m.isGameLocked(fl.games[0]));
+    CHECK(m.isGameLocked(fl.games[1]));  // locked = 1
+    CHECK(m.isGameLocked(fl.games[2]));  // PEGI 16 > 12
+    dl.clear();
+    m.draw(ctx, dl);
+    CHECK(dl.quadCount() > unlockedQuads);
+    m.setParental(nullptr, nullptr);
+    CHECK_FALSE(m.isGameLocked(fl.games[1]));
 }

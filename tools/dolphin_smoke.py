@@ -32,6 +32,11 @@ DEFAULT_MARKERS = ["NL_READY"]
 SYSINFO_REL = "newlauncher/sysinfo.txt"
 CONFIG_REL = "newlauncher/config.ini"
 GAMES_REL = "newlauncher/games.ini"  # Spieloptionen pro Spiel (M14)
+THEMES_REL = "newlauncher/themes"  # Theme-Pakete (M17)
+CATEGORIES_REL = "newlauncher/categories.ini"  # eigene Kategorien (M17)
+STATS_REL = "newlauncher/stats.ini"  # Spielstatistik (M17)
+# Zwei gültige Tokens und ein kaputter (ohne #): der Launcher meldet genau eine NL_THEME_BAD-Zeile.
+SMOKE_THEME_INI = "[light]\nbar = #123456\naccent = #ABCDEF\nbar_border = fff\n"
 DEBUG_INI_REL = "newlauncher/debug.ini"  # [debug] ohne config.ini (--fresh-data, M13)
 _MAC_RE = re.compile(r"[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}")
 _IPV4_RE = re.compile(r"\b\d{1,3}(\.\d{1,3}){3}\b")
@@ -223,6 +228,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wbfs-iso", metavar="ID6:GRÖSSE[:broken]", action="append", default=[],
                         help="mit --sd-disk …,wbfs: Test-Disc in einen Slot der ersten WBFS-Partition (Reihenfolge = "
                              "Slot); :broken ohne Wii-Magic in der Disc-Kopf-Kopie (M16 Task 5)")
+    parser.add_argument("--expect-stats", metavar="LINE", action="append", default=[],
+                        help="Zeile, die nach dem Lauf in newlauncher/stats.ini im SD-Image stehen muss (M17, mehrfach); "
+                             "eine alte stats.ini wird vor jedem Lauf entfernt")
+    parser.add_argument("--categories", metavar="TEXT",
+                        help="Inhalt für newlauncher/categories.ini (M17); ein wörtliches \\n trennt Zeilen. "
+                             "Ohne die Option wird eine alte categories.ini entfernt")
+    parser.add_argument("--theme-pack", metavar="NAME",
+                        help="Fixture-Theme newlauncher/themes/NAME mit einem kaputten Token anlegen und in config.ini "
+                             "wählen; verlangt genau eine NL_THEME_BAD-Zeile (M17). Ohne die Option wird themes/ entfernt")
     args = parser.parse_args(argv)
     tls = args.tls or args.tls_wrong_ca
     if tls and not (args.cover_server or args.emu_server or args.cheat_server):
@@ -441,6 +455,19 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             (sd / GAMES_REL).write_text(_cli_text(args.games_ini), encoding="utf-8", newline="\n")
         else:
             (sd / GAMES_REL).unlink(missing_ok=True)  # Optionen eines früheren Laufs dürfen nicht nachwirken
+        if getattr(args, "categories", None) is not None:
+            (sd / CATEGORIES_REL).write_text(_cli_text(args.categories), encoding="utf-8", newline="\n")
+        else:
+            (sd / CATEGORIES_REL).unlink(missing_ok=True)  # Kategorien eines früheren Laufs dürfen nicht nachwirken
+        (sd / STATS_REL).unlink(missing_ok=True)  # Starts eines früheren Laufs dürfen nicht mitzählen
+        shutil.rmtree(sd / THEMES_REL, ignore_errors=True)  # Theme eines früheren Laufs darf nicht nachwirken
+        if getattr(args, "theme_pack", None):
+            theme_dir = sd / THEMES_REL / args.theme_pack
+            theme_dir.mkdir(parents=True)
+            (theme_dir / "theme.ini").write_text(SMOKE_THEME_INI, encoding="utf-8", newline="\n")
+            if not args.fresh_data:
+                with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
+                    f.write(f"[theme]\npack = {args.theme_pack}\n")
         if args.config_append and not args.fresh_data:
             with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
                 f.write(_cli_text(args.config_append))
@@ -501,6 +528,10 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
         missing = _check_sysinfo(user_dir)
     if not missing and getattr(args, "expect_games_ini", None):
         missing = _check_games_ini(user_dir, args.expect_games_ini)
+    if not missing and getattr(args, "expect_stats", None):
+        missing = _check_sd_ini(user_dir, STATS_REL, args.expect_stats)
+    if not missing and getattr(args, "theme_pack", None):
+        missing = _check_theme_bad(user_dir)
     if not missing and getattr(args, "cheat_server", None):
         missing = _check_cheat_file(user_dir, args.cheat_server == "ok")
     if not missing and getattr(args, "fresh_data", False):
@@ -589,17 +620,36 @@ def _check_sysinfo(user_dir: Path) -> list[str]:
     return problems
 
 
+def _check_theme_bad(user_dir: Path) -> list[str]:
+    """Das Fixture-Theme hat genau einen kaputten Token; mehr oder weniger NL_THEME_BAD-Zeilen sind ein Fehler (M17)."""
+    try:
+        text = log_path(user_dir).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ["NL_THEME_BAD"]
+    count = sum(1 for line in text.splitlines() if "NL_THEME_BAD " in line)
+    if count == 1:
+        print("SMOKE Theme geprüft (1 NL_THEME_BAD)")
+        return []
+    return [f"genau 1 NL_THEME_BAD (gefunden: {count})"]
+
+
 def _check_games_ini(user_dir: Path, expected: list[str]) -> list[str]:
     """games.ini aus dem SD-Image lesen und die erwarteten Zeilen verlangen (M14)."""
+    return _check_sd_ini(user_dir, GAMES_REL, expected)
+
+
+def _check_sd_ini(user_dir: Path, rel: str, expected: list[str]) -> list[str]:
+    """Eine INI-Datei aus dem SD-Image lesen und die erwarteten Zeilen verlangen (M14, M17)."""
+    name = rel.rsplit("/", 1)[-1]
     try:
-        text = read_file(user_dir / "Load/WiiSD.raw", GAMES_REL).decode("utf-8", errors="replace")
+        text = read_file(user_dir / "Load/WiiSD.raw", rel).decode("utf-8", errors="replace")
     except (OSError, ValueError, NotFat32Error) as e:
-        print(f"SMOKE FEHLER: games.ini nicht lesbar: {e}")
-        return ["games.ini"]
+        print(f"SMOKE FEHLER: {name} nicht lesbar: {e}")
+        return [name]
     absent = missing_ini_lines(text, expected)
     if not absent:
-        print(f"SMOKE games.ini geprüft ({len(expected)} Zeilen)")
-    return [f"games.ini: {line}" for line in absent]
+        print(f"SMOKE {name} geprüft ({len(expected)} Zeilen)")
+    return [f"{name}: {line}" for line in absent]
 
 
 if __name__ == "__main__":

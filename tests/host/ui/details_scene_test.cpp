@@ -311,3 +311,79 @@ TEST_CASE_FIXTURE(Fixture, "Details: Hoch fokussiert „Cheats“ bei Wii und GC
     CHECK(d.focusedButton() == 0);
     CHECK(std::string(appCommandName(AppCommand::OpenCheats)) == "open_cheats");
 }
+
+// --- M17: Zeile „Kategorien“ (Häkchenliste) ---
+TEST_CASE_FIXTURE(Fixture, "Details: Kategorien – Hoch wählt die Zeile, Links/Rechts blättern, A schaltet um") {
+    DetailsScene d;
+    const Game g{Console::Nes, "nes/a.nes", "A", 0, 0};
+    d.open(g, false, 0);
+    d.setCategories({"Party", "Retro"}, {false, true});
+    step(d, action(Action::Up));
+    REQUIRE(d.focusedButton() == DetailsScene::kFocusCategories);
+    CHECK(d.categoryIndex() == 0);
+    const SceneRequests r = step(d, action(Action::Confirm));
+    CHECK(r.command == AppCommand::ToggleCategory);
+    CHECK(r.category == 0);
+    REQUIRE(r.game != nullptr);
+    CHECK(std::strcmp(r.game->key, "nes/a.nes") == 0);
+    step(d, action(Action::Right));
+    CHECK(d.categoryIndex() == 1);
+    step(d, action(Action::Right));
+    CHECK(d.categoryIndex() == 0);
+    step(d, action(Action::Left));
+    CHECK(d.categoryIndex() == 1);
+    d.setCategories({"Party", "Retro"}, {true, false});  // nach dem Umschalten: Auswahl bleibt
+    CHECK(d.categoryIndex() == 1);
+    CHECK_FALSE(d.categoryChecked(1));
+    CHECK(d.categoryChecked(0));
+    step(d, action(Action::Down));
+    CHECK(d.focusedButton() == 0);
+    d.draw(ctx, dl);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Details: Kategorien liegen zwischen Knöpfen und Cheats; open() leert sie") {
+    DetailsScene d;
+    const Game g{Console::Wii, "RMCP01", "Mario Kart", 2008, 4};
+    d.open(g, false, 0);
+    d.setCategories({"Party"}, {false});
+    step(d, action(Action::Up));
+    CHECK(d.focusedButton() == DetailsScene::kFocusCategories);
+    step(d, action(Action::Up));
+    CHECK(d.focusedButton() == DetailsScene::kFocusCheats);
+    step(d, action(Action::Down));
+    CHECK(d.focusedButton() == DetailsScene::kFocusCategories);
+    d.open(g, false, 0);
+    step(d, action(Action::Up));
+    CHECK(d.focusedButton() == DetailsScene::kFocusCheats);
+}
+
+TEST_CASE("detailsStatsLine: DE/EN, einmal, nie gestartet; Datum je Sprache") {
+    char buf[128];
+    setLanguage(Lang::De);
+    detailsStatsLine(PlayStat{12, 1762128000u}, buf, sizeof buf);  // 2025-11-03
+    CHECK(std::string(buf) == "12-mal gestartet, zuletzt am 03.11.2025");
+    detailsStatsLine(PlayStat{1, 0}, buf, sizeof buf);
+    CHECK(std::string(buf) == "Einmal gestartet");
+    detailsStatsLine(PlayStat{0, 5}, buf, sizeof buf);
+    CHECK(std::string(buf).empty());
+    setLanguage(Lang::En);
+    detailsStatsLine(PlayStat{12, 1762128000u}, buf, sizeof buf);
+    CHECK(std::string(buf) == "Started 12 times, last on 2025-11-03");
+    detailsStatsLine(PlayStat{1, 1762128000u}, buf, sizeof buf);
+    CHECK(std::string(buf) == "Started once, last on 2025-11-03");
+    detailsInfoLine(Game{Console::N64, "n64/x", "X", 0, 0}, 1762128000u, buf, sizeof buf);
+    CHECK(std::string(buf).find("2025-11-03") != std::string::npos);
+    setLanguage(Lang::De);
+}
+
+TEST_CASE("DetailsScene::setStats: mit Starts entfällt das Verlaufsdatum in der Infozeile") {
+    DetailsScene d;
+    d.open(Game{Console::Nes, "nes/x", "X", 0, 0}, false, 1762128000u);
+    CHECK(std::string(d.infoText()).find("03.11.2025") != std::string::npos);
+    CHECK(std::string(d.statsText()).empty());
+    d.setStats(PlayStat{3, 1762128000u});
+    CHECK(std::string(d.infoText()).find("03.11.2025") == std::string::npos);
+    CHECK(std::string(d.statsText()) == "3-mal gestartet, zuletzt am 03.11.2025");
+    d.setStats(PlayStat{});
+    CHECK(std::string(d.infoText()).find("03.11.2025") != std::string::npos);
+}

@@ -18,6 +18,8 @@ namespace nl::ui {
 struct UiContext {
     float width = 640.0f, height = 480.0f;
     const Theme* theme = nullptr;
+    bool background = false;           // Theme-Paket hat ein Hintergrundbild (gfx::kBackgroundTexture)
+    float backgroundU1 = 1.0f, backgroundV1 = 1.0f;  // sichtbarer Teil der aufgefüllten Textur
     const gfx::FontSet* fonts = nullptr;
     const gfx::AtlasShapes* shapes = nullptr;
     ThemeMode themeMode = ThemeMode::Auto;
@@ -51,6 +53,11 @@ enum class AppCommand : u8 {
     OpenCheats,       // Cheat-Auswahl öffnen (M15): game = Wii- oder GC-Spiel
     FetchCheats,      // Codeliste laden: CheatsScene::id6(), overwrite()
     SaveCheats,       // Cheat-Szene geschlossen mit Änderungen: CheatsScene::model().selText() als .sel schreiben
+    ToggleCategory,   // Details (M17): game in Kategorie category (Index der setCategories-Liste) an/aus
+    OpenParental,     // Kindersicherung öffnen (M17); mit PIN erst nach der PIN-Abfrage
+    ChangePin,        // Kindersicherung: neue PIN zweimal abfragen (PinScene im Modus Set)
+    RemovePin,        // Kindersicherung: PIN löschen, Kindersicherung aus
+    PinEntered,       // PinScene: vier Ziffern bestätigt, PinScene::pinText()
 };
 const char* appCommandName(AppCommand c);
 
@@ -61,6 +68,7 @@ struct SceneRequests {
     AppCommand command = AppCommand::None;
     const Game* game = nullptr;  // Ziel von ToggleFavorite, Launch und SetN64Method
     u8 n64Choice = 0;            // SetN64Method: 0 = Automatisch, sonst 1 + N64Method
+    u8 category = 0;             // ToggleCategory: Index in der Kategorienliste der Detailansicht
     Console console = Console::Wii;  // OpenOptions ohne game: Wii oder Gc
     UiSound sound = UiSound::None;  // main spielt ihn nach dem Update
 };

@@ -120,3 +120,42 @@ TEST_CASE("Zeile Einrichtung steht vor Systeminfo und ist eine Aktion (M13 Task 
     CHECK(static_cast<int>(SettingRow::Setup) + 1 == static_cast<int>(SettingRow::SysInfo));
     CHECK(isAction(SettingRow::Setup));
 }
+
+TEST_CASE("stepThemePack: Standard → Pakete → Standard, rückwärts auch") {
+    Config c;
+    const std::vector<std::string> packs{"alpha", "zeta"};
+    stepThemePack(c, packs, +1);
+    CHECK(c.themePack == "alpha");
+    stepThemePack(c, packs, +1);
+    CHECK(c.themePack == "zeta");
+    stepThemePack(c, packs, +1);
+    CHECK(c.themePack.empty());
+    stepThemePack(c, packs, -1);
+    CHECK(c.themePack == "zeta");
+}
+
+TEST_CASE("stepThemePack: unbekanntes Paket aus config.ini springt auf den Anfang") {
+    Config c;
+    c.themePack = "weg";
+    stepThemePack(c, std::vector<std::string>{"alpha"}, +1);
+    CHECK(c.themePack.empty());
+    stepThemePack(c, std::vector<std::string>{}, +1);
+    CHECK(c.themePack.empty());
+    CHECK(settingEnabled(c, SettingRow::ThemePack));
+    CHECK_FALSE(isAction(SettingRow::ThemePack));
+}
+
+TEST_CASE("stepSetting: Sortierung zyklisch (M17)") {
+    Config c;
+    stepSetting(c, SettingRow::Sort, +1);
+    CHECK(c.sortOrder == SortOrder::Year);
+    stepSetting(c, SettingRow::Sort, +1);
+    CHECK(c.sortOrder == SortOrder::Recent);
+    stepSetting(c, SettingRow::Sort, +1);
+    CHECK(c.sortOrder == SortOrder::Most);
+    stepSetting(c, SettingRow::Sort, +1);
+    CHECK(c.sortOrder == SortOrder::Title);
+    stepSetting(c, SettingRow::Sort, -1);
+    CHECK(c.sortOrder == SortOrder::Most);
+    CHECK_FALSE(isAction(SettingRow::Sort));
+}

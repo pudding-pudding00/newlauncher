@@ -86,14 +86,47 @@ int detailsInfoLine(const Game& g, u32 lastPlayedUnix, char* out, std::size_t ca
         appendf(out, cap, len, " %s", tr(Str::Player));
     }
     if (lastPlayedUnix != 0) {
-        int y = 0, m = 0, d = 0;
-        civilFromDays(static_cast<long>(lastPlayedUnix / 86400u), y, m, d);
         char date[32];
-        std::snprintf(date, sizeof date, "%02d.%02d.%04d", d, m, y);
+        formatDate(lastPlayedUnix, date, sizeof date);
         appendf(out, cap, len, " \xC2\xB7 %s", tr(Str::LastPlayed));
         appendf(out, cap, len, " %s", date);
     }
     return len;
+}
+
+int formatDate(u32 unixTime, char* out, std::size_t cap) {
+    if (cap == 0) return 0;
+    int y = 0, m = 0, d = 0;
+    civilFromDays(static_cast<long>(unixTime / 86400u), y, m, d);
+    const int n = language() == Lang::En ? std::snprintf(out, cap, "%04d-%02d-%02d", y, m, d)
+                                         : std::snprintf(out, cap, "%02d.%02d.%04d", d, m, y);
+    return n < 0 ? 0 : std::min(n, static_cast<int>(cap) - 1);
+}
+
+int detailsStatsLine(PlayStat s, char* out, std::size_t cap) {
+    if (cap == 0) return 0;
+    out[0] = '\0';
+    if (s.starts == 0) return 0;
+    const auto fill = [](const char* fmt, std::string_view tag, const std::string& v) {
+        std::string r(fmt);
+        const std::size_t at = r.find(tag);
+        if (at != std::string::npos) r.replace(at, tag.size(), v);
+        return r;
+    };
+    std::string line = s.starts == 1 ? std::string(tr(Str::StatsOnce))
+                                     : fill(tr(Str::StatsStarts), "%u", std::to_string(s.starts));
+    if (s.last != 0) {
+        char date[32];
+        formatDate(s.last, date, sizeof date);
+        line += fill(tr(Str::StatsLast), "%s", date);
+    }
+    return static_cast<int>(copyEllipsized(out, cap, line));
+}
+
+void DetailsScene::setStats(PlayStat s) {
+    if (!hasGame_) return;
+    detailsStatsLine(s, stats_, sizeof stats_);
+    detailsInfoLine(game_, s.starts != 0 ? 0u : lastPlayed_, info_, sizeof info_);
 }
 
 int n64HintLine(const N64Decision& d, char* out, std::size_t cap) {
@@ -161,6 +194,10 @@ void DetailsScene::open(const Game& game, bool favorite, u32 lastPlayedUnix) {
     choice_ = 0;
     method_[0] = '\0';
     hint_[0] = '\0';
+    catNames_.clear();
+    catChecked_.clear();
+    catIndex_ = 0;
+    stats_[0] = '\0';
     detailsInfoLine(game_, lastPlayed_, info_, sizeof info_);
 }
 
@@ -169,9 +206,29 @@ Rect DetailsScene::buttonRect([[maybe_unused]] const UiContext& ctx, int index) 
     return Rect{x, kTop + kCoverH - kButtonH, kButtonW, kButtonH};
 }
 
+Rect DetailsScene::categoriesRect(const UiContext& ctx) const {
+    const Rect b0 = buttonRect(ctx, 0);
+    return Rect{b0.x, b0.y - kMethodGap - kMethodH, 2 * kButtonW + 16.0f, kMethodH};
+}
+
 Rect DetailsScene::cheatsRect(const UiContext& ctx) const {
     const Rect b0 = buttonRect(ctx, 0);
-    return Rect{b0.x, b0.y - kMethodGap - kMethodH, kButtonW, kMethodH};
+    const float rows = hasCategories() ? 2.0f : 1.0f;  // mit Kategorien eine Zeile höher
+    return Rect{b0.x, b0.y - rows * (kMethodGap + kMethodH), kButtonW, kMethodH};
+}
+
+void DetailsScene::setCategories(std::vector<std::string> names, std::vector<bool> checked) {
+    checked.resize(names.size(), false);
+    catNames_ = std::move(names);
+    catChecked_ = std::move(checked);
+    if (catIndex_ >= static_cast<int>(catNames_.size())) catIndex_ = 0;
+    if (catNames_.empty() && focus_ == kFocusCategories) focus_ = 0;
+}
+
+int DetailsScene::upperRowFocus() const {
+    if (hasCheats_) return kFocusCheats;
+    if (hasN64_) return kFocusMethod;
+    return -1;
 }
 
 void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
@@ -186,6 +243,7 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, Sce
         for (int i = 0; i < 2; ++i)
             if (contains(buttonRect(ctx, i), in.pointerX, in.pointerY)) hit = i;
         if (hasCheats_ && contains(cheatsRect(ctx), in.pointerX, in.pointerY)) hit = kFocusCheats;
+        if (hasCategories() && contains(categoriesRect(ctx), in.pointerX, in.pointerY)) hit = kFocusCategories;
         if (in.pointerMoved) {
             if (hit >= 0) focus_ = hit;
             keysSincePointerMove_ = false;
@@ -206,19 +264,31 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, Sce
             return;
         }
         if (in.pressed(Action::Down)) {
-            focus_ = 0;
+            focus_ = hasCategories() ? kFocusCategories : 0;
             keysSincePointerMove_ = true;
         }
     } else if (focus_ == kFocusCheats) {
         if (in.pressed(Action::Down)) {
-            focus_ = 0;
+            focus_ = hasCategories() ? kFocusCategories : 0;
             keysSincePointerMove_ = true;
         }
+    } else if (focus_ == kFocusCategories) {
+        const int count = static_cast<int>(catNames_.size());
+        const int dir = in.pressed(Action::Right) ? 1 : in.pressed(Action::Left) ? -1 : 0;
+        if (dir != 0 && count > 0) {
+            catIndex_ = (catIndex_ + dir + count) % count;
+            out.sound = UiSound::Move;
+        }
+        if (in.pressed(Action::Up) && upperRowFocus() >= 0) focus_ = upperRowFocus();
+        if (in.pressed(Action::Down)) focus_ = 0;
+        if (dir != 0 || in.pressed(Action::Up) || in.pressed(Action::Down)) keysSincePointerMove_ = true;
     } else {
         if (in.pressed(Action::Left) && focus_ > 0) --focus_;
         if (in.pressed(Action::Right) && focus_ < 1) ++focus_;
-        if (in.pressed(Action::Up) && hasN64_) focus_ = kFocusMethod;
-        if (in.pressed(Action::Up) && hasCheats_) focus_ = kFocusCheats;
+        if (in.pressed(Action::Up)) {
+            if (hasCategories()) focus_ = kFocusCategories;
+            else if (upperRowFocus() >= 0) focus_ = upperRowFocus();
+        }
         if (in.pressed(Action::Left) || in.pressed(Action::Right) || in.pressed(Action::Up)) keysSincePointerMove_ = true;
     }
 
@@ -240,6 +310,12 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, Sce
     if (in.pressed(Action::Confirm) && !pointerOff && focus_ == kFocusCheats && hasGame_) {
         out.command = AppCommand::OpenCheats;
         out.game = &game_;
+        return;
+    }
+    if (in.pressed(Action::Confirm) && !pointerOff && focus_ == kFocusCategories && hasGame_) {
+        out.command = AppCommand::ToggleCategory;
+        out.game = &game_;
+        out.category = static_cast<u8>(catIndex_);
         return;
     }
     if (in.pressed(Action::Confirm) && !pointerOff && hasGame_ && focus_ != kFocusMethod) {
@@ -284,13 +360,19 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     y += 4.0f;
     gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, info_, t.text2);
     y += body.lineHeight;
+    if (stats_[0] != '\0') {
+        gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, stats_, t.text2);
+        y += body.lineHeight;
+    }
     if (!device_.empty()) {
         gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, device_, t.text2);
         y += body.lineHeight;
     }
     y += 12.0f;
     const std::string_view desc(description_);
-    const int descLines = (hasN64_ || hasCheats_ ? 2 : 3) - (device_.empty() ? 0 : 1);
+    const int descLines =
+        std::max(0, (hasN64_ || hasCheats_ ? 2 : 3) - (device_.empty() ? 0 : 1) - (hasCategories() ? 1 : 0) -
+                        (stats_[0] != '\0' ? 1 : 0));
     n = gfx::wrapText(body, desc, w, std::span<gfx::Line>(lines, static_cast<std::size_t>(descLines)));
     for (int i = 0; i < n; ++i) {
         gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, desc.substr(lines[i].start, lines[i].length), t.text);
@@ -300,7 +382,8 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     // N64: Startmethode zwischen Beschreibung und Knöpfen, Gründe unter den Knöpfen
     if (hasN64_) {
         const Rect b0 = buttonRect(ctx, 0);
-        const Rect row{b0.x, b0.y - kMethodGap - kMethodH, 2 * kButtonW + 16.0f, kMethodH};
+        const Rect upper = cheatsRect(ctx);
+        const Rect row{upper.x, upper.y, 2 * kButtonW + 16.0f, kMethodH};
         const bool focused = focus_ == kFocusMethod;
         if (focused) gfx::roundRect(dl, s, Rect{row.x - 3, row.y - 3, row.w + 6, row.h + 6}, kMethodH / 2 + 3, t.accent);
         gfx::roundRect(dl, s, row, kMethodH / 2, t.tile);
@@ -317,6 +400,19 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         gfx::roundRect(dl, s, row, kMethodH / 2, t.tile);
         gfx::drawTextEllipsis(dl, body, row.x + 16, row.y + row.h / 2 + (body.ascent - body.descent) / 2, row.w - 32,
                               tr(Str::DetailsCheats), t.text);
+    }
+
+    // Kategorien (M17): "Kategorien:  < [x] Party >"; Links/Rechts wählen, A schaltet um
+    if (hasCategories()) {
+        const Rect row = categoriesRect(ctx);
+        const bool focused = focus_ == kFocusCategories;
+        if (focused) gfx::roundRect(dl, s, Rect{row.x - 3, row.y - 3, row.w + 6, row.h + 6}, kMethodH / 2 + 3, t.accent);
+        gfx::roundRect(dl, s, row, kMethodH / 2, t.tile);
+        const std::size_t i = static_cast<std::size_t>(catIndex_);
+        const std::string text = std::string(tr(Str::Categories)) + ":  < " + (catChecked_[i] ? "[x] " : "[ ] ") +
+                                 catNames_[i] + " >";
+        gfx::drawTextEllipsis(dl, body, row.x + 16, row.y + row.h / 2 + (body.ascent - body.descent) / 2, row.w - 32,
+                              text, t.text);
     }
 
     // Knöpfe

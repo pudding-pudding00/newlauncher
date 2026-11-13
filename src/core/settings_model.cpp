@@ -21,9 +21,19 @@ int stepClock(int minute, int dir) { return ((minute + dir * 30) % kDay + kDay) 
 
 }  // namespace
 
+void stepThemePack(Config& c, std::span<const std::string> packs, int dir) {
+    const int n = static_cast<int>(packs.size()) + 1;  // 0 = Standard
+    int i = 0;
+    for (std::size_t k = 0; k < packs.size(); ++k)
+        if (packs[k] == c.themePack) i = static_cast<int>(k) + 1;
+    if (i == 0 && !c.themePack.empty()) i = dir < 0 ? 1 : n - 1;  // unbekannt: wie Standard weiterzählen
+    const int next = (i + (dir < 0 ? n - 1 : 1)) % n;
+    c.themePack = next == 0 ? std::string() : packs[static_cast<std::size_t>(next - 1)];
+}
+
 bool isAction(SettingRow r) {
     return r == SettingRow::Rescan || r == SettingRow::FetchCovers || r == SettingRow::VcMap ||
-           r == SettingRow::Emulators || r == SettingRow::WiiGames || r == SettingRow::GcGames || r == SettingRow::Setup || r == SettingRow::SysInfo ||
+           r == SettingRow::Emulators || r == SettingRow::WiiGames || r == SettingRow::GcGames || r == SettingRow::Parental || r == SettingRow::Setup || r == SettingRow::SysInfo ||
            r == SettingRow::About;
 }
 
@@ -37,6 +47,7 @@ void stepSetting(Config& c, SettingRow r, int dir) {
         case SettingRow::Music: c.music = !c.music; break;
         case SettingRow::Volume: c.musicVolume = std::clamp(c.musicVolume + dir * 10, 0, 100); break;
         case SettingRow::Sounds: c.sounds = !c.sounds; break;
+        case SettingRow::Sort: c.sortOrder = cycle(c.sortOrder, 4, dir); break;
         case SettingRow::Library:
         {
             // Umlauf Auto → USB → SD; eine eigene Liste aus config.ini steht vor Auto.
@@ -55,12 +66,14 @@ void stepSetting(Config& c, SettingRow r, int dir) {
             c.coverRegion = std::string(kRegions[static_cast<std::size_t>((i + dir + n) % n)]);
             break;
         }
+        case SettingRow::ThemePack:  // braucht die Paketliste: stepThemePack
         case SettingRow::Rescan:
         case SettingRow::FetchCovers:
         case SettingRow::VcMap:
         case SettingRow::Emulators:
         case SettingRow::WiiGames:
         case SettingRow::GcGames:
+        case SettingRow::Parental:
         case SettingRow::Setup:
         case SettingRow::SysInfo:
         case SettingRow::About:

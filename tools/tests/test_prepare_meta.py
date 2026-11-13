@@ -33,6 +33,35 @@ WIITDB = """<?xml version="1.0" encoding="UTF-8"?>
 </datafile>
 """
 
+WIITDB_V2 = """<?xml version="1.0" encoding="UTF-8"?>
+<datafile>
+  <WiiTDB version="1" games="4"/>
+  <genres>
+    <maingenre name="theme"><subgenre name="fantasy"/></maingenre>
+    <maingenre name="general"><subgenre name="party"/></maingenre>
+    <maingenre name="action"><subgenre name="2D platformer"/></maingenre>
+    <maingenre name="sports"/>
+    <maingenre name="racing"><subgenre name="kart racing"/></maingenre>
+  </genres>
+  <game name="Mario Kart Wii">
+    <id>RMCP01</id><locale lang="EN"><title>Mario Kart Wii</title></locale>
+    <genre>racing,kart racing</genre><rating type="ESRB" value="T"/>
+  </game>
+  <game name="New Super Mario Bros. Wii">
+    <id>SMNP01</id><locale lang="EN"><title>NSMB Wii</title></locale>
+    <genre>2d platformer,party</genre><rating type="PEGI" value="12"/>
+  </game>
+  <game name="Wii Sports">
+    <id>RSPJ01</id><locale lang="EN"><title>Wii Sports</title></locale>
+    <genre>sports,zorbing</genre><rating type="CERO" value="C"/>
+  </game>
+  <game name="Metroid Prime">
+    <id>GM8P01</id><locale lang="EN"><title>Metroid Prime</title></locale>
+    <rating type="GRB" value="12"/>
+  </game>
+</datafile>
+"""
+
 YEAR_DAT = """clrmamepro (
 \tname "Nintendo - Nintendo Entertainment System"
 )
@@ -93,9 +122,46 @@ class PrepareMetaTest(unittest.TestCase):
             path = Path(tmp) / "wiitdb.xml"
             path.write_text(WIITDB, encoding="utf-8")
             meta = pm.parse_wiitdb(path, {"RMCP01", "GM8P01"}, "DE")
-            self.assertEqual(meta["RMCP01"], ("Mario Kart Wii (DE)", 2008, 4, "Rennen."))
-            self.assertEqual(meta["GM8P01"], ("Metroid Prime", 2002, 1, "Samus."))
+            self.assertEqual(meta["RMCP01"], ("Mario Kart Wii (DE)", 2008, 4, "Rennen.", 0, 0, 0))
+            self.assertEqual(meta["GM8P01"], ("Metroid Prime", 2002, 1, "Samus.", 0, 0, 0))
             self.assertNotIn("ZZZZ01", meta)
+
+    # --- M17: Genres (Hauptgenre-Bitmaske) und Altersfreigabe ---
+    def _parse_v2(self, unknown=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "wiitdb.xml"
+            path.write_text(WIITDB_V2, encoding="utf-8")
+            return pm.parse_wiitdb(path, {"RMCP01", "SMNP01", "RSPJ01", "GM8P01"}, "EN", unknown)
+
+    def test_parse_wiitdb_genres_map_subgenres_to_main(self):
+        meta = self._parse_v2()
+        bit = {name: 1 << i for i, name in enumerate(pm.GENRES)}
+        self.assertEqual(meta["RMCP01"][4], bit["racing"])  # "kart racing" ist Untergenre von racing
+        self.assertEqual(meta["SMNP01"][4], bit["action"] | bit["general"])  # 2D Platformer, party
+
+    def test_parse_wiitdb_unknown_genre_is_ignored_and_counted(self):
+        unknown = {}
+        meta = self._parse_v2(unknown)
+        self.assertEqual(meta["RSPJ01"][4], 1 << pm.GENRES.index("sports"))
+        self.assertEqual(unknown, {"zorbing": 1})
+
+    def test_parse_wiitdb_ratings(self):
+        meta = self._parse_v2()
+        self.assertEqual(meta["RMCP01"][5:], (pm.RATING_ESRB, 13))  # ESRB T
+        self.assertEqual(meta["SMNP01"][5:], (pm.RATING_PEGI, 12))
+        self.assertEqual(meta["RSPJ01"][5:], (pm.RATING_CERO, 15))  # CERO C
+        self.assertEqual(meta["GM8P01"][5:], (pm.RATING_NONE, 0))  # GRB: nicht unterstützt
+
+    def test_rating_age_mapping(self):
+        esrb = {"EC": 3, "E": 6, "E10+": 10, "T": 13, "M": 17, "AO": 18}
+        for value, age in esrb.items():
+            self.assertEqual(pm.rating("ESRB", value), (pm.RATING_ESRB, age))
+        cero = {"A": 0, "B": 12, "C": 15, "D": 17, "Z": 18}
+        for value, age in cero.items():
+            self.assertEqual(pm.rating("CERO", value), (pm.RATING_CERO, age))
+        self.assertEqual(pm.rating("USK", "16"), (pm.RATING_USK, 16))
+        self.assertEqual(pm.rating("PEGI", ""), (pm.RATING_NONE, 0))
+        self.assertEqual(pm.rating("ESRB", "12"), (pm.RATING_NONE, 0))
 
     def test_parse_dat_reads_comment_value_and_crc(self):
         years = pm.parse_dat(YEAR_DAT, "releaseyear")

@@ -232,6 +232,11 @@ TEST_CASE("configFromIni: [debug] open_scene (M11)") {
     CHECK(configFromIni(IniDoc::parse("[debug]\nopen_scene = about\n")).debugOpenScene == "about");
 }
 
+TEST_CASE("configFromIni: [debug] filter (M17)") {
+    CHECK(configFromIni(IniDoc::parse("")).debugFilter.empty());
+    CHECK(configFromIni(IniDoc::parse("[debug]\nfilter = category:Party \n")).debugFilter == "category:Party");
+}
+
 TEST_CASE("Standardquellen: HTTPS mit TLS, HTTP ohne (M11 Task 8)") {
     const Config on = configFromIni(IniDoc::parse(""), true);
     CHECK(on.emulatorRepo == "https://hbb1.oscwii.org/hbb");
@@ -309,4 +314,31 @@ TEST_CASE("applyDebugIni: nur [debug] aus debug.ini, wizard-Schlüssel (M13 Task
 TEST_CASE("configFromIni: [debug] option_set (M14)") {
     CHECK(configFromIni(IniDoc::parse("")).debugOptionSet.empty());
     CHECK(configFromIni(IniDoc::parse("[debug]\noption_set = video=pal60\n")).debugOptionSet == "video=pal60");
+}
+
+TEST_CASE("Config: [library] sort (M17)") {
+    CHECK(configFromIni(IniDoc::parse("")).sortOrder == SortOrder::Title);
+    CHECK(configFromIni(IniDoc::parse("[library]\nsort = most\n")).sortOrder == SortOrder::Most);
+    const Config bad = configFromIni(IniDoc::parse("[library]\nsort = zufall\n"));
+    CHECK(bad.sortOrder == SortOrder::Title);
+    Config c;
+    c.sortOrder = SortOrder::Recent;
+    CHECK(configToIniText(c, "").find("sort = recent") != std::string::npos);
+}
+
+TEST_CASE("Config: [parental] lesen und schreiben, [debug] pin_input (M17)") {
+    CHECK_FALSE(configFromIni(IniDoc::parse("")).parental.enabled);
+    Config c;
+    constexpr std::array<u8, 16> salt = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    c.parental = withPin(c.parental, "1234", salt);
+    c.parental.maxAge = 12;
+    c.parental.system = RatingSystem::Usk;
+    const std::string text = configToIniText(c, "");
+    CHECK(text.find("[parental]") != std::string::npos);
+    CHECK(text.find("1234") == std::string::npos);  // nie die PIN selbst
+    const Config r = configFromIni(IniDoc::parse(text));
+    CHECK(checkPin(r.parental, "1234"));
+    CHECK(r.parental.maxAge == 12);
+    CHECK(r.parental.system == RatingSystem::Usk);
+    CHECK(configFromIni(IniDoc::parse("[debug]\npin_input = 0000\n")).debugPinInput == "0000");
 }

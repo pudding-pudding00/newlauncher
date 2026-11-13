@@ -13,7 +13,7 @@ int countAction(InputMapper& m, const RawInput& raw, Action a, int frames, float
     return n;
 }
 
-RawInput held(nl::u32 bits) {
+RawInput held(nl::u64 bits) {
     RawInput r;
     r.held = bits;
     return r;
@@ -195,4 +195,70 @@ TEST_CASE("Wiimote + und GC R lösen zusätzlich Options aus (M14)") {
     }
     InputMapper m;
     CHECK_FALSE(m.update(held(RawInput::Minus), kDt).pressed(Action::Options));
+}
+
+// --- Classic Controller (Spec 10.1) ---
+
+TEST_CASE("Classic-Belegung nach Spec 10.1") {
+    struct Row {
+        nl::u64 btn;
+        Action a;
+    };
+    const Row rows[] = {
+        {RawInput::CcA, Action::Confirm},      {RawInput::CcB, Action::Back},
+        {RawInput::CcL, Action::PrevConsole},  {RawInput::CcR, Action::NextConsole},
+        {RawInput::CcY, Action::Favorite},     {RawInput::CcX, Action::Search},
+        {RawInput::CcPlus, Action::Options},   {RawInput::CcHome, Action::Home},
+    };
+    for (const Row& r : rows) {
+        InputMapper m;
+        const InputFrame f = m.update(held(r.btn), kDt);
+        CHECK(f.pressed(r.a));
+        CHECK(f.actions == (1u << static_cast<nl::u32>(r.a)));  // genau diese eine Aktion
+    }
+}
+
+TEST_CASE("Classic + löst Optionen aus, aber nicht NextConsole") {
+    InputMapper m;
+    const InputFrame f = m.update(held(RawInput::CcPlus), kDt);
+    CHECK(f.pressed(Action::Options));
+    CHECK_FALSE(f.pressed(Action::NextConsole));
+}
+
+TEST_CASE("Wiimote + löst NextConsole und Optionen aus") {
+    InputMapper m;
+    const InputFrame f = m.update(held(RawInput::Plus), kDt);
+    CHECK(f.pressed(Action::NextConsole));
+    CHECK(f.pressed(Action::Options));
+}
+
+TEST_CASE("Classic ZL+ZR löst DebugToggle einmal aus, erneut erst nach Loslassen") {
+    InputMapper m;
+    const nl::u64 both = RawInput::CcZL | RawInput::CcZR;
+    CHECK(countAction(m, held(both), Action::DebugToggle, 30) == 1);
+    CHECK(countAction(m, held(RawInput::CcZL), Action::DebugToggle, 5) == 0);  // ZR los, ZL gehalten
+    m.update(RawInput{}, kDt);
+    CHECK(countAction(m, held(both), Action::DebugToggle, 5) == 1);
+}
+
+TEST_CASE("Classic ZL oder ZR einzeln und Classic − sind unbelegt") {
+    for (nl::u64 b : {RawInput::CcZL, RawInput::CcZR, RawInput::CcMinus}) {
+        InputMapper m;
+        for (int i = 0; i < 3; ++i) CHECK(m.update(held(b), kDt).actions == 0);
+        CHECK(m.update(RawInput{}, kDt).actions == 0);
+    }
+}
+
+TEST_CASE("Classic abstecken: Bits verschwinden, keine Aktion und keine Wiederholung") {
+    InputMapper m;
+    CHECK(countAction(m, held(RawInput::DRight | RawInput::CcA), Action::Right, 10) == 1);
+    for (int i = 0; i < 60; ++i) CHECK(m.update(RawInput{}, kDt).actions == 0);
+}
+
+TEST_CASE("Classic abstecken während ZL+ZR: kein DebugToggle beim Wiederanstecken ohne neuen Druck") {
+    InputMapper m;
+    const nl::u64 both = RawInput::CcZL | RawInput::CcZR;
+    CHECK(countAction(m, held(both), Action::DebugToggle, 3) == 1);
+    CHECK(m.update(RawInput{}, kDt).actions == 0);
+    CHECK(countAction(m, held(both), Action::DebugToggle, 3) == 1);  // neuer Druck → einmal
 }

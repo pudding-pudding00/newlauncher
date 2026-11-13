@@ -89,14 +89,20 @@ bool isGameSection(std::string_view name, std::string_view id6) {
            ieq(trim(name.substr(kGamePrefix.size())), id6);
 }
 
-// Letzter Wert des Schlüssels über alle passenden Abschnitte (Datei-Reihenfolge).
+// Wert des in der Datei zuletzt stehenden Eintrags des Schlüssels über alle passenden Abschnitte.
 template <typename Match>
 std::optional<std::string> lookup(const IniDoc& doc, Match match, std::string_view key) {
     std::optional<std::string> out;
+    std::size_t best = 0;  // Dateiposition; gleichnamige Abschnitte in anderer Schreibweise liegen getrennt
     for (std::string_view name : doc.sectionNames()) {
         if (!match(name)) continue;
-        for (const auto& [k, v] : doc.entries(name))
-            if (ieq(k, key)) out = lower(trim(v));
+        const auto entries = doc.entries(name);
+        const auto order = doc.entryOrder(name);
+        for (std::size_t i = 0; i < entries.size(); ++i) {
+            if (!ieq(entries[i].first, key) || (out && order[i] < best)) continue;
+            out = lower(trim(entries[i].second));
+            best = order[i];
+        }
     }
     return out;
 }

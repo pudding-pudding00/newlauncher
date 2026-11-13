@@ -129,3 +129,28 @@ TEST_CASE("iniTextRemoveSection entfernt alle gleichnamigen Abschnitte, der Rest
     CHECK(nl::iniTextRemoveSection(in, "game RMGP01") ==
           "[n64_method]\r\nn64/a.z64 = vc\r\n\r\n[emulator]\r\nnes/a.nes = fceugx\r\n");
 }
+
+TEST_CASE("iniTextRemoveSection: abgesetzter Kommentar vor dem nächsten Abschnitt bleibt") {
+    const std::string in = "[n64_method]\na = vc\n\n[game RMGP01]\nvideo = pal60\n\n; Emulatoren\n[emulator]\nb = c\n";
+    CHECK(nl::iniTextRemoveSection(in, "game RMGP01") == "[n64_method]\na = vc\n\n; Emulatoren\n[emulator]\nb = c\n");
+    // Am Dateiende gehört ein Kommentar zum entfernten Abschnitt.
+    CHECK(nl::iniTextRemoveSection("[a]\nx = 1\n[game X]\nv = 1\n\n; Ende\n", "game X") == "[a]\nx = 1\n");
+}
+
+TEST_CASE("iniTextSet/iniTextRemoveSection: UTF-8-BOM vor dem ersten Abschnitt") {
+    const std::string bom = "\xEF\xBB\xBF";
+    CHECK(nl::iniTextSet(bom + "[game RMGP01]\nvideo = pal50\n", "game RMGP01", "video", "pal60") ==
+          bom + "[game RMGP01]\nvideo = pal60\n");
+    CHECK(nl::iniTextRemoveSection(bom + "[game RMGP01]\nvideo = pal50\n[a]\nb = 1\n", "game RMGP01") ==
+          bom + "[a]\nb = 1\n");
+}
+
+TEST_CASE("IniDoc::entryOrder gibt die Dateireihenfolge über gleichnamige Abschnitte") {
+    const nl::IniDoc doc = nl::IniDoc::parse("[A]\nx = 1\n[a]\nx = 2\n[A]\nx = 3\n");
+    const auto upper = doc.entryOrder("A");
+    const auto lower = doc.entryOrder("a");
+    REQUIRE(upper.size() == 2);
+    REQUIRE(lower.size() == 1);
+    CHECK(upper[0] < lower[0]);
+    CHECK(lower[0] < upper[1]);
+}

@@ -23,6 +23,7 @@ void PinScene::open(PinMode mode) {
     hasMessage_ = false;
     closeNext_ = false;
     next_ = nullptr;
+    home_ = nullptr;
     clear();
 }
 
@@ -44,6 +45,7 @@ void PinScene::update(const UiContext&, const InputFrame& in, float, SceneReques
     }
     if (in.pressed(Action::Back) || in.pressed(Action::Home)) {
         out.pop = true;
+        if (in.pressed(Action::Home)) out.push = home_;  // HOME heißt überall HOME-Menü, auch aus der Abfrage
         return;
     }
     char& d = digits_[static_cast<std::size_t>(cursor_)];

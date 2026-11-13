@@ -60,11 +60,16 @@ TEST_CASE("themeFromIni: nur [dark] → light ist komplett Standard") {
     CHECK(bad == std::vector<std::string>{"dark.tile"});
 }
 
-TEST_CASE("themeFromIni: unbekannte Schlüssel werden ignoriert, fehlende sind kein Fehler") {
+TEST_CASE("themeFromIni: unbekannte Schlüssel und Abschnitte werden gemeldet, fehlende sind kein Fehler") {
     std::vector<std::string> bad;
-    const ThemePair p = themeFromIni(IniDoc::parse("[light]\nfoo = #000000\n"), &bad);
-    CHECK(bad.empty());
+    const ThemePair p =
+        themeFromIni(IniDoc::parse("; Kopf\n[light]\nfoo = #000000\n[Dark]\naccent = #000000\n[dark]\n"), &bad);
+    CHECK(bad == std::vector<std::string>{"light.foo", "Dark"});
     CHECK(p.light == lightTheme());
+    CHECK(p.dark == darkTheme());
+    bad.clear();
+    themeFromIni(IniDoc::parse("[light]\naccent = #112233\n"), &bad);
+    CHECK(bad.empty());
 }
 
 TEST_CASE("listThemePacks: nur Ordner mit theme.ini, sortiert, höchstens 32") {
@@ -87,10 +92,17 @@ TEST_CASE("listThemePacks: fehlender themes-Ordner → leer") {
     CHECK(listThemePacks(fs, "sd:/nl").empty());
 }
 
-TEST_CASE("config.ini: [theme] pack, fehlend → leer") {
+TEST_CASE("config.ini: [theme] name (Spec v2 §16), alter Schlüssel pack als Rückfall, fehlend → leer") {
     CHECK(configFromIni(IniDoc::parse("[theme]\nmode = dark\n")).themePack.empty());
+    CHECK(configFromIni(IniDoc::parse("[theme]\nname = smoke\n")).themePack == "smoke");
     CHECK(configFromIni(IniDoc::parse("[theme]\npack = smoke\n")).themePack == "smoke");
-    CHECK(configFromIni(IniDoc::parse("[theme]\npack = ../x\n")).themePack.empty());  // kein Pfad
+    CHECK(configFromIni(IniDoc::parse("[theme]\npack = alt\nname = neu\n")).themePack == "neu");
+    CHECK(configFromIni(IniDoc::parse("[theme]\nname = ../x\n")).themePack.empty());  // kein Pfad
+    Config c;
+    c.themePack = "smoke";
+    const std::string text = configToIniText(c, "[theme]\npack = smoke\n");
+    CHECK(text.find("name = smoke") != std::string::npos);
+    CHECK(text.find("pack") == std::string::npos);  // der alte Schlüssel wird ersetzt, nicht verdoppelt
 }
 
 TEST_CASE("isThemePackName: nur ein Ordnername ohne Pfadteile") {

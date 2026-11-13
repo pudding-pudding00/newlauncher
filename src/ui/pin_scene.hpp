@@ -23,6 +23,7 @@ public:
         next_ = next;
     }
     void reject(Str message);             // Eingabe leeren, Meldung zeigen
+    void setHomeMenu(Scene* home) { home_ = home; }  // nach open(): HOME bricht ab und öffnet dieses Menü
 
     PinMode mode() const { return mode_; }
     std::string_view pinText() const { return {digits_.data(), digits_.size()}; }
@@ -46,6 +47,7 @@ private:
     bool hasMessage_ = false;
     bool closeNext_ = false;
     Scene* next_ = nullptr;
+    Scene* home_ = nullptr;
 };
 
 }  // namespace nl::ui

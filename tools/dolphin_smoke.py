@@ -467,7 +467,7 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             (theme_dir / "theme.ini").write_text(SMOKE_THEME_INI, encoding="utf-8", newline="\n")
             if not args.fresh_data:
                 with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
-                    f.write(f"[theme]\npack = {args.theme_pack}\n")
+                    f.write(f"[theme]\nname = {args.theme_pack}\n")
         if args.config_append and not args.fresh_data:
             with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
                 f.write(_cli_text(args.config_append))

@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <ctime>
 
 #include "core/sha256.hpp"
 
@@ -19,6 +20,15 @@ bool ahbprotDisabled() { return read32(kHwAhbprot) == 0xFFFFFFFFu; }
 
 void randomBytes(std::span<u8> out) {
     Sha256 h;
+    // Feste Anteile (RTC-Zeit, Geräte-ID) machen Salze verschiedener Konsolen und Tage verschieden, auch wenn
+    // der Zeitgeber-Jitter nach dem Einschalten ähnlich ausfällt. Der Jitter bleibt die eigentliche Zufallsquelle.
+    const u64 rtc = static_cast<u64>(std::time(nullptr));
+    u32 device = 0;
+    if (ES_GetDeviceID(&device) < 0) device = 0;
+    u8 seed[12];
+    for (int k = 0; k < 8; ++k) seed[k] = static_cast<u8>(rtc >> (8 * k));
+    for (int k = 0; k < 4; ++k) seed[8 + k] = static_cast<u8>(device >> (8 * k));
+    h.update(seed);
     for (int i = 0; i < 64; ++i) {
         u64 t = gettime();
         // Warten, bis sich der Zeitgeber bewegt hat; die Zahl der Runden schwankt mit Caches und Interrupts.
@@ -36,7 +46,9 @@ void randomBytes(std::span<u8> out) {
 std::optional<WiiParental> readWiiParental() {
     constexpr std::size_t kSize = 0x4000;
     alignas(32) static u8 buf[kSize];
-    if (ISFS_Initialize() < 0) return std::nullopt;  // nand_titles hält ISFS offen; dann ein No-Op
+    // Bewusst ohne ISFS_Deinitialize: ISFS bleibt für die ganze Sitzung offen (nand_titles hält es ebenso);
+    // wii_boot schließt es vor dem IOS-Wechsel. Ist es schon offen, ist der Aufruf ein No-Op.
+    if (ISFS_Initialize() < 0) return std::nullopt;
     const s32 fd = ISFS_Open("/shared2/sys/SYSCONF", ISFS_OPEN_READ);
     if (fd < 0) return std::nullopt;
     const s32 got = ISFS_Read(fd, buf, kSize);

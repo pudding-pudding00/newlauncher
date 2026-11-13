@@ -634,6 +634,7 @@ int main(int argc, char** argv) {
     nl::ui::JumpBar jumpBar(mainScene);
     mainScene.setJumpBar(&jumpBar);
     nl::ui::Keyboard keyboard(mainScene);
+    keyboard.setFilter(&mainScene);  // Filterzeile im Such-Overlay (Spec v2 10.3)
     mainScene.setKeyboard(&keyboard);
     nl::ui::DetailsScene details;
     mainScene.setDetails(&details, &store);
@@ -645,6 +646,23 @@ int main(int argc, char** argv) {
     nl::ui::ParentalScene parentalScene;
     parentalScene.setConfig(&config.parental);
     nl::PinGate pinGate;
+    // Eine Sperre aus dem letzten Lauf gilt weiter (Neustart umgeht die 30 s nicht). Höchstens 30 s, falls die
+    // Uhr seitdem zurückgestellt wurde.
+    if (const std::time_t t = std::time(nullptr); t > 0 && config.parental.lockUntil != 0) {
+        const u32 now = static_cast<u32>(t);
+        const u32 rest = config.parental.lockUntil > now ? std::min<u32>(config.parental.lockUntil - now, 30) : 0;
+        if (rest > 0) {
+            pinGate.blockFor(rest * 1000u, msSince(bootTicks));
+            nl::log::line("NL_PARENTAL locked %u", static_cast<unsigned>(rest));
+        }
+        // Abgelaufen oder zu weit in der Zukunft (Uhr zurückgestellt): auf die gekappte Restzeit kürzen, damit
+        // nicht jeder weitere Start erneut 30 s sperrt.
+        const u32 kept = rest > 0 ? now + rest : 0;
+        if (kept != config.parental.lockUntil) {
+            config.parental.lockUntil = kept;
+            saveConfig();
+        }
+    }
     nl::ParentalConfig parental;
     std::optional<nl::WiiParental> wiiParental;
     bool wiiParentalRead = false;
@@ -1333,6 +1351,7 @@ int main(int argc, char** argv) {
     enum class PinPurpose : u8 { Launch, Parental, Setup };
     PinPurpose pinPurpose = PinPurpose::Launch;
     std::string pinGameKey, pendingLaunchKey;
+    nl::PinUnlock pinUnlock;  // Freigabe für den Neuversuch nach dem Preflight-Hinweis (einmal, kurz, dasselbe Spiel)
     auto launchByKey = [&](const std::string& key) {
         for (const nl::Game& g : store.games())
             if (key == g.key) {
@@ -1349,12 +1368,23 @@ int main(int argc, char** argv) {
         }
         const bool ok = pinGate.submit(nl::checkPin(parental, pin), now);
         nl::log::line(ok ? "NL_PARENTAL ok" : "NL_PARENTAL denied");
+        if (ok && config.parental.lockUntil != 0) {  // richtige PIN: keine Sperre mehr für den nächsten Start
+            config.parental.lockUntil = 0;
+            saveConfig();
+        }
+        if (!ok && pinGate.blocked(now)) {  // dritter Fehler: Sperrende merken, damit ein Neustart sie nicht aufhebt
+            if (const std::time_t t = std::time(nullptr); t > 0) {
+                config.parental.lockUntil = static_cast<u32>(t) + 30u;
+                saveConfig();
+            }
+        }
         return ok;
     };
     // fromScene: die PIN-Szene ist offen und schließt erst im nächsten Frame; Folgeszenen öffnen danach.
     auto runPinPurpose = [&](bool fromScene) {
         switch (pinPurpose) {
             case PinPurpose::Launch:
+                pinUnlock.grant(pinGameKey, msSince(bootTicks));
                 if (fromScene) {
                     pendingLaunchKey = pinGameKey;  // startet, sobald die PIN-Szene weg ist
                     pinScene.accept();
@@ -1381,11 +1411,15 @@ int main(int argc, char** argv) {
             return;
         }
         pinScene.open(nl::ui::PinMode::Verify);
+        // HOME öffnet das HOME-Menü nur dort, wo es das ohne Abfrage auch täte: direkt über der Spieleliste.
+        pinScene.setHomeMenu(scenes.top() == &mainScene ? &homeMenu : nullptr);
         scenes.push(&pinScene);
         nl::log::line("NL_PARENTAL ask");
     };
     auto requestLaunch = [&](const nl::Game& game) {
-        if (mainScene.isGameLocked(game)) askPin(PinPurpose::Launch, game.key);
+        // Zweites A nach dem Preflight-Hinweis: dieselbe Freigabe gilt noch, keine zweite PIN.
+        const bool retry = pinUnlock.consume(game.key, msSince(bootTicks)) && warnedLaunch == game.key;
+        if (mainScene.isGameLocked(game) && !retry) askPin(PinPurpose::Launch, game.key);
         else launchGame(game);
     };
     auto runPendingAutostart = [&]() {

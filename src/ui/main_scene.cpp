@@ -142,6 +142,8 @@ void MainScene::applyCurrentFilter(std::string_view keepKey) {
     const Categories& cats = cats_ != nullptr ? *cats_ : kNoCategories;
     const LibraryStore* favs = store_ != nullptr ? store_ : detailsStore_;
     choices_ = filterChoices(base_, cats);
+    // Ein Genre ohne Treffer fehlt in filterChoices; es bleibt wählbar, damit die Zeile nicht „Alle“ zeigt.
+    if (std::find(choices_.begin(), choices_.end(), filter_) == choices_.end()) choices_.push_back(filter_);
     filtered_ = applyFilter(base_, filter_, favs, cats);
     games_ = filtered_;
     const GridMetrics m = gridMetrics(gridWidth_);
@@ -232,6 +234,7 @@ void MainScene::setQuery(std::string_view query) {
     const std::string folded = foldForSearch(query);
     if (folded.empty()) {
         if (!searchActive_) return;
+        const GameFilter kept = filter_;  // Tastatur kann noch offen sein: Filter der Zeile bleibt
         searchActive_ = false;
         searchResults_.clear();
         rebuildBar();
@@ -245,12 +248,18 @@ void MainScene::setQuery(std::string_view query) {
             }
         }
         selectBar(index, gridWidth_, gridHeight_);
+        if (!(filter_ == kept)) {
+            filter_ = kept;
+            applyCurrentFilter({});
+        }
         return;
     }
-    if (!searchActive_) {
+    const bool starting = !searchActive_;
+    if (starting) {
         entryBeforeSearch_ = bar_[barIndex_];
         searchActive_ = true;
     }
+    const GameFilter carried = filter_;  // Filter aus dem Overlay gilt auch für die Treffer
     searchQuery_.assign(query);
     std::snprintf(searchLabel_, sizeof searchLabel_, "%s: %s", tr(Str::Search), searchQuery_.c_str());
     searchResults_.clear();
@@ -260,6 +269,10 @@ void MainScene::setQuery(std::string_view query) {
                      [](const Game* a, const Game* b) { return compareTitles(a->title, b->title) < 0; });
     rebuildBar();
     selectBar(0, gridWidth_, gridHeight_);
+    if (starting && !(filter_ == carried)) {
+        filter_ = carried;
+        applyCurrentFilter({});
+    }
     infoGame_ = nullptr;
 }
 

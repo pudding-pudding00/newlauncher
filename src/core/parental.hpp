@@ -29,6 +29,7 @@ struct ParentalConfig {
     u8 maxAge = 18;  // 255 = keine Grenze (nur aus dem Wii-Jugendschutz)
     bool lockUnrated = false;
     bool useWii = false;  // Stufe und PIN aus SYSCONF IPL.PC
+    u32 lockUntil = 0;    // Unix-Sekunden: PIN-Sperre läuft bis dahin, auch über einen Neustart (0 = keine)
     bool operator==(const ParentalConfig&) const = default;
 };
 
@@ -42,7 +43,7 @@ ParentalConfig withPin(ParentalConfig c, std::string_view pin, std::span<const u
 ParentalConfig withoutPin(ParentalConfig c);
 
 // Gesperrt, wenn lockedFlag, oder bewertet im gewählten System mit age > maxAge, oder unbewertet und
-// lockUnrated. Eine Bewertung in einem anderen System zählt als unbewertet. Ohne PIN nie gesperrt.
+// lockUnrated. Alter ist in Jahren normiert, daher gilt auch eine Bewertung aus einem anderen System. Ohne PIN nie gesperrt.
 bool isLocked(const ParentalConfig& c, const Rating& r, bool lockedFlag);
 
 // 3 falsche PINs → 30 s keine Eingabe (nicht die Konsole). Millisekunden-Uhr darf überlaufen.
@@ -51,11 +52,29 @@ public:
     bool submit(bool ok, u32 nowMs);  // true = PIN angenommen
     bool blocked(u32 nowMs) const;
     u32 remainingMs(u32 nowMs) const;
+    void blockFor(u32 ms, u32 nowMs);  // Sperre von außen (Restzeit nach Neustart); 0 = keine
 
 private:
     u8 fails_ = 0;
     bool active_ = false;
     u32 until_ = 0;
+};
+
+// Freigabe nach richtiger PIN für den Neuversuch nach dem Preflight-Hinweis (M17-Review): gilt genau einmal,
+// nur für dasselbe Spiel und nur kurz, damit eine stehengebliebene Freigabe später keinen Start ohne PIN erlaubt.
+class PinUnlock {
+public:
+    static constexpr u32 kWindowMs = 60000;
+    void grant(std::string key, u32 nowMs) {
+        key_ = std::move(key);
+        at_ = nowMs;
+    }
+    bool consume(std::string_view key, u32 nowMs);  // true = Start ohne PIN; verbraucht die Freigabe immer
+    void clear() { key_.clear(); }
+
+private:
+    std::string key_;
+    u32 at_ = 0;
 };
 
 // Zeilen der Kindersicherungs-Szene (M17). Pin und RemovePin lösen etwas aus, der Rest ändert einen Wert.

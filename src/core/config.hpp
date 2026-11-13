@@ -28,7 +28,7 @@ struct Config {
     int usbTimeoutSec = 15;
     ThemeMode themeMode = ThemeMode::Light;
     int darkFromMin = 19 * 60, darkToMin = 7 * 60;
-    std::string themePack;  // [theme] pack (M17): Ordner unter <data>/themes, leer = Standard
+    std::string themePack;  // [theme] name (Spec v2 §16; M16-Schlüssel pack wird noch gelesen): Ordner unter <data>/themes, leer = Standard
     bool music = true;
     int musicVolume = 60;
     bool sounds = true;

@@ -38,7 +38,7 @@ Rect JumpBar::filterRect(const UiContext& ctx) const {
 void JumpBar::stepFilter(int dir, SceneRequests& out) {
     const int n = target_.filterCount();
     if (n <= 0) return;
-    target_.setFilterIndex(((target_.filterIndex() + dir) % n + n) % n);
+    target_.setFilterIndex(stepFilterIndex(target_.filterIndex(), dir, n));
     out.sound = UiSound::Move;
 }
 

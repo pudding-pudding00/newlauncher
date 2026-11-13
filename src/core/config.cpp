@@ -92,7 +92,10 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     else if (mode == "auto") c.themeMode = ThemeMode::Auto;
     c.darkFromMin = parseClock(ini.get("theme", "dark_from"), c.darkFromMin);
     c.darkToMin = parseClock(ini.get("theme", "dark_to"), c.darkToMin);
-    if (const std::string_view pack = trim(ini.get("theme", "pack")); isThemePackName(pack)) c.themePack = std::string(pack);
+    // Spec v2 §16: [theme] name; pack ist der Schlüssel aus M16 und gilt nur, wenn name fehlt.
+    std::string_view pack = trim(ini.get("theme", "name"));
+    if (pack.empty()) pack = trim(ini.get("theme", "pack"));
+    if (isThemePackName(pack)) c.themePack = std::string(pack);
 
     c.music = parseIntIn(ini.get("audio", "music"), 0, 1, 1) == 1;
     c.musicVolume = parseIntIn(ini.get("audio", "music_volume"), 0, 100, c.musicVolume);
@@ -148,7 +151,7 @@ std::vector<IniValue> configValues(const Config& c) {
         {"theme", "mode", mode},
         {"theme", "dark_from", formatClock(c.darkFromMin)},
         {"theme", "dark_to", formatClock(c.darkToMin)},
-        {"theme", "pack", c.themePack},
+        {"theme", "name", c.themePack},
         {"audio", "music", c.music ? "1" : "0"},
         {"audio", "music_volume", std::to_string(std::clamp(c.musicVolume, 0, 100))},
         {"audio", "sounds", c.sounds ? "1" : "0"},
@@ -187,6 +190,8 @@ std::string configToIniText(const Config& c, std::string_view previousText) {
         }
         if (eq != std::string_view::npos && line.front() != ';' && line.front() != '#') {
             const std::string_view key = trim(line.substr(0, eq));
+            // Die Test-PIN steht im Klartext da und wird nie zurückgeschrieben; [theme] pack heißt jetzt name.
+            if ((section == "debug" && key == "pin_input") || (section == "theme" && key == "pack")) continue;
             auto it = std::find_if(values.begin(), values.end(),
                                    [&](const IniValue& v) { return section == v.section && key == v.key; });
             if (it != values.end()) {

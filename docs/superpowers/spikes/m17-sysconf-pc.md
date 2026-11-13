@@ -45,7 +45,7 @@
 
 - `core/parental`: `sysconfItem(file, "IPL.PC")` findet die Nutzdaten in der Datei; `parseIplPc(payload)` liefert aktiv, Stelle, Alter und PIN. Alles ohne `<ogc/...>`, Host-getestet mit einer erzeugten `SYSCONF`-Fixture.
 - `platform`: liest die Datei per ISFS (`/shared2/sys/SYSCONF`, nur lesend). Der Launcher schreibt nie in `SYSCONF`.
-- Mit `use_wii = 1` gelten Stufe und PIN der Wii; die Wii-PIN wird nur im Speicher mit dem Salz aus `config.ini` gehasht und nie geloggt. Ist der Jugendschutz der Wii aus, ist auch die Kindersicherung des Launchers aus.
+- Mit `use_wii = 1` gelten Stufe und PIN der Wii; die Wii-PIN wird nur im Speicher gehasht, mit einem Zufallssalz, das bei jedem Start neu entsteht (nicht das Salz aus `config.ini`), und nie geloggt. Ist der Jugendschutz der Wii aus, ist auch die Kindersicherung des Launchers aus.
 - Altersstufe 20 = keine Einschränkung → `maxAge = 255`.
 
 ## Offen für die Hardware-Abnahme (W7)

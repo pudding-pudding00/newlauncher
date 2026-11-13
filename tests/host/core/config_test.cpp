@@ -342,3 +342,23 @@ TEST_CASE("Config: [parental] lesen und schreiben, [debug] pin_input (M17)") {
     CHECK(r.parental.system == RatingSystem::Usk);
     CHECK(configFromIni(IniDoc::parse("[debug]\npin_input = 0000\n")).debugPinInput == "0000");
 }
+
+TEST_CASE("Config: [debug] pin_input wird beim Schreiben entfernt, andere debug-Zeilen bleiben") {
+    const Config c = configFromIni(IniDoc::parse("[debug]\npin_input = 1234\nperf = 1\n"));
+    const std::string text = configToIniText(c, "[debug]\npin_input = 1234\nperf = 1\n");
+    CHECK(text.find("pin_input") == std::string::npos);
+    CHECK(text.find("1234") == std::string::npos);
+    CHECK(text.find("perf = 1") != std::string::npos);
+}
+
+TEST_CASE("Config: [parental] lock_until übersteht das Schreiben, 0 = leer") {
+    Config c;
+    CHECK(configFromIni(IniDoc::parse("")).parental.lockUntil == 0);
+    c.parental.lockUntil = 1762700030;
+    const std::string text = configToIniText(c, "");
+    CHECK(text.find("lock_until = 1762700030") != std::string::npos);
+    CHECK(configFromIni(IniDoc::parse(text)).parental.lockUntil == 1762700030u);
+    c.parental.lockUntil = 0;
+    CHECK(configToIniText(c, "").find("lock_until = \n") != std::string::npos);
+    CHECK(configFromIni(IniDoc::parse("[parental]\nlock_until = x\n")).parental.lockUntil == 0);
+}

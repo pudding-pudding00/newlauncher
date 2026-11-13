@@ -23,11 +23,10 @@ struct Pending {
     std::string key;
     std::optional<u32> starts;
     std::optional<u32> last;
-    bool bad = false;
 };
 
 void commit(std::map<std::string, PlayStat, std::less<>>& out, const Pending& p) {
-    if (p.key.empty() || p.bad || !p.starts || *p.starts == 0) return;
+    if (p.key.empty() || !p.starts || *p.starts == 0) return;
     out[p.key] = PlayStat{*p.starts, p.last.value_or(0)};
 }
 
@@ -64,11 +63,9 @@ PlayStats PlayStats::fromText(std::string_view text) {
         if (eq == std::string_view::npos) continue;
         const std::string_view name = trim(line.substr(0, eq));
         const std::optional<u32> value = parseU32(line.substr(eq + 1));
-        if (name == "starts" || name == "last") {
-            if (!value) cur.bad = true;
-            else if (name == "starts") cur.starts = value;
-            else cur.last = value;
-        }
+        if (!value) continue;  // kaputte Zeile: nur sie fällt weg, nicht der ganze Eintrag
+        if (name == "starts") cur.starts = value;
+        else if (name == "last") cur.last = value;
     }
     if (inSection) commit(r.stats_, cur);
     return r;

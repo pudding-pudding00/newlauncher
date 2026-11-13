@@ -12,6 +12,7 @@ constexpr const char* kRows[5] = {"1234567890", "QWERTZUIOP", "ASDFGHJKL", "YXCV
 constexpr int kRowCount = 5;
 constexpr float kKeyW = 44.0f, kKeyH = 40.0f, kGap = 6.0f, kInfoBarH = 72.0f;
 constexpr float kSpecialW[3] = {180.0f, 120.0f, 120.0f};
+constexpr float kFilterH = 36.0f;
 
 int rowLength(int r) {
     int n = 0;
@@ -70,10 +71,21 @@ Rect Keyboard::keyRect(const UiContext& ctx, int index) const {
     return Rect{x0 + static_cast<float>(col) * (kKeyW + kGap), y, kKeyW, kKeyH};
 }
 
+Rect Keyboard::filterRect(const UiContext& ctx) const {
+    const float w = ctx.width / 2;
+    return Rect{(ctx.width - w) / 2, panelTop(ctx) - 8 - kFilterH, w, kFilterH};
+}
+
 void Keyboard::onEnter() {
     text_.clear();
     focus_ = 0;
+    filterRow_ = false;
     keysSincePointerMove_ = false;
+}
+
+void Keyboard::stepFilter(int dir, SceneRequests& out) {
+    filter_->setFilterIndex(stepFilterIndex(filter_->filterIndex(), dir, filter_->filterCount()));
+    out.sound = UiSound::Move;
 }
 
 void Keyboard::press(int key, SceneRequests& out) {
@@ -94,19 +106,42 @@ void Keyboard::press(int key, SceneRequests& out) {
 
 void Keyboard::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
     FocusSound sound(out, focus_);
+    const bool filterOn = hasFilter();
+    if (!filterOn) filterRow_ = false;
     int hit = -1;
+    bool hitFilter = false;
     if (in.pointerValid) {
         for (int i = 0; i < keyCount() && hit < 0; ++i)
             if (contains(keyRect(ctx, i), in.pointerX, in.pointerY)) hit = i;
+        hitFilter = filterOn && contains(filterRect(ctx), in.pointerX, in.pointerY);
         if (in.pointerMoved) {
-            if (hit >= 0) focus_ = hit;
+            if (hit >= 0) {
+                focus_ = hit;
+                filterRow_ = false;
+            } else if (hitFilter && !filterRow_) {
+                filterRow_ = true;
+                out.sound = UiSound::Move;  // FocusSound sieht nur focus_
+            }
             keysSincePointerMove_ = false;
         }
     }
     const int r = row(focus_);
-    if (in.pressed(Action::Left) && focus_ > rowStart(r)) --focus_;
-    if (in.pressed(Action::Right) && focus_ < rowStart(r) + rowLength(r) - 1) ++focus_;
-    if (in.pressed(Action::Up) || in.pressed(Action::Down)) {
+    const bool wasFilterRow = filterRow_;
+    if (filterRow_) {
+        if (in.pressed(Action::Left)) stepFilter(-1, out);
+        if (in.pressed(Action::Right)) stepFilter(1, out);
+        if (in.pressed(Action::Down)) {
+            filterRow_ = false;  // zurück auf die zuletzt gewählte Taste
+            out.sound = UiSound::Move;
+        }
+    } else if (in.pressed(Action::Up) && r == 0 && filterOn) {
+        filterRow_ = true;
+        out.sound = UiSound::Move;
+    } else {
+        if (in.pressed(Action::Left) && focus_ > rowStart(r)) --focus_;
+        if (in.pressed(Action::Right) && focus_ < rowStart(r) + rowLength(r) - 1) ++focus_;
+    }
+    if (!wasFilterRow && !filterRow_ && (in.pressed(Action::Up) || in.pressed(Action::Down))) {
         const int target = in.pressed(Action::Up) ? r - 1 : r + 1;
         if (target >= 0 && target < kRowCount) {
             const Rect cur = keyRect(ctx, focus_);
@@ -131,8 +166,12 @@ void Keyboard::update(const UiContext& ctx, const InputFrame& in, float, SceneRe
         out.pop = true;
         return;
     }
-    const bool pointerOff = in.pointerValid && hit < 0 && !keysSincePointerMove_;
+    const bool pointerOff = in.pointerValid && hit < 0 && !hitFilter && !keysSincePointerMove_;
     if (in.pressed(Action::Confirm) && !pointerOff) {
+        if (filterRow_) {
+            stepFilter(1, out);  // A blättert weiter, die Tastatur bleibt offen
+            return;
+        }
         press(focus_, out);
         out.sound = UiSound::Confirm;
     }
@@ -154,9 +193,19 @@ void Keyboard::draw(const UiContext& ctx, gfx::DrawList& dl) {
                           shown, text_.empty() ? t.textMuted : t.text);
 
     const gfx::FontFace& f = ctx.fonts->face(gfx::FontSize::Body, gfx::FontWeight::Medium);
+    if (hasFilter()) {  // wie in der A–Z-Leiste
+        const Rect r = filterRect(ctx);
+        gfx::roundRect(dl, s, r, 10, filterRow_ ? t.accent : t.bar);
+        const std::string label =
+            std::string(tr(Str::Filter)) + ":  < " + filter_->filterLabel(filter_->filterIndex()) + " >";
+        const float w = gfx::measureText(f, label.c_str());
+        const float x = w < r.w - 16 ? r.x + (r.w - w) / 2 : r.x + 8;
+        gfx::drawTextEllipsis(dl, f, x, r.y + r.h / 2 + (f.ascent - f.descent) / 2, r.w - 16, label.c_str(),
+                              filterRow_ ? t.onAccent : t.text);
+    }
     for (int i = 0; i < keyCount(); ++i) {
         const Rect r = keyRect(ctx, i);
-        const bool focused = i == focus_;
+        const bool focused = i == focus_ && !filterRow_;
         gfx::roundRect(dl, s, r, 8, focused ? t.accent : t.tile);
         const char c = keyChar(i);
         char single[2] = {c, '\0'};

@@ -515,3 +515,25 @@ TEST_CASE_FIXTURE(Fixture, "Klänge: rechts → Move, ohne Wirkung still, HOME �
     s.setHomeMenu(&home);
     CHECK(step(s, action(Action::Home)).sound == UiSound::Open);
 }
+
+TEST_CASE_FIXTURE(Fixture, "Hintergrundbild: ein Quad mit kBackgroundTexture über den ganzen Bildschirm, ohne Bild keiner") {
+    const Library lib = testLibrary();
+    MainScene s(lib);
+    step(s, InputFrame{});
+    auto countBg = [&]() {
+        dl.clear();
+        s.draw(ctx, dl);
+        int n = 0;
+        for (const gfx::Batch& b : dl.batches())
+            if (b.texture == gfx::kBackgroundTexture) n += static_cast<int>(b.vertexCount);
+        return n;
+    };
+    CHECK(countBg() == 0);
+    ctx.background = true;
+    ctx.backgroundU1 = 0.5f;
+    ctx.backgroundV1 = 1.0f;
+    CHECK(countBg() == 4);
+    const gfx::Batch& first = dl.batches()[1];  // direkt nach der Grundfläche
+    CHECK(first.texture == gfx::kBackgroundTexture);
+    CHECK(dl.vertices()[first.firstVertex + 2].u == doctest::Approx(0.5f));
+}

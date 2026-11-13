@@ -13,6 +13,8 @@ class Renderer {
 public:
     Result<void> init(platform::Video& video);
     void setAtlas(const UiAtlas& atlas);
+    // Hintergrund (RGB5A3, 32-Byte-ausgerichtet, vom Aufrufer gehalten); nullptr: Batches mit kBackgroundTexture entfallen.
+    void setBackground(const void* texels, u16 width, u16 height);
 
     float logicalWidth() const { return logicalWidth_; }
     float logicalHeight() const { return 480.0f; }
@@ -34,6 +36,7 @@ private:
     int next_ = 1;
     bool efbCleared_ = false;
     u32 coverGeneration_ = 0;
+    const void* background_ = nullptr;
     u32 drawCalls_ = 0, drawCallsLast_ = 0, textureBytes_ = 0;
 };
 

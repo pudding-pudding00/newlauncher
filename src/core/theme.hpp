@@ -12,6 +12,8 @@ enum class ThemeMode : u8 { Light, Dark, Auto };
 struct Theme {
     Color bg, bar, barBorder, tile, tileFocus, text, text2, textMuted, accent, onAccent,
         accentSoft, accentSoftText, overlayDim, danger;  // danger: schwacher Akku
+
+    friend constexpr bool operator==(const Theme&, const Theme&) = default;
 };
 
 const Theme& lightTheme();
@@ -28,6 +30,8 @@ inline constexpr float kThemeTransitionMs = 200.0f;
 class ThemeState {
 public:
     void setTarget(bool dark, bool animate);
+    // Theme-Paket (M17): ersetzt die Standardfarben; ein laufender Übergang mischt ab jetzt die neuen.
+    void setThemes(const Theme& light, const Theme& dark);
     void update(float dtMs);
     const Theme& current() const { return current_; }
     bool dark() const { return dark_; }
@@ -37,6 +41,7 @@ private:
 
     bool dark_ = false;
     Tween mix_;  // 0 = hell, 1 = dunkel
+    Theme lightTheme_ = lightTheme(), darkTheme_ = darkTheme();
     Theme current_ = lightTheme();
 };
 

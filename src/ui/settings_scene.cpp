@@ -13,10 +13,10 @@ using gfx::FontSize;
 using gfx::FontWeight;
 using gfx::Rect;
 
-constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 21.0f, kHelpH = 24.0f;  // 18 Zeilen in 480
+constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 20.0f, kHelpH = 24.0f;  // 19 Zeilen in 480
 
 const Str kLabels[SettingsScene::kCount] = {
-    Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo,  Str::Music,       Str::Volume,
+    Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo, Str::ThemePack,  Str::Music,       Str::Volume,
     Str::Sounds,   Str::LibraryDevice, Str::CoverRegion, Str::Rescan, Str::FetchCovers, Str::VcMapTitle,
     Str::Emulators, Str::WiiGames, Str::GcGames, Str::Setup, Str::SysInfo, Str::About,
 };
@@ -26,7 +26,7 @@ bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y 
 bool sameSettings(const Config& a, const Config& b) {
     return a.language == b.language && a.library == b.library && a.libraryRules.sources == b.libraryRules.sources &&
            a.usbTimeoutSec == b.usbTimeoutSec &&
-           a.themeMode == b.themeMode && a.darkFromMin == b.darkFromMin && a.darkToMin == b.darkToMin &&
+           a.themeMode == b.themeMode && a.themePack == b.themePack && a.darkFromMin == b.darkFromMin && a.darkToMin == b.darkToMin &&
            a.music == b.music && a.musicVolume == b.musicVolume && a.sounds == b.sounds &&
            a.coverRegion == b.coverRegion;
 }
@@ -79,7 +79,11 @@ std::string valueText(const Config& c, SettingRow r) {
 }
 }  // namespace
 
-std::string SettingsScene::valueTextFor(SettingRow row) const { return live_ != nullptr ? valueText(*live_, row) : std::string(); }
+std::string SettingsScene::valueTextFor(SettingRow row) const {
+    if (live_ == nullptr) return {};
+    if (row == SettingRow::ThemePack) return live_->themePack.empty() ? std::string(tr(Str::ThemePackDefault)) : live_->themePack;
+    return valueText(*live_, row);
+}
 
 void SettingsScene::onEnter() {
     focus_ = 0;
@@ -163,7 +167,8 @@ void SettingsScene::update(const UiContext& ctx, const InputFrame& in, float, Sc
     if (in.pressed(Action::Right) || (in.pressed(Action::Confirm) && !pointerOff)) dir = 1;
     else if (in.pressed(Action::Left)) dir = -1;
     if (dir != 0 && settingEnabled(*live_, row)) {
-        stepSetting(*live_, row, dir);
+        if (row == SettingRow::ThemePack) stepThemePack(*live_, themePacks_, dir);
+        else stepSetting(*live_, row, dir);
         out.command = AppCommand::SettingsChanged;
     }
 }
@@ -190,7 +195,7 @@ void SettingsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         const float base = r.y + r.h / 2 + (label.ascent - label.descent) / 2;
         const Color fg = enabled ? t.text : t.textMuted;
 
-        std::string v = live_ != nullptr ? valueText(*live_, row) : std::string();
+        std::string v = valueTextFor(row);
         const float vw = v.empty() ? 0.0f : gfx::measureText(value, v);
         float labelMax = r.w - 16 - vw - (vw > 0 ? 12 : 0);
         if (row == SettingRow::Library && restartHintShown()) {

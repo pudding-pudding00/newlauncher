@@ -39,6 +39,7 @@
 #include "core/n64_choice.hpp"
 #include "core/perf_stats.hpp"
 #include "core/theme.hpp"
+#include "core/theme_file.hpp"
 #include "core/vc_map.hpp"
 #include "core/wip_patch.hpp"
 #include "gfx/draw_list.hpp"
@@ -62,6 +63,7 @@
 #include "platform/storage.hpp"
 #include "platform/system.hpp"
 #include "platform/system_probe.hpp"
+#include "platform/theme_loader.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_disc.hpp"
 
@@ -350,6 +352,28 @@ int main(int argc, char** argv) {
     theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, config.darkFromMin, config.darkToMin), false);
     ctx.theme = &theme.current();
 
+    // Theme-Paket (M17, Spec v2 10.2): kaputte Werte nehmen den Standard und stehen als NL_THEME_BAD im Log.
+    nl::platform::ThemeBackground themeBackground;
+    std::string appliedThemePack;
+    auto applyThemePack = [&]() {
+        appliedThemePack = config.themePack;
+        renderer.setBackground(nullptr, 0, 0);  // alte Texel nicht mehr zeichnen, bevor sie freigegeben werden
+        const nl::platform::LoadedTheme loaded = data.readable
+            ? nl::platform::loadThemePack(fs, data.dir, config.themePack, themeBackground)
+            : nl::platform::LoadedTheme{};
+        if (!data.readable) themeBackground.reset();
+        theme.setThemes(loaded.pair.light, loaded.pair.dark);
+        renderer.setBackground(themeBackground.texels(), themeBackground.width(), themeBackground.height());
+        ctx.background = themeBackground.texels() != nullptr;
+        ctx.backgroundU1 = themeBackground.u1();
+        ctx.backgroundV1 = themeBackground.v1();
+        if (config.themePack.empty()) return;
+        const nl::Color bar = loaded.pair.light.bar;
+        nl::log::line("NL_THEME %s light.bar=#%02X%02X%02X", config.themePack.c_str(), bar.r, bar.g, bar.b);
+        for (const std::string& b : loaded.bad) nl::log::line("NL_THEME_BAD %s", b.c_str());
+    };
+    applyThemePack();
+
     // Perf (M7, [debug] perf): nur bei Bedarf angelegt; der Ring hält 2 × 4 KiB.
     std::unique_ptr<nl::PerfStats> perf;
     if (config.debugPerf) perf = std::make_unique<nl::PerfStats>(video.refreshHz());
@@ -572,6 +596,7 @@ int main(int argc, char** argv) {
     mainScene.setHomeMenu(&homeMenu);
     nl::ui::SettingsScene settings;
     settings.setConfig(&config);
+    if (data.readable) settings.setThemePacks(nl::listThemePacks(fs, data.dir));
     settings.setActiveSources(libFellBack ? nl::SourceSpec{false, {"sd"}} : sources);
     // Wurzel des Geräts, auf dem ein Spiel liegt ("usb2:"); Game::device zählt in store.devices().
     auto rootOf = [&](const nl::Game& game) {
@@ -1406,6 +1431,7 @@ int main(int argc, char** argv) {
                 }
                 ctx.themeMode = config.themeMode;
                 theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, config.darkFromMin, config.darkToMin), true);
+                if (config.themePack != appliedThemePack) applyThemePack();
                 audio.setSounds(config.sounds);
                 music.setEnabled(config.music);
                 music.setVolume(config.musicVolume);

@@ -120,3 +120,27 @@ TEST_CASE("Zeile Einrichtung steht vor Systeminfo und ist eine Aktion (M13 Task 
     CHECK(static_cast<int>(SettingRow::Setup) + 1 == static_cast<int>(SettingRow::SysInfo));
     CHECK(isAction(SettingRow::Setup));
 }
+
+TEST_CASE("stepThemePack: Standard → Pakete → Standard, rückwärts auch") {
+    Config c;
+    const std::vector<std::string> packs{"alpha", "zeta"};
+    stepThemePack(c, packs, +1);
+    CHECK(c.themePack == "alpha");
+    stepThemePack(c, packs, +1);
+    CHECK(c.themePack == "zeta");
+    stepThemePack(c, packs, +1);
+    CHECK(c.themePack.empty());
+    stepThemePack(c, packs, -1);
+    CHECK(c.themePack == "zeta");
+}
+
+TEST_CASE("stepThemePack: unbekanntes Paket aus config.ini springt auf den Anfang") {
+    Config c;
+    c.themePack = "weg";
+    stepThemePack(c, std::vector<std::string>{"alpha"}, +1);
+    CHECK(c.themePack.empty());
+    stepThemePack(c, std::vector<std::string>{}, +1);
+    CHECK(c.themePack.empty());
+    CHECK(settingEnabled(c, SettingRow::ThemePack));
+    CHECK_FALSE(isAction(SettingRow::ThemePack));
+}

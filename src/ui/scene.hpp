@@ -18,6 +18,8 @@ namespace nl::ui {
 struct UiContext {
     float width = 640.0f, height = 480.0f;
     const Theme* theme = nullptr;
+    bool background = false;           // Theme-Paket hat ein Hintergrundbild (gfx::kBackgroundTexture)
+    float backgroundU1 = 1.0f, backgroundV1 = 1.0f;  // sichtbarer Teil der aufgefüllten Textur
     const gfx::FontSet* fonts = nullptr;
     const gfx::AtlasShapes* shapes = nullptr;
     ThemeMode themeMode = ThemeMode::Auto;

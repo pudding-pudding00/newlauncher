@@ -286,6 +286,43 @@ class DolphinToolsTest(unittest.TestCase):
                     "--timeout", "2"])
         self.assertFalse((data / "games.ini").exists())
 
+    # --- M17: --theme-pack legt ein Fixture-Theme an und verlangt genau eine NL_THEME_BAD-Zeile ---
+    def test_smoke_theme_pack_writes_fixture_and_config(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                    "--timeout", "2", "--theme-pack", "smoke"])
+        data = self.user / "SDSync/newlauncher"
+        ini = (data / "themes/smoke/theme.ini").read_text(encoding="utf-8")
+        self.assertIn("bar = #123456", ini)
+        self.assertIn("bar_border = fff", ini)
+        self.assertIn("[theme]\npack = smoke\n", (data / "config.ini").read_text(encoding="utf-8"))
+
+    def test_smoke_without_theme_pack_removes_stale_themes(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        stale = self.user / "SDSync/newlauncher/themes/alt"
+        stale.mkdir(parents=True, exist_ok=True)
+        (stale / "theme.ini").write_text("[light]\n", encoding="utf-8")
+        smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                    "--timeout", "2"])
+        self.assertFalse((self.user / "SDSync/newlauncher/themes").exists())
+
+    def _theme_run(self, logged: str) -> int:
+        self._fake_dolphin(
+            "import pathlib, time\n"
+            "log = pathlib.Path(__file__).parent / 'Logs' / 'dolphin.log'\n"
+            "log.parent.mkdir(parents=True, exist_ok=True)\n"
+            f"log.write_text({logged!r})\n"
+            "time.sleep(60)\n")
+        return smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                           "--timeout", "5", "--theme-pack", "smoke", "--marker", "NL_THEME smoke"])
+
+    def test_smoke_theme_pack_accepts_exactly_one_bad_line(self):
+        self.assertEqual(self._theme_run("NL_THEME smoke light.bar=#123456\nNL_THEME_BAD light.bar_border\n"), 0)
+
+    def test_smoke_theme_pack_fails_on_two_bad_lines(self):
+        self.assertEqual(self._theme_run("NL_THEME smoke light.bar=#123456\nNL_THEME_BAD light.bar_border\n"
+                                         "NL_THEME_BAD light.accent\n"), 1)
+
     def test_smoke_tls_requires_a_server(self):
         with mock.patch("sys.stderr"), self.assertRaises(SystemExit) as cm:
             smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),

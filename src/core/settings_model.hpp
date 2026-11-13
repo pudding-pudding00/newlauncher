@@ -4,6 +4,9 @@
 #include "core/config.hpp"
 #include "core/types.hpp"
 
+#include <span>
+#include <string>
+
 namespace nl {
 
 enum class SettingRow : u8 {
@@ -11,6 +14,7 @@ enum class SettingRow : u8 {
     Theme,
     DarkFrom,
     DarkTo,
+    ThemePack,  // Theme-Paket aus <data>/themes (M17)
     Music,
     Volume,
     Sounds,
@@ -33,5 +37,7 @@ bool isAction(SettingRow r);  // Rescan, FetchCovers, VcMap, Emulators, WiiGames
 void stepSetting(Config& c, SettingRow r, int dir);
 // DarkFrom/DarkTo nur bei ThemeMode::Auto, Volume nur bei eingeschalteter Musik.
 bool settingEnabled(const Config& c, SettingRow r);
+// ThemePack: Standard (leer) → packs[0] → … → Standard; ein unbekanntes Paket gilt als Standard.
+void stepThemePack(Config& c, std::span<const std::string> packs, int dir);
 
 }  // namespace nl

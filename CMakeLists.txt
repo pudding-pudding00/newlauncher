@@ -20,6 +20,8 @@ include(cmake/NlAboutEntries.cmake)
 add_library(nl_core STATIC
     src/core/assert.cpp
     src/core/theme.cpp
+    src/core/theme_file.cpp
+    src/core/rgb5a3.cpp
     src/core/console.cpp
     src/core/frame_stats.cpp
     src/core/crash_report.cpp
@@ -250,6 +252,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/std_fs.cpp
         src/platform/scan_worker.cpp
         src/platform/png_decode.cpp
+        src/platform/theme_loader.cpp
         src/platform/cover_worker.cpp
         src/platform/http_client.cpp
         src/platform/net_service.cpp

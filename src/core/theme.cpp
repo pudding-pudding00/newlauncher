@@ -81,6 +81,12 @@ void ThemeState::update(float dtMs) {
     recompute();
 }
 
-void ThemeState::recompute() { current_ = lerp(kLight, kDark, mix_.value()); }
+void ThemeState::setThemes(const Theme& light, const Theme& dark) {
+    lightTheme_ = light;
+    darkTheme_ = dark;
+    recompute();
+}
+
+void ThemeState::recompute() { current_ = lerp(lightTheme_, darkTheme_, mix_.value()); }
 
 }  // namespace nl

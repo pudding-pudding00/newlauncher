@@ -7,6 +7,7 @@
 #include "core/cios_scan.hpp"
 #include "core/emu_catalog.hpp"
 #include "core/http.hpp"
+#include "core/theme_file.hpp"
 
 namespace nl {
 
@@ -88,6 +89,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     else if (mode == "auto") c.themeMode = ThemeMode::Auto;
     c.darkFromMin = parseClock(ini.get("theme", "dark_from"), c.darkFromMin);
     c.darkToMin = parseClock(ini.get("theme", "dark_to"), c.darkToMin);
+    if (const std::string_view pack = trim(ini.get("theme", "pack")); isThemePackName(pack)) c.themePack = std::string(pack);
 
     c.music = parseIntIn(ini.get("audio", "music"), 0, 1, 1) == 1;
     c.musicVolume = parseIntIn(ini.get("audio", "music_volume"), 0, 100, c.musicVolume);
@@ -141,6 +143,7 @@ std::vector<IniValue> configValues(const Config& c) {
         {"theme", "mode", mode},
         {"theme", "dark_from", formatClock(c.darkFromMin)},
         {"theme", "dark_to", formatClock(c.darkToMin)},
+        {"theme", "pack", c.themePack},
         {"audio", "music", c.music ? "1" : "0"},
         {"audio", "music_volume", std::to_string(std::clamp(c.musicVolume, 0, 100))},
         {"audio", "sounds", c.sounds ? "1" : "0"},

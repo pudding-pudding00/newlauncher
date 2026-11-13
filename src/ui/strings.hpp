@@ -21,6 +21,8 @@
     X(HomeCloses, "HOME schließt", "HOME closes") \
     X(NoGames, "Keine Spiele", "No games") \
     X(Appearance, "Darstellung", "Appearance") \
+    X(ThemePack, "Theme-Paket", "Theme pack") \
+    X(ThemePackDefault, "Standard", "Default") \
     X(ThemeLight, "Hell", "Light") \
     X(ThemeDark, "Dunkel", "Dark") \
     X(ThemeAuto, "Automatisch", "Automatic") \

@@ -478,6 +478,9 @@ void MainScene::drawInfoBar(const UiContext& ctx, gfx::DrawList& dl) const {
 void MainScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const Theme& t = *ctx.theme;
     gfx::fillRect(dl, *ctx.shapes, Rect{0, 0, ctx.width, ctx.height}, t.bg);
+    if (ctx.background)  // Hintergrundbild unter allem, auf den ganzen Bildschirm gestreckt
+        dl.quad(gfx::kBackgroundTexture, Rect{0, 0, ctx.width, ctx.height},
+                gfx::UvRect{0.0f, 0.0f, ctx.backgroundU1, ctx.backgroundV1}, Color{255, 255, 255, 255});
 
     const float scroll = scroll_.value();
     const float viewTop = grid_.viewTop(), viewBottom = viewTop + grid_.viewHeight();

@@ -76,3 +76,17 @@ TEST_CASE("danger: Spec-Werte und Kontrast >= 3 zur Leiste") {
     CHECK(contrast(darkTheme().danger, darkTheme().bar) >= 3.0);
     CHECK(lerp(lightTheme(), darkTheme(), 1.0f).danger == darkTheme().danger);
 }
+
+TEST_CASE("ThemeState: eigenes Paar ersetzt hell und dunkel, auch mitten im Übergang") {
+    Theme l = lightTheme(), d = darkTheme();
+    l.bar = Color{1, 2, 3, 255};
+    d.bar = Color{9, 8, 7, 255};
+    ThemeState s;
+    s.setTarget(false, false);
+    s.setThemes(l, d);
+    CHECK(s.current().bar == Color{1, 2, 3, 255});
+    s.setTarget(true, false);
+    CHECK(s.current().bar == Color{9, 8, 7, 255});
+    s.setThemes(lightTheme(), darkTheme());
+    CHECK(s.current() == darkTheme());
+}

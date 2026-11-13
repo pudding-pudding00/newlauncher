@@ -14,7 +14,7 @@ using B = ui::RawInput::Button;
 
 struct Map {
     u32 from;
-    u32 to;
+    u64 to;
 };
 
 constexpr Map kWiimote[] = {
@@ -30,9 +30,23 @@ constexpr Map kGc[] = {
     {PAD_BUTTON_DOWN, B::GcDown},   {PAD_BUTTON_LEFT, B::GcLeft}, {PAD_BUTTON_RIGHT, B::GcRight},
 };
 
+// Classic Controller (auch Classic Pro und Wii-U-Pro, die libogc ebenfalls als WPAD_EXP_CLASSIC
+// meldet) in den oberen 16 Bit von WPAD_ButtonsHeld. Nunchuk und Gitarre nutzen dieselben Bits,
+// deshalb gilt die Tabelle nur bei exp.type == WPAD_EXP_CLASSIC.
+constexpr Map kClassic[] = {
+    {WPAD_CLASSIC_BUTTON_UP, B::DUp},       {WPAD_CLASSIC_BUTTON_DOWN, B::DDown},
+    {WPAD_CLASSIC_BUTTON_LEFT, B::DLeft},   {WPAD_CLASSIC_BUTTON_RIGHT, B::DRight},
+    {WPAD_CLASSIC_BUTTON_A, B::CcA},        {WPAD_CLASSIC_BUTTON_B, B::CcB},
+    {WPAD_CLASSIC_BUTTON_X, B::CcX},        {WPAD_CLASSIC_BUTTON_Y, B::CcY},
+    {WPAD_CLASSIC_BUTTON_FULL_L, B::CcL},   {WPAD_CLASSIC_BUTTON_FULL_R, B::CcR},
+    {WPAD_CLASSIC_BUTTON_ZL, B::CcZL},      {WPAD_CLASSIC_BUTTON_ZR, B::CcZR},
+    {WPAD_CLASSIC_BUTTON_PLUS, B::CcPlus},  {WPAD_CLASSIC_BUTTON_MINUS, B::CcMinus},
+    {WPAD_CLASSIC_BUTTON_HOME, B::CcHome},
+};
+
 template <std::size_t N>
-u32 mapButtons(u32 held, const Map (&table)[N]) {
-    u32 out = 0;
+u64 mapButtons(u32 held, const Map (&table)[N]) {
+    u64 out = 0;
     for (const Map& m : table)
         if (held & m.from) out |= m.to;
     return out;
@@ -46,6 +60,11 @@ void takeStick(ui::RawInput& r, float x, float y) {
         r.stickX = clampUnit(x);
         r.stickY = clampUnit(y);
     }
+}
+// Analogstick von libwiiuse: Winkel 0° = oben, im Uhrzeigersinn; Betrag 0..1.
+void takeJoystick(ui::RawInput& r, const joystick_t& js) {
+    const float ang = js.ang * 3.14159265f / 180.0f;
+    takeStick(r, js.mag * std::sin(ang), js.mag * std::cos(ang));
 }
 }  // namespace
 
@@ -62,13 +81,17 @@ ui::RawInput WiiInput::poll() {
     WPAD_ScanPads();
     PAD_ScanPads();
     for (int chan = 0; chan < 4; ++chan) {
-        r.held |= mapButtons(WPAD_ButtonsHeld(chan), kWiimote);
+        const u32 wpadHeld = WPAD_ButtonsHeld(chan);
+        r.held |= mapButtons(wpadHeld, kWiimote);
         const WPADData* d = WPAD_Data(chan);
         if (d == nullptr) continue;
         if (d->exp.type == WPAD_EXP_NUNCHUK) {
-            const float ang = d->exp.nunchuk.js.ang * 3.14159265f / 180.0f;
-            const float mag = d->exp.nunchuk.js.mag;
-            takeStick(r, mag * std::sin(ang), mag * std::cos(ang));  // 0° = oben, im Uhrzeigersinn
+            takeJoystick(r, d->exp.nunchuk.js);
+        } else if (d->exp.type == WPAD_EXP_CLASSIC) {
+            // Wird der Classic abgesteckt, meldet der nächste Frame einen anderen Typ: die
+            // gehaltenen Classic-Bits fallen mit ihm weg, nichts bleibt hängen.
+            r.held |= mapButtons(wpadHeld, kClassic);
+            takeJoystick(r, d->exp.classic.ljs);
         }
         if (!r.pointerValid && d->ir.valid) {
             r.pointerValid = true;

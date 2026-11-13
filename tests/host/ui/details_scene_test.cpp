@@ -292,3 +292,22 @@ TEST_CASE_FIXTURE(Fixture, "Details: + öffnet die Optionen nur für Wii und Gam
     d.open(nes, false, 0);
     CHECK(step(d, action(Action::Options)).command == AppCommand::None);
 }
+
+TEST_CASE_FIXTURE(Fixture, "Details: Hoch fokussiert „Cheats“ bei Wii und GC, A öffnet die Cheat-Szene (M15)") {
+    DetailsScene d;
+    const Game gc{Console::Gc, "GM8P01", "Metroid Prime", 2002, 1};
+    d.open(gc, false, 0);
+    step(d, action(Action::Up));
+    CHECK(d.focusedButton() == DetailsScene::kFocusCheats);
+    SceneRequests r = step(d, action(Action::Confirm));
+    CHECK(r.command == AppCommand::OpenCheats);
+    REQUIRE(r.game != nullptr);
+    CHECK(std::string(r.game->key) == "GM8P01");
+    step(d, action(Action::Down));
+    CHECK(d.focusedButton() == 0);
+    const Game nes{Console::Nes, "nes/a.nes", "A", 0, 0};
+    d.open(nes, false, 0);
+    step(d, action(Action::Up));
+    CHECK(d.focusedButton() == 0);
+    CHECK(std::string(appCommandName(AppCommand::OpenCheats)) == "open_cheats");
+}

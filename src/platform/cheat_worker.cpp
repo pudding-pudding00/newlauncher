@@ -16,13 +16,14 @@ CheatWorker::~CheatWorker() {
     LWP_MutexDestroy(mutex_);
 }
 
-bool CheatWorker::start(FileSystem& fs, std::string url, std::string id6, std::string destTxt) {
+bool CheatWorker::start(FileSystem& fs, std::string url, std::string id6, std::string destTxt, bool overwrite) {
     if (running_) return false;
     join();
     fs_ = &fs;
     url_ = std::move(url);
     id6_ = std::move(id6);
     dest_ = std::move(destTxt);
+    overwrite_ = overwrite;
     LWP_MutexLock(mutex_);
     result_.reset();
     LWP_MutexUnlock(mutex_);
@@ -75,7 +76,7 @@ void CheatWorker::finish(CheatFetchResult r) {
 
 void CheatWorker::run(const volatile bool& cancel) {
     std::array<u8, 1> probe{};
-    if (fs_->read(dest_, 0, probe).isOk()) return finish(CheatFetchResult::Exists);  // nie überschreiben
+    if (!overwrite_ && fs_->read(dest_, 0, probe).isOk()) return finish(CheatFetchResult::Exists);
 
     const auto url = parseUrl(url_);
     if (!url) {

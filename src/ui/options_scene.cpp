@@ -39,7 +39,8 @@ constexpr KeyLabel kLabels[] = {
     {"force_wide", Str::OptForceWide},  {"wiiu_wide", Str::OptWiiuWide},
     {"memcard", Str::OptMemcard},       {"memcard_blocks", Str::OptMemcardBlocks},
     {"native_si", Str::OptNativeSi},    {"max_pads", Str::OptMaxPads},
-    {"skip_ipl", Str::OptSkipIpl},
+    {"skip_ipl", Str::OptSkipIpl},      {"cheats", Str::OptCheats},
+    {"hook", Str::OptHook},
 };
 
 struct ValueLabel {
@@ -63,6 +64,8 @@ constexpr ValueLabel kWords[] = {
 constexpr std::string_view kFixed[][2] = {
     {"pal50", "PAL 50"}, {"pal60", "PAL 60"},           {"ntsc", "NTSC"},       {"progressive", "480p"},
     {"mpal", "PAL-M"},   {"framebuffer", "Framebuffer"}, {"wiimmfi", "Wiimmfi"},
+    {"vbi", "VBI"},      {"kpad", "KPAD"},              {"joypad", "Joypad"},   {"gxdraw", "GXDraw"},
+    {"gxflush", "GXFlush"}, {"ossleep", "OSSleepThread"}, {"axframe", "AXNextFrame"},
 };
 
 std::string displayValue(std::string_view key, const std::string& v) {

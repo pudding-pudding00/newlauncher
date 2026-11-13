@@ -73,6 +73,14 @@ class MakeFixturesTest(unittest.TestCase):
         hist = (self.out / "newlauncher/history.ini").read_text(encoding="utf-8")
         self.assertIn("1762700000 = n64/Super Mario 64 (Europe) (En,Fr,De).z64", hist)
 
+    def test_cheat_list_for_gc_game(self):
+        # Selbst erzeugte Gecko-Liste (M15): 3 Codes (einer mit Platzhalter), 1 kaputter Block ohne Codezeilen.
+        text = (self.out / "newlauncher/codes/GM8P01.txt").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("GM8P01\nMetroid Prime\n\n"))
+        self.assertIn("Unendlich Energie [Fixture]\n04001000 00000063\n", text)
+        self.assertIn("0400XXXX", text)
+        self.assertIn("\nNur Name\n\n", text)
+
     def test_deploy_copies_fixtures(self):
         sd = Path(self._tmp.name) / "deployed"
         dist = Path(self._tmp.name) / "dist"

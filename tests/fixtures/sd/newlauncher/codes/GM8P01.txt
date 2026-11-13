@@ -1,0 +1,14 @@
+GM8P01
+Metroid Prime
+
+Unendlich Energie [Fixture]
+04001000 00000063
+
+Nur Name
+
+Wert waehlen
+0400XXXX 00000001
+XXXX = Adresse anpassen
+
+Alle Raketen
+04001004 000000FF

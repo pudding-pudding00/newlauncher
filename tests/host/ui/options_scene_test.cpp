@@ -52,24 +52,28 @@ struct Fixture {
 TEST_CASE_FIXTURE(Fixture, "Optionen: geerbter Wert zeigt Standard (…), Befehlsnamen") {
     open(OptionsModel(Console::Wii, "RMGP01", "[wii]\nvideo = pal60\n", ""), "Super Mario Galaxy");
     CHECK(s.isOverlay());
-    CHECK(s.rowCount() == 14);  // 13 Optionen + Zurücksetzen
+    CHECK(s.rowCount() == 16);  // 15 Optionen + Zurücksetzen
     CHECK(s.valueText(rowOf("video")) == "Standard (PAL 60)");
     CHECK(s.labelText(rowOf("video")) == "Videomodus");
-    CHECK(s.labelText(13) == "Auf Standard zurücksetzen");
+    CHECK(s.labelText(15) == "Auf Standard zurücksetzen");
+    CHECK(s.labelText(rowOf("cheats")) == "Cheats");
+    CHECK(s.labelText(rowOf("hook")) == "Cheat-Hook");
+    CHECK(s.valueText(rowOf("hook")) == "Standard (VBI)");
     setLanguage(Lang::En);
     CHECK(s.valueText(rowOf("video")) == "Default (PAL 60)");
+    CHECK(s.labelText(rowOf("hook")) == "Cheat hook");
     CHECK(std::string(appCommandName(AppCommand::OpenOptions)) == "open_options");
     CHECK(std::string(appCommandName(AppCommand::SaveOptions)) == "save_options");
 }
 
 TEST_CASE_FIXTURE(Fixture, "Optionen global: kein Standard (…), Titel nach Konsole") {
     open(OptionsModel(Console::Gc, "", "", ""));
-    CHECK(s.rowCount() == 11);
+    CHECK(s.rowCount() == 12);
     CHECK(s.valueText(rowOf("video")) == "Automatisch");
     CHECK(s.valueText(rowOf("memcard_blocks")) == "251 Blöcke");
     CHECK(s.valueText(rowOf("progressive")) == "Aus");
     CHECK(s.titleText() == "GameCube-Spiele");
-    CHECK(s.labelText(10) == "Zurücksetzen");
+    CHECK(s.labelText(11) == "Zurücksetzen");
 }
 
 TEST_CASE_FIXTURE(Fixture, "Optionen: ◀▶ ändert, B speichert nur bei Änderung") {
@@ -93,7 +97,7 @@ TEST_CASE_FIXTURE(Fixture, "Optionen: ◀▶ ändert, B speichert nur bei Änder
 TEST_CASE_FIXTURE(Fixture, "Optionen: A auf Zurücksetzen entfernt den Spielabschnitt") {
     open(OptionsModel(Console::Wii, "RMGP01", "", "[game RMGP01]\nvideo = ntsc\n"));
     CHECK(s.valueText(rowOf("video")) == "NTSC");
-    focus(13);
+    focus(15);
     press(Action::Confirm);
     CHECK(s.model().gamesIniText().empty());
     CHECK(s.valueText(rowOf("video")) == "Standard (System)");

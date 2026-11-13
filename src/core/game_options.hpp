@@ -43,6 +43,8 @@ struct WiiOptions {
     WiiCfgFields cfg;
     std::optional<u8> ios;         // nullopt = auto
     bool returnToHbc = false;      // return_to = hbc: die Plattform darf auf JODI ausweichen
+    bool cheats = false;           // M15: ausgewählte Gecko-Codes anwenden
+    u8 hookType = 1;               // vbi/kpad/joypad/gxdraw/gxflush/ossleep/axframe → 1–7 (0 = ohne Cheats)
     std::vector<std::string> bad;  // Schlüssel mit unbekanntem Wert
 };
 
@@ -50,6 +52,7 @@ struct GcOptions {
     NinConfigInput nin{{}, {}, false};  // gamePath, id6, usb setzt der Aufrufer
     bool memcardReal = false;
     bool nativeSi = false;
+    bool cheats = false;  // M15: Nintendont lädt die GCT (NIN_CFG_CHEATS + CheatPath)
     std::vector<std::string> unsupported;  // gesetzte Optionen, die die Nintendont-Version nicht kennt
     std::vector<std::string> bad;
 };
@@ -64,7 +67,7 @@ struct OptionValue {
     bool inherited = false;      // kein Wert im Spiel (oder „default“)
     std::string inheritedValue;  // globaler Wert bzw. Standard
 };
-// Wii 13, GC 10 Zeilen in Tabellenreihenfolge der Spec; andere Konsolen: leer.
+// Wii 15, GC 11 Zeilen in Tabellenreihenfolge der Spec; andere Konsolen: leer.
 std::vector<OptionValue> listOptions(Console c, const IniDoc& config, const IniDoc& games, std::string_view id6);
 
 // Erlaubte Werte einer Option in Anzeigereihenfolge (für die Szene); ios und return_to: nur die festen Werte.

@@ -50,6 +50,7 @@ add_library(nl_core STATIC
     src/core/gecko_txt.cpp
     src/core/cheat_select.cpp
     src/core/gct.cpp
+    src/core/cheat_model.cpp
     src/core/cheat_source.cpp
     src/core/n64_choice.cpp
     src/core/vc_map.cpp
@@ -105,6 +106,7 @@ add_library(nl_core STATIC
     src/ui/keyboard.cpp
     src/ui/details_scene.cpp
     src/ui/options_scene.cpp
+    src/ui/cheats_scene.cpp
     src/ui/vc_map_scene.cpp
     src/ui/dialog_scene.cpp
     src/ui/launch_text.cpp

@@ -12,9 +12,9 @@ std::size_t rowOf(const OptionsModel& m, std::string_view key) {
 }
 }  // namespace
 
-TEST_CASE("OptionsModel: Wii 13 Zeilen, GC 10, andere Konsolen keine") {
-    CHECK(OptionsModel(Console::Wii, "RMGP01", "", "").rows() == 13);
-    CHECK(OptionsModel(Console::Gc, "GM8P01", "", "").rows() == 10);
+TEST_CASE("OptionsModel: Wii 15 Zeilen, GC 11, andere Konsolen keine") {
+    CHECK(OptionsModel(Console::Wii, "RMGP01", "", "").rows() == 15);
+    CHECK(OptionsModel(Console::Gc, "GM8P01", "", "").rows() == 11);
     CHECK(OptionsModel(Console::Nes, "", "", "").rows() == 0);
 }
 

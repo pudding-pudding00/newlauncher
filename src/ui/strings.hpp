@@ -149,6 +149,20 @@
     X(OptNativeSi, "Native Controller", "Native controllers") \
     X(OptMaxPads, "Max. Controller", "Max controllers") \
     X(OptSkipIpl, "IPL überspringen", "Skip IPL") \
+    X(OptCheats, "Cheats", "Cheats") \
+    X(OptHook, "Cheat-Hook", "Cheat hook") \
+    X(CheatsTitle, "Cheats – %s", "Cheats – %s") \
+    X(DetailsCheats, "Cheats …", "Cheats …") \
+    X(CheatsNoFile, "Keine Codeliste. +/R lädt Codes.", "No code list. +/R loads codes.") \
+    X(CheatsLoading, "Lade Codes …", "Loading codes …") \
+    X(CheatsNoCodes, "Keine Codes für dieses Spiel gefunden", "No codes found for this game") \
+    X(CheatsNetError, "Codes konnten nicht geladen werden", "Could not load codes") \
+    X(CheatsNoSource, "Keine Codequelle (HTTPS nötig)", "No code source (HTTPS required)") \
+    X(CheatsReadOnly, "Datenordner nicht beschreibbar", "Data folder is read-only") \
+    X(CheatsWiiUnavailable, "Wii-Cheats in dieser Version nicht verfügbar", "Wii cheats not available in this version") \
+    X(CheatsOverwrite, "Vorhandene Codeliste ersetzen? A Ja · B Nein", "Replace the existing code list? A Yes · B No") \
+    X(CheatsUnselectable, "nicht wählbar", "not selectable") \
+    X(CheatsHelp, "A An/Aus · ◀▶ Seite · +/R Codes laden · B Speichern", "A On/Off · ◀▶ Page · +/R Load codes · B Save") \
     X(ValGame, "Spiel", "Game") \
     X(ValSystem, "System", "System") \
     X(ValNoChange, "Keine Änderung", "No change") \

@@ -6,7 +6,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <cstdlib>
-#include <functional>
+#include <array>
 #include <ctime>
 #include <malloc.h>
 #include <unistd.h>
@@ -69,6 +69,7 @@
 #include "ui/dialog_scene.hpp"
 #include "ui/emulators_scene.hpp"
 #include "ui/about_scene.hpp"
+#include "ui/cheats_scene.hpp"
 #include "ui/options_scene.hpp"
 #include "ui/setup_scene.hpp"
 #include "ui/sysinfo_scene.hpp"
@@ -580,6 +581,8 @@ int main(int argc, char** argv) {
     nl::ui::EmulatorsScene emuScene;
     nl::ui::AboutScene aboutScene;
     nl::ui::OptionsScene optionsScene;
+    nl::ui::CheatsScene cheatsScene;
+    nl::Console cheatsConsole = nl::Console::Wii;  // Konsole des Spiels in der Cheat-Szene
 #if defined(NL_TLS) && NL_TLS  // ab M11 Task 4 vom CMake-Schalter gesetzt
     aboutScene.setBuildInfo(NL_VERSION, true);
 #else
@@ -941,20 +944,70 @@ int main(int argc, char** argv) {
     };
     // Gecko-Codes eines Spiels laden (M15): nur auf Knopfdruck, Ziel <data>/codes/<ID6>.txt.
     const std::string cheatSourceTmpl = config.debugCheatUrl.empty() ? config.cheatSource : config.debugCheatUrl;
-    std::function<void(nl::CheatFetchResult)> onCheatFetched;  // gesetzt von der Cheat-Szene
-    auto startCheatFetch = [&](const std::string& id6) {
+    std::string cheatFetchId6;  // Spiel des laufenden bzw. letzten Auftrags
+    auto startCheatFetch = [&](const std::string& id6, bool overwrite) {
         if (cheatSourceTmpl.empty() || !data.writable || cheatWorker.running()) return false;
-        if (!cheatWorker.start(fs, nl::cheatUrl(cheatSourceTmpl, id6), id6, nl::cheatTxtPath(data.dir, id6))) {
+        cheatFetchId6 = id6;
+        if (!cheatWorker.start(fs, nl::cheatUrl(cheatSourceTmpl, id6), id6, nl::cheatTxtPath(data.dir, id6), overwrite)) {
             nl::log::line("NL_WARN Cheat-Auftrag nicht angenommen");
             return false;
         }
         return true;
     };
+    // Codeliste und Auswahl eines Spiels lesen; exists: <ID6>.txt liegt vor (auch wenn zu groß oder kaputt).
+    auto loadCheatModel = [&](nl::Console c, const std::string& id6, bool& exists) {
+        std::string txt, sel;
+        exists = false;
+        if (data.readable) {
+            const std::string txtPath = nl::cheatTxtPath(data.dir, id6);
+            std::array<u8, 1> probe{};
+            exists = fs.read(txtPath, 0, probe).isOk();
+            if (auto r = fs.readAll(txtPath, nl::kMaxCheatTxtBytes); r.isOk())
+                txt.assign(reinterpret_cast<const char*>(r.value().data()), r.value().size());
+            if (auto r = fs.readAll(nl::cheatSelPath(data.dir, id6), kMaxIniBytes); r.isOk())
+                sel.assign(reinterpret_cast<const char*>(r.value().data()), r.value().size());
+        }
+        nl::CheatModel m(c, txt, sel);
+        if (m.status() == nl::CheatStatus::Ready && m.skipped() > 0)
+            nl::log::line("NL_CHEAT_SKIP %u", static_cast<unsigned>(m.skipped()));
+        return m;
+    };
+    auto openCheats = [&](const nl::Game& g) {
+        const std::string id6 = g.key != nullptr ? g.key : "";
+        bool exists = false;
+        nl::CheatModel m = loadCheatModel(g.console, id6, exists);
+        std::optional<nl::ui::Str> blocked;
+        if (cheatSourceTmpl.empty()) blocked = nl::ui::Str::CheatsNoSource;
+        else if (!data.writable) blocked = nl::ui::Str::CheatsReadOnly;
+        const unsigned rows = static_cast<unsigned>(m.rows());
+        cheatsScene.open(std::move(m), id6, g.title != nullptr ? g.title : id6, exists, blocked);
+        if (!scenes.contains(&cheatsScene)) scenes.push(&cheatsScene);
+        nl::log::line("NL_SCENE cheats rows=%u", rows);
+    };
+    auto saveCheats = [&]() {
+        if (!cheatsScene.hasModel()) return;
+        const std::string& id6 = cheatsScene.id6();
+        const std::string dir = data.path("codes");
+        if (data.writable && fs.makeDirs(dir).isOk() &&
+            writeText(fs, nl::cheatSelPath(data.dir, id6).c_str(), cheatsScene.model().selText())) {
+            nl::log::line("NL_CHEATS_SAVED %s n=%u", id6.c_str(), static_cast<unsigned>(cheatsScene.model().selection().size()));
+        } else {
+            nl::log::line("NL_WARN %s.sel nicht gespeichert", id6.c_str());
+        }
+    };
     auto pumpCheats = [&]() {
         for (const std::string& line : cheatWorker.takeLogLines()) nl::log::line("%s", line.c_str());
         if (const auto r = cheatWorker.takeResult()) {
             nl::log::line("NL_CHEAT_FETCH %.*s", static_cast<int>(nl::cheatFetchTag(*r).size()), nl::cheatFetchTag(*r).data());
-            if (onCheatFetched) onCheatFetched(*r);
+            // Die Szene zeigt noch dasselbe Spiel: Ergebnis melden, bei Erfolg neu einlesen.
+            if (cheatsScene.hasModel() && cheatsScene.fetching() && cheatsScene.id6() == cheatFetchId6) {
+                std::optional<nl::CheatModel> reloaded;
+                if (*r == nl::CheatFetchResult::Ok || *r == nl::CheatFetchResult::Exists) {
+                    bool exists = false;
+                    reloaded.emplace(loadCheatModel(cheatsConsole, cheatFetchId6, exists));
+                }
+                cheatsScene.fetchDone(*r, std::move(reloaded));
+            }
         }
     };
     // Fortschritt, Marker und Ergebnis des Netz-Threads übernehmen (Haupt-Thread).
@@ -1342,6 +1395,22 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 saveOptions();
                 break;
+            case nl::ui::AppCommand::OpenCheats:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (req.game != nullptr) {
+                    cheatsConsole = req.game->console;
+                    openCheats(*req.game);
+                }
+                break;
+            case nl::ui::AppCommand::FetchCheats:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (!startCheatFetch(cheatsScene.id6(), cheatsScene.overwrite()))
+                    cheatsScene.fetchDone(nl::CheatFetchResult::NetError, std::nullopt);
+                break;
+            case nl::ui::AppCommand::SaveCheats:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                saveCheats();
+                break;
             case nl::ui::AppCommand::OpenAbout:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 scenes.push(&aboutScene);
@@ -1417,13 +1486,25 @@ int main(int argc, char** argv) {
                 runPendingAutostart();
             }
             if (config.debugFetchCovers) fetchCovers();  // nur für Tests
-            if (!config.debugCheatFetch.empty() && !startCheatFetch(config.debugCheatFetch))  // nur für Tests (M15)
+            if (!config.debugCheatFetch.empty() && !startCheatFetch(config.debugCheatFetch, false))  // nur für Tests (M15)
                 nl::log::line("NL_CHEAT_FETCH nosource");
             if (config.debugOpenScene == "about") {   // nur für Tests (M11)
                 scenes.push(&aboutScene);
                 nl::log::line("NL_SCENE about");
             }
             if (config.debugOpenScene == "sysinfo") openSysInfo();  // nur für Tests (M13)
+            if (config.debugOpenScene.rfind("cheats:", 0) == 0) {  // nur für Tests (M15): cheats:<ID6>
+                const std::string id = config.debugOpenScene.substr(7);
+                const nl::Game* found = nullptr;
+                for (const nl::Game& g : store.games())
+                    if (id == g.key) found = &g;
+                if (found != nullptr) {
+                    cheatsConsole = found->console;
+                    openCheats(*found);
+                } else {
+                    nl::log::line("NL_WARN cheats %s fehlt", id.c_str());
+                }
+            }
             if (config.debugOpenScene.rfind("options:", 0) == 0) {  // nur für Tests (M14): options:<ID6>|wii|gc
                 const std::string id = config.debugOpenScene.substr(8);
                 const nl::Game* found = nullptr;

@@ -26,6 +26,7 @@ bool BannerWorker::startGc(FileSystem& fs, std::string key, std::string gamePath
     lang_ = langIndex;
     shiftJis_ = shiftJis;
     channel_ = false;
+    wii_ = false;
     return launch();
 }
 
@@ -37,6 +38,18 @@ bool BannerWorker::startChannel(FileSystem& fs, std::string key, u64 titleId, st
     path_ = std::move(filePath);
     titleId_ = titleId;
     channel_ = true;
+    wii_ = false;
+    return launch();
+}
+
+bool BannerWorker::startWii(FileSystem& fs, std::string key, std::string gamePath) {
+    if (running_) return false;
+    join();
+    fs_ = &fs;
+    key_ = std::move(key);
+    path_ = std::move(gamePath);
+    channel_ = true;
+    wii_ = true;
     return launch();
 }
 
@@ -77,7 +90,9 @@ void* BannerWorker::entry(void* arg) {
 }
 
 void BannerWorker::runChannel(BannerResult& r) {
-    auto content = path_.empty() ? readChannelContent0(titleId_) : fs_->readAll(path_, kChannelContent0Max);
+    auto content = wii_            ? readWiiDiscBanner(*fs_, path_)
+                   : path_.empty() ? readChannelContent0(titleId_)
+                                   : fs_->readAll(path_, kChannelContent0Max);
     if (!content.isOk()) {
         r.error = content.error().code;
         r.context = content.error().context;

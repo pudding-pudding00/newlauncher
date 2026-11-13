@@ -33,6 +33,8 @@ public:
     bool startGc(FileSystem& fs, std::string key, std::string gamePath, u8 langIndex, bool shiftJis);
     // Kanal-Banner aus Content 0 im NAND (titleId) oder, für den Smoke, aus einer Datei (filePath nicht leer).
     bool startChannel(FileSystem& fs, std::string key, u64 titleId, std::string filePath);
+    // Wii-Spiel: opening.bnr aus dem Abbild (.iso/.wbfs), Ergebnis wie ein Kanal-Banner (Task 9).
+    bool startWii(FileSystem& fs, std::string key, std::string gamePath);
     bool running() const { return running_; }
     std::optional<BannerResult> take();
     void join();
@@ -47,6 +49,7 @@ private:
     FileSystem* fs_ = nullptr;
     std::string key_, path_;
     bool channel_ = false;
+    bool wii_ = false;
     u64 titleId_ = 0;
     u8 lang_ = 0;
     bool shiftJis_ = false;

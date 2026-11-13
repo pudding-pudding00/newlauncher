@@ -67,6 +67,7 @@ private:
     std::string key_, path_;   // gewünschtes Spiel
     bool requested_ = false;   // Auftrag für key_ gestartet (oder nichts zu laden)
     bool gc_ = false;          // key_ ist ein GC-Spiel
+    bool wii_ = false;         // key_ ist ein Wii-Spiel (opening.bnr aus dem Abbild, Task 9)
     std::optional<u64> titleId_;  // Kanal-Titel aus der VC-Zuordnung
     const VcMap* vcMap_ = nullptr;
     bool enabled_ = true;

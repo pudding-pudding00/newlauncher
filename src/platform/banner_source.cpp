@@ -9,6 +9,7 @@
 #include <cstring>
 #include <memory>
 
+#include "core/wii_partition.hpp"
 #include "platform/nand_titles.hpp"
 
 namespace nl::platform {
@@ -18,7 +19,26 @@ struct AlignedFree {
     void operator()(void* p) const { std::free(p); }
 };
 Result<std::vector<u8>> fail(ErrorCode code, const char* what) { return Result<std::vector<u8>>::err(Error{code, what}); }
+// Titelschlüssel über ES; IOS verlangt 32-Byte-ausgerichtete Puffer. Nur im Banner-Thread, einer zugleich.
+std::optional<AesBlock> esTitleKey(const WiiTicketKey& k) {
+    alignas(32) static u32 iv[4];
+    alignas(32) static u8 in[32];
+    alignas(32) static u8 out[32];
+    std::memcpy(iv, k.iv.data(), 16);
+    std::memcpy(in, k.encrypted.data(), 16);
+    const u32 keynum = k.index == 1 ? ES_KEY_KOREAN : ES_KEY_COMMON;
+    if (ES_Decrypt(keynum, iv, in, 16, out) < 0) return std::nullopt;
+    AesBlock key{};
+    std::memcpy(key.data(), out, 16);
+    return key;
+}
 }  // namespace
+
+Result<std::vector<u8>> readWiiDiscBanner(FileSystem& fs, const std::string& gamePath) {
+    auto disc = openWiiDiscFile(fs, gamePath);
+    if (!disc.isOk()) return Result<std::vector<u8>>::err(disc.error());
+    return readWiiOpeningBnr(*disc.value(), esTitleKey, kWiiBannerMax);
+}
 
 Result<std::vector<u8>> readChannelContent0(u64 titleId) {
     static bool isfsReady = false;

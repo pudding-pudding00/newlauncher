@@ -81,3 +81,22 @@ Verworfen: Registerzugriff auf die AES-Engine konkurriert mit IOS, und das ist o
   - Auf der Wii liefert `ES_Decrypt` den Titelschlüssel.
   - Kein Dolphin-Smoke: Ein eigenes, „echt“ verschlüsseltes Test-Image bräuchte den Common Key beim Erzeugen. Die Hardware-Abnahme W6 prüft den Weg. Lehnt IOS den Aufruf ab, bleibt es beim Cover, und W6 hält das fest.
 - **Nicht im Quelltext:** kein Common Key, kein Hash davon, kein Fremd-Tool.
+
+## 4. Umsetzung Task 9 (Messwerte)
+
+- **Code:**
+  - `core/aes128` ist AES-128 mit ECB-Block und CBC. Geprüft wird gegen FIPS-197 C.1 und SP 800-38A F.2.
+  - `core/wii_partition` liest die Partitionstabelle, das Ticket, die Cluster und das FST. Datenquellen sind `.iso` und `.wbfs`, letzteres über Slot 0 des WBFS-Kopfs.
+  - `platform/banner_source` holt mit `readWiiDiscBanner` den Titelschlüssel per `ES_Decrypt` (Schlüssel 4, koreanisch 11). Die Puffer sind auf 32 Byte ausgerichtet.
+- **Lesemenge je Banner:**
+  - Pflichtteile: Partitionstabelle (32 B + Einträge), Ticket (512 B), Daten-Offset (8 B).
+  - Cluster: ein Cluster für den Disc-Kopf und je ein Cluster je 0x7C00 Byte für FST und opening.bnr. Typisch sind das 2–3 Cluster FST und 1–2 Cluster Banner, zusammen unter 200 KiB.
+  - Der letzte entschlüsselte Cluster bleibt im Speicher. Arbeitsspeicher: 2 × 32 KiB für Cluster, dazu FST (≤ 1 MiB) und opening.bnr (≤ 4 MiB, danach Budget aus Task 8).
+- **Fallbacks** (Log `NL_BANNER_FALLBACK cover <grund> <kontext>`):
+  - keine Spielpartition, kein opening.bnr → `missing`;
+  - ES lehnt ab → `io es`;
+  - kaputte Strukturen → `invalid`;
+  - geteilte `.wbfs` (`.wbf1`) und Spiele auf einer WBFS-Partition → `io` mit Kontext `WBFS geteilt` bzw. `Wii: Dateityp`.
+- **Dolphin:**
+  - Nur Verdrahtung geprüft: `open_scene=details:RMCP01` mit der Kopf-Fixture ergibt `cover invalid WBFS: Kopf`, ohne Absturz.
+  - Echte Entschlüsselung prüft W6 auf der Hardware.

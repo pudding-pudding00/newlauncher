@@ -155,10 +155,12 @@ void BannerService::want(const Game& game) {
     focusTicks_ = gettime();
     path_.clear();
     gc_ = game.console == Console::Gc;
-    titleId_ = gc_ || vcMap_ == nullptr ? std::nullopt : vcMap_->titleFor(key);
-    // Wii-Spiele erst mit Task 9; Konsolen ohne Banner leise aufs Cover (kein Auftrag, kein Log).
-    if (!gc_ && !titleId_ && debugFile_.empty()) requested_ = true;
-    if (gc_ && game.device < roots_.size() && game.path != nullptr) path_ = joinPath(roots_[game.device], game.path);
+    wii_ = game.console == Console::Wii;
+    titleId_ = gc_ || wii_ || vcMap_ == nullptr ? std::nullopt : vcMap_->titleFor(key);
+    // Konsolen ohne Banner (und Emulator-Spiele ohne VC-Zuordnung) leise aufs Cover: kein Auftrag, kein Log.
+    if (!gc_ && !wii_ && !titleId_ && debugFile_.empty()) requested_ = true;
+    if ((gc_ || wii_) && game.device < roots_.size() && game.path != nullptr)
+        path_ = joinPath(roots_[game.device], game.path);
 }
 
 ui::BannerView BannerService::view(const Game& game) const {
@@ -208,6 +210,10 @@ void BannerService::pump() {
     }
     if (path_.empty()) {
         log::line("NL_BANNER_FALLBACK cover missing");
+        return;
+    }
+    if (wii_) {
+        if (!worker_.startWii(fs_, key_, path_)) log::line("NL_BANNER_FALLBACK cover thread");
         return;
     }
     const bool shiftJis = key_.size() >= 4 && key_[3] == 'J';

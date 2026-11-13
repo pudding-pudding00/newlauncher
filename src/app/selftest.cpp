@@ -121,9 +121,9 @@ ui::RawInput selftestInput(int frame, const SelftestView& v) {
         case 334: return press(B::A);
         case 350: return press(B::DRight);
         case 354: return press(B::DLeft);
-        case 368: return press(B::DLeft);  // Zeile 5 (Lautstärke), siehe Runter-Folge unten
+        case 368: return press(B::DLeft);  // Lautstärke, siehe Runter-Folge unten
         case 372: return press(B::B);
-        // M4/M5: HOME → Einstellungen → Zeile 11 „VC-Injects zuordnen“ → A;
+        // M4/M5: HOME → Einstellungen → „VC-Injects zuordnen“ → A;
         // „Super Mario 64" dem Testkanal zuordnen, schließen
         case 388: return press(B::HomeBtn);  // erst nach dem Ausblenden der Einstellungen (200 ms)
         case 404: case 406: return press(B::DRight);
@@ -140,8 +140,11 @@ ui::RawInput selftestInput(int frame, const SelftestView& v) {
     }
     if (frame >= 104 && frame <= 114 && isEven(frame)) return press(B::DRight);
     if (frame >= 142 && frame <= 156 && isEven(frame)) return press(B::DRight);
-    if (frame >= 358 && frame <= 366 && isEven(frame)) return press(B::DDown);  // 5× → Lautstärke
-    if (frame >= 428 && frame <= 448 && isEven(frame)) return press(B::DDown);  // 11× → VC-Injects
+    // Runter bis zur Zielzeile (bis zu 6× bzw. 13×): neue Einstellungszeilen verschieben das Ziel nicht mehr.
+    if (frame >= 356 && frame <= 366 && isEven(frame) && v.settings->focus() != static_cast<int>(SettingRow::Volume))
+        return press(B::DDown);  // → Lautstärke
+    if (frame >= 424 && frame <= 448 && isEven(frame) && v.settings->focus() != static_cast<int>(SettingRow::VcMap))
+        return press(B::DDown);  // → VC-Injects
     if (frame >= kTypeStart && frame < kTypeStart + 15) {
         const int i = (frame - kTypeStart) / 3, phase = (frame - kTypeStart) % 3;
         const gfx::Rect r = v.keyboard.keyRect(v.ctx, v.keyboard.keyIndex(kTyped[i]));

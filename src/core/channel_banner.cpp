@@ -82,6 +82,14 @@ Result<ChannelBanner> loadChannelBanner(std::span<const u8> content0) {
         b.textures.resize(baseTextures);
         b.layout.textures.resize(baseTextures);
     }
+    if (const auto snd = outer.value().file("meta/sound.bin")) {
+        auto raw = unwrapImd5(*snd, kSoundBinMax);
+        auto parsed = raw.isOk() ? parseBns(raw.value(), kBnsMaxSamples) : Result<BnsSound>::err(raw.error());
+        if (parsed.isOk())
+            b.sound = std::move(parsed.value());
+        else
+            b.soundInvalid = true;
+    }
     b.archive = std::move(archive);
     return Result<ChannelBanner>::ok(std::move(b));
 }

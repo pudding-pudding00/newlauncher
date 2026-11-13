@@ -1,4 +1,5 @@
 #include "core/channel_banner.hpp"
+#include "support/bns_image.hpp"
 #include "support/brlan_images.hpp"
 #include "support/brlyt_images.hpp"
 #include "support/tpl_images.hpp"
@@ -31,10 +32,12 @@ std::vector<u8> innerArchive(bool withTexture, std::vector<FstSpec> anim = {}, s
     return test::buildU8({dir("arc", std::move(arc))});
 }
 
-std::vector<u8> content0(const std::vector<u8>& bannerBin) {
+std::vector<u8> content0(const std::vector<u8>& bannerBin, std::optional<std::vector<u8>> soundBin = std::nullopt) {
     std::vector<u8> c(0x600, 0);
     std::memcpy(c.data() + 0x40, "IMET", 4);
-    const auto outer = test::buildU8({dir("meta", {file("banner.bin", bannerBin)})});
+    std::vector<FstSpec> meta{file("banner.bin", bannerBin)};
+    if (soundBin) meta.push_back(file("sound.bin", *soundBin));
+    const auto outer = test::buildU8({dir("meta", std::move(meta))});
     c.insert(c.end(), outer.begin(), outer.end());
     return c;
 }
@@ -115,4 +118,30 @@ TEST_CASE("channel_banner: kaputte Animation oder fehlende Mustertextur → steh
     CHECK(r.value().animInvalid);
     CHECK(r.value().layout.textures.size() == 1);
     CHECK(r.value().textures.size() == 1);
+}
+
+TEST_CASE("channel_banner: sound.bin wird über IMD5 und BNS geladen") {
+    const std::vector<s16> pcm(56, 1000);
+    const auto bns = test::buildBns({pcm}, 32000, true, 14);
+    auto r = loadChannelBanner(content0(test::imd5(innerArchive(true)), test::imd5(bns.file)));
+    REQUIRE(r.isOk());
+    REQUIRE(r.value().sound.has_value());
+    CHECK_FALSE(r.value().soundInvalid);
+    CHECK(r.value().sound->sampleRate == 32000);
+    CHECK(r.value().sound->pcm.size() == 112);
+    CHECK(r.value().sound->loopStart == 14);
+}
+
+TEST_CASE("channel_banner: ohne oder mit kaputtem sound.bin bleibt das Banner stumm") {
+    auto r = loadChannelBanner(content0(test::imd5(innerArchive(true))));
+    REQUIRE(r.isOk());
+    CHECK_FALSE(r.value().sound.has_value());
+    CHECK_FALSE(r.value().soundInvalid);
+    r = loadChannelBanner(content0(test::imd5(innerArchive(true)), test::imd5({'B', 'N', 'S', ' ', 0, 0})));
+    REQUIRE(r.isOk());
+    CHECK_FALSE(r.value().sound.has_value());
+    CHECK(r.value().soundInvalid);
+    r = loadChannelBanner(content0(test::imd5(innerArchive(true)), std::vector<u8>{1, 2, 3}));  // kein IMD5
+    REQUIRE(r.isOk());
+    CHECK(r.value().soundInvalid);
 }

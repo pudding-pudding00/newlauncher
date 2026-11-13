@@ -6,7 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from make_banner_fixtures import (TEX_BYTES, brlan, brlyt, channel_banner_app, gc_bnr, gc_iso, imd5,  # noqa: E402
+from make_banner_fixtures import (ADPCM_COEFS, TEX_BYTES, bns, brlan, brlyt, channel_banner_app,  # noqa: E402
+                                  encode_adpcm, gc_bnr, gc_iso, imd5,
                                   main, pane, rgb5a3_pixel, sample_bnr, tex_bytes, tile_rgb5a3, tpl,
                                   u8_archive)
 
@@ -121,6 +122,30 @@ class MakeBannerFixturesTest(unittest.TestCase):
         self.assertIn(struct.pack(">fff", 60, 360, 0), data)
         self.assertIn(struct.pack(">fHxx", 0, 0), data)
 
+    def test_adpcm_hand_frame_and_error(self):
+        import math
+        frames, decoded = encode_adpcm([2, 6, 4, -12, 2])
+        self.assertEqual(len(frames), 8)
+        self.assertEqual(decoded, [2, 6, 4, -12, 2])
+        pcm = [int(12000 * math.sin(i * 0.07)) for i in range(14 * 20 + 3)]
+        frames, decoded = encode_adpcm(pcm)
+        self.assertEqual(len(frames), 8 * 21)
+        self.assertEqual(len(decoded), len(pcm))
+        self.assertLess(max(abs(a - b) for a, b in zip(pcm, decoded)), 600)
+
+    def test_bns_layout(self):
+        data = bns([[0] * 30, [100] * 30], 32000, True, 14)
+        self.assertEqual(data[:8], b"BNS " + bytes([0xFE, 0xFF, 0x01, 0x00]))
+        self.assertEqual(struct.unpack_from(">I", data, 8)[0], len(data))
+        info_at, info_size, data_at, data_size = struct.unpack_from(">IIII", data, 16)
+        self.assertEqual((data[info_at:info_at + 4], data[data_at:data_at + 4]), (b"INFO", b"DATA"))
+        self.assertEqual(data_at + data_size, len(data))
+        self.assertEqual(struct.unpack_from(">BBBxHxxIII", data, info_at + 8), (0, 1, 2, 32000, 14, 30, 0x18))
+        ch1 = struct.unpack_from(">I", data, info_at + 8 + 0x18 + 4)[0]
+        d1, a1 = struct.unpack_from(">II", data, info_at + 8 + ch1)
+        self.assertEqual(d1, 3 * 8)
+        self.assertEqual(struct.unpack_from(">16h", data, info_at + 8 + a1), ADPCM_COEFS)
+
     def test_channel_banner_app(self):
         data = channel_banner_app()
         self.assertEqual(data[0x80:0x84], b"IMET")
@@ -130,6 +155,8 @@ class MakeBannerFixturesTest(unittest.TestCase):
         for name in (b"banner.brlyt\0", b"bg.tpl\0", b"logo.tpl\0", b"RLYT", b"banner_Start.brlan\0",
                      b"banner_Loop.brlan\0", b"logo2.tpl\0", b"RLAN"):
             self.assertIn(name, data[inner_at:])
+        self.assertIn(b"sound.bin\0", data)
+        self.assertIn(b"BNS " + bytes([0xFE, 0xFF, 0x01, 0x00]), data)
 
     def test_main_writes_bnr(self):
         with tempfile.TemporaryDirectory() as d:

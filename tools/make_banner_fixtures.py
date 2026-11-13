@@ -5,6 +5,7 @@ Formatbeschreibungen stehen an den Parsern in src/core (gc_banner, gc_fst, spät
     python tools/make_banner_fixtures.py <ausgabeordner>
 """
 
+import functools
 import hashlib
 import struct
 import sys
@@ -322,8 +323,83 @@ def brlan(frames: int, loop: bool, patterns: list, entries: list) -> bytes:
     return b"RLAN" + bytes([0xFE, 0xFF, 0x00, 0x08]) + struct.pack(">IHH", 0x10 + len(section), 0x10, 1) + section
 
 
+ADPCM_COEFS = (0, 0, 2048, 0, 4096, -2048, 3600, -1600, 3900, -1900, 1800, 0, 3000, -1000, 4000, -2000)
+
+
+def _adpcm_sample(nib: int, exp: int, c1: int, c2: int, h1: int, h2: int) -> int:
+    return max(-32768, min(32767, (nib * (1 << exp) * 2048 + c1 * h1 + c2 * h2 + 1024) >> 11))
+
+
+def encode_adpcm(pcm: list) -> tuple[bytes, list]:
+    """Eigener DSP-ADPCM-Encoder: je Frame alle 8 Koeffizientenpaare × 12 Skalen, kleinste Fehlerquadratsumme.
+
+    Liefert (Frames, Rekonstruktion). Gleiches Verfahren wie tests/host/support/adpcm_encode.hpp."""
+    frames, decoded, h1, h2 = bytearray(), [], 0, 0
+    for at in range(0, len(pcm), 14):
+        best = None
+        for p in range(8):
+            c1, c2 = ADPCM_COEFS[2 * p], ADPCM_COEFS[2 * p + 1]
+            for exp in range(12):
+                a, b, err, nibs, out = h1, h2, 0, [], []
+                step = 1 << exp
+                for k in range(14):
+                    x = pcm[at + k] if at + k < len(pcm) else 0
+                    pred = (c1 * a + c2 * b + 1024) >> 11
+                    d = x - pred
+                    n = (d + step // 2) // step if d >= 0 else -((-d + step // 2) // step)
+                    n = max(-8, min(7, n))
+                    v = _adpcm_sample(n, exp, c1, c2, a, b)
+                    err += (x - v) * (x - v)
+                    nibs.append(n)
+                    out.append(v)
+                    a, b = v, a
+                if best is None or err < best[0]:
+                    best = (err, p << 4 | exp, nibs, out)
+        _, ps, nibs, out = best
+        frames.append(ps)
+        for k in range(0, 14, 2):
+            frames.append((nibs[k] & 0xF) << 4 | (nibs[k + 1] & 0xF))
+        decoded += out[:min(14, len(pcm) - at)]
+        h1, h2 = out[13], out[12]
+    return bytes(frames), decoded
+
+
+def bns(channels: list, rate: int, loop: bool, loop_start: int) -> bytes:
+    """BNS mit DSP-ADPCM: Kopf 0x20, INFO (Kanaltabelle, Kanalinfo, ADPCM-Info 0x30), DATA je Kanal am Stück."""
+    count, n = len(channels), len(channels[0])
+    table = 0x18
+    ch_info = table + 4 * count
+    adpcm = ch_info + 0x0C * count
+    info = bytearray(adpcm + 0x30 * count)
+    struct.pack_into(">BBBxHxxIII", info, 0, 0, 1 if loop else 0, count, rate, loop_start, n, table)
+    data = bytearray()
+    for c, pcm in enumerate(channels):
+        frames, _ = encode_adpcm(pcm)
+        struct.pack_into(">I", info, table + 4 * c, ch_info + 0x0C * c)
+        struct.pack_into(">II", info, ch_info + 0x0C * c, len(data), adpcm + 0x30 * c)
+        struct.pack_into(">16h", info, adpcm + 0x30 * c, *ADPCM_COEFS)
+        data += frames
+    info_sec = b"INFO" + struct.pack(">I", 8 + len(info)) + bytes(info)
+    data_sec = b"DATA" + struct.pack(">I", 8 + len(data)) + bytes(data)
+    head = b"BNS " + bytes([0xFE, 0xFF, 0x01, 0x00]) + struct.pack(
+        ">IHHIIII", 0x20 + len(info_sec) + len(data_sec), 0x20, 2, 0x20, len(info_sec),
+        0x20 + len(info_sec), len(data_sec))
+    return head + info_sec + data_sec
+
+
+@functools.lru_cache(maxsize=1)
+def sample_bns() -> bytes:
+    """0,75 s Stereo bei 16 kHz: links 440 Hz, rechts 660 Hz, Schleife ab 0,25 s."""
+    import math
+    rate, n = 16000, 12000
+    left = [int(6000 * math.sin(2 * math.pi * 440 * i / rate)) for i in range(n)]
+    right = [int(6000 * math.sin(2 * math.pi * 660 * i / rate)) for i in range(n)]
+    return bns([left, right], rate, True, 4000)
+
+
 def channel_banner_app() -> bytes:
-    """Kanal-content0 wie auf der NAND: 0x40 Byte frei, IMET-Kopf bis 0x640, dann U8 mit meta/banner.bin.
+    """Kanal-content0 wie auf der NAND: 0x40 Byte frei, IMET-Kopf bis 0x640, dann U8 mit meta/banner.bin
+    und meta/sound.bin (BNS, zwei Töne mit Schleife).
 
     Szene: Hintergrund (RGB5A3), gedrehtes Logo (C8 mit Palette), ungetextureter Balken → drei Quads.
     Animation: banner_Start (30 Bilder) und banner_Loop (120 Bilder, mit Musterwechsel auf logo2.tpl)."""
@@ -349,7 +425,7 @@ def channel_banner_app() -> bytes:
     inner = u8_archive({"arc": {"anim": {"banner_Loop.brlan": loop, "banner_Start.brlan": start},
                                 "blyt": {"banner.brlyt": layout},
                                 "timg": {"bg.tpl": bg, "logo.tpl": logo, "logo2.tpl": logo2}}})
-    outer = u8_archive({"meta": {"banner.bin": imd5(inner)}})
+    outer = u8_archive({"meta": {"banner.bin": imd5(inner), "sound.bin": imd5(sample_bns())}})
     head = bytearray(0x640)
     head[0x80:0x84] = b"IMET"
     struct.pack_into(">II", head, 0x84, 0x600, 3)

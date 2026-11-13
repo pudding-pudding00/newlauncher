@@ -9,11 +9,14 @@
 #include <optional>
 
 #include "core/banner_scene.hpp"
+#include "core/banner_sound.hpp"
 #include "core/brlan.hpp"
 #include "core/fs.hpp"
 #include "gfx/renderer.hpp"
+#include "platform/audio.hpp"
 #include "platform/banner_tex.hpp"
 #include "platform/banner_worker.hpp"
+#include "platform/music.hpp"
 #include "ui/banner_provider.hpp"
 
 namespace nl::app {
@@ -27,6 +30,11 @@ public:
     void setGerman(bool german) { german_ = german; }
     // [debug] banner_file: dieses Kanal-content0 statt des GC-Banners laden (Smoke, M18).
     void setDebugFile(std::string path) { debugFile_ = std::move(path); }
+    // Banner-Ton (Task 7): ohne Audio bleibt das Banner stumm. Music wird währenddessen gedrückt.
+    void setAudio(platform::Audio* audio, platform::Music* music) {
+        audio_ = audio;
+        music_ = music;
+    }
     void pump();      // Ergebnis übernehmen, nächsten Auftrag starten
     void release();   // Banner freigeben (Bibliothek neu, Szene verlassen)
     void shutdown();  // vor dem Aushängen der Laufwerke
@@ -40,6 +48,8 @@ private:
     void freeFrame();
     void takeChannel(ChannelBanner& banner);
     void animate();  // ein Bild der Animation weiter, Quads neu
+    void updateSound();
+    void stopSound();  // Ton aus, Puffer frei, Musik wieder laut
 
     FileSystem& fs_;
     gfx::Renderer& renderer_;
@@ -57,6 +67,10 @@ private:
     AnimPlayer player_;
     ui::BannerFrame frame_{};
     bool haveFrame_ = false;
+    platform::Audio* audio_ = nullptr;
+    platform::Music* music_ = nullptr;
+    BannerSoundGate gate_;
+    u64 focusTicks_ = 0;  // gettime() beim Fokuswechsel
 };
 
 }  // namespace nl::app

@@ -5,6 +5,7 @@
 #include <malloc.h>
 
 #include <ogc/cache.h>
+#include <ogc/lwp_watchdog.h>
 
 #include "platform/log.hpp"
 
@@ -34,7 +35,34 @@ void BannerService::freeTexels() {
     texels_ = nullptr;
 }
 
+void BannerService::stopSound() {
+    if (gate_.playing()) log::line("NL_BANNER sound stop");
+    gate_.reset();
+    if (audio_ != nullptr) audio_->freeBanner();
+    if (music_ != nullptr) music_->duck(false);
+}
+
+void BannerService::updateSound() {
+    if (audio_ == nullptr) return;
+    const u64 ms = ticks_to_millisecs(gettime() - focusTicks_);
+    const u32 focusMs = ms > 0xFFFFFFFFu ? 0xFFFFFFFFu : static_cast<u32>(ms);
+    switch (gate_.update(audio_->bannerLoaded(), audio_->sounds(), focusMs)) {
+        case BannerSoundGate::Action::Start:
+            audio_->playBanner();
+            if (music_ != nullptr) music_->duck(true);
+            log::line("NL_BANNER sound play");
+            break;
+        case BannerSoundGate::Action::Stop:
+            audio_->stopBanner();
+            if (music_ != nullptr) music_->duck(false);
+            log::line("NL_BANNER sound stop");
+            break;
+        case BannerSoundGate::Action::None: break;
+    }
+}
+
 void BannerService::freeFrame() {
+    stopSound();
     textures_.release();
     quads_.clear();
     player_.reset(nullptr, nullptr);
@@ -64,6 +92,18 @@ void BannerService::takeChannel(ChannelBanner& banner) {
               static_cast<unsigned>(layout_.textures.size()), static_cast<unsigned>(textures_.bytes()));
     log::line("NL_BANNER static quads=%u", static_cast<unsigned>(quads_.size()));
     if (banner.animInvalid) log::line("NL_BANNER_FALLBACK static brlan");
+    if (banner.soundInvalid) log::line("NL_BANNER_FALLBACK mute bns");
+    if (banner.sound && audio_ != nullptr) {
+        const BnsSound& s = *banner.sound;
+        if (audio_->loadBanner(s)) {
+            log::line("NL_BANNER sound rate=%u samples=%u loop=%u bytes=%u", static_cast<unsigned>(s.sampleRate),
+                      static_cast<unsigned>(s.pcm.size() / 2), static_cast<unsigned>(s.loop ? s.loopStart : 0),
+                      static_cast<unsigned>(audio_->bannerBytes()));
+        } else {
+            log::line("NL_BANNER_FALLBACK mute memory");
+        }
+    }
+    banner.sound.reset();  // nur eine PCM-Kopie im Speicher
     if (player_.current() != nullptr) {
         log::line("NL_BANNER anim start=%u loop=%u", static_cast<unsigned>(start_ ? start_->frames : 0),
                   static_cast<unsigned>(loop_ ? loop_->frames : 0));
@@ -93,6 +133,7 @@ void BannerService::want(const Game& game) {
     // Anderes Spiel: Freigabe erst in pump(), der Renderer kann das alte Banner im laufenden Frame noch zeichnen.
     key_ = key;
     requested_ = false;
+    focusTicks_ = gettime();
     path_.clear();
     if (game.device < roots_.size() && game.path != nullptr) path_ = joinPath(roots_[game.device], game.path);
 }
@@ -128,6 +169,7 @@ void BannerService::pump() {
         }
     }
     if (haveFrame_) animate();  // 60 Bilder je Sekunde: pump() läuft einmal je Frame
+    updateSound();
     if (key_.empty() || requested_ || worker_.running()) return;
     requested_ = true;
     freeTexels();  // altes Spiel: Renderer hat den Vorframe mit GX_DrawDone beendet

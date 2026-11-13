@@ -4,8 +4,10 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
+#include "core/block_dev.hpp"
 #include "core/fs.hpp"
 #include "core/index_file.hpp"
 #include "core/meta_db.hpp"
@@ -44,12 +46,21 @@ std::string deviceCacheDir(std::string_view device, bool writable, std::string_v
 struct MultiScan {
     std::vector<DeviceIndex> indexes;  // nur lesbare Geräte, in der Reihenfolge von `devices`
     ScanStats stats;                   // Summe über alle Geräte
+    std::vector<std::pair<std::string, u32>> wbfsSkips;  // (Gerät, Slot) übersprungener WBFS-Slots
+};
+
+// Gerät ohne Dateisystem (WBFS-Partition, M16): gelesen über Rohzugriff ab partLba (Gerätesektoren).
+struct RawSource {
+    std::string device;
+    BlockDevice* dev;
+    u64 partLba;
 };
 
 // Scannt jedes Gerät mit seinem vorherigen Index (gleicher Gerätename). Nicht lesbare Geräte fallen weg;
 // ist keines lesbar: NotMounted. Abbruch über progress: Cancelled.
 Result<MultiScan> scanDevices(FileSystem& fs, std::span<const std::string> devices, const ScanRules& rules,
                               std::span<const DeviceIndex> previous, const MetaDb* meta,
-                              ScanProgress progress = nullptr, void* user = nullptr);
+                              ScanProgress progress = nullptr, void* user = nullptr,
+                              std::span<const RawSource> raw = {});
 
 }  // namespace nl

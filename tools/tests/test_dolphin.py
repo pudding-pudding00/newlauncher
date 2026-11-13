@@ -562,6 +562,26 @@ class DolphinToolsTest(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertEqual(calls, [])
 
+    def test_smoke_wbfs_iso_goes_to_wbfs_partition_in_order(self):
+        rc, _ = self._sd_disk_run(["OSREPORT: NL_DEV usb fat mounted lba=2048",
+                                   "OSREPORT: NL_DEV usb2 wbfs mounted ro lba=133120"], layout="fat32,wbfs",
+                                  extra=["--wbfs-iso", "RNLA01:1M", "--wbfs-iso", "RNLB01:1M:broken"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sorted(self.ntfs_files), ["00_RNLA01.iso", "01_RNLB01.broken.iso"])
+        self.assertEqual(self.ntfs_files["00_RNLA01.iso"][:6], b"RNLA01")
+        self.assertEqual(len(self.ntfs_files["01_RNLB01.broken.iso"]), 1 << 20)
+
+    def test_smoke_wbfs_layout_expects_ro_mount(self):
+        rc, _ = self._sd_disk_run(["OSREPORT: NL_DEV usb fat mounted lba=2048",
+                                   "OSREPORT: NL_DEV usb2 wbfs skipped lba=133120"], layout="fat32,wbfs")
+        self.assertNotEqual(rc, 0)
+
+    def test_smoke_wbfs_iso_needs_wbfs_partition(self):
+        for extra in (["--wbfs-iso", "RNLA01:1M"], ["--wbfs-iso", "RNLA01:1M:kaputt"]):
+            rc, calls = self._sd_disk_run([], layout="fat32,ntfs" if len(extra[1]) < 12 else "fat32,wbfs", extra=extra)
+            self.assertEqual(rc, 2, extra)
+            self.assertEqual(calls, [], extra)
+
     def test_smoke_sd_disk_first_partition_must_be_fat32(self):
         rc, calls = self._sd_disk_run([], layout="ntfs,fat32")
         self.assertEqual(rc, 2)

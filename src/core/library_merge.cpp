@@ -1,9 +1,11 @@
 #include "core/library_merge.hpp"
 
 #include <algorithm>
+#include <set>
 #include <unordered_map>
 
 #include "core/text_fold.hpp"
+#include "core/wbfs_part.hpp"
 
 namespace nl {
 
@@ -50,12 +52,38 @@ std::string deviceCacheDir(std::string_view device, bool writable, std::string_v
 
 Result<MultiScan> scanDevices(FileSystem& fs, std::span<const std::string> devices, const ScanRules& rules,
                               std::span<const DeviceIndex> previous, const MetaDb* meta, ScanProgress progress,
-                              void* user) {
+                              void* user, std::span<const RawSource> raw) {
     MultiScan out;
     for (const std::string& device : devices) {
         const IndexData* prev = nullptr;
         for (const DeviceIndex& p : previous)
             if (p.device == device) prev = &p.index;
+        const RawSource* src = nullptr;
+        for (const RawSource& r : raw)
+            if (r.device == device && r.dev != nullptr) src = &r;
+        if (src != nullptr) {
+            // WBFS-Partition (M16): kein Dateisystem, die Slots werden bei jedem Scan roh gelesen.
+            if (progress != nullptr && !progress(user, 0)) return Result<MultiScan>::err(Error{ErrorCode::Cancelled, device});
+            auto w = scanWbfsPartition(*src->dev, src->partLba, meta);
+            if (!w.isOk()) continue;  // kein gültiger WBFS-Kopf
+            WbfsScan ws = std::move(w).value();
+            std::set<std::string_view> before;
+            if (prev != nullptr)
+                for (const IndexGame& g : prev->games) before.insert(g.key);
+            std::set<std::string_view> after;
+            for (const IndexGame& g : ws.games) {
+                after.insert(g.key);
+                if (!before.count(g.key)) ++out.stats.added;
+            }
+            for (std::string_view k : before) out.stats.removed += after.count(k) ? 0 : 1;
+            out.stats.headersRead += static_cast<u32>(ws.games.size() + ws.skippedSlots.size());
+            out.stats.skipped += static_cast<u32>(ws.skippedSlots.size());
+            for (u32 slot : ws.skippedSlots) out.wbfsSkips.emplace_back(device, slot);
+            IndexData idx;
+            idx.games = std::move(ws.games);
+            out.indexes.push_back(DeviceIndex{device, std::move(idx)});
+            continue;
+        }
         auto r = scanLibrary(fs, device + ":", rules, prev, meta, progress, user);
         if (!r.isOk()) {
             if (r.error().code == ErrorCode::Cancelled) return Result<MultiScan>::err(r.error());

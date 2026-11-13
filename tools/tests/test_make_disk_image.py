@@ -87,5 +87,61 @@ class AssembleTest(unittest.TestCase):
                 mdi.assemble(tmp / "disk.raw", parts, tmp)
 
 
+class WbfsTest(unittest.TestCase):
+    """M16 Task 5: WBFS-Partition direkt in Python, Layout wie libwbfs (hd 512, Block 2 MiB)."""
+
+    def _iso(self, path: Path, id6: str, size: int) -> bytes:
+        head = bytearray(512)
+        head[:6] = id6.encode()
+        head[0x18:0x1C] = bytes.fromhex("5D1C9EA3")
+        data = bytes(head) + bytes(((i * 7) & 0xFF) or 1 for i in range(size - 512))
+        path.write_bytes(data)
+        return data
+
+    def test_wbfs_is_known_kind(self):
+        self.assertEqual(mdi.parse_part("wbfs:x"), ("wbfs", Path("x")))
+        self.assertEqual(mdi.size_sectors("wbfs", 0), 64 * 2048)
+
+    def test_wbfs_image_has_head_slots_and_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            src = tmp / "in"
+            src.mkdir()
+            a = self._iso(src / "00_RNLA01.iso", "RNLA01", 3 << 20)
+            self._iso(src / "01_RNLB01.broken.iso", "RNLB01", 1 << 20)
+            (src / "nl_ntfs.txt").write_text("keine ISO")
+            sectors = 64 * 2048
+            mdi.write_wbfs_image(tmp / "p.img", sectors, src)
+            d = (tmp / "p.img").read_bytes()
+            self.assertEqual(len(d), sectors * 512)
+            self.assertEqual(d[:4], b"WBFS")
+            self.assertEqual(struct.unpack_from(">I", d, 4)[0], sectors)
+            self.assertEqual((d[8], d[9]), (9, 21))
+            self.assertEqual(d[12:15], bytes([1, 1, 0]))
+            info0 = d[512:512 + 19 * 512]  # disc_info_lba = 19
+            self.assertEqual(info0[:6], b"RNLA01")
+            wlba0 = struct.unpack_from(">3H", info0, 0x100)
+            self.assertEqual(wlba0, (1, 2, 0))  # 3 MiB → zwei Blöcke zu 2 MiB
+            block = 2 << 20
+            self.assertEqual(d[block:block + (3 << 20)], a)
+            info1 = d[(1 + 19) * 512:(1 + 2 * 19) * 512]
+            self.assertEqual(info1[:6], b"RNLB01")
+            self.assertEqual(info1[0x18:0x1C], bytes(4))  # .broken: Disc-Kopf ohne Wii-Magic
+            self.assertEqual(struct.unpack_from(">H", info1, 0x100)[0], 3)
+
+    def test_format_script_leaves_wbfs_to_python(self):
+        script = mdi.format_script(mdi.plan([("fat32", 64 * 2048), ("wbfs", 64 * 2048)]), [True, True])
+        self.assertNotIn("p1.img", script)
+
+    def test_wbfs_rejects_too_many_blocks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            src = tmp / "in"
+            src.mkdir()
+            self._iso(src / "00_RNLA01.iso", "RNLA01", 3 << 20)
+            with self.assertRaises(ValueError):
+                mdi.write_wbfs_image(tmp / "p.img", 2 * 4096, src)  # zwei Blöcke: Kopf + einer
+
+
 if __name__ == "__main__":
     unittest.main()

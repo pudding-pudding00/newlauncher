@@ -21,7 +21,8 @@ struct WbfsLayout {
 u32 wbfsHeadBytes(u8 wbfsSecSzShift);
 
 // Prüft Magic „WBFS“, 512-Byte-Sektoren (hd_sec_sz_s = 9) und 15 ≤ wbfs_sec_sz_s ≤ 30.
-Result<WbfsLayout, FragError> parseWbfsHead(std::span<const u8> head);
+// slot: Disc-Info ab 512 + slot × ALIGN_LBA(…); bisheriger Aufruf = Slot 0 einer .wbfs-Datei.
+Result<WbfsLayout, FragError> parseWbfsHead(std::span<const u8> head, u32 slot = 0);
 
 struct DiscRun {
     u64 discOffset;

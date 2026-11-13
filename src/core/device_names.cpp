@@ -16,7 +16,8 @@ SkipReason unsupported(FsKind kind) {
 }
 
 bool mountable(FsKind kind, FsSupport support) {
-    return kind == FsKind::Fat || (kind == FsKind::Ntfs && support.ntfs) || (kind == FsKind::Ext && support.ext);
+    return kind == FsKind::Fat || (kind == FsKind::Ntfs && support.ntfs) || (kind == FsKind::Ext && support.ext) ||
+           (kind == FsKind::Wbfs && support.wbfs);
 }
 
 }  // namespace

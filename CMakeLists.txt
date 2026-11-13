@@ -70,6 +70,7 @@ add_library(nl_core STATIC
     src/core/nin_cfg.cpp
     src/core/fat_chain.cpp
     src/core/wbfs_map.cpp
+    src/core/wbfs_part.cpp
     src/core/partition_table.cpp
     src/core/device_names.cpp
     src/core/data_dir.cpp

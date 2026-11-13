@@ -22,6 +22,7 @@ constexpr FsSupport kFsSupport{
 #ifdef NL_FS_NTFS
     .ntfs = true,
 #endif
+    .wbfs = true,
 };
 
 void logSlot(const Device& d) {
@@ -43,11 +44,13 @@ bool mountSlot(const DeviceSlot& s, const DISC_INTERFACE* io) {
         case FsKind::Ntfs:
             return ntfsMount(s.name.c_str(), io, s.lba, kCachePages, kSectorsPerPage, NTFS_READ_ONLY | NTFS_SHOW_HIDDEN_FILES);
 #endif
+        case FsKind::Wbfs: return true;  // kein devoptab: Scanner und Fragmentliste lesen die Slots roh (M16)
         default: return false;
     }
 }
 
 void unmountSlot(const DeviceSlot& s) {
+    if (s.kind == FsKind::Wbfs) return;
 #ifdef NL_FS_NTFS
     if (s.kind == FsKind::Ntfs) {
         ntfsUnmount(s.name.c_str(), true);

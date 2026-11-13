@@ -512,7 +512,13 @@ int main(int argc, char** argv) {
     auto logGames = [&]() {
         if (!config.debugListGames) return;
         for (const nl::Game& g : store.games())
-            nl::log::line("NL_GAME %s %s", g.key, store.devices()[g.device].c_str());
+            nl::log::line("NL_GAME %s %s path=%s", g.key, store.devices()[g.device].c_str(), g.path != nullptr ? g.path : "");
+    };
+    // Review Focus 3: kaputte WBFS-Slots fallen still aus der Bibliothek, das Log nennt sie (Haupt-Thread, log ist
+    // nicht threadfest).
+    auto logWbfsSkips = [](const nl::MultiScan& m) {
+        for (const auto& [dev, slot] : m.wbfsSkips)
+            nl::log::line("NL_WBFS_SKIP %u dev=%s", static_cast<unsigned>(slot), dev.c_str());
     };
     auto applyIndexes = [&]() {
         store.setGames(nl::mergeIndexes(deviceIndexes), metaPtr);
@@ -543,6 +549,7 @@ int main(int argc, char** argv) {
         }
         if (result->isOk()) {
             const nl::ScanStats st = result->value().stats;
+            logWbfsSkips(result->value());
             deviceIndexes = std::move(*result).value().indexes;
             applyIndexes();
             nl::log::line("NL_SCAN_DONE games=%u added=%u removed=%u", static_cast<unsigned>(store.games().size()),
@@ -1283,6 +1290,7 @@ int main(int argc, char** argv) {
         if (auto result = worker.take()) {
             if (result->isOk()) {
                 const nl::ScanStats st = result->value().stats;
+                logWbfsSkips(result->value());
                 const std::string focusKey = mainScene.focusedKey();  // vor setGames: danach sind die Zeiger ungültig
                 deviceIndexes = std::move(*result).value().indexes;
                 applyIndexes();

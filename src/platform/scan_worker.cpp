@@ -1,5 +1,10 @@
 #include "platform/scan_worker.hpp"
 
+#include <memory>
+
+#include "platform/storage.hpp"
+#include "platform/wii_disc.hpp"
+
 namespace nl::platform {
 
 namespace {
@@ -57,8 +62,17 @@ void ScanWorker::cancelAndJoin() {
 
 void* ScanWorker::entry(void* arg) {
     auto* self = static_cast<ScanWorker*>(arg);
-    Result<MultiScan> r =
-        scanDevices(*self->fs_, self->devices_, self->rules_, self->previous_, self->meta_, &ScanWorker::onProgress, self);
+    // WBFS-Partitionen (M16) haben kein devoptab: der Scan liest ihre Slots über einen eigenen Rohzugriff.
+    std::vector<std::unique_ptr<RawDevice>> owned;
+    std::vector<RawSource> raw;
+    for (const std::string& name : self->devices_) {
+        const Device* d = deviceTable().byName(name);
+        if (d == nullptr || !d->mounted || d->slot.kind != FsKind::Wbfs) continue;
+        owned.push_back(std::make_unique<RawDevice>(d->slot.usb && !deviceTable().sdAsDisk()));
+        raw.push_back(RawSource{name, owned.back().get(), d->slot.lba});
+    }
+    Result<MultiScan> r = scanDevices(*self->fs_, self->devices_, self->rules_, self->previous_, self->meta_,
+                                      &ScanWorker::onProgress, self, raw);
     LWP_MutexLock(self->mutex_);
     self->result_.emplace(std::move(r));
     self->running_ = false;

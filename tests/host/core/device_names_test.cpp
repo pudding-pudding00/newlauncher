@@ -141,3 +141,16 @@ TEST_CASE("device_names: exFAT bleibt auch mit voller Unterstützung ohne Namen"
     CHECK(s[0].skip == SkipReason::ExFat);
     CHECK(std::string(skipReasonText(s[0].skip, false)) == "exFAT is not supported – please use FAT32");
 }
+
+// M16 Task 5: WBFS bekommt mit wbfs=true einen Namen, nur lesend (Rohzugriff, kein Dateisystem).
+TEST_CASE("device_names: FAT + WBFS mit wbfs=true → usb (fat), usb2 (wbfs, nur lesend)") {
+    const std::vector<PartitionInfo> usb{part(2048, FsKind::Fat), part(9000, FsKind::Wbfs)};
+    const auto s = assignDevices(false, FsKind::Unknown, usb, FsSupport{false, false, true});
+    REQUIRE(s.size() == 2);
+    CHECK(s[1].name == "usb2");
+    CHECK(s[1].mount);
+    CHECK(s[1].readOnly);
+    const auto off = assignDevices(false, FsKind::Unknown, usb, FsSupport{true, false, false});
+    CHECK_FALSE(off[1].mount);
+    CHECK(off[1].skip == SkipReason::WbfsUnsupported);
+}

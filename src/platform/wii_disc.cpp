@@ -12,6 +12,7 @@
 #include <cstring>
 #include <memory>
 
+#include "core/wbfs_part.hpp"
 #include "core/wii_title.hpp"
 #include "platform/fs_extents.hpp"
 #include "platform/log.hpp"
@@ -79,6 +80,38 @@ bool verifyPart(FileSystem& fs, BlockDevice& dev, const Part& p) {
 
 }  // namespace
 
+namespace {
+
+// WBFS-Partition (M16 Task 5): Liste aus Kopf und Disc-Info des Slots; Gegenprobe = erster Disc-Sektor über die
+// Liste roh gelesen trägt die ID6 des Spiels.
+Result<FragList, LaunchError> wbfsSlotFragsChecked(const Game& g, const Device& device, u32 slot, const std::string& context,
+                                                   u32* partLbaOut) {
+    using R = Result<FragList, LaunchError>;
+    if (device.slot.kind != FsKind::Wbfs || device.slot.lba > 0xFFFFFFFFull) return R::err({LaunchFailure::RomMissing, context});
+    RawDevice dev(device.slot.usb && !deviceTable().sdAsDisk());
+    auto list = wbfsSlotFrags(dev, device.slot.lba, slot);
+    if (!list.isOk()) return R::err(fromFragError(list.error(), context));
+    if (partLbaOut != nullptr) *partLbaOut = static_cast<u32>(device.slot.lba);
+
+    const FragList& f = list.value();
+    const std::string_view key = g.key != nullptr ? g.key : "";
+    const u32 perDev = dev.sectorSize() / 512;
+    bool ok = !f.entries.empty() && f.entries[0].offset == 0 && perDev != 0 && key.size() >= 6;
+    if (ok) {
+        std::vector<u8> raw(dev.sectorSize());
+        const u32 lba = f.entries[0].sector;
+        ok = dev.read(lba / perDev, 1, raw) && std::memcmp(raw.data() + (lba % perDev) * 512, key.data(), 6) == 0;
+    }
+    if (!ok) {
+        log::line("NL_FRAG_VERIFY fail %s", context.c_str());
+        return R::err({LaunchFailure::WiiFileBroken, context});
+    }
+    log::line("NL_FRAG_VERIFY ok");
+    return R::ok(std::move(list.value()));
+}
+
+}  // namespace
+
 RawDevice::RawDevice(bool usb)
     : io_(usb ? &__io_usbstorage : &__io_wiisd),
       sectorSize_(usb && __io_usbstorage_sector_size != 0 ? __io_usbstorage_sector_size : 512),
@@ -103,6 +136,7 @@ Result<FragList, LaunchError> computeWiiFrags(FileSystem& fs, const Game& g, con
     using R = Result<FragList, LaunchError>;
     const std::string libRoot = device.slot.name + ":";
     const std::string main = joinPath(libRoot, g.path != nullptr ? g.path : "");
+    if (auto slot = wbfsSlotOf(g.path != nullptr ? g.path : "")) return wbfsSlotFragsChecked(g, device, *slot, main, partLbaOut);
     const bool wbfs = endsWithNoCase(main, ".wbfs");
 
     std::vector<Part> parts;

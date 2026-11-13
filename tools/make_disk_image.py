@@ -23,8 +23,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = REPO_ROOT / "tools" / "docker" / "fsimg.Dockerfile"
 DOCKER_IMAGE = "nl-fsimg"
 ALIGN = 2048  # Sektoren (1 MiB)
-TYPES = {"fat32": 0x0C, "ntfs": 0x07, "ext4": 0x83}
-MIN_MIB = {"fat32": 64, "ntfs": 16, "ext4": 16}
+TYPES = {"fat32": 0x0C, "ntfs": 0x07, "ext4": 0x83, "wbfs": 0x07}  # WBFS erkennt der Launcher an der Magic
+MIN_MIB = {"fat32": 64, "ntfs": 16, "ext4": 16, "wbfs": 64}
+WBFS_HD_SHIFT = 9    # 512-Byte-Sektoren
+WBFS_SEC_SHIFT = 21  # 2-MiB-Blöcke, wie wbfs_file/USB Loader GX bei kleinen Partitionen
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,8 @@ def format_script(parts: list[Part], filled: list[bool]) -> str:
     """sh-Skript, das in $WORK aus in<i>/ die Images p<i>.img erzeugt."""
     lines = ["set -e", 'cd "$WORK"', "export MTOOLS_SKIP_CHECK=1"]
     for i, (p, fill) in enumerate(zip(parts, filled)):
+        if p.kind == "wbfs":
+            continue  # schreibt write_wbfs_image in Python
         mib = p.sectors // 2048
         img = f"p{i}.img"
         lines.append(f"rm -f {img} && truncate -s {mib}M {img}")
@@ -93,6 +97,49 @@ def format_script(parts: list[Part], filled: list[bool]) -> str:
             src = f"-d in{i}" if fill else ""
             lines.append(f"mkfs.ext4 -q -F -b 4096 -L nlext{i} {src} {img} {mib}M")
     return "\n".join(lines) + "\n"
+
+
+def write_wbfs_image(img: Path, sectors: int, src: Path) -> None:
+    """WBFS-Partition wie libwbfs: Kopf im hd-Sektor 0, Disc-Info je Slot ab hd-Sektor 1, Daten ab Block 1.
+
+    Jede *.iso aus `src` (sortiert) belegt einen Slot; die Disc-Info trägt die ersten 0x100 Byte der ISO und die
+    wlba-Tabelle. Bei `*.broken.iso` fehlt in der Disc-Kopf-Kopie die Wii-Magic (Review Focus 3). Die Frei-Bitmap
+    bleibt leer; der Launcher liest sie nicht.
+    """
+    hd = 1 << WBFS_HD_SHIFT
+    block = 1 << WBFS_SEC_SHIFT
+    per_disc = (143432 * 2) >> (WBFS_SEC_SHIFT - 15)
+    info_bytes = -(-(0x100 + 2 * per_disc) // hd) * hd
+    n_blocks = sectors * 512 // block
+    isos = sorted(f for f in src.iterdir() if f.is_file() and f.name.endswith(".iso"))
+    head = bytearray(hd)
+    head[:4] = b"WBFS"
+    struct.pack_into(">I", head, 4, sectors * 512 >> WBFS_HD_SHIFT)
+    head[8], head[9] = WBFS_HD_SHIFT, WBFS_SEC_SHIFT
+    if 12 + len(isos) > hd or (1 + len(isos) * info_bytes // hd) * hd > block:
+        raise ValueError(f"{len(isos)} ISOs passen nicht in den WBFS-Kopf")
+    with img.open("wb") as f:
+        f.truncate(sectors * 512)
+        next_block = 1
+        for slot, iso in enumerate(isos):
+            data = iso.read_bytes()
+            used = -(-len(data) // block)
+            if used > per_disc or next_block + used > n_blocks:
+                raise ValueError(f"{iso.name}: zu groß für die WBFS-Partition ({n_blocks} Blöcke)")
+            info = bytearray(info_bytes)
+            info[:0x100] = data[:0x100].ljust(0x100, bytes(1))
+            if iso.name.endswith(".broken.iso"):
+                info[0x18:0x1C] = bytes(4)
+            for b in range(used):
+                struct.pack_into(">H", info, 0x100 + 2 * b, next_block + b)
+            f.seek(hd + slot * info_bytes)
+            f.write(info)
+            f.seek(next_block * block)
+            f.write(data)
+            head[12 + slot] = 1
+            next_block += used
+        f.seek(0)
+        f.write(head)
 
 
 def assemble(out: Path, parts: list[Part], work: Path) -> None:
@@ -144,6 +191,9 @@ def make_image(out: Path, specs: list[tuple[str, Path | None]], native: bool = F
         if rc != 0:
             print(f"DISK FEHLER: Formatieren scheiterte (rc={rc})")
             return 1
+        for i, p in enumerate(parts):
+            if p.kind == "wbfs":
+                write_wbfs_image(work / f"p{i}.img", p.sectors, work / f"in{i}")
         out.parent.mkdir(parents=True, exist_ok=True)
         assemble(out, parts, work)
     print(f"{out}: " + ", ".join(f"{p.kind}@{p.lba}+{p.sectors}" for p in parts))

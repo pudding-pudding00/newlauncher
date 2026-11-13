@@ -16,7 +16,7 @@ inline constexpr u32 kMaxUsbMounts = 8;
 struct FsSupport {
     bool ntfs = false;
     bool ext = false;   // Spike M16 negativ: bleibt im Launcher false
-    bool wbfs = false;
+    bool wbfs = false;  // M16 Task 5: Rohzugriff auf die Slots, kein Dateisystem
 };
 
 // Warum eine Partition keinen Namen bekommt (Log deutsch, Systeminfo DE/EN).

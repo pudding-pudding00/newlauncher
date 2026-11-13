@@ -220,6 +220,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ntfs-iso", metavar="ID6:GRÖSSE", action="append", default=[],
                         help="mit --sd-disk: selbst erzeugtes Wii-Test-ISO auf die erste NTFS-Partition "
                              "(wbfs/Test [ID6]/ID6.iso), Größe in Bytes oder mit M, Vielfaches von 512")
+    parser.add_argument("--wbfs-iso", metavar="ID6:GRÖSSE[:broken]", action="append", default=[],
+                        help="mit --sd-disk …,wbfs: Test-Disc in einen Slot der ersten WBFS-Partition (Reihenfolge = "
+                             "Slot); :broken ohne Wii-Magic in der Disc-Kopf-Kopie (M16 Task 5)")
     args = parser.parse_args(argv)
     tls = args.tls or args.tls_wrong_ca
     if tls and not (args.cover_server or args.emu_server or args.cheat_server):
@@ -240,6 +243,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"SMOKE FEHLER: --ntfs-iso braucht ID6:GRÖSSE (Vielfaches von 512) und --sd-disk mit ntfs: {spec}")
             return 2
         args.ntfs_isos.append(iso)
+    args.wbfs_isos = []
+    for spec in args.wbfs_iso:
+        base, _, flag = spec.partition(":")[2].partition(":")
+        iso = parse_ntfs_iso(spec.partition(":")[0] + ":" + base)
+        if iso is None or flag not in ("", "broken") or not args.sd_disk_layout or "wbfs" not in args.sd_disk_layout:
+            print(f"SMOKE FEHLER: --wbfs-iso braucht ID6:GRÖSSE[:broken] und --sd-disk mit wbfs: {spec}")
+            return 2
+        args.wbfs_isos.append((iso[0], iso[1], flag == "broken"))
 
     for name, path in (("Dolphin", args.dolphin), ("DOL", args.dol)):
         if not path.is_file():
@@ -317,17 +328,17 @@ def main(argv: list[str] | None = None) -> int:
             server_dir.cleanup()
 
 
-SD_DISK_KINDS = ("fat32", "ntfs")
+SD_DISK_KINDS = ("fat32", "ntfs", "wbfs")
 SD_DISK_PROBE = "nl_ntfs.txt"  # Inhalt der weiteren Partitionen: eine Datei, die sich lesen lässt
 
 
 def sd_disk_markers(layout: list[str]) -> list[str]:
-    """Erwartete NL_DEV-Zeilen: Partitionen in MBR-Reihenfolge als usb, usb2, …; NTFS nur lesend (M16)."""
-    names = {"fat32": "fat", "ntfs": "ntfs"}
+    """Erwartete NL_DEV-Zeilen: Partitionen in MBR-Reihenfolge als usb, usb2, …; NTFS und WBFS nur lesend (M16)."""
+    names = {"fat32": "fat", "ntfs": "ntfs", "wbfs": "wbfs"}
     out = []
     for i, kind in enumerate(layout):
         name = "usb" if i == 0 else f"usb{i + 1}"
-        out.append(f"NL_DEV {name} {names[kind]} mounted" + (" ro" if kind == "ntfs" else ""))
+        out.append(f"NL_DEV {name} {names[kind]} mounted" + (" ro" if kind in ("ntfs", "wbfs") else ""))
     return out
 
 
@@ -340,11 +351,11 @@ def parse_ntfs_iso(spec: str) -> tuple[str, int] | None:
     return (id6, n) if n > 0 and n % 512 == 0 else None
 
 
-def _write_test_iso(root: Path, id6: str, size: int) -> None:
+def _write_test_iso(root: Path, id6: str, size: int, path: Path | None = None, title: str = "NTFS Test") -> None:
     """Wii-Kopf plus Füllmuster ohne Null-Sektoren, damit cp/ntfs-3g keine Löcher (sparse) anlegen."""
-    path = root / "wbfs" / f"Test [{id6}]" / f"{id6}.iso"
+    path = path or root / "wbfs" / f"Test [{id6}]" / f"{id6}.iso"
     path.parent.mkdir(parents=True, exist_ok=True)
-    head = bytes(disc_header(id6, f"NTFS Test {id6}", wii=True))[:512]
+    head = bytes(disc_header(id6, f"{title} {id6}", wii=True))[:512]
     fill = bytes(((i * 7) & 0xFF) or 1 for i in range(1 << 16))
     with path.open("wb") as f:
         f.write(head)
@@ -355,7 +366,8 @@ def _write_test_iso(root: Path, id6: str, size: int) -> None:
             left -= n
 
 
-def _build_sd_disk(layout: list[str], sd: Path, out: Path, isos: list[tuple[str, int]] | None = None) -> int:
+def _build_sd_disk(layout: list[str], sd: Path, out: Path, isos: list[tuple[str, int]] | None = None,
+                   wbfs_isos: list[tuple[str, int, bool]] | None = None) -> int:
     with tempfile.TemporaryDirectory(prefix="nl_sddisk_") as tmp:
         probe = Path(tmp) / "probe"
         probe.mkdir()
@@ -368,6 +380,14 @@ def _build_sd_disk(layout: list[str], sd: Path, out: Path, isos: list[tuple[str,
             for id6, size in isos:
                 _write_test_iso(games, id6, size)
             specs[layout.index("ntfs")] = ("ntfs", games)
+        if wbfs_isos:
+            # Erste WBFS-Partition: NN_ID6[.broken].iso, make_disk_image vergibt die Slots in Namensreihenfolge.
+            discs = Path(tmp) / "wbfs_discs"
+            discs.mkdir()
+            for n, (id6, size, broken) in enumerate(wbfs_isos):
+                name = f"{n:02d}_{id6}" + (".broken" if broken else "") + ".iso"
+                _write_test_iso(discs, id6, size, discs / name, "WBFS Test")
+            specs[layout.index("wbfs")] = ("wbfs", discs)
         rc = make_image(out, specs)
     if rc != 0:
         print(f"SMOKE FEHLER: SD-Image nicht gebaut (rc={rc})")
@@ -443,7 +463,8 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
 
     args.sd_image = None
     if getattr(args, "sd_disk_layout", None):
-        if _build_sd_disk(args.sd_disk_layout, sd, user_dir / "sd_disk.raw", args.ntfs_isos) != 0:
+        if _build_sd_disk(args.sd_disk_layout, sd, user_dir / "sd_disk.raw", args.ntfs_isos,
+                          getattr(args, "wbfs_isos", None)) != 0:
             return 2
         args.sd_image = user_dir / "sd_disk.raw"
     try:

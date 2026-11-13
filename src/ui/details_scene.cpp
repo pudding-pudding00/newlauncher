@@ -213,6 +213,11 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, Sce
         out.pop = true;
         return;
     }
+    if (in.pressed(Action::Options) && hasGame_ && (game_.console == Console::Wii || game_.console == Console::Gc)) {
+        out.command = AppCommand::OpenOptions;
+        out.game = &game_;
+        return;
+    }
     if (in.pressed(Action::Favorite) && hasGame_) {
         out.command = AppCommand::ToggleFavorite;
         out.game = &game_;
@@ -305,7 +310,9 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     gfx::fillRect(dl, s, Rect{0, top, ctx.width, kInfoBarH}, t.bar);
     gfx::fillRect(dl, s, Rect{0, top, ctx.width, 1}, t.barBorder);
     gfx::drawTextEllipsis(dl, body, kMargin, top + 36 + (body.ascent - body.descent) / 2, ctx.width - 2 * kMargin - 80,
-                          tr(Str::DetailsHelp), t.text2);
+                          tr(game_.console == Console::Wii || game_.console == Console::Gc ? Str::DetailsHelpOptions
+                                                                                            : Str::DetailsHelp),
+                          t.text2);
     const gfx::FontFace& clock = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
     const float cw = gfx::measureText(clock, clock_);
     gfx::drawText(dl, clock, ctx.width - kMargin - cw, top + 36 + (clock.ascent - clock.descent) / 2, clock_, t.text2);

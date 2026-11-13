@@ -24,6 +24,8 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::OpenSetup: return "open_setup";
         case AppCommand::SetupNetTest: return "setup_net_test";
         case AppCommand::FinishSetup: return "finish_setup";
+        case AppCommand::OpenOptions: return "open_options";
+        case AppCommand::SaveOptions: return "save_options";
         case AppCommand::EmuFetchList: return "emu_fetch_list";
         case AppCommand::EmuInstall: return "emu_install";
         case AppCommand::EmuInstallAll: return "emu_install_all";

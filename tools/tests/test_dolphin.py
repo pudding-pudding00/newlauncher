@@ -15,7 +15,7 @@ from deploy_dolphin import main as deploy_main  # noqa: E402
 from dolphin import (dolphin_command, log_path, reset_log, wait_for_markers,  # noqa: E402
                      write_dev_config)
 from dolphin_smoke import main as smoke_main  # noqa: E402
-from dolphin_smoke import sysinfo_problems  # noqa: E402
+from dolphin_smoke import missing_ini_lines, sysinfo_problems  # noqa: E402
 
 
 def process_alive(pid: int) -> bool:
@@ -200,6 +200,11 @@ class DolphinToolsTest(unittest.TestCase):
         text = "newlauncher 0.13.0\nPlattform: Wii\nSystem-Menü: 4.3E (514)\nNetzwerk: verbunden\n"
         self.assertEqual(sysinfo_problems(text), [])
         self.assertEqual(sysinfo_problems("Platform: vWii\n"), [])
+
+    def test_missing_ini_lines_ignores_spacing_and_reports_absent(self):
+        text = "[game RMGP01]\r\n  video =   pal60 \r\n"
+        self.assertEqual(missing_ini_lines(text, ["[game RMGP01]", "video = pal60"]), [])
+        self.assertEqual(missing_ini_lines(text, ["video = ntsc"]), ["video = ntsc"])
 
     def test_sysinfo_problems_flags_mac_ip_and_missing_platform(self):
         self.assertTrue(sysinfo_problems("Plattform: Wii\nMAC 00:17:AB:00:00:01\n"))

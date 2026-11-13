@@ -45,6 +45,18 @@ def sysinfo_problems(text: str) -> list[str]:
         problems.append("sysinfo.txt enthält eine IPv4-Adresse")
     return problems
 
+def _norm_ini_line(line: str) -> str:
+    if "=" in line:
+        k, v = line.split("=", 1)
+        return f"{k.strip()} = {v.strip()}"
+    return line.strip()
+
+
+def missing_ini_lines(text: str, expected: list[str]) -> list[str]:
+    """Erwartete Zeilen, die in text fehlen (Leerraum um „=“ und am Rand zählt nicht)."""
+    have = {_norm_ini_line(line) for line in text.splitlines()}
+    return [e for e in expected if _norm_ini_line(e) not in have]
+
 # Bilder des Test-Cover-Servers (Pfad wie bei GameTDB: <Region>/<ID6>.png). RMGP01 fehlt absichtlich.
 # --sd-layout multi (M12): eigener NES-Ordner neben roms/nes und ein ZIP-ROM. Nur zur Laufzeit erzeugt.
 MULTI_DIR = "emu"
@@ -178,6 +190,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--games-ini", metavar="TEXT",
                         help="Inhalt für newlauncher/games.ini (Spieloptionen, M14); ein wörtliches \\n trennt Zeilen. "
                              "Ohne die Option wird eine alte games.ini entfernt")
+    parser.add_argument("--expect-games-ini", metavar="LINE", action="append", default=[],
+                        help="Zeile, die nach dem Lauf in newlauncher/games.ini im SD-Image stehen muss (M14, mehrfach)")
     parser.add_argument("--config-append", metavar="TEXT",
                         help="Text, der vor dem [debug]-Block an config.ini angehängt wird (M14); \\n trennt Zeilen")
     args = parser.parse_args(argv)
@@ -342,6 +356,8 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
         missing = _check_frag(user_dir, args.expect_frag)
     if not missing and args.expect_sysinfo:
         missing = _check_sysinfo(user_dir)
+    if not missing and getattr(args, "expect_games_ini", None):
+        missing = _check_games_ini(user_dir, args.expect_games_ini)
     if not missing and getattr(args, "fresh_data", False):
         missing = _check_second_start(args, user_dir)
     if not missing:
@@ -410,6 +426,19 @@ def _check_sysinfo(user_dir: Path) -> list[str]:
     if not problems:
         print(f"SMOKE sysinfo.txt geprüft ({len(text.splitlines())} Zeilen)")
     return problems
+
+
+def _check_games_ini(user_dir: Path, expected: list[str]) -> list[str]:
+    """games.ini aus dem SD-Image lesen und die erwarteten Zeilen verlangen (M14)."""
+    try:
+        text = read_file(user_dir / "Load/WiiSD.raw", GAMES_REL).decode("utf-8", errors="replace")
+    except (OSError, ValueError, NotFat32Error) as e:
+        print(f"SMOKE FEHLER: games.ini nicht lesbar: {e}")
+        return ["games.ini"]
+    absent = missing_ini_lines(text, expected)
+    if not absent:
+        print(f"SMOKE games.ini geprüft ({len(expected)} Zeilen)")
+    return [f"games.ini: {line}" for line in absent]
 
 
 if __name__ == "__main__":

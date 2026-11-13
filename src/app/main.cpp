@@ -30,6 +30,9 @@
 #include "core/library_store.hpp"
 #include "core/meta_db.hpp"
 #include "core/n64.hpp"
+#include "core/options_model.hpp"
+#include "core/nin_cfg.hpp"
+#include "core/cios_scan.hpp"
 #include "core/n64_choice.hpp"
 #include "core/perf_stats.hpp"
 #include "core/theme.hpp"
@@ -63,6 +66,7 @@
 #include "ui/dialog_scene.hpp"
 #include "ui/emulators_scene.hpp"
 #include "ui/about_scene.hpp"
+#include "ui/options_scene.hpp"
 #include "ui/setup_scene.hpp"
 #include "ui/sysinfo_scene.hpp"
 #include "core/sysinfo.hpp"
@@ -571,6 +575,7 @@ int main(int argc, char** argv) {
     nl::platform::EmuWorker emu(netService);
     nl::ui::EmulatorsScene emuScene;
     nl::ui::AboutScene aboutScene;
+    nl::ui::OptionsScene optionsScene;
 #if defined(NL_TLS) && NL_TLS  // ab M11 Task 4 vom CMake-Schalter gesetzt
     aboutScene.setBuildInfo(NL_VERSION, true);
 #else
@@ -1032,6 +1037,37 @@ int main(int argc, char** argv) {
     };
 
     // debug autostart (nur für Tests); wartet ggf. auf die Debug-Emulator-Installation.
+    // Spieloptionen (Spec 7): pro Spiel (g != nullptr) oder global für eine Konsole.
+    auto openOptions = [&](nl::Console c, const nl::Game* g) {
+        std::string gamesText = data.readable ? readText(fs, gamesPath.c_str()) : std::string();
+        std::optional<nl::NinVersion> nin;  // unbekannt: nichts gesperrt
+        if (c == nl::Console::Gc && !emulators.nintendont().dol.empty())
+            nin = nl::findNintendontVersion(fs, emulators.nintendont().dol);
+        optionsScene.open(nl::OptionsModel(c, g != nullptr ? std::string(g->key) : std::string(), configText,
+                                           std::move(gamesText), nin),
+                          g != nullptr && g->title != nullptr ? std::string(g->title) : std::string());
+        scenes.push(&optionsScene);
+        nl::log::line("NL_SCENE options");
+    };
+    auto saveOptions = [&]() {
+        if (!optionsScene.hasModel()) return;
+        const nl::OptionsModel& m = optionsScene.model();
+        if (m.perGame()) {
+            if (data.writable && writeText(fs, gamesPath.c_str(), m.gamesIniText())) {
+                overrides = nl::GameOverrides::fromIni(nl::IniDoc::parse(m.gamesIniText()));
+                nl::log::line("NL_OPTIONS_SAVED games.ini %s", m.id6().c_str());
+            } else {
+                nl::log::line("NL_WARN games.ini nicht gespeichert");
+            }
+        } else if (data.writable && writeText(fs, configPath.c_str(), m.configIniText())) {
+            configText = m.configIniText();
+            // [wii] ios gehört auch zur Live-Config; sonst schriebe saveConfig den alten Wert zurück.
+            config.wiiIos = nl::parseIosValue(nl::IniDoc::parse(configText).get("wii", "ios"));
+            nl::log::line("NL_OPTIONS_SAVED config.ini %s", m.console() == nl::Console::Gc ? "gc" : "wii");
+        } else {
+            nl::log::line("NL_WARN config.ini nicht gespeichert");
+        }
+    };
     auto runPendingAutostart = [&]() {
         if (!autostartPending) return;
         autostartPending = false;
@@ -1246,6 +1282,14 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 startEmuInstall(emuScene.takeTargets());
                 break;
+            case nl::ui::AppCommand::OpenOptions:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                openOptions(req.game != nullptr ? req.game->console : req.console, req.game);
+                break;
+            case nl::ui::AppCommand::SaveOptions:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                saveOptions();
+                break;
             case nl::ui::AppCommand::OpenAbout:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 scenes.push(&aboutScene);
@@ -1326,6 +1370,22 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_SCENE about");
             }
             if (config.debugOpenScene == "sysinfo") openSysInfo();  // nur für Tests (M13)
+            if (config.debugOpenScene.rfind("options:", 0) == 0) {  // nur für Tests (M14): options:<ID6>|wii|gc
+                const std::string id = config.debugOpenScene.substr(8);
+                const nl::Game* found = nullptr;
+                for (const nl::Game& g : store.games())
+                    if (id == g.key) found = &g;
+                if (found != nullptr) openOptions(found->console, found);
+                else if (id == "wii" || id == "gc") openOptions(id == "gc" ? nl::Console::Gc : nl::Console::Wii, nullptr);
+                else nl::log::line("NL_WARN options %s fehlt", id.c_str());
+                const std::size_t eq = config.debugOptionSet.find('=');
+                if (scenes.contains(&optionsScene) && eq != std::string::npos) {
+                    const std::string k = config.debugOptionSet.substr(0, eq), v = config.debugOptionSet.substr(eq + 1);
+                    const bool ok = optionsScene.model().set(k, v);
+                    nl::log::line("NL_OPTION_SET %s=%s %s", k.c_str(), v.c_str(), ok ? "ok" : "fail");
+                    optionsScene.requestClose();
+                }
+            }
             if (config.debugSysinfoSave) {                          // nur für Tests (M13)
                 sysInfoScene.setInfo(buildSysInfo());
                 saveSysInfo();

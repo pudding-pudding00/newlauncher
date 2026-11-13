@@ -241,3 +241,19 @@ TEST_CASE_FIXTURE(Fixture, "Bibliothekszeile zeigt Automatisch statt USB, wenn s
     cfg.libraryRules.sources = SourceSpec{false, {"usb2", "sd"}};
     CHECK(s.valueTextFor(SettingRow::Library) == "usb2,sd");
 }
+
+TEST_CASE_FIXTURE(Fixture, "Wii-Spiele und GameCube-Spiele öffnen die globalen Optionen (M14)") {
+    CHECK(isAction(SettingRow::WiiGames));
+    CHECK(isAction(SettingRow::GcGames));
+    focusRow(SettingRow::WiiGames);
+    SceneRequests r = press(Action::Confirm);
+    CHECK(r.command == AppCommand::OpenOptions);
+    CHECK(r.game == nullptr);
+    CHECK(r.console == Console::Wii);
+    CHECK(r.pop);
+    s.onEnter();
+    focusRow(SettingRow::GcGames);
+    r = press(Action::Confirm);
+    CHECK(r.command == AppCommand::OpenOptions);
+    CHECK(r.console == Console::Gc);
+}

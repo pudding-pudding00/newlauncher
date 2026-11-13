@@ -7,7 +7,9 @@ namespace nl::ui {
 
 enum class Action : u8 {
     Up, Down, Left, Right, Confirm, Back, PrevConsole, NextConsole,
-    Favorite, Search, Home, DebugToggle, Count
+    Favorite, Search, Home, DebugToggle,
+    Options,  // Spieloptionen (M14): Wiimote + und GC R, zusätzlich zu NextConsole
+    Count
 };
 
 // Gerätezustand eines Frames, geräteneutral; alle Controller verodert.

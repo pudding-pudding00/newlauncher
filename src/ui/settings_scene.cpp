@@ -13,12 +13,12 @@ using gfx::FontSize;
 using gfx::FontWeight;
 using gfx::Rect;
 
-constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 24.0f, kHelpH = 24.0f;  // 16 Zeilen in 480
+constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 21.0f, kHelpH = 24.0f;  // 18 Zeilen in 480
 
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo,  Str::Music,       Str::Volume,
     Str::Sounds,   Str::LibraryDevice, Str::CoverRegion, Str::Rescan, Str::FetchCovers, Str::VcMapTitle,
-    Str::Emulators, Str::Setup, Str::SysInfo, Str::About,
+    Str::Emulators, Str::WiiGames, Str::GcGames, Str::Setup, Str::SysInfo, Str::About,
 };
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
@@ -37,6 +37,8 @@ AppCommand actionCommand(SettingRow r) {
         case SettingRow::FetchCovers: return AppCommand::FetchCovers;
         case SettingRow::VcMap: return AppCommand::OpenVcMap;
         case SettingRow::Emulators: return AppCommand::OpenEmulators;
+        case SettingRow::WiiGames:
+        case SettingRow::GcGames: return AppCommand::OpenOptions;
         case SettingRow::Setup: return AppCommand::OpenSetup;
         case SettingRow::SysInfo: return AppCommand::OpenSysInfo;
         case SettingRow::About: return AppCommand::OpenAbout;
@@ -110,6 +112,7 @@ void SettingsScene::update(const UiContext& ctx, const InputFrame& in, float, Sc
     if (pendingAction_ != AppCommand::None) {  // SaveSettings lief im letzten Frame, der Klang auch
         sound.silence();
         out.command = pendingAction_;
+        out.console = pendingConsole_;
         out.pop = true;
         pendingAction_ = AppCommand::None;
         return;
@@ -141,6 +144,8 @@ void SettingsScene::update(const UiContext& ctx, const InputFrame& in, float, Sc
     const SettingRow row = static_cast<SettingRow>(focus_);
     if (isAction(row)) {
         if (in.pressed(Action::Confirm) && !pointerOff) {
+            out.console = row == SettingRow::GcGames ? Console::Gc : Console::Wii;
+            pendingConsole_ = out.console;
             if (dirty()) {
                 out.command = AppCommand::SaveSettings;
                 saved_ = *live_;

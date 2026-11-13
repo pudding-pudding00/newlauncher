@@ -1,4 +1,5 @@
 #include "core/channel_banner.hpp"
+#include "support/brlan_images.hpp"
 #include "support/brlyt_images.hpp"
 #include "support/tpl_images.hpp"
 #include "support/u8_images.hpp"
@@ -14,13 +15,20 @@ namespace {
 FstSpec file(std::string name, std::vector<u8> data) { return FstSpec{std::move(name), std::move(data), false, {}}; }
 FstSpec dir(std::string name, std::vector<FstSpec> children) { return FstSpec{std::move(name), {}, true, std::move(children)}; }
 
-std::vector<u8> innerArchive(bool withTexture) {
+std::vector<u8> tplOf(u8 red) {
+    return test::tplFile({test::TplSpec{TexFmt::RGB5A3, 8, 4, [red](int, int) { return test::Rgba{red, 0, 0, 255}; }, {}}});
+}
+
+std::vector<u8> innerArchive(bool withTexture, std::vector<FstSpec> anim = {}, std::vector<FstSpec> moreTex = {}) {
     test::PaneSpec pic = test::pane("pic1", "p", 0, 0, 8, 8);
     const auto brlyt = test::buildBrlyt(608, 456, {"logo.tpl"}, {test::MatSpec{"m", {0}, {}, {}}}, {pic});
     const auto tpl = test::tplFile({test::TplSpec{TexFmt::RGB5A3, 8, 4, [](int, int) { return test::Rgba{255, 0, 0, 255}; }, {}}});
     std::vector<FstSpec> timg;
     if (withTexture) timg.push_back(file("logo.tpl", tpl));
-    return test::buildU8({dir("arc", {dir("blyt", {file("banner.brlyt", brlyt)}), dir("timg", timg)})});
+    for (auto& t : moreTex) timg.push_back(std::move(t));
+    std::vector<FstSpec> arc{dir("blyt", {file("banner.brlyt", brlyt)}), dir("timg", timg)};
+    if (!anim.empty()) arc.insert(arc.begin(), dir("anim", std::move(anim)));
+    return test::buildU8({dir("arc", std::move(arc))});
 }
 
 std::vector<u8> content0(const std::vector<u8>& bannerBin) {
@@ -58,4 +66,53 @@ TEST_CASE("channel_banner: Fehler fallen sauber zurück") {
     CHECK(loadChannelBanner(noBin).error().code == ErrorCode::NotFound);
     CHECK(loadChannelBanner(content0(test::imd5(innerArchive(false)))).error().code == ErrorCode::InvalidData);
     CHECK(loadChannelBanner(content0({1, 2, 3})).error().code == ErrorCode::InvalidData);  // kein IMD5
+}
+
+namespace {
+std::vector<u8> moveAnim(u16 frames, std::vector<std::string> patterns = {}) {
+    std::vector<test::TagSpec> tags{test::TagSpec{"RLPA", {test::InfoSpec{0, 0, false, {{0, 0, 0}, {10, 50, 0}}}}}};
+    if (!patterns.empty()) tags.push_back(test::TagSpec{"RLTP", {test::InfoSpec{0, 0, true, {{0, 0, 0}}}}});
+    std::vector<test::EntrySpec> entries{test::EntrySpec{"p", false, {tags[0]}}};
+    if (!patterns.empty()) entries.push_back(test::EntrySpec{"m", true, {tags[1]}});
+    return test::buildBrlan(frames, true, patterns, entries);
+}
+}  // namespace
+
+TEST_CASE("channel_banner: Start- und Loop-Animation, Mustertexturen werden mitgeladen") {
+    auto r = loadChannelBanner(content0(test::imd5(innerArchive(
+        true, {file("banner_Start.brlan", moveAnim(30)), file("banner_Loop.brlan", moveAnim(120, {"pat.tpl", "logo.tpl"}))},
+        {file("pat.tpl", tplOf(9))}))));
+    REQUIRE(r.isOk());
+    const ChannelBanner& b = r.value();
+    REQUIRE(b.start);
+    REQUIRE(b.loop);
+    CHECK(b.start->frames == 30);
+    CHECK(b.loop->frames == 120);
+    CHECK_FALSE(b.animInvalid);
+    CHECK(b.layout.textures == std::vector<std::string>{"logo.tpl", "pat.tpl"});  // pat.tpl angehängt, logo nicht doppelt
+    REQUIRE(b.textures.size() == 2);
+    CHECK(decodeToRgba(b.textures[1])[0] == 8);  // 9 auf 5 Bit gerundet
+}
+
+TEST_CASE("channel_banner: nur banner.brlan ist die Schleife") {
+    auto r = loadChannelBanner(content0(test::imd5(innerArchive(true, {file("banner.brlan", moveAnim(60))}))));
+    REQUIRE(r.isOk());
+    CHECK_FALSE(r.value().start);
+    REQUIRE(r.value().loop);
+    CHECK(r.value().loop->frames == 60);
+}
+
+TEST_CASE("channel_banner: kaputte Animation oder fehlende Mustertextur → stehendes Bild") {
+    auto broken = moveAnim(60);
+    broken[0] = 'X';
+    auto r = loadChannelBanner(content0(test::imd5(innerArchive(true, {file("banner_Loop.brlan", broken)}))));
+    REQUIRE(r.isOk());
+    CHECK_FALSE(r.value().loop);
+    CHECK(r.value().animInvalid);
+    r = loadChannelBanner(content0(test::imd5(innerArchive(true, {file("banner_Loop.brlan", moveAnim(60, {"fehlt.tpl"}))}))));
+    REQUIRE(r.isOk());
+    CHECK_FALSE(r.value().loop);
+    CHECK(r.value().animInvalid);
+    CHECK(r.value().layout.textures.size() == 1);
+    CHECK(r.value().textures.size() == 1);
 }

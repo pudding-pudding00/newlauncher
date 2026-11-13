@@ -287,10 +287,46 @@ def brlyt(w: float, h: float, textures: list, materials: list, roots: list) -> b
     return b"RLYT" + bytes([0xFE, 0xFF, 0x00, 0x0A]) + struct.pack(">IHH", 0x10 + len(body), 0x10, len(secs)) + body
 
 
+def brlan(frames: int, loop: bool, patterns: list, entries: list) -> bytes:
+    """BRLAN (Version 8) mit einem pai1-Abschnitt.
+
+    entries: (Name, Material?, [(Tag-Magic, [(Index, Ziel, Stufe?, [(Bild, Wert, Steigung)])])])."""
+    body = bytearray(struct.pack(">HBxHHI", frames, 1 if loop else 0, len(patterns), len(entries), 0))
+    timg = len(body)
+    body += bytes(4 * len(patterns))
+    for i, name in enumerate(patterns):
+        struct.pack_into(">I", body, timg + 4 * i, len(body) - timg)
+        body += name.encode("ascii") + bytes(1)
+    body += bytes(-len(body) % 4)
+    table = len(body)
+    struct.pack_into(">I", body, 8, 8 + table)
+    body += bytes(4 * len(entries))
+    for e, (name, material, tags) in enumerate(entries):
+        base = len(body)
+        struct.pack_into(">I", body, table + 4 * e, 8 + base)
+        body += _fixed(name, 20) + struct.pack(">BBxx", len(tags), 1 if material else 0)
+        tag_table = len(body)
+        body += bytes(4 * len(tags))
+        for t, (magic, infos) in enumerate(tags):
+            tag_at = len(body)
+            struct.pack_into(">I", body, tag_table + 4 * t, tag_at - base)
+            body += magic.encode("ascii") + struct.pack(">Bxxx", len(infos))
+            info_table = len(body)
+            body += bytes(4 * len(infos))
+            for i, (index, target, step, keys) in enumerate(infos):
+                struct.pack_into(">I", body, info_table + 4 * i, len(body) - tag_at)
+                body += struct.pack(">BBBxHxxI", index, target, 1 if step else 2, len(keys), 0x0C)
+                for frame, value, slope in keys:
+                    body += struct.pack(">fHxx", frame, int(value)) if step else struct.pack(">fff", frame, value, slope)
+    section = _section("pai1", bytes(body))
+    return b"RLAN" + bytes([0xFE, 0xFF, 0x00, 0x08]) + struct.pack(">IHH", 0x10 + len(section), 0x10, 1) + section
+
+
 def channel_banner_app() -> bytes:
     """Kanal-content0 wie auf der NAND: 0x40 Byte frei, IMET-Kopf bis 0x640, dann U8 mit meta/banner.bin.
 
-    Szene: Hintergrund (RGB5A3), gedrehtes Logo (C8 mit Palette), ungetextureter Balken → drei Quads."""
+    Szene: Hintergrund (RGB5A3), gedrehtes Logo (C8 mit Palette), ungetextureter Balken → drei Quads.
+    Animation: banner_Start (30 Bilder) und banner_Loop (120 Bilder, mit Musterwechsel auf logo2.tpl)."""
     bg = tpl([(5, 64, 48, lambda x, y: (30, 40 + y * 3, 120 + x, 255), None)])
     palette = [rgb5a3_pixel(250, 200, 40), rgb5a3_pixel(250, 250, 250)]
     logo = tpl([(9, 32, 16, lambda x, y: (x // 4 + y // 4) % 2, palette)])
@@ -302,7 +338,17 @@ def channel_banner_app() -> bytes:
     ])
     layout = brlyt(608, 456, ["bg.tpl", "logo.tpl"],
                    [("bg", 0, None), ("logo", 1, None), ("bar", None, (255, 255, 255, 255))], [root])
-    inner = u8_archive({"arc": {"blyt": {"banner.brlyt": layout}, "timg": {"bg.tpl": bg, "logo.tpl": logo}}})
+    logo2 = tpl([(9, 32, 16, lambda x, y: (x // 4 + y // 4 + 1) % 2, palette)])
+    # Start: Logo fährt von links herein. Schleife: Logo pendelt, Balken pulsiert, Logo wechselt das Muster.
+    start = brlan(30, False, [], [("logo", False, [("RLPA", [(0, 0, False, [(0, -400, 0), (30, 0, 0)])])])])
+    loop = brlan(120, True, ["logo.tpl", "logo2.tpl"], [
+        ("logo", False, [("RLPA", [(0, 5, False, [(0, 15, 0), (60, -15, 0), (120, 15, 0)])])]),
+        ("bar", False, [("RLVC", [(0, 0x10, False, [(0, 200, 0), (60, 80, 0), (120, 200, 0)])])]),
+        ("logo", True, [("RLTP", [(0, 0, True, [(0, 0, 0), (30, 1, 0), (60, 0, 0), (90, 1, 0)])])]),
+    ])
+    inner = u8_archive({"arc": {"anim": {"banner_Loop.brlan": loop, "banner_Start.brlan": start},
+                                "blyt": {"banner.brlyt": layout},
+                                "timg": {"bg.tpl": bg, "logo.tpl": logo, "logo2.tpl": logo2}}})
     outer = u8_archive({"meta": {"banner.bin": imd5(inner)}})
     head = bytearray(0x640)
     head[0x80:0x84] = b"IMET"

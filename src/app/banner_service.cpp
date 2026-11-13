@@ -37,6 +37,9 @@ void BannerService::freeTexels() {
 void BannerService::freeFrame() {
     textures_.release();
     quads_.clear();
+    player_.reset(nullptr, nullptr);
+    start_.reset();
+    loop_.reset();
     layout_ = Layout{};
     frame_ = ui::BannerFrame{};
     haveFrame_ = false;
@@ -48,6 +51,9 @@ void BannerService::takeChannel(ChannelBanner& banner) {
         return;
     }
     layout_ = std::move(banner.layout);
+    start_ = std::move(banner.start);
+    loop_ = std::move(banner.loop);
+    player_.reset(start_ ? &*start_ : nullptr, loop_ ? &*loop_ : nullptr);
     quads_ = buildQuads(layout_, initialState(layout_));
     u32 pictures = 0;
     for (const LytPane& p : layout_.panes) pictures += p.isPicture ? 1 : 0;
@@ -57,6 +63,21 @@ void BannerService::takeChannel(ChannelBanner& banner) {
               static_cast<unsigned>(layout_.panes.size()), static_cast<unsigned>(layout_.skipped),
               static_cast<unsigned>(layout_.textures.size()), static_cast<unsigned>(textures_.bytes()));
     log::line("NL_BANNER static quads=%u", static_cast<unsigned>(quads_.size()));
+    if (banner.animInvalid) log::line("NL_BANNER_FALLBACK static brlan");
+    if (player_.current() != nullptr) {
+        log::line("NL_BANNER anim start=%u loop=%u", static_cast<unsigned>(start_ ? start_->frames : 0),
+                  static_cast<unsigned>(loop_ ? loop_->frames : 0));
+    }  // das erste Bild setzt pump() direkt danach
+}
+
+void BannerService::animate() {
+    const Anim* a = player_.current();
+    if (a == nullptr) return;
+    std::vector<PaneState> state = initialState(layout_);
+    applyAnim(layout_, *a, player_.frame(), state);
+    quads_ = buildQuads(layout_, state);
+    frame_.quads = quads_;
+    player_.step();
 }
 
 void BannerService::release() {
@@ -106,6 +127,7 @@ void BannerService::pump() {
             }
         }
     }
+    if (haveFrame_) animate();  // 60 Bilder je Sekunde: pump() läuft einmal je Frame
     if (key_.empty() || requested_ || worker_.running()) return;
     requested_ = true;
     freeTexels();  // altes Spiel: Renderer hat den Vorframe mit GX_DrawDone beendet

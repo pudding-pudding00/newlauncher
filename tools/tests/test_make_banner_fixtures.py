@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from make_banner_fixtures import (TEX_BYTES, brlyt, channel_banner_app, gc_bnr, gc_iso, imd5,  # noqa: E402
+from make_banner_fixtures import (TEX_BYTES, brlan, brlyt, channel_banner_app, gc_bnr, gc_iso, imd5,  # noqa: E402
                                   main, pane, rgb5a3_pixel, sample_bnr, tex_bytes, tile_rgb5a3, tpl,
                                   u8_archive)
 
@@ -109,13 +109,26 @@ class MakeBannerFixturesTest(unittest.TestCase):
         self.assertEqual(struct.unpack_from(">I", data, pic_at + 4)[0], 0x60)
         self.assertEqual(struct.unpack_from(">H", data, pic_at + 0x5C)[0], 1)
 
+    def test_brlan_header_and_keys(self):
+        data = brlan(120, True, ["a.tpl"], [("logo", False, [("RLPA", [(0, 5, False, [(0, 0, 0), (60, 360, 0)])])]),
+                                            ("m", True, [("RLTP", [(0, 0, True, [(0, 0, 0)])])])])
+        self.assertEqual(data[:8], b"RLAN" + bytes([0xFE, 0xFF, 0x00, 0x08]))
+        self.assertEqual(struct.unpack_from(">I", data, 8)[0], len(data))
+        self.assertEqual(sections(data), [(b"pai1", len(data) - 0x10)])
+        self.assertEqual(struct.unpack_from(">HBxHH", data, 0x18), (120, 1, 1, 2))
+        self.assertIn(b"a.tpl" + bytes(1), data)
+        self.assertIn(b"RLPA", data)
+        self.assertIn(struct.pack(">fff", 60, 360, 0), data)
+        self.assertIn(struct.pack(">fHxx", 0, 0), data)
+
     def test_channel_banner_app(self):
         data = channel_banner_app()
         self.assertEqual(data[0x80:0x84], b"IMET")
         self.assertEqual(data[0x640:0x644], bytes([0x55, 0xAA, 0x38, 0x2D]))
         inner_at = data.index(b"IMD5") + 32
         self.assertEqual(data[inner_at:inner_at + 4], bytes([0x55, 0xAA, 0x38, 0x2D]))
-        for name in (b"banner.brlyt\0", b"bg.tpl\0", b"logo.tpl\0", b"RLYT"):
+        for name in (b"banner.brlyt\0", b"bg.tpl\0", b"logo.tpl\0", b"RLYT", b"banner_Start.brlan\0",
+                     b"banner_Loop.brlan\0", b"logo2.tpl\0", b"RLAN"):
             self.assertIn(name, data[inner_at:])
 
     def test_main_writes_bnr(self):

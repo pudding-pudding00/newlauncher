@@ -6,7 +6,10 @@
 #include <string>
 #include <vector>
 
+#include <optional>
+
 #include "core/banner_scene.hpp"
+#include "core/brlan.hpp"
 #include "core/fs.hpp"
 #include "gfx/renderer.hpp"
 #include "platform/banner_tex.hpp"
@@ -36,6 +39,7 @@ private:
     void freeTexels();
     void freeFrame();
     void takeChannel(ChannelBanner& banner);
+    void animate();  // ein Bild der Animation weiter, Quads neu
 
     FileSystem& fs_;
     gfx::Renderer& renderer_;
@@ -49,6 +53,8 @@ private:
     platform::BannerTextures textures_;  // Kanal-Banner für key_
     Layout layout_;
     std::vector<Quad> quads_;
+    std::optional<Anim> start_, loop_;
+    AnimPlayer player_;
     ui::BannerFrame frame_{};
     bool haveFrame_ = false;
 };

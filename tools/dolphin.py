@@ -51,13 +51,17 @@ def write_dev_config(user_dir: Path) -> None:
     )
 
 
-def dolphin_command(exe: Path, user_dir: Path, dol: Path) -> list[str]:
+def dolphin_command(exe: Path, user_dir: Path, dol: Path, sd_image: Path | None = None) -> list[str]:
     """Startbefehl; -u isoliert die Konfiguration vom privaten Dolphin des Nutzers.
 
     -C setzt die Lautstärke nur für diesen Lauf auf 0 (nicht gespeichert): die Test-Musik ist ein Dauerton,
     der DSP läuft trotzdem wie sonst. Muss hinter -u <dir> stehen (Fake-Dolphin in den Tests ist Python).
+    sd_image (M16): rohes SD-Image statt Ordner-Sync; nur für diesen Lauf, die Dev-Konfiguration bleibt.
     """
-    return [str(exe), "-u", str(user_dir), "-b", "-C", "Dolphin.DSP.Volume=0", "-e", str(dol)]
+    cmd = [str(exe), "-u", str(user_dir), "-b", "-C", "Dolphin.DSP.Volume=0"]
+    if sd_image is not None:
+        cmd += ["-C", f"Dolphin.General.WiiSDCardPath={sd_image}", "-C", "Dolphin.Core.WiiSDCardEnableFolderSync=False"]
+    return cmd + ["-e", str(dol)]
 
 
 def reset_log(user_dir: Path) -> None:

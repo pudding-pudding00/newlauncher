@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from deploy_dolphin import FIXTURES_DIR, deploy  # noqa: E402
 from deploy_dolphin import main as deploy_main  # noqa: E402
-from dolphin import (dolphin_command, log_path, reset_log, wait_for_markers,  # noqa: E402
+from dolphin import (dolphin_command, log_path, reset_log, sd_sync_dir, wait_for_markers,  # noqa: E402
                      write_dev_config)
 from dolphin_smoke import main as smoke_main  # noqa: E402
 from dolphin_smoke import missing_ini_lines, sysinfo_problems  # noqa: E402
@@ -62,6 +62,13 @@ class DolphinToolsTest(unittest.TestCase):
     def test_dolphin_command_always_isolates_user_dir(self):
         cmd = dolphin_command(Path("D.exe"), self.user, Path("a.dol"))
         self.assertEqual(cmd, ["D.exe", "-u", str(self.user), "-b", "-C", "Dolphin.DSP.Volume=0", "-e", "a.dol"])
+
+    def test_dolphin_command_with_sd_image_uses_raw_card(self):
+        # M16: SD-Karte als Rohgerät; ohne Ordner-Sync liest Dolphin das Image direkt.
+        cmd = dolphin_command(Path("D.exe"), self.user, Path("a.dol"), sd_image=Path("x.raw"))
+        self.assertEqual(cmd, ["D.exe", "-u", str(self.user), "-b", "-C", "Dolphin.DSP.Volume=0",
+                               "-C", "Dolphin.General.WiiSDCardPath=x.raw",
+                               "-C", "Dolphin.Core.WiiSDCardEnableFolderSync=False", "-e", "a.dol"])
 
     def test_reset_log_removes_stale_marker(self):
         log_path(self.user).parent.mkdir(parents=True)
@@ -483,6 +490,54 @@ class DolphinToolsTest(unittest.TestCase):
             self.assertEqual(self._frag_run("NL_FRAG irgendwas", fat16=True), 0)
         printed = "".join(str(c.args[0]) for c in out.write.call_args_list if c.args)
         self.assertIn("SMOKE HINWEIS: SD-Image nicht FAT32, Abgleich übersprungen", printed)
+
+    # --- M16: --sd-disk baut ein Platten-Image aus der SD und einer NTFS-Partition ---
+    def _sd_disk_run(self, logged: list[str], layout: str = "fat32,ntfs"):
+        calls = []
+
+        def fake_make_image(out, specs, native=False):
+            calls.append((out, specs, (specs[1][1] / "nl_ntfs.txt").is_file() if len(specs) > 1 else None))
+            out.write_bytes(b"x" * 512)
+            return 0
+
+        body = ['OSREPORT: NL_READY', '<argv>'] + logged
+        self._fake_dolphin(
+            "import pathlib, sys, time\n"
+            f"lines = {body!r}\n"
+            "lines[1] = ' '.join(sys.argv)\n"
+            "log = pathlib.Path(__file__).parent / 'Logs' / 'dolphin.log'\n"
+            "log.parent.mkdir(parents=True, exist_ok=True)\n"
+            "log.write_text(''.join(x + chr(10) for x in lines))\n"
+            "time.sleep(60)\n")
+        with mock.patch("dolphin_smoke.make_image", side_effect=fake_make_image):
+            rc = smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                             "--timeout", "5", "--sd-disk", layout])
+        return rc, calls
+
+    def test_smoke_sd_disk_builds_image_from_sd(self):
+        rc, calls = self._sd_disk_run(["OSREPORT: NL_DEV usb fat mounted lba=2048",
+                                       "OSREPORT: NL_DEV usb2 ntfs mounted ro lba=133120"])
+        self.assertEqual(rc, 0)
+        out, specs, ntfs_filled = calls[0]
+        self.assertEqual(out, self.user.resolve() / "sd_disk.raw")
+        self.assertEqual(specs[0], ("fat32", sd_sync_dir(self.user.resolve())))
+        self.assertEqual(specs[1][0], "ntfs")
+        self.assertTrue(ntfs_filled)
+        text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertIn("sd_as_disk = 1", text)
+        # Fixture-config.ini sagt library = sd; ohne „auto“ fragt der Launcher die Platte nie ab.
+        self.assertIn("[library]\nsources = auto\n[debug]", text)
+        log = (self.user / "Logs/dolphin.log").read_text()
+        self.assertIn("WiiSDCardPath=" + str(out), log)
+
+    def test_smoke_sd_disk_requires_ntfs_marker(self):
+        rc, _ = self._sd_disk_run(["OSREPORT: NL_DEV usb fat mounted lba=2048"])
+        self.assertEqual(rc, 1)
+
+    def test_smoke_sd_disk_first_partition_must_be_fat32(self):
+        rc, calls = self._sd_disk_run([], layout="ntfs,fat32")
+        self.assertEqual(rc, 2)
+        self.assertEqual(calls, [])
 
     def test_smoke_reports_unstartable_dolphin(self):
         bad = self.tmp / "kaputt.exe"

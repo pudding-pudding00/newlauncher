@@ -19,6 +19,7 @@ from pathlib import Path
 
 from deploy_dolphin import ARGV_ECHO_DOL, DEFAULT_DOL, DIST_DIR, FIXTURES_DIR, deploy
 from fat_frag import NotFat32Error, expected_frag_line, read_file
+from make_disk_image import make_image
 from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_path, reset_log,
                      sd_sync_dir, wait_for_markers, write_dev_config)
 from pngfile import solid_png
@@ -212,11 +213,22 @@ def main(argv: list[str] | None = None) -> int:
                         help="Zeile, die nach dem Lauf in newlauncher/games.ini im SD-Image stehen muss (M14, mehrfach)")
     parser.add_argument("--config-append", metavar="TEXT",
                         help="Text, der vor dem [debug]-Block an config.ini angehängt wird (M14); \\n trennt Zeilen")
+    parser.add_argument("--sd-disk", metavar="LAYOUT",
+                        help="SD als Platte (M16), z. B. fat32,ntfs: baut ein Image mit MBR; die erste Partition "
+                             "(fat32) ist der SD-Inhalt, weitere enthalten nl_ntfs.txt. Braucht Docker")
     args = parser.parse_args(argv)
     tls = args.tls or args.tls_wrong_ca
     if tls and not (args.cover_server or args.emu_server or args.cheat_server):
         parser.error("--tls/--tls-wrong-ca braucht --cover-server, --emu-server oder --cheat-server")
     markers = args.markers or DEFAULT_MARKERS
+    args.sd_disk_layout = None
+    if args.sd_disk:
+        layout = [k.strip() for k in args.sd_disk.split(",")]
+        if layout[0] != "fat32" or any(k not in SD_DISK_KINDS for k in layout) or len(layout) > 4:
+            print(f"SMOKE FEHLER: --sd-disk braucht fat32 zuerst, dann {', '.join(SD_DISK_KINDS)}: {args.sd_disk}")
+            return 2
+        args.sd_disk_layout = layout
+        markers = markers + sd_disk_markers(layout)
 
     for name, path in (("Dolphin", args.dolphin), ("DOL", args.dol)):
         if not path.is_file():
@@ -281,6 +293,8 @@ def main(argv: list[str] | None = None) -> int:
         markers = markers + ["NL_SYSINFO_SAVED"]
     if args.fresh_data:
         markers = markers + ["NL_WIZARD done"]
+    if args.sd_disk_layout:
+        debug_lines.append("sd_as_disk = 1")
     debug_lines += debug_lines_tls
     try:
         return _run(args, markers, debug_lines)
@@ -290,6 +304,31 @@ def main(argv: list[str] | None = None) -> int:
             server.server_close()
         for server_dir in server_dirs:
             server_dir.cleanup()
+
+
+SD_DISK_KINDS = ("fat32", "ntfs")
+SD_DISK_PROBE = "nl_ntfs.txt"  # Inhalt der weiteren Partitionen: eine Datei, die sich lesen lässt
+
+
+def sd_disk_markers(layout: list[str]) -> list[str]:
+    """Erwartete NL_DEV-Zeilen: Partitionen in MBR-Reihenfolge als usb, usb2, …; NTFS nur lesend (M16)."""
+    names = {"fat32": "fat", "ntfs": "ntfs"}
+    out = []
+    for i, kind in enumerate(layout):
+        name = "usb" if i == 0 else f"usb{i + 1}"
+        out.append(f"NL_DEV {name} {names[kind]} mounted" + (" ro" if kind == "ntfs" else ""))
+    return out
+
+
+def _build_sd_disk(layout: list[str], sd: Path, out: Path) -> int:
+    with tempfile.TemporaryDirectory(prefix="nl_sddisk_") as tmp:
+        probe = Path(tmp)
+        (probe / SD_DISK_PROBE).write_text("newlauncher M16\n", encoding="utf-8", newline="\n")
+        specs = [("fat32", sd)] + [(kind, probe) for kind in layout[1:]]
+        rc = make_image(out, specs)
+    if rc != 0:
+        print(f"SMOKE FEHLER: SD-Image nicht gebaut (rc={rc})")
+    return rc
 
 
 def _cli_text(text: str) -> str:
@@ -342,6 +381,10 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
         if args.config_append and not args.fresh_data:
             with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
                 f.write(_cli_text(args.config_append))
+        if getattr(args, "sd_disk_layout", None) and not args.fresh_data:
+            # Fixture-config.ini sagt library = sd; mit „auto“ fragt der Launcher die Platte (die SD) ab.
+            with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
+                f.write("[library]\nsources = auto\n")
         if args.fresh_data:
             # Erster Start (Spec v2 6.4): keine config.ini; [debug] kommt aus debug.ini.
             (sd / CONFIG_REL).unlink(missing_ok=True)
@@ -355,6 +398,11 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
         print(f"SMOKE FEHLER: Dev-Ordner nicht vorbereitet (läuft Dolphin noch?): {e}")
         return 2
 
+    args.sd_image = None
+    if getattr(args, "sd_disk_layout", None):
+        if _build_sd_disk(args.sd_disk_layout, sd, user_dir / "sd_disk.raw") != 0:
+            return 2
+        args.sd_image = user_dir / "sd_disk.raw"
     try:
         return _run_dolphin(args, markers, user_dir)
     finally:
@@ -364,7 +412,8 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
 
 def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -> int:
     try:
-        proc = subprocess.Popen(dolphin_command(args.dolphin, user_dir, args.dol.resolve()))
+        proc = subprocess.Popen(dolphin_command(args.dolphin, user_dir, args.dol.resolve(),
+                                                getattr(args, "sd_image", None)))
     except OSError as e:
         print(f"SMOKE FEHLER: Dolphin startet nicht: {e}")
         return 2

@@ -47,6 +47,11 @@ std::optional<N64Method> parseN64Method(std::string_view s) {
     return std::nullopt;
 }
 
+std::string setN64MethodText(std::string_view gamesText, std::string_view key, std::optional<N64Method> m) {
+    return iniTextSet(gamesText, kSection,
+                      key, m ? std::optional<std::string_view>(n64MethodKey(*m)) : std::nullopt);
+}
+
 GameOverrides GameOverrides::fromIni(const IniDoc& doc) {
     GameOverrides o;
     for (const auto& [k, v] : doc.entries(kSection))

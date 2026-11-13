@@ -37,6 +37,7 @@ IniDoc IniDoc::parse(std::string_view text) {
         const std::string_view key = trim(line.substr(0, eq));
         if (key.empty()) continue;
         current->entries.emplace_back(std::string(key), std::string(trim(line.substr(eq + 1))));
+        current->order.push_back(doc.nextOrder_++);
     }
     return doc;
 }
@@ -50,7 +51,7 @@ const IniDoc::Section* IniDoc::find(std::string_view name) const {
 IniDoc::Section& IniDoc::findOrAdd(std::string_view name) {
     for (Section& s : sections_)
         if (s.name == name) return s;
-    sections_.push_back(Section{std::string(name), {}, {}, {}});
+    sections_.push_back(Section{std::string(name), {}, {}, {}, {}});
     return sections_.back();
 }
 
@@ -71,6 +72,7 @@ void IniDoc::set(std::string_view section, std::string_view key, std::string_vie
         }
     }
     s.entries.emplace_back(std::string(key), std::string(value));
+    s.order.push_back(nextOrder_++);
 }
 
 std::span<const std::string> IniDoc::lines(std::string_view section) const {
@@ -104,6 +106,11 @@ std::span<const std::pair<std::string, std::string>> IniDoc::entries(std::string
     const Section* s = find(section);
     return s != nullptr ? std::span<const std::pair<std::string, std::string>>(s->entries)
                         : std::span<const std::pair<std::string, std::string>>{};
+}
+
+std::span<const std::size_t> IniDoc::entryOrder(std::string_view section) const {
+    const Section* s = find(section);
+    return s != nullptr ? std::span<const std::size_t>(s->order) : std::span<const std::size_t>{};
 }
 
 std::string IniDoc::serialize() const {
@@ -190,6 +197,10 @@ bool hasKey(std::string_view line, std::string_view key) {
     return isContent(line) && eq != std::string_view::npos && equalsNoCase(trim(t.substr(0, eq)), key);
 }
 
+std::string_view bomOf(std::string_view text) {
+    return text.substr(0, 3) == "\xEF\xBB\xBF" ? text.substr(0, 3) : std::string_view{};
+}
+
 std::string_view eolOf(std::string_view text) { return text.find("\r\n") != std::string_view::npos ? "\r\n" : "\n"; }
 
 std::string_view lineEol(std::string_view line, std::string_view fallback) {
@@ -202,6 +213,8 @@ std::string_view lineEol(std::string_view line, std::string_view fallback) {
 
 std::string iniTextSet(std::string_view text, std::string_view section, std::string_view key,
                        std::optional<std::string_view> value) {
+    const std::string_view bom = bomOf(text);
+    text.remove_prefix(bom.size());
     const std::vector<std::string_view> lines = splitLines(text);
     const std::string want = normalSection(section);
     const std::string_view eol = eolOf(text);
@@ -227,7 +240,7 @@ std::string iniTextSet(std::string_view text, std::string_view section, std::str
         return s;
     };
 
-    std::string out;
+    std::string out(bom);
     for (std::size_t i = 0; i < lines.size(); ++i) {
         const bool hit = std::find(hits.begin(), hits.end(), i) != hits.end();
         if (hit && value && i == hits.back()) out += entry(lineEol(lines[i], ""));
@@ -239,7 +252,7 @@ std::string iniTextSet(std::string_view text, std::string_view section, std::str
     }
     if (value && hits.empty() && anchor == lines.size()) {
         if (!out.empty() && out.back() != '\n') out += eol;
-        const bool blankBefore = out.empty() || out.ends_with("\n\n") || out.ends_with("\r\n\r\n");
+        const bool blankBefore = out.size() == bom.size() || out.ends_with("\n\n") || out.ends_with("\r\n\r\n");
         if (!blankBefore) out += eol;
         out += "[";
         out += section;
@@ -251,12 +264,33 @@ std::string iniTextSet(std::string_view text, std::string_view section, std::str
 }
 
 std::string iniTextRemoveSection(std::string_view text, std::string_view section) {
+    const std::string_view bom = bomOf(text);
+    text.remove_prefix(bom.size());
     const std::string want = normalSection(section);
-    std::string out;
+    std::string out(bom);
     bool in = false;
+    std::vector<std::string_view> tail;  // Kommentar- und Leerzeilen nach der letzten Inhaltszeile
     for (std::string_view line : splitLines(text)) {
         std::string_view name;
-        if (headerName(line, name)) in = normalSection(name) == want;
+        if (headerName(line, name)) {
+            const bool next = normalSection(name) == want;
+            if (in && !next) {
+                // Ein durch eine Leerzeile abgesetzter Kommentarblock direkt vor dem nächsten Kopf gehört zu diesem.
+                std::size_t keep = tail.size();
+                for (std::size_t i = tail.size(); i > 0; --i)
+                    if (body(tail[i - 1]).empty()) {
+                        keep = i;
+                        break;
+                    }
+                if (keep > 0)
+                    for (std::size_t i = keep; i < tail.size(); ++i) out += tail[i];
+            }
+            in = next;
+            tail.clear();
+        } else if (in) {
+            if (isContent(line)) tail.clear();
+            else tail.push_back(line);
+        }
         if (!in) out += line;
     }
     return out;

@@ -290,3 +290,9 @@ TEST_CASE("game_options: hbcReturnTo nimmt LULZ, sonst JODI, sonst nichts") {
     CHECK(hbcReturnTo(old) == kReturnToHbcOld);
     CHECK(hbcReturnTo(none) == 0u);
 }
+
+TEST_CASE("game_options: gleichnamige Abschnitte in anderer Schreibweise – der letzte in der Datei gilt") {
+    const IniDoc games = IniDoc::parse("[game RMGP01]\nvideo = pal50\n[game rmgp01]\nvideo = ntsc\n"
+                                       "[game RMGP01]\nvideo = pal60\n");
+    CHECK(resolveWiiOptions(IniDoc{}, games, kId).cfg.vidMode == 3);  // pal60
+}

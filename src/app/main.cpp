@@ -1179,10 +1179,17 @@ int main(int argc, char** argv) {
                 const std::string key = req.game->key;
                 const std::optional<nl::N64Method> method =
                     req.n64Choice == 0 ? std::nullopt : std::optional<nl::N64Method>(static_cast<nl::N64Method>(req.n64Choice - 1));
-                overrides.setN64Method(key, method);
-                if (data.writable && writeText(fs, gamesPath.c_str(), overrides.toIni().serialize()))
+                // Auf dem Dateitext statt über toIni(): Kommentare und Schreibweisen der übrigen Abschnitte bleiben.
+                const std::optional<std::string> gamesText =
+                    data.readable ? nl::optionsFileText(nl::readAllWithFallback(fs, gamesPath, kMaxIniBytes)) : std::string();
+                std::string text = gamesText ? nl::setN64MethodText(*gamesText, key, method) : std::string();
+                if (gamesText && data.writable && writeText(fs, gamesPath.c_str(), text)) {
+                    overrides = nl::GameOverrides::fromIni(nl::IniDoc::parse(text));
                     nl::log::line("NL_OVERRIDE_SAVED %s %s", key.c_str(), method ? nl::n64MethodKey(*method) : "auto");
-                else nl::log::line("NL_WARN games.ini nicht gespeichert");
+                } else {
+                    overrides.setN64Method(key, method);  // gilt bis zum Neustart, auch ohne Datei
+                    nl::log::line("NL_WARN games.ini nicht gespeichert");
+                }
                 refreshDetailsN64();
                 break;
             }

@@ -22,6 +22,9 @@ public:
     std::span<const std::string> rawLines(std::string_view section) const;
     // Alle Schlüssel-Wert-Paare in Dateireihenfolge, gleiche Schlüssel mehrfach.
     std::span<const std::pair<std::string, std::string>> entries(std::string_view section) const;
+    // Position jedes Eintrags von entries() in der Datei; vergleichbar über Abschnitte hinweg (gleichnamige
+    // Abschnitte werden zusammengefasst, Abschnitte in anderer Schreibweise nicht).
+    std::span<const std::size_t> entryOrder(std::string_view section) const;
     void addLine(std::string_view section, std::string_view line);
     // Entfernt den Abschnitt (exakter Name) samt Inhalt; ein fehlender Abschnitt ist kein Fehler.
     void removeSection(std::string_view section);
@@ -33,6 +36,7 @@ private:
     struct Section {
         std::string name;
         std::vector<std::pair<std::string, std::string>> entries;
+        std::vector<std::size_t> order;  // parallel zu entries
         std::vector<std::string> lines;
         std::vector<std::string> raw;
     };
@@ -40,6 +44,7 @@ private:
     Section& findOrAdd(std::string_view name);
 
     std::vector<Section> sections_;
+    std::size_t nextOrder_ = 0;
 };
 
 std::string_view trim(std::string_view s);

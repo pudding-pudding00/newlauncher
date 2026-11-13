@@ -20,6 +20,9 @@ const char* n64MethodKey(N64Method m);    // "vc" | "not64" | "wii64" (Dateiwert
 const char* n64MethodLabel(N64Method m);  // "VC-Inject" | "Not64" | "Wii64" (Anzeige)
 std::optional<N64Method> parseN64Method(std::string_view s);  // getrimmt, Groß/klein egal
 
+// Setzt bzw. löscht (nullopt) key in [n64_method] des games.ini-Texts; alles andere bleibt Byte für Byte.
+std::string setN64MethodText(std::string_view gamesText, std::string_view key, std::optional<N64Method> m);
+
 // games.ini. [n64_method] wird gelesen und geschrieben; aus [game <ID6>] liest M13 den Schlüssel ios (Spec v2
 // 6.2/7.1). Alle anderen Abschnitte und Schlüssel bleiben beim Speichern erhalten (ohne Kommentare).
 class GameOverrides {

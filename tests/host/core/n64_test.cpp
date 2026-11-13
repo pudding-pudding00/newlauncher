@@ -78,3 +78,12 @@ TEST_CASE("GameOverrides: [emulator] <schlüssel> = <profil> (M13)") {
     edit.setN64Method("n64/b.z64", N64Method::Wii64);
     CHECK(GameOverrides::fromIni(edit.toIni()).emulatorProfile("nes/Metroid (Test).zip").has_value());
 }
+
+TEST_CASE("setN64MethodText ändert nur [n64_method], Kommentare und andere Abschnitte bleiben") {
+    const std::string in = "; Meine Overrides\r\n[n64_method]\r\n# Notiz\r\nn64/a.z64 = vc\r\n\r\n[game RMGP01]\r\nvideo = pal60\r\n";
+    CHECK(nl::setN64MethodText(in, "n64/a.z64", nl::N64Method::Not64) ==
+          "; Meine Overrides\r\n[n64_method]\r\n# Notiz\r\nn64/a.z64 = not64\r\n\r\n[game RMGP01]\r\nvideo = pal60\r\n");
+    CHECK(nl::setN64MethodText(in, "n64/a.z64", std::nullopt) ==
+          "; Meine Overrides\r\n[n64_method]\r\n# Notiz\r\n\r\n[game RMGP01]\r\nvideo = pal60\r\n");
+    CHECK(nl::setN64MethodText("", "n64/b.z64", nl::N64Method::Wii64) == "[n64_method]\nn64/b.z64 = wii64\n");
+}

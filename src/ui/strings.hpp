@@ -121,7 +121,7 @@
     X(Emulators, "Emulatoren", "Emulators") \
     X(WiiGames, "Wii-Spiele", "Wii games") \
     X(GcGames, "GameCube-Spiele", "GameCube games") \
-    X(DetailsHelpOptions, "A Starten · B Zurück · 1 Favorit · + Optionen", "A Start · B Back · 1 Favorite · + Options") \
+    X(DetailsHelpOptions, "A Starten · B Zurück · 1 Favorit · +/R Optionen", "A Start · B Back · 1 Favorite · +/R Options") \
     X(OptionsHelp, "◀▶ Ändern · B Speichern und zurück", "◀▶ Change · B Save and back") \
     X(OptResetGame, "Auf Standard zurücksetzen", "Reset to defaults") \
     X(OptResetGlobal, "Zurücksetzen", "Reset") \

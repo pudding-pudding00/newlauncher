@@ -189,6 +189,23 @@ TEST_CASE_FIXTURE(Fixture, "Keyboard: Zeiger auf der Filterzeile, A blättert") 
     CHECK(k.text().empty());
 }
 
+TEST_CASE_FIXTURE(Fixture, "Keyboard: Zeiger auf die Filterzeile spielt den Move-Klang, Verweilen nicht") {
+    SpySearch t;
+    SpyFilter f;
+    Keyboard k(t);
+    k.setFilter(&f);
+    k.onEnter();
+    const gfx::Rect r = k.filterRect(ctx);
+    InputFrame in;
+    in.pointerValid = true;
+    in.pointerMoved = true;
+    in.pointerX = r.x + r.w / 2;
+    in.pointerY = r.y + r.h / 2;
+    CHECK(step(k, in).sound == UiSound::Move);
+    CHECK(k.filterRowFocused());
+    CHECK(step(k, in).sound == UiSound::None);  // schon dort
+}
+
 TEST_CASE_FIXTURE(Fixture, "Keyboard: Filterzeile in 640 und 854 über den Tasten im Bild, ohne verworfene Quads") {
     for (float w : {640.0f, 854.0f}) {
         ctx.width = w;

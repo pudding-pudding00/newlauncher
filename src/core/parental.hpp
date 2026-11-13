@@ -60,6 +60,23 @@ private:
     u32 until_ = 0;
 };
 
+// Freigabe nach richtiger PIN für den Neuversuch nach dem Preflight-Hinweis (M17-Review): gilt genau einmal,
+// nur für dasselbe Spiel und nur kurz, damit eine stehengebliebene Freigabe später keinen Start ohne PIN erlaubt.
+class PinUnlock {
+public:
+    static constexpr u32 kWindowMs = 60000;
+    void grant(std::string key, u32 nowMs) {
+        key_ = std::move(key);
+        at_ = nowMs;
+    }
+    bool consume(std::string_view key, u32 nowMs);  // true = Start ohne PIN; verbraucht die Freigabe immer
+    void clear() { key_.clear(); }
+
+private:
+    std::string key_;
+    u32 at_ = 0;
+};
+
 // Zeilen der Kindersicherungs-Szene (M17). Pin und RemovePin lösen etwas aus, der Rest ändert einen Wert.
 enum class ParentalRow : u8 { Pin, System, MaxAge, LockUnrated, UseWii, RemovePin, Count };
 bool isParentalAction(ParentalRow r);

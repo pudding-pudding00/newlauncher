@@ -597,6 +597,9 @@ TEST_CASE("MainScene: die Suche übernimmt den Filter des Eintrags davor (Filter
     m.setQuery("al");
     CHECK(m.grid().count() == 1);  // gleicher Eintrag: Filter bleibt
     CHECK(m.filterLabel(m.filterIndex()) == "Party");
+    m.setQuery("");  // Text gelöscht, Tastatur noch offen: Filter bleibt auf dem Eintrag davor
+    CHECK(m.filterLabel(m.filterIndex()) == "Party");
+    CHECK(m.grid().count() == 1);  // NES-Party: nur Alpha
 }
 
 TEST_CASE("MainScene: ein Genre ohne Treffer bleibt als Filter sichtbar statt „Alle“ anzuzeigen") {

@@ -118,8 +118,9 @@ void Keyboard::update(const UiContext& ctx, const InputFrame& in, float, SceneRe
             if (hit >= 0) {
                 focus_ = hit;
                 filterRow_ = false;
-            } else if (hitFilter) {
+            } else if (hitFilter && !filterRow_) {
                 filterRow_ = true;
+                out.sound = UiSound::Move;  // FocusSound sieht nur focus_
             }
             keysSincePointerMove_ = false;
         }

@@ -52,6 +52,12 @@ bool PinGate::blocked(u32 nowMs) const { return active_ && static_cast<s32>(unti
 
 u32 PinGate::remainingMs(u32 nowMs) const { return blocked(nowMs) ? until_ - nowMs : 0; }
 
+bool PinUnlock::consume(std::string_view key, u32 nowMs) {
+    const bool ok = !key_.empty() && key == key_ && nowMs - at_ <= kWindowMs;
+    key_.clear();
+    return ok;
+}
+
 void PinGate::blockFor(u32 ms, u32 nowMs) {
     fails_ = 0;
     active_ = ms != 0;

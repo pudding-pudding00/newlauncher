@@ -234,6 +234,7 @@ void MainScene::setQuery(std::string_view query) {
     const std::string folded = foldForSearch(query);
     if (folded.empty()) {
         if (!searchActive_) return;
+        const GameFilter kept = filter_;  // Tastatur kann noch offen sein: Filter der Zeile bleibt
         searchActive_ = false;
         searchResults_.clear();
         rebuildBar();
@@ -247,6 +248,10 @@ void MainScene::setQuery(std::string_view query) {
             }
         }
         selectBar(index, gridWidth_, gridHeight_);
+        if (!(filter_ == kept)) {
+            filter_ = kept;
+            applyCurrentFilter({});
+        }
         return;
     }
     const bool starting = !searchActive_;

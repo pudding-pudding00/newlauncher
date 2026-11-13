@@ -47,6 +47,9 @@ add_library(nl_core STATIC
     src/core/n64.cpp
     src/core/game_options.cpp
     src/core/options_model.cpp
+    src/core/gecko_txt.cpp
+    src/core/cheat_select.cpp
+    src/core/gct.cpp
     src/core/n64_choice.cpp
     src/core/vc_map.cpp
     src/core/wii_title.cpp

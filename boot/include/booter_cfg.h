@@ -29,6 +29,10 @@ extern "C" {
  * in die Codeliste hinter dem Codehandler (codelist…codelistend in MEM1); der Handler liest nie aus MEM2. */
 #define NL_GCT_ADDR       0x93240000u
 #define NL_GCT_MAX        0x10000u
+/* M15: WIP-Liste (the_CFG.wip_list, WIP_Code-Einträge). set_wip_list() kopiert sie gleich nach dem Lesen von the_CFG
+ * in den Booter-Heap; offset zählt im Datenstrom der main.dol-Sektionen (wip.c do_wip_code). */
+#define NL_WIP_ADDR       0x93250000u
+#define NL_WIP_MAX        1024u
 
 /* --- types.h ---------------------------------------------------------------------------------- */
 enum
@@ -171,8 +175,10 @@ _Static_assert(sizeof(FragList) == 12 + MAX_FRAG * 12, "FragList-Layout weicht v
 /* M15: GCT-Puffer hinter the_CFG und FragList, ohne Überlappung. */
 #ifdef __cplusplus
 static_assert(NL_FRAG_LIST_ADDR + sizeof(FragList) <= NL_GCT_ADDR, "GCT-Puffer überlappt die FragList");
+static_assert(NL_GCT_ADDR + NL_GCT_MAX <= NL_WIP_ADDR, "WIP-Liste überlappt den GCT-Puffer");
 #else
 _Static_assert(NL_FRAG_LIST_ADDR + sizeof(FragList) <= NL_GCT_ADDR, "GCT-Puffer überlappt die FragList");
+_Static_assert(NL_GCT_ADDR + NL_GCT_MAX <= NL_WIP_ADDR, "WIP-Liste überlappt den GCT-Puffer");
 #endif
 
 #ifdef __cplusplus

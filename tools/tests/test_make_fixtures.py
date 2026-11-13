@@ -91,6 +91,14 @@ class MakeFixturesTest(unittest.TestCase):
         sel = (self.out / "newlauncher/codes/RMGP01.sel").read_text(encoding="utf-8")
         self.assertEqual(sel, "Sternenbits\n")  # .sel nennt den Namen ohne Autor-Tag „[Fixture]“
 
+    def test_wip_for_wii_game(self):
+        # M15 Task 7: drei gültige WIP-Zeilen, ein Kommentar, eine kaputte Zeile (kein Hex) für NL_WIP_SKIP.
+        lines = (self.out / "newlauncher/codes/RMGP01.wip").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 5)
+        self.assertTrue(lines[0].startswith("#"))
+        self.assertEqual(lines[1], "00001000 00000000 00000001")
+        self.assertIn("G", lines[4])
+
     def test_deploy_copies_fixtures(self):
         sd = Path(self._tmp.name) / "deployed"
         dist = Path(self._tmp.name) / "dist"

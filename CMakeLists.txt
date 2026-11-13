@@ -50,6 +50,7 @@ add_library(nl_core STATIC
     src/core/gecko_txt.cpp
     src/core/cheat_select.cpp
     src/core/gct.cpp
+    src/core/wip_patch.cpp
     src/core/cheat_model.cpp
     src/core/cheat_source.cpp
     src/core/n64_choice.cpp

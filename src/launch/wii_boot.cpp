@@ -25,6 +25,9 @@ static_assert(NL_GCT_ADDR + NL_GCT_MAX <= kBooterAddr, "GCT-Puffer überlappt de
 // M15: Preflight-Grenze (core) = Codeliste des gebauten Handlers (codelist…codelistend).
 static_assert(NL_CH_CODELIST_END - NL_CH_CODELIST == kWiiCodelistBytes, "kWiiCodelistBytes passt nicht zum Codehandler");
 static_assert(kWiiCodelistBytes <= NL_GCT_MAX, "GCT-Puffer kleiner als die Codeliste");
+static_assert(NL_WIP_ADDR + NL_WIP_MAX * sizeof(::WIP_Code) <= kBooterAddr, "WIP-Liste überlappt den App-Booter");
+static_assert(NL_WIP_MAX == kWipMaxEntries, "kWipMaxEntries passt nicht zu NL_WIP_MAX");
+static_assert(sizeof(::WIP_Code) == 12, "WIP_Code-Layout weicht von upstream ab");
 
 }  // namespace
 
@@ -76,6 +79,19 @@ Result<LaunchPlan> prepareWiiBoot(const WiiBootPlan& plan, std::string_view titl
         cfg.codelist = at(NL_CH_CODELIST);
         cfg.codelistend = static_cast<u8*>(at(NL_CH_CODELIST_END));
         cfg.hooktype = plan.hookType;
+    }
+    // M15: WIP-Patches; leer → wip_list NULL, set_wip_list() im Booter tut dann nichts.
+    if (!plan.wip.empty()) {
+        if (plan.wip.size() > NL_WIP_MAX) return Result<LaunchPlan>::err({ErrorCode::InvalidData, "WIP"});
+        auto* list = static_cast<::WIP_Code*>(at(NL_WIP_ADDR));
+        for (std::size_t i = 0; i < plan.wip.size(); ++i) {
+            list[i].offset = plan.wip[i].offset;
+            list[i].srcaddress = plan.wip[i].original;
+            list[i].dstaddress = plan.wip[i].replacement;
+        }
+        DCFlushRange(list, static_cast<u32>(plan.wip.size() * sizeof(::WIP_Code)));
+        cfg.wip_list = list;
+        cfg.wip_count = static_cast<u32>(plan.wip.size());
     }
     cfg.debugger = 0;
 

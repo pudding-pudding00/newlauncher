@@ -40,6 +40,7 @@
 #include "core/perf_stats.hpp"
 #include "core/theme.hpp"
 #include "core/vc_map.hpp"
+#include "core/wip_patch.hpp"
 #include "gfx/draw_list.hpp"
 #include "gfx/font_loader.hpp"
 #include "gfx/renderer.hpp"
@@ -780,7 +781,17 @@ int main(int argc, char** argv) {
             readCheatFiles(id6, txt, sel);
             gct = nl::gctForSelection(txt, sel);
         }
-        auto plan = nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options, gct);
+        // M15: WIP-Patches aus <data>/codes/<ID6>.wip (wie WiiFlow ohne eigene Option); kaputte Zeilen nur ins Log.
+        nl::WipFile wip;
+        if (data.readable) {
+            if (auto r = fs.readAll(nl::wipPath(data.dir, id6), nl::kMaxWipBytes); r.isOk()) {
+                wip = nl::parseWip(std::string_view(reinterpret_cast<const char*>(r.value().data()), r.value().size()));
+                for (u32 line : wip.badLines) nl::log::line("NL_WIP_SKIP line=%u", static_cast<unsigned>(line));
+                nl::log::line("NL_WII_WIP n=%u skipped=%u", static_cast<unsigned>(wip.entries.size()),
+                              static_cast<unsigned>(wip.skipped));
+            }
+        }
+        auto plan = nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options, gct, wip.entries);
         if (plan.isOk() && !plan.value().gct.empty()) {
             nl::log::line("NL_WII_CHEATS bytes=%u hook=%u", static_cast<unsigned>(plan.value().gct.size()),
                           static_cast<unsigned>(plan.value().hookType));

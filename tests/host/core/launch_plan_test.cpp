@@ -391,6 +391,19 @@ TEST_CASE("preflightWii: Cheats (M15) – GCT und Hook im Plan, ohne Cheats hook
     CHECK(none.value().hookType == 0);  // keine gewählten Codes → kein Hook
 }
 
+TEST_CASE("preflightWii: Plan trägt die WIP-Einträge, unabhängig von Cheats") {
+    const std::vector<WipEntry> wip = {{0x1000, 1, 2}, {0x2001, 3, 4}, {0x3000, 5, 6}};
+    auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::D2x, 249, "v11"}, goodFrags(), false, {}, {}, wip);
+    REQUIRE(r.isOk());
+    REQUIRE(r.value().wip.size() == 3);
+    CHECK(r.value().wip[1].offset == 0x2001u);
+    CHECK(r.value().wip[2].replacement == 6u);
+    CHECK(r.value().hookType == 0);  // WIP braucht keinen Codehandler
+    auto none = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::D2x, 249, "v11"}, goodFrags(), false);
+    REQUIRE(none.isOk());
+    CHECK(none.value().wip.empty());
+}
+
 TEST_CASE("preflightWii: GCT über der Codelisten-Grenze → CheatsTooLarge mit Größe") {
     WiiOptions o;
     o.cheats = true;

@@ -211,7 +211,8 @@ LaunchError fromFragError(FragError e, std::string context) {
 
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
                                               const Result<FragList, LaunchError>& frags, bool dryRun,
-                                              const WiiOptions& options, std::span<const u8> gct) {
+                                              const WiiOptions& options, std::span<const u8> gct,
+                                              std::span<const WipEntry> wip) {
     using R = Result<WiiBootPlan, LaunchError>;
     if (!dryRun && cios.state == CiosState::Missing) {
         return R::err({LaunchFailure::CiosMissing, std::to_string(static_cast<unsigned>(cios.slot))});
@@ -230,6 +231,7 @@ Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view li
     p.options = options;
     p.gct.assign(gct.begin(), gct.end());
     p.hookType = gct.empty() ? 0 : options.hookType;  // Spec v2 8: ohne Codes kein Hook
+    p.wip.assign(wip.begin(), wip.begin() + static_cast<std::ptrdiff_t>(std::min(wip.size(), kWipMaxEntries)));
     if (cios.state != CiosState::D2x) p.options.cfg.returnTo = 0;  // Spec 7.2: Rückkehr nur mit d2x
     return R::ok(std::move(p));
 }

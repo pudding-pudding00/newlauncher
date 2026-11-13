@@ -81,6 +81,12 @@ CHEATS_GM8P01 = ("GM8P01\nMetroid Prime\n\n"
 CHEATS_RMGP01 = ("RMGP01\nSuper Mario Galaxy\n\n"
                  "Sternenbits [Fixture]\n04001000 0000270F\n\n"
                  "Leben [Fixture]\n04001004 00000063\n")
+# WIP (M15 Task 7): drei gültige Zeilen, ein Kommentar, eine kaputte Zeile (NL_WIP_SKIP line=5). Werte frei erfunden.
+WIP_RMGP01 = ("# Fixture, selbst erzeugt\n"
+              "00001000 00000000 00000001\n"
+              "00001005 11111111 22222222\n"
+              "0000200A 33333333 44444444\n"
+              "0000300G 00000000 00000001\n")
 
 
 def write(out: Path, rel: str, data: bytes | str) -> None:
@@ -114,6 +120,7 @@ def main(out: Path) -> int:
     write(out, "newlauncher/codes/GM8P01.sel", "Alle Raketen\n")  # M15 Task 6: GC-Smoke mit Cheats
     write(out, "newlauncher/codes/RMGP01.txt", CHEATS_RMGP01)
     write(out, "newlauncher/codes/RMGP01.sel", "Sternenbits\n")  # Name ohne Autor-Tag
+    write(out, "newlauncher/codes/RMGP01.wip", WIP_RMGP01)
     write(out, "wbfs/Mario Kart Wii [RMCP01]/RMCP01.wbfs", wbfs_file("RMCP01", "MARIO KART WII"))
     write(out, "wbfs/Super Mario Galaxy [RMGP01]/RMGP01.iso",
           bytes(disc_header("RMGP01", "Super Mario Galaxy", wii=True)))

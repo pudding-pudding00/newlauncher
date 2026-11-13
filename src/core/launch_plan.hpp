@@ -18,6 +18,7 @@
 #include "core/n64_choice.hpp"
 #include "core/nin_cfg.hpp"
 #include "core/result.hpp"
+#include "core/wip_patch.hpp"
 
 namespace nl {
 
@@ -81,6 +82,7 @@ struct WiiBootPlan {
     WiiOptions options;         // M14: the_CFG-Felder, ios und Rückkehr
     std::vector<u8> gct;        // M15: gewählte Codes als GCT; leer = ohne Cheats
     u8 hookType = 0;            // M15: the_CFG.hooktype, 0 ohne Codes
+    std::vector<WipEntry> wip;  // M15: WIP-Patches aus <ID6>.wip, höchstens kWipMaxEntries
 };
 
 // Reihenfolge: cIOS Missing → CiosMissing (Kontext Slot, z. B. "222"); bei dryRun nur durchgelassen (die
@@ -89,7 +91,8 @@ struct WiiBootPlan {
 // cios kommt aus ciosStatusFor (core/cios_scan); usb folgt aus libRoot („usb:“).
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
                                               const Result<FragList, LaunchError>& frags, bool dryRun,
-                                              const WiiOptions& options = {}, std::span<const u8> gct = {});
+                                              const WiiOptions& options = {}, std::span<const u8> gct = {},
+                                              std::span<const WipEntry> wip = {});
 
 // Ziel eines Starts: ein DOL über den Chainloader, ein Kanal im NAND (VC-Inject) oder ein Wii-Spiel.
 struct LaunchTarget {

@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <string_view>
+#include <vector>
 
 #include "core/launch_plan.hpp"
 
@@ -14,5 +15,9 @@ std::size_t copyEllipsized(char* out, std::size_t cap, std::string_view src);
 
 // Titel und Text zu einem Fehler aus preflightEmulator. Rückgabe = Länge des Textes.
 int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, char* text, std::size_t textCap);
+
+// Titel „Hinweis“ und Text zu Preflight-Hinweisen (Spec 7.3): je Hinweis eine Zeile, dann „A erneut …“.
+int launchWarningText(const std::vector<LaunchWarning>& warnings, char* title, std::size_t titleCap, char* text,
+                      std::size_t textCap);
 
 }  // namespace nl::ui

@@ -757,6 +757,7 @@ int main(int argc, char** argv) {
         return plan;
     };
 
+    std::string warnedLaunch;  // Spec 7.3: Spiel, dessen Preflight-Hinweis schon gezeigt wurde; nächstes A startet
     auto launchGame = [&](const nl::Game& game) {
         const std::string key = game.key;  // game kann auf Bibliotheksdaten zeigen
         auto showError = [&](const nl::LaunchError& e) {
@@ -826,7 +827,20 @@ int main(int argc, char** argv) {
             nl::log::line("NL_NIN_CFG flags=%08x vid=%08x lang=%u blocks=%u pads=%u", flags, static_cast<unsigned>(n.videoMode),
                           static_cast<unsigned>(n.language), static_cast<unsigned>(n.memcardBlocks), static_cast<unsigned>(n.maxPads));
         }
-        for (nl::LaunchWarning w : target.value().warnings) nl::log::line("NL_PREFLIGHT_WARN %s", nl::launchWarningName(w));
+        const std::vector<nl::LaunchWarning>& warnings = target.value().warnings;
+        for (nl::LaunchWarning w : warnings) nl::log::line("NL_PREFLIGHT_WARN %s", nl::launchWarningName(w));
+        if (!warnings.empty() && warnedLaunch != key) {  // erst zeigen, beim nächsten Versuch trotzdem starten
+            warnedLaunch = key;
+            char title[64];
+            char text[320];
+            nl::ui::launchWarningText(warnings, title, sizeof title, text, sizeof text);
+            dialog.open(title, text);
+            scenes.push(&dialog);
+            audio.play(nl::UiSound::Error);
+            nl::log::line("NL_PREFLIGHT_HOLD %s", key.c_str());
+            return;
+        }
+        warnedLaunch.clear();
         store.recordPlayed(key, static_cast<u32>(std::time(nullptr)));
         if (data.writable && writeText(fs, historyPath.c_str(), store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
         else nl::log::line("NL_WARN history.ini nicht gespeichert");
@@ -1039,12 +1053,18 @@ int main(int argc, char** argv) {
     // debug autostart (nur für Tests); wartet ggf. auf die Debug-Emulator-Installation.
     // Spieloptionen (Spec 7): pro Spiel (g != nullptr) oder global für eine Konsole.
     auto openOptions = [&](nl::Console c, const nl::Game* g) {
-        std::string gamesText = data.readable ? readText(fs, gamesPath.c_str()) : std::string();
+        std::optional<std::string> gamesText =
+            data.readable ? nl::optionsFileText(nl::readAllWithFallback(fs, gamesPath, kMaxIniBytes)) : std::string();
+        if (!gamesText) {  // unlesbar (zu groß, Kartenfehler): nicht öffnen, sonst ginge der Rest beim Speichern verloren
+            nl::log::line("NL_WARN games.ini nicht lesbar, Optionen nicht geöffnet");
+            audio.play(nl::UiSound::Error);
+            return;
+        }
         std::optional<nl::NinVersion> nin;  // unbekannt: nichts gesperrt
         if (c == nl::Console::Gc && !emulators.nintendont().dol.empty())
             nin = nl::findNintendontVersion(fs, emulators.nintendont().dol);
         optionsScene.open(nl::OptionsModel(c, g != nullptr ? std::string(g->key) : std::string(), configText,
-                                           std::move(gamesText), nin),
+                                           std::move(*gamesText), nin),
                           g != nullptr && g->title != nullptr ? std::string(g->title) : std::string());
         scenes.push(&optionsScene);
         nl::log::line("NL_SCENE options");

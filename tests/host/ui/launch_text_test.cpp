@@ -112,3 +112,22 @@ TEST_CASE("launchErrorText: Wii-Fehler in DE und EN") {
     CHECK(std::string(render(LaunchFailure::WiiFileBroken, "a.wbfs").text) == "Game file damaged.\na.wbfs is damaged or too fragmented.");
     setLanguage(saved);
 }
+
+TEST_CASE("launchWarningText: GC-Ports fehlen, Hinweis vor dem Start in DE und EN") {
+    const Lang saved = language();
+    char title[64];
+    char text[256];
+    setLanguage(Lang::De);
+    launchWarningText({LaunchWarning::MemcardRealNoPorts}, title, sizeof title, text, sizeof text);
+    CHECK(std::string(title) == "Hinweis");
+    CHECK(std::string(text).find("Speicherkarte") != std::string::npos);
+    CHECK(std::string(text).find("A erneut") != std::string::npos);
+    launchWarningText({LaunchWarning::MemcardRealNoPorts, LaunchWarning::NativeSiNoPorts}, title, sizeof title, text,
+                      sizeof text);
+    CHECK(std::string(text).find("Controller") != std::string::npos);
+    setLanguage(Lang::En);
+    launchWarningText({LaunchWarning::NativeSiNoPorts}, title, sizeof title, text, sizeof text);
+    CHECK(std::string(title) == "Note");
+    CHECK(std::string(text).find("Press A again") != std::string::npos);
+    setLanguage(saved);
+}

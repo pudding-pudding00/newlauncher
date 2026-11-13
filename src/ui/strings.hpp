@@ -45,6 +45,10 @@
     X(FavAdded, "Zu Favoriten hinzugefügt", "Added to favorites") \
     X(FavRemoved, "Aus Favoriten entfernt", "Removed from favorites") \
     X(LaunchFailed, "Start nicht möglich", "Cannot start") \
+    X(LaunchNote, "Hinweis", "Note") \
+    X(WarnMemcardNoPorts, "Echte Speicherkarte gewählt, aber diese Konsole hat keine GameCube-Ports: Spielstände gehen verloren.", "Real memory card selected, but this console has no GameCube ports: saves will be lost.") \
+    X(WarnNativeSiNoPorts, "Native Controller gewählt, aber diese Konsole hat keine GameCube-Ports.", "Native controllers selected, but this console has no GameCube ports.") \
+    X(WarnLaunchAgain, "A erneut drücken, um trotzdem zu starten.", "Press A again to start anyway.") \
     X(EmuMissing, "Emulator nicht gefunden:\n%s", "Emulator not found:\n%s") \
     X(EmuInvalid, "Emulator-Datei ist ungültig:\n%s", "Emulator file is invalid:\n%s") \
     X(RomMissing, "Spieldatei nicht gefunden:\n%s", "Game file not found:\n%s") \

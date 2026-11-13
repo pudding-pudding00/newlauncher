@@ -24,6 +24,15 @@ bool isChannelHex(std::string_view v) {
 
 }  // namespace
 
+std::optional<std::string> optionsFileText(const Result<std::vector<u8>>& read) {
+    if (read.isOk()) {
+        const std::vector<u8>& b = read.value();
+        return std::string(reinterpret_cast<const char*>(b.data()), b.size());
+    }
+    if (read.error().code == ErrorCode::NotFound) return std::string();
+    return std::nullopt;
+}
+
 OptionsModel::OptionsModel(Console c, std::string id6, std::string configText, std::string gamesText,
                            std::optional<NinVersion> nin)
     : console_(c),

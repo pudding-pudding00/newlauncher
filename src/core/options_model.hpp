@@ -12,8 +12,14 @@
 #include "core/console.hpp"
 #include "core/game_options.hpp"
 #include "core/nin_cfg.hpp"
+#include "core/result.hpp"
+#include "core/types.hpp"
 
 namespace nl {
+
+// Dateitext für das Modell: fehlende Datei → leer; jeder andere Lesefehler → nullopt (dann nicht öffnen,
+// sonst überschriebe das Speichern die unlesbare Datei mit nur dem neuen Abschnitt).
+std::optional<std::string> optionsFileText(const Result<std::vector<u8>>& read);
 
 class OptionsModel {
 public:

@@ -95,3 +95,12 @@ TEST_CASE("OptionsModel: set für den Smoke, unbekannte Schlüssel und Werte sch
     CHECK_FALSE(m.set("video", "secam"));
     CHECK_FALSE(m.set("bogus", "1"));
 }
+
+TEST_CASE("optionsFileText: fehlende Datei ist leer, Lesefehler sperrt das Speichern") {
+    const std::vector<u8> bytes{'[', 'a', ']', '\n'};
+    CHECK(optionsFileText(Result<std::vector<u8>>::ok(bytes)) == std::optional<std::string>("[a]\n"));
+    CHECK(optionsFileText(Result<std::vector<u8>>::err({ErrorCode::NotFound, "games.ini"})) ==
+          std::optional<std::string>(""));
+    CHECK_FALSE(optionsFileText(Result<std::vector<u8>>::err({ErrorCode::IoError, "games.ini"})).has_value());
+    CHECK_FALSE(optionsFileText(Result<std::vector<u8>>::err({ErrorCode::InvalidData, "zu groß"})).has_value());
+}

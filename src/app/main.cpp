@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <algorithm>
 #include <cstdlib>
+#include <functional>
 #include <ctime>
 #include <malloc.h>
 #include <unistd.h>
@@ -32,6 +33,7 @@
 #include "core/n64.hpp"
 #include "core/options_model.hpp"
 #include "core/nin_cfg.hpp"
+#include "core/cheat_source.hpp"
 #include "core/cios_scan.hpp"
 #include "core/n64_choice.hpp"
 #include "core/perf_stats.hpp"
@@ -44,6 +46,7 @@
 #include "launch/channel.hpp"
 #include "launch/wii_boot.hpp"
 #include "platform/crash.hpp"
+#include "platform/cheat_worker.hpp"
 #include "platform/emu_worker.hpp"
 #include "platform/audio.hpp"
 #include "platform/log.hpp"
@@ -573,6 +576,7 @@ int main(int argc, char** argv) {
     nl::ui::DialogScene dialog;
     nl::ui::VcMapScene vcMapScene;
     nl::platform::EmuWorker emu(netService);
+    nl::platform::CheatWorker cheatWorker(netService);  // M15: Gecko-Codes laden
     nl::ui::EmulatorsScene emuScene;
     nl::ui::AboutScene aboutScene;
     nl::ui::OptionsScene optionsScene;
@@ -848,6 +852,7 @@ int main(int argc, char** argv) {
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
         net.join();
         emu.join();
+        cheatWorker.join();
         netService.shutdown();  // wtls_shutdown im Netz-Thread, dann Thread beendet
         covers.shutdown();
 
@@ -934,8 +939,27 @@ int main(int argc, char** argv) {
         }
         coverToastDone = ~0u;
     };
+    // Gecko-Codes eines Spiels laden (M15): nur auf Knopfdruck, Ziel <data>/codes/<ID6>.txt.
+    const std::string cheatSourceTmpl = config.debugCheatUrl.empty() ? config.cheatSource : config.debugCheatUrl;
+    std::function<void(nl::CheatFetchResult)> onCheatFetched;  // gesetzt von der Cheat-Szene
+    auto startCheatFetch = [&](const std::string& id6) {
+        if (cheatSourceTmpl.empty() || !data.writable || cheatWorker.running()) return false;
+        if (!cheatWorker.start(fs, nl::cheatUrl(cheatSourceTmpl, id6), id6, nl::cheatTxtPath(data.dir, id6))) {
+            nl::log::line("NL_WARN Cheat-Auftrag nicht angenommen");
+            return false;
+        }
+        return true;
+    };
+    auto pumpCheats = [&]() {
+        for (const std::string& line : cheatWorker.takeLogLines()) nl::log::line("%s", line.c_str());
+        if (const auto r = cheatWorker.takeResult()) {
+            nl::log::line("NL_CHEAT_FETCH %.*s", static_cast<int>(nl::cheatFetchTag(*r).size()), nl::cheatFetchTag(*r).data());
+            if (onCheatFetched) onCheatFetched(*r);
+        }
+    };
     // Fortschritt, Marker und Ergebnis des Netz-Threads übernehmen (Haupt-Thread).
     auto pumpNet = [&]() {
+        pumpCheats();
         for (const std::string& line : net.takeLogLines()) nl::log::line("%s", line.c_str());
         for (const std::string& stem : net.takeFinishedStems()) covers.invalidate(stem);
         if (net.running()) {
@@ -1280,6 +1304,7 @@ int main(int argc, char** argv) {
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
                 net.join();
                 emu.join();
+                cheatWorker.join();
                 netService.shutdown();
                 covers.shutdown();
                 stopAudio();
@@ -1392,6 +1417,8 @@ int main(int argc, char** argv) {
                 runPendingAutostart();
             }
             if (config.debugFetchCovers) fetchCovers();  // nur für Tests
+            if (!config.debugCheatFetch.empty() && !startCheatFetch(config.debugCheatFetch))  // nur für Tests (M15)
+                nl::log::line("NL_CHEAT_FETCH nosource");
             if (config.debugOpenScene == "about") {   // nur für Tests (M11)
                 scenes.push(&aboutScene);
                 nl::log::line("NL_SCENE about");
@@ -1441,6 +1468,7 @@ int main(int argc, char** argv) {
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
     net.join();
     emu.join();
+    cheatWorker.join();
     netService.shutdown();
     covers.shutdown();
     stopAudio();

@@ -196,6 +196,27 @@ class DolphinToolsTest(unittest.TestCase):
         text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
         self.assertTrue(text.endswith("[debug]\ncover_url = http://127.0.0.1:12345\nfetch_covers = 1\n"))
 
+    def test_smoke_cheat_server_serves_generated_codes_or_html(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        for mode, start in (("ok", b"RMCP01\n"), ("html", b"<!DOCTYPE html>")):
+            seen = {}
+
+            def fake_start(root, ssl_context=None):
+                seen["body"] = (Path(root) / "codes/RMCP01.txt").read_bytes()
+                return mock.Mock(), 23456
+
+            stale = self.user / "SDSync/newlauncher/codes/RMCP01.txt"
+            stale.parent.mkdir(parents=True, exist_ok=True)
+            stale.write_text("alt", encoding="utf-8")
+            with mock.patch("dolphin_smoke.start_cover_server", side_effect=fake_start):
+                smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                            "--timeout", "2", "--cheat-server", mode])
+            self.assertTrue(seen["body"].startswith(start), mode)
+            self.assertFalse(stale.exists(), "alte Codeliste muss vor dem Lauf weg")
+            text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+            self.assertTrue(text.endswith("[debug]\ncheat_url = http://127.0.0.1:23456/codes/{id6}.txt\n"
+                                          "cheat_fetch = RMCP01\n"), text)
+
     def test_sysinfo_problems_accepts_clean_text(self):
         text = "newlauncher 0.13.0\nPlattform: Wii\nSystem-Menü: 4.3E (514)\nNetzwerk: verbunden\n"
         self.assertEqual(sysinfo_problems(text), [])

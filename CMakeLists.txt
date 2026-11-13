@@ -50,6 +50,7 @@ add_library(nl_core STATIC
     src/core/gecko_txt.cpp
     src/core/cheat_select.cpp
     src/core/gct.cpp
+    src/core/cheat_source.cpp
     src/core/n64_choice.cpp
     src/core/vc_map.cpp
     src/core/wii_title.cpp
@@ -221,6 +222,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/net_service.cpp
         src/platform/net_worker.cpp
         src/platform/emu_worker.cpp
+        src/platform/cheat_worker.cpp
         src/platform/sd_space.cpp
         src/platform/system.cpp
         src/platform/system_probe.cpp

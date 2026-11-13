@@ -9,6 +9,7 @@
 
 #include "core/n64_choice.hpp"
 #include "core/play_stats.hpp"
+#include "ui/banner_provider.hpp"
 #include "ui/cover_provider.hpp"
 #include "ui/scene.hpp"
 
@@ -24,6 +25,7 @@ public:
     const char* infoText() const { return info_; }
     const char* statsText() const { return stats_; }
     void setCovers(CoverProvider* covers) { covers_ = covers; }  // nullptr = Platzhalter
+    void setBanners(BannerProvider* banners) { banners_ = banners; }  // nullptr = kein Banner (M18)
     // N64: Zeile „Startmethode“ (Spec 6.6). Wirkt nur bei geöffnetem N64-Spiel; open() setzt sie zurück.
     void setN64(const N64Decision& decision, std::optional<N64Method> override_);
     int methodChoice() const { return choice_; }  // 0 = Automatisch, sonst 1 + N64Method
@@ -52,6 +54,7 @@ private:
     Game game_{};
     bool hasGame_ = false;
     CoverProvider* covers_ = nullptr;
+    BannerProvider* banners_ = nullptr;
     bool favorite_ = false;
     u32 lastPlayed_ = 0;
     int focus_ = 0;

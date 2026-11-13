@@ -387,3 +387,54 @@ TEST_CASE("DetailsScene::setStats: mit Starts entfällt das Verlaufsdatum in der
     d.setStats(PlayStat{});
     CHECK(std::string(d.infoText()).find("03.11.2025") != std::string::npos);
 }
+
+// --- M18: GC-Banner unter dem Cover ---
+namespace {
+class FakeBanners final : public BannerProvider {
+public:
+    void want(const Game& g) override { wanted.emplace_back(g.key); }
+    BannerView view(const Game&) const override { return v; }
+    std::vector<std::string> wanted;
+    BannerView v;
+};
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "Details: GC-Spiel möchte ein Banner und zeichnet es 2× unter dem Cover") {
+    FakeBanners b;
+    DetailsScene d;
+    d.setBanners(&b);
+    d.open(Game{Console::Gc, "GM8P01", "Metroid Prime", 0, 1}, false, 0);
+    step(d, InputFrame{});
+    REQUIRE(b.wanted.size() == 1);
+    CHECK(b.wanted[0] == "GM8P01");
+    ctx.width = 640;
+    ctx.height = 480;
+    dl.clear();
+    d.draw(ctx, dl);
+    CHECK(dl.batches().size() > 0);
+    for (const gfx::Batch& bt : dl.batches()) CHECK(bt.texture != gfx::kBannerTextureBase);  // noch nicht geladen
+    b.v = BannerView{gfx::kBannerTextureBase, 96, 32};
+    dl.clear();
+    d.draw(ctx, dl);
+    bool found = false;
+    for (const gfx::Batch& bt : dl.batches()) {
+        if (bt.texture != gfx::kBannerTextureBase) continue;
+        found = true;
+        REQUIRE(bt.vertexCount == 4);
+        const gfx::Vertex* v = &dl.vertices()[bt.firstVertex];
+        CHECK(v[2].x - v[0].x == doctest::Approx(192));
+        CHECK(v[2].y - v[0].y == doctest::Approx(64));
+        CHECK(v[0].y >= 32 + 280);   // unter dem Cover
+        CHECK(v[2].y <= 480 - 72);   // über der Infoleiste
+    }
+    CHECK(found);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Details: andere Konsolen fragen kein Banner an") {
+    FakeBanners b;
+    DetailsScene d;
+    d.setBanners(&b);
+    d.open(Game{Console::Nes, "nes/a", "A", 0, 0}, false, 0);
+    step(d, InputFrame{});
+    CHECK(b.wanted.empty());
+}

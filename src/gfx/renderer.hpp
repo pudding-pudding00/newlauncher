@@ -9,12 +9,18 @@
 
 namespace nl::gfx {
 
+// GX-Texturformate (gleich den TPL-Formatnummern), damit Aufrufer ohne GX-Header auskommen.
+inline constexpr u8 kTexFormatRgb5a3 = 5;
+
 class Renderer {
 public:
     Result<void> init(platform::Video& video);
     void setAtlas(const UiAtlas& atlas);
     // Hintergrund (RGB5A3, 32-Byte-ausgerichtet, vom Aufrufer gehalten); nullptr: Batches mit kBackgroundTexture entfallen.
     void setBackground(const void* texels, u16 width, u16 height);
+    // Banner-Textur im Slot (M18), gezeichnet über kBannerTextureBase + slot; texels nullptr gibt den Slot frei.
+    // Texel 32-Byte-ausgerichtet, vom Aufrufer gehalten und mit DCFlushRange geschrieben.
+    void setBannerTexture(u16 slot, const void* texels, u16 width, u16 height, u8 gxFormat);
 
     float logicalWidth() const { return logicalWidth_; }
     float logicalHeight() const { return 480.0f; }
@@ -37,6 +43,7 @@ private:
     bool efbCleared_ = false;
     u32 coverGeneration_ = 0;
     const void* background_ = nullptr;
+    const void* banner_[kBannerTextureSlots] = {};
     u32 drawCalls_ = 0, drawCallsLast_ = 0, textureBytes_ = 0;
 };
 

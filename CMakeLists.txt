@@ -92,6 +92,9 @@ add_library(nl_core STATIC
     src/core/setup_wizard.cpp
     src/core/cover_download.cpp
     src/core/lz77.cpp
+    src/core/gc_fst.cpp
+    src/core/gc_banner.cpp
+    src/core/gc_disc.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp
@@ -261,6 +264,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/png_decode.cpp
         src/platform/theme_loader.cpp
         src/platform/cover_worker.cpp
+        src/platform/banner_worker.cpp
         src/platform/http_client.cpp
         src/platform/net_service.cpp
         src/platform/net_worker.cpp
@@ -274,6 +278,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/wii_disc.cpp
         src/platform/fs_extents.cpp
         src/app/cover_service.cpp
+        src/app/banner_service.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp
     )

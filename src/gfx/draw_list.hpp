@@ -13,6 +13,9 @@ namespace nl::gfx {
 using TextureId = u16;  // 0 = UI-Atlas, ab kCoverTextureBase die Cover-Slots
 inline constexpr TextureId kCoverTextureBase = 1;  // Cover-Slot s ist kCoverTextureBase + s
 inline constexpr TextureId kBackgroundTexture = 0xFFFF;  // Hintergrundbild des Theme-Pakets (M17)
+// Banner-Texturen (M18): kBannerTextureBase + Slot, Slots < kBannerTextureSlots; vor kBackgroundTexture.
+inline constexpr TextureId kBannerTextureBase = 0xF000;
+inline constexpr TextureId kBannerTextureSlots = 64;
 
 struct Vertex {
     float x, y, u, v;

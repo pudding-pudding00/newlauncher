@@ -234,6 +234,7 @@ int DetailsScene::upperRowFocus() const {
 void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
     FocusSound sound(out, focus_);
     if (covers_ != nullptr && hasGame_) covers_->want(game_, CoverPriority::Visible);
+    if (banners_ != nullptr && hasGame_ && game_.console == Console::Gc) banners_->want(game_);
     if (ctx.minuteOfDay != clockMinute_) {
         clockMinute_ = ctx.minuteOfDay;
         formatClock(clockMinute_, clock_, sizeof clock_);
@@ -342,6 +343,15 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         if (cv.texture != 0 && cv.alpha > 0.0f) {
             const u8 a = static_cast<u8>(std::min(cv.alpha, 1.0f) * 255.0f);
             dl.quad(cv.texture, cover, gfx::UvRect{0, 0, 1, 1}, Color{255, 255, 255, a});
+        }
+    }
+    // Banner (M18) 2× unter dem Cover: dort ist bis zur Infoleiste Platz, die Beschreibung behält ihre Zeilen.
+    if (banners_ != nullptr && game_.console == Console::Gc) {
+        const BannerView bv = banners_->view(game_);
+        if (bv.texture != 0) {
+            const float bw = bv.width * 2.0f, bh = bv.height * 2.0f;
+            dl.quad(bv.texture, Rect{cover.x + (cover.w - bw) / 2, cover.y + cover.h + 16.0f, bw, bh}, gfx::UvRect{0, 0, 1, 1},
+                    Color{255, 255, 255, 255});
         }
     }
 

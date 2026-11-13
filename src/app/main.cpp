@@ -500,6 +500,10 @@ int main(int argc, char** argv) {
         vcMapText = readText(fs, vcMapPath.c_str());
         vcMapping = nl::VcMap::fromIni(nl::IniDoc::parse(vcMapText));
     }
+    // Eigene Kategorien (M17, Spec 10.3): Rohtext bleibt mit Kommentaren erhalten, nur geänderte Zeilen kommen dazu.
+    const std::string categoriesPath = data.path("categories.ini");
+    nl::Categories categories = nl::Categories::fromText(data.readable ? readText(fs, categoriesPath.c_str()) : std::string());
+    nl::log::line("NL_CATEGORIES n=%u", static_cast<unsigned>(categories.names().size()));
 
     // N64-Startwege (Spec 6.6): Kanäle im NAND und die beiden Emulator-DOLs, einmal pro Sitzung.
     const std::vector<u64> installedTitles = nl::platform::installedTitleIds();
@@ -608,6 +612,7 @@ int main(int argc, char** argv) {
     nl::platform::NetService netService;  // ein Netz-Thread für Cover und Emulatoren (M11); lebt länger als die Worker
     nl::platform::NetWorker net(netService);
     mainScene.setFavoriteKeys(&store);
+    mainScene.setCategories(&categories);
     nl::ui::JumpBar jumpBar(mainScene);
     mainScene.setJumpBar(&jumpBar);
     nl::ui::Keyboard keyboard(mainScene);
@@ -1416,6 +1421,23 @@ int main(int argc, char** argv) {
                 if (details.game() != nullptr && key == details.game()->key) details.setFavorite(nowFavorite);
                 break;
             }
+            case nl::ui::AppCommand::ToggleCategory: {
+                const auto names = categories.names();
+                if (req.game == nullptr || req.category >= names.size()) break;
+                const std::string key = req.game->key;
+                const std::string name = names[req.category];
+                const bool on = !categories.contains(name, key);
+                if (!categories.set(name, key, on)) {
+                    nl::log::line("NL_WARN Kategorie nicht geändert");
+                    break;
+                }
+                if (data.writable && writeText(fs, categoriesPath.c_str(), categories.toText()))
+                    nl::log::line("NL_CAT_SAVED %s %s %d", name.c_str(), key.c_str(), on ? 1 : 0);
+                else nl::log::line("NL_WARN categories.ini nicht gespeichert");
+                mainScene.syncDetailsCategories(key);
+                mainScene.refreshFilter();
+                break;
+            }
             case nl::ui::AppCommand::CycleTheme:
                 ctx.themeMode = nl::nextMode(ctx.themeMode);
                 config.themeMode = ctx.themeMode;
@@ -1592,6 +1614,12 @@ int main(int argc, char** argv) {
             if (config.debugFetchCovers) fetchCovers();  // nur für Tests
             if (!config.debugCheatFetch.empty() && !startCheatFetch(config.debugCheatFetch, false))  // nur für Tests (M15)
                 nl::log::line("NL_CHEAT_FETCH nosource");
+            if (!config.debugFilter.empty()) {  // nur für Tests (M17)
+                if (const auto f = nl::parseFilter(config.debugFilter))
+                    nl::log::line("NL_FILTER %s n=%d bar=%s", nl::filterSpec(*f).c_str(), mainScene.setFilter(*f),
+                                  mainScene.barLabelText(mainScene.barIndex()));
+                else nl::log::line("NL_FILTER bad %s", config.debugFilter.c_str());
+            }
             if (config.debugOpenScene == "about") {   // nur für Tests (M11)
                 scenes.push(&aboutScene);
                 nl::log::line("NL_SCENE about");

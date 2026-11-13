@@ -49,6 +49,8 @@ void LibraryStore::setGames(MergedLibrary library, const MetaDb* meta) {
             if (auto e = meta->find(metaKey(g))) {
                 game.year = e->year;
                 game.players = e->players;
+                game.genres = e->genres;
+                game.rating = e->rating;
                 if (!e->description.empty()) {
                     descriptions_.emplace_back(e->description);
                     game.description = descriptions_.back().c_str();

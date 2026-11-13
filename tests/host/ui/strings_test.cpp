@@ -92,3 +92,15 @@ TEST_CASE("langKey") {
     CHECK(std::string(langKey(Lang::De)) == "de");
     CHECK(std::string(langKey(Lang::En)) == "en");
 }
+
+TEST_CASE("genreLabel: je kGenres-Eintrag ein Text in beiden Sprachen; außerhalb → Sonstiges") {
+    setLanguage(Lang::De);
+    CHECK(std::string(genreLabel(0)) == "Thema");
+    CHECK(std::string(genreLabel(3)) == "Sport");
+    CHECK(std::string(genreLabel(9)) == "Rollenspiel");
+    CHECK(std::string(genreLabel(200)) == "Sonstiges");
+    setLanguage(Lang::En);
+    CHECK(std::string(genreLabel(8)) == "Simulation");
+    CHECK(std::string(genreLabel(13)) == "Others");
+    setLanguage(Lang::De);
+}

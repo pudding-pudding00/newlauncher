@@ -53,6 +53,7 @@ enum class AppCommand : u8 {
     OpenCheats,       // Cheat-Auswahl öffnen (M15): game = Wii- oder GC-Spiel
     FetchCheats,      // Codeliste laden: CheatsScene::id6(), overwrite()
     SaveCheats,       // Cheat-Szene geschlossen mit Änderungen: CheatsScene::model().selText() als .sel schreiben
+    ToggleCategory,   // Details (M17): game in Kategorie category (Index der setCategories-Liste) an/aus
 };
 const char* appCommandName(AppCommand c);
 
@@ -63,6 +64,7 @@ struct SceneRequests {
     AppCommand command = AppCommand::None;
     const Game* game = nullptr;  // Ziel von ToggleFavorite, Launch und SetN64Method
     u8 n64Choice = 0;            // SetN64Method: 0 = Automatisch, sonst 1 + N64Method
+    u8 category = 0;             // ToggleCategory: Index in der Kategorienliste der Detailansicht
     Console console = Console::Wii;  // OpenOptions ohne game: Wii oder Gc
     UiSound sound = UiSound::None;  // main spielt ihn nach dem Update
 };

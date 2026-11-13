@@ -52,6 +52,7 @@ struct Config {
     bool debugListGames = false;    // [debug] list_games = 1: NL_GAME <schlüssel> <gerät> je Spiel nach dem Laden (Smoke, M12)
     std::string debugEmuRepo;       // [debug] emu_repo: ersetzt emulatorRepo (Smoke-Test)
     std::string debugEmuInstall;    // [debug] emu_install: Komma-Liste, nach NL_READY installieren (Smoke-Test)
+    std::string debugFilter;        // [debug] filter = <spec>: Filter der Startleiste setzen, NL_FILTER loggen (Smoke, M17)
     std::string debugWizard;        // [debug] wizard = accept: Einrichtungs-Assistent nimmt jeden Vorschlag an (Smoke, M13)
 };
 

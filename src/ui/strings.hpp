@@ -34,6 +34,23 @@
     X(Scanning, "Bibliothek wird durchsucht …", "Scanning library …") \
     X(Files, "Dateien", "files") \
     X(Search, "Suche", "Search") \
+    X(Filter, "Filter", "Filter") \
+    X(FilterAll, "Alle", "All") \
+    X(Categories, "Kategorien", "Categories") \
+    X(GenreTheme, "Thema", "Theme") \
+    X(GenreGeneral, "Allgemein", "General") \
+    X(GenreAction, "Action", "Action") \
+    X(GenreSports, "Sport", "Sports") \
+    X(GenreAdventure, "Abenteuer", "Adventure") \
+    X(GenreMusic, "Musik", "Music") \
+    X(GenreRacing, "Rennspiel", "Racing") \
+    X(GenreFighting, "Kampfspiel", "Fighting") \
+    X(GenreSimulation, "Simulation", "Simulation") \
+    X(GenreRolePlaying, "Rollenspiel", "Role-playing") \
+    X(GenreStrategy, "Strategie", "Strategy") \
+    X(GenreTraditional, "Traditionell", "Traditional") \
+    X(GenreHealth, "Gesundheit", "Health") \
+    X(GenreOthers, "Sonstiges", "Others") \
     X(SearchHint, "Titel eingeben …", "Enter a title …") \
     X(NoResults, "Keine Treffer", "No results") \
     X(KeySpace, "Leerzeichen", "Space") \
@@ -290,6 +307,7 @@ const char* langKey(Lang l);           // "de" / "en"
 const char* weekdayName(int weekday0Mon);  // 0 = Montag
 const char* monthName(int month1);         // 1 = Januar
 Str netErrorText(NetError e);              // Klartext je Netzfehler (M11)
+const char* genreLabel(u8 genre);          // Index in kGenres (M17); unbekannt → "Sonstiges"
 // Text des Cover-Dialogs; bei failed > 0 und bekannter Ursache folgt der Klartext dazu in einer zweiten Zeile.
 std::string coversSummaryText(u32 ok, u32 missing, u32 failed, NetError lastError);
 

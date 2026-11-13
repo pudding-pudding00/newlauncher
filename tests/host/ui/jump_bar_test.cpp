@@ -172,3 +172,62 @@ TEST_CASE_FIXTURE(Fixture, "Stapel: Suche-Taste → A–Z-Leiste → „Suche\" 
     CHECK(st.top() == &kb);
     CHECK(st.depth() == 2);
 }
+
+// --- M17: Filterzeile über den Buchstaben ---
+namespace {
+struct FilterTarget final : JumpTarget {
+    int index = 0;
+    void jumpToBucket(char) override {}
+    Scene* openSearch() override { return nullptr; }
+    bool hasBucket(char) const override { return true; }
+    char currentBucket() const override { return 'A'; }
+    int filterCount() const override { return 3; }
+    int filterIndex() const override { return index; }
+    std::string filterLabel(int i) const override { return i == 0 ? "Alle" : i == 1 ? "Favoriten" : "Party"; }
+    void setFilterIndex(int i) override { index = i; }
+};
+}  // namespace
+
+TEST_CASE("JumpBar: Hoch wählt die Filterzeile, Links/Rechts wechseln den Filter mit Umlauf") {
+    Fixture fx;
+    FilterTarget t;
+    JumpBar bar(t);
+    bar.onEnter();
+    SceneRequests out;
+    bar.update(fx.ctx, Fixture::action(Action::Up), 16, out);
+    CHECK(bar.filterRowFocused());
+    bar.update(fx.ctx, Fixture::action(Action::Right), 16, out);
+    CHECK(t.index == 1);
+    bar.update(fx.ctx, Fixture::action(Action::Right), 16, out);
+    bar.update(fx.ctx, Fixture::action(Action::Right), 16, out);
+    CHECK(t.index == 0);
+    bar.update(fx.ctx, Fixture::action(Action::Left), 16, out);
+    CHECK(t.index == 2);
+    SceneRequests confirm;
+    bar.update(fx.ctx, Fixture::action(Action::Confirm), 16, confirm);
+    CHECK(t.index == 0);  // A schaltet weiter (auch per Zeiger), schließt nicht
+    CHECK_FALSE(confirm.pop);
+    bar.update(fx.ctx, Fixture::action(Action::Down), 16, out);
+    CHECK_FALSE(bar.filterRowFocused());
+    const int letter = bar.focus();
+    bar.update(fx.ctx, Fixture::action(Action::Right), 16, out);
+    CHECK(bar.focus() == letter + 1);  // Buchstaben wieder aktiv
+    CHECK(t.index == 0);
+}
+
+TEST_CASE("JumpBar: ohne Filter keine Filterzeile; Zeichnen nennt den aktiven Filter") {
+    Fixture fx;
+    SpyTarget plain;
+    JumpBar a(plain);
+    a.onEnter();
+    SceneRequests out;
+    a.update(fx.ctx, Fixture::action(Action::Up), 16, out);
+    CHECK_FALSE(a.filterRowFocused());
+
+    FilterTarget t;
+    t.index = 2;
+    JumpBar b(t);
+    b.onEnter();
+    b.draw(fx.ctx, fx.dl);  // darf nicht abstürzen; Zeile liegt über den Buchstaben
+    CHECK(b.filterRect(fx.ctx).y + b.filterRect(fx.ctx).h <= b.cellRect(fx.ctx, 0).y);
+}

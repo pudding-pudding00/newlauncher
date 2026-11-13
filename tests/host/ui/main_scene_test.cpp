@@ -537,3 +537,76 @@ TEST_CASE_FIXTURE(Fixture, "Hintergrundbild: ein Quad mit kBackgroundTexture üb
     CHECK(first.texture == gfx::kBackgroundTexture);
     CHECK(dl.vertices()[first.firstVertex + 2].u == doctest::Approx(0.5f));
 }
+
+// --- M17: Filter je Leiste ---
+namespace {
+struct FilterLib {
+    Game games[4] = {
+        Game{Console::Nes, "nes/a", "Alpha", 0, 0},
+        Game{Console::Nes, "nes/b", "Beta", 0, 0},
+        Game{Console::Nes, "nes/c", "Gamma", 0, 0},
+        Game{Console::Snes, "snes/d", "Delta", 0, 0},
+    };
+    FilterLib() { games[1].genres = 1u << 3; }
+    Library lib() const { return Library{games, {}, {}}; }
+};
+int barOf(const MainScene& m, const char* label) {
+    for (int i = 0; i < 16; ++i)
+        if (std::string(m.barLabelText(i)) == label) return i;
+    return -1;
+}
+}  // namespace
+
+TEST_CASE("MainScene: Kategorie-Filter zeigt nur deren Spiele; Konsolenwechsel setzt auf Alle zurück") {
+    FilterLib fl;
+    MainScene m(fl.lib());
+    Categories cats = Categories::fromText("[Party]\nnes/c\nnes/a\n");
+    m.setCategories(&cats);
+    const int nes = barOf(m, "NES"), snes = barOf(m, "SNES");
+    REQUIRE(nes >= 0);
+    REQUIRE(snes >= 0);
+    m.selectBarForTest(nes);
+    REQUIRE(m.filterCount() == 4);  // Alle, Favoriten, Sport, Party
+    CHECK(m.filterLabel(3) == "Party");
+    m.setFilterIndex(3);
+    CHECK(m.grid().count() == 2);
+    m.setFocusForTest(1);
+    CHECK(m.focusedKey() == "nes/c");
+    cats.set("Party", "nes/b", true);
+    m.refreshFilter();
+    CHECK(m.grid().count() == 3);
+    CHECK(m.focusedKey() == "nes/c");  // Fokus bleibt auf dem Spiel
+    m.selectBarForTest(snes);
+    CHECK(m.filterIndex() == 0);
+    CHECK(m.grid().count() == 1);
+}
+
+TEST_CASE("MainScene::setFilter liefert die Trefferzahl; unbekannte Kategorie → 0 Spiele") {
+    FilterLib fl;
+    MainScene m(fl.lib());
+    const Categories cats = Categories::fromText("[Party]\nnes/a\n");
+    m.setCategories(&cats);
+    m.selectBarForTest(barOf(m, "NES"));
+    CHECK(m.setFilter(*parseFilter("genre:sports")) == 1);
+    CHECK(m.focusedKey() == "nes/b");
+    CHECK(m.setFilter(*parseFilter("category:Fehlt")) == 0);
+    CHECK(m.setFilter(GameFilter{}) == 3);
+}
+
+TEST_CASE_FIXTURE(Fixture, "MainScene: Details öffnen setzt die Kategorien mit Häkchen fürs Spiel") {
+    FilterLib fl;
+    MainScene m(fl.lib());
+    DetailsScene d;
+    m.setDetails(&d, nullptr);
+    const Categories cats = Categories::fromText("[Party]\nnes/b\n[Retro]\nnes/a\n");
+    m.setCategories(&cats);
+    m.selectBarForTest(barOf(m, "NES"));
+    m.setFocusForTest(0);  // Alpha = nes/a
+    const SceneRequests r = step(m, action(Action::Confirm));
+    REQUIRE(r.push == &d);
+    CHECK_FALSE(d.categoryChecked(0));
+    CHECK(d.categoryChecked(1));
+    SceneRequests out;
+    d.update(ctx, action(Action::Up), 16, out);
+    CHECK(d.focusedButton() == DetailsScene::kFocusCategories);
+}

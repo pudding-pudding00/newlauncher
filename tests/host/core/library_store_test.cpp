@@ -175,3 +175,24 @@ TEST_CASE("setGames(MergedLibrary): Gerät je Spiel, Favorit übersteht Gerätew
     CHECK(s.devices()[s.favorites()[0]->device] == "sd");
     CHECK(s.alsoOn(*s.favorites()[0]).empty());
 }
+
+TEST_CASE("setGames übernimmt Genres und Bewertung aus meta.bin v2 (M17)") {
+    BeWriter w;
+    for (char c : std::string_view("NLMD")) w.u8(static_cast<u8>(c));
+    w.u16(2); w.u16(0); w.u32(1);
+    w.str("nes/a"); w.str("Titel A"); w.u16(1985); w.u8(2); w.str("");
+    w.u32(0b1010); w.u8(static_cast<u8>(RatingSystem::Usk)); w.u8(6);
+    auto db = MetaDb::parse(w.bytes());
+    REQUIRE(db.isOk());
+    LibraryStore store;
+    store.setGames(lib({"nes/a.nes", "nes/b.nes"}), &db.value());
+    const Game* a = store.findByKey("nes/a.nes");
+    REQUIRE(a != nullptr);
+    CHECK(a->genres == 0b1010);
+    CHECK(a->rating.system == RatingSystem::Usk);
+    CHECK(a->rating.age == 6);
+    const Game* b = store.findByKey("nes/b.nes");
+    REQUIRE(b != nullptr);
+    CHECK(b->genres == 0);
+    CHECK(b->rating.system == RatingSystem::None);
+}

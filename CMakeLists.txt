@@ -21,6 +21,8 @@ add_library(nl_core STATIC
     src/core/assert.cpp
     src/core/theme.cpp
     src/core/theme_file.cpp
+    src/core/categories.cpp
+    src/core/game_filter.cpp
     src/core/rgb5a3.cpp
     src/core/console.cpp
     src/core/frame_stats.cpp

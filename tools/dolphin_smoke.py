@@ -33,6 +33,7 @@ SYSINFO_REL = "newlauncher/sysinfo.txt"
 CONFIG_REL = "newlauncher/config.ini"
 GAMES_REL = "newlauncher/games.ini"  # Spieloptionen pro Spiel (M14)
 THEMES_REL = "newlauncher/themes"  # Theme-Pakete (M17)
+CATEGORIES_REL = "newlauncher/categories.ini"  # eigene Kategorien (M17)
 # Zwei gültige Tokens und ein kaputter (ohne #): der Launcher meldet genau eine NL_THEME_BAD-Zeile.
 SMOKE_THEME_INI = "[light]\nbar = #123456\naccent = #ABCDEF\nbar_border = fff\n"
 DEBUG_INI_REL = "newlauncher/debug.ini"  # [debug] ohne config.ini (--fresh-data, M13)
@@ -226,6 +227,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wbfs-iso", metavar="ID6:GRÖSSE[:broken]", action="append", default=[],
                         help="mit --sd-disk …,wbfs: Test-Disc in einen Slot der ersten WBFS-Partition (Reihenfolge = "
                              "Slot); :broken ohne Wii-Magic in der Disc-Kopf-Kopie (M16 Task 5)")
+    parser.add_argument("--categories", metavar="TEXT",
+                        help="Inhalt für newlauncher/categories.ini (M17); ein wörtliches \\n trennt Zeilen. "
+                             "Ohne die Option wird eine alte categories.ini entfernt")
     parser.add_argument("--theme-pack", metavar="NAME",
                         help="Fixture-Theme newlauncher/themes/NAME mit einem kaputten Token anlegen und in config.ini "
                              "wählen; verlangt genau eine NL_THEME_BAD-Zeile (M17). Ohne die Option wird themes/ entfernt")
@@ -447,6 +451,10 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             (sd / GAMES_REL).write_text(_cli_text(args.games_ini), encoding="utf-8", newline="\n")
         else:
             (sd / GAMES_REL).unlink(missing_ok=True)  # Optionen eines früheren Laufs dürfen nicht nachwirken
+        if getattr(args, "categories", None) is not None:
+            (sd / CATEGORIES_REL).write_text(_cli_text(args.categories), encoding="utf-8", newline="\n")
+        else:
+            (sd / CATEGORIES_REL).unlink(missing_ok=True)  # Kategorien eines früheren Laufs dürfen nicht nachwirken
         shutil.rmtree(sd / THEMES_REL, ignore_errors=True)  # Theme eines früheren Laufs darf nicht nachwirken
         if getattr(args, "theme_pack", None):
             theme_dir = sd / THEMES_REL / args.theme_pack

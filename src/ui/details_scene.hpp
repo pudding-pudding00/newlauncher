@@ -5,6 +5,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 #include "core/n64_choice.hpp"
 #include "ui/cover_provider.hpp"
@@ -22,6 +23,13 @@ public:
     int methodChoice() const { return choice_; }  // 0 = Automatisch, sonst 1 + N64Method
     static constexpr int kFocusMethod = 2;
     static constexpr int kFocusCheats = 3;  // Zeile „Cheats“ über den Knöpfen (Wii, GC; M15)
+    static constexpr int kFocusCategories = 4;  // Zeile „Kategorien“ direkt über den Knöpfen (M17)
+    // Kategorien mit Häkchen fürs geöffnete Spiel; leer = keine Zeile. Die Auswahl bleibt, solange sie gültig ist.
+    void setCategories(std::vector<std::string> names, std::vector<bool> checked);
+    int categoryIndex() const { return catIndex_; }
+    bool categoryChecked(int i) const {
+        return i >= 0 && i < static_cast<int>(catChecked_.size()) && catChecked_[static_cast<std::size_t>(i)];
+    }
     int focusedButton() const { return focus_; }
     void setDeviceLine(std::string line) { device_ = std::move(line); }  // nach open(); leer = keine Zeile
     const std::string& deviceLine() const { return device_; }
@@ -51,9 +59,15 @@ private:
     int choice_ = 0;
     char method_[96] = "";
     char hint_[256] = "";
+    std::vector<std::string> catNames_;
+    std::vector<bool> catChecked_;
+    int catIndex_ = 0;
 
     bool choiceAllowed(int c) const;
-    gfx::Rect cheatsRect(const UiContext& ctx) const;
+    gfx::Rect cheatsRect(const UiContext& ctx) const;  // auch Zeile der N64-Startmethode
+    gfx::Rect categoriesRect(const UiContext& ctx) const;
+    bool hasCategories() const { return !catNames_.empty(); }
+    int upperRowFocus() const;  // Cheats bzw. Startmethode, sonst -1
     void refreshN64Text();
 };
 

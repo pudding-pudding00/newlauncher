@@ -72,6 +72,7 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     c.debugOptionSet = std::string(trim(ini.get("debug", "option_set")));
     c.debugTlsCa = std::string(trim(ini.get("debug", "tls_ca")));
     c.debugWizard = std::string(trim(ini.get("debug", "wizard")));
+    c.debugFilter = std::string(trim(ini.get("debug", "filter")));
 }
 
 Config configFromIni(const IniDoc& ini, bool tls) {

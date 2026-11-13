@@ -286,6 +286,23 @@ class DolphinToolsTest(unittest.TestCase):
                     "--timeout", "2"])
         self.assertFalse((data / "games.ini").exists())
 
+    # --- M17: --categories schreibt newlauncher/categories.ini; ohne die Option wird sie entfernt ---
+    def test_smoke_categories_writes_file(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                    "--timeout", "2", "--categories", "[Party]\\nnes/zelda (europe) (rev 1).nes"])
+        text = (self.user / "SDSync/newlauncher/categories.ini").read_text(encoding="utf-8")
+        self.assertEqual(text, "[Party]\nnes/zelda (europe) (rev 1).nes\n")
+
+    def test_smoke_without_categories_removes_stale_file(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        data = self.user / "SDSync/newlauncher"
+        data.mkdir(parents=True, exist_ok=True)
+        (data / "categories.ini").write_text("[Alt]\nnes/a\n", encoding="utf-8")
+        smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                    "--timeout", "2"])
+        self.assertFalse((data / "categories.ini").exists())
+
     # --- M17: --theme-pack legt ein Fixture-Theme an und verlangt genau eine NL_THEME_BAD-Zeile ---
     def test_smoke_theme_pack_writes_fixture_and_config(self):
         self._fake_dolphin("raise SystemExit(0)\n")

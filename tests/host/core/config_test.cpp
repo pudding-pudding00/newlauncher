@@ -232,6 +232,11 @@ TEST_CASE("configFromIni: [debug] open_scene (M11)") {
     CHECK(configFromIni(IniDoc::parse("[debug]\nopen_scene = about\n")).debugOpenScene == "about");
 }
 
+TEST_CASE("configFromIni: [debug] filter (M17)") {
+    CHECK(configFromIni(IniDoc::parse("")).debugFilter.empty());
+    CHECK(configFromIni(IniDoc::parse("[debug]\nfilter = category:Party \n")).debugFilter == "category:Party");
+}
+
 TEST_CASE("Standardquellen: HTTPS mit TLS, HTTP ohne (M11 Task 8)") {
     const Config on = configFromIni(IniDoc::parse(""), true);
     CHECK(on.emulatorRepo == "https://hbb1.oscwii.org/hbb");

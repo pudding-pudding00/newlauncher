@@ -311,3 +311,48 @@ TEST_CASE_FIXTURE(Fixture, "Details: Hoch fokussiert „Cheats“ bei Wii und GC
     CHECK(d.focusedButton() == 0);
     CHECK(std::string(appCommandName(AppCommand::OpenCheats)) == "open_cheats");
 }
+
+// --- M17: Zeile „Kategorien“ (Häkchenliste) ---
+TEST_CASE_FIXTURE(Fixture, "Details: Kategorien – Hoch wählt die Zeile, Links/Rechts blättern, A schaltet um") {
+    DetailsScene d;
+    const Game g{Console::Nes, "nes/a.nes", "A", 0, 0};
+    d.open(g, false, 0);
+    d.setCategories({"Party", "Retro"}, {false, true});
+    step(d, action(Action::Up));
+    REQUIRE(d.focusedButton() == DetailsScene::kFocusCategories);
+    CHECK(d.categoryIndex() == 0);
+    const SceneRequests r = step(d, action(Action::Confirm));
+    CHECK(r.command == AppCommand::ToggleCategory);
+    CHECK(r.category == 0);
+    REQUIRE(r.game != nullptr);
+    CHECK(std::strcmp(r.game->key, "nes/a.nes") == 0);
+    step(d, action(Action::Right));
+    CHECK(d.categoryIndex() == 1);
+    step(d, action(Action::Right));
+    CHECK(d.categoryIndex() == 0);
+    step(d, action(Action::Left));
+    CHECK(d.categoryIndex() == 1);
+    d.setCategories({"Party", "Retro"}, {true, false});  // nach dem Umschalten: Auswahl bleibt
+    CHECK(d.categoryIndex() == 1);
+    CHECK_FALSE(d.categoryChecked(1));
+    CHECK(d.categoryChecked(0));
+    step(d, action(Action::Down));
+    CHECK(d.focusedButton() == 0);
+    d.draw(ctx, dl);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Details: Kategorien liegen zwischen Knöpfen und Cheats; open() leert sie") {
+    DetailsScene d;
+    const Game g{Console::Wii, "RMCP01", "Mario Kart", 2008, 4};
+    d.open(g, false, 0);
+    d.setCategories({"Party"}, {false});
+    step(d, action(Action::Up));
+    CHECK(d.focusedButton() == DetailsScene::kFocusCategories);
+    step(d, action(Action::Up));
+    CHECK(d.focusedButton() == DetailsScene::kFocusCheats);
+    step(d, action(Action::Down));
+    CHECK(d.focusedButton() == DetailsScene::kFocusCategories);
+    d.open(g, false, 0);
+    step(d, action(Action::Up));
+    CHECK(d.focusedButton() == DetailsScene::kFocusCheats);
+}

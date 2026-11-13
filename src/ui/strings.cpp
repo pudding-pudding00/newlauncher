@@ -2,6 +2,8 @@
 
 #include <cstdio>
 
+#include "core/rating.hpp"
+
 namespace nl::ui {
 
 namespace {
@@ -36,6 +38,13 @@ const char* tr(Str s) {
     const auto i = static_cast<std::size_t>(s);
     if (i >= kCount) return "";
     return gLang == Lang::En ? kEn[i] : kDe[i];
+}
+
+const char* genreLabel(u8 genre) {
+    constexpr u16 first = static_cast<u16>(Str::GenreTheme);
+    static_assert(static_cast<u16>(Str::GenreOthers) - first + 1 == kGenres.size(), "ein Text je kGenres-Eintrag");
+    if (genre >= kGenres.size()) return tr(Str::GenreOthers);
+    return tr(static_cast<Str>(first + genre));
 }
 
 Str netErrorText(NetError e) {

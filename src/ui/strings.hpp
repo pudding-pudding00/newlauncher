@@ -45,6 +45,25 @@
     X(StatsStarts, "%u-mal gestartet", "Started %u times") \
     X(StatsOnce, "Einmal gestartet", "Started once") \
     X(StatsLast, ", zuletzt am %s", ", last on %s") \
+    X(Parental, "Kindersicherung", "Parental controls") \
+    X(ParentalSetPin, "PIN festlegen", "Set PIN") \
+    X(ParentalChangePin, "PIN ändern", "Change PIN") \
+    X(ParentalSystem, "Altersfreigabe nach", "Rating system") \
+    X(ParentalMaxAge, "Altersgrenze", "Age limit") \
+    X(ParentalLockUnrated, "Spiele ohne Freigabe sperren", "Lock unrated games") \
+    X(ParentalUseWii, "Wii-Jugendschutz übernehmen", "Use Wii parental controls") \
+    X(ParentalRemovePin, "PIN entfernen (Kindersicherung aus)", "Remove PIN (turn off)") \
+    X(ParentalOff, "Aus", "Off") \
+    X(ParentalAgeYears, "ab %u", "%u+") \
+    X(PinEnter, "PIN eingeben", "Enter PIN") \
+    X(PinNew, "Neue PIN", "New PIN") \
+    X(PinRepeat, "PIN wiederholen", "Repeat PIN") \
+    X(PinMismatch, "PINs stimmen nicht überein", "PINs do not match") \
+    X(PinWrong, "Falsche PIN", "Wrong PIN") \
+    X(PinBlocked, "Zu viele Versuche, bitte 30 s warten", "Too many attempts, wait 30 s") \
+    X(PinHelp, "▲▼ Ziffer · ◀▶ Stelle · A Weiter · B Abbrechen", "▲▼ Digit · ◀▶ Position · A Next · B Cancel") \
+    X(PinSet, "PIN gespeichert", "PIN saved") \
+    X(PinRemoved, "Kindersicherung aus", "Parental controls off") \
     X(GenreTheme, "Thema", "Theme") \
     X(GenreGeneral, "Allgemein", "General") \
     X(GenreAction, "Action", "Action") \

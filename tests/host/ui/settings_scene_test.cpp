@@ -257,3 +257,11 @@ TEST_CASE_FIXTURE(Fixture, "Wii-Spiele und GameCube-Spiele öffnen die globalen 
     CHECK(r.command == AppCommand::OpenOptions);
     CHECK(r.console == Console::Gc);
 }
+
+TEST_CASE_FIXTURE(Fixture, "A auf Kindersicherung meldet OpenParental (M17)") {
+    focusRow(SettingRow::Parental);
+    const SceneRequests r = press(Action::Confirm);
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::OpenParental);
+    CHECK(std::string(appCommandName(AppCommand::OpenParental)) == "open_parental");
+}

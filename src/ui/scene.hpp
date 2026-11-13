@@ -54,6 +54,10 @@ enum class AppCommand : u8 {
     FetchCheats,      // Codeliste laden: CheatsScene::id6(), overwrite()
     SaveCheats,       // Cheat-Szene geschlossen mit Änderungen: CheatsScene::model().selText() als .sel schreiben
     ToggleCategory,   // Details (M17): game in Kategorie category (Index der setCategories-Liste) an/aus
+    OpenParental,     // Kindersicherung öffnen (M17); mit PIN erst nach der PIN-Abfrage
+    ChangePin,        // Kindersicherung: neue PIN zweimal abfragen (PinScene im Modus Set)
+    RemovePin,        // Kindersicherung: PIN löschen, Kindersicherung aus
+    PinEntered,       // PinScene: vier Ziffern bestätigt, PinScene::pinText()
 };
 const char* appCommandName(AppCommand c);
 

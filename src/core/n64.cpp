@@ -64,6 +64,7 @@ GameOverrides GameOverrides::fromIni(const IniDoc& doc) {
         o.others_.emplace_back(std::string(name), std::vector<std::string>(raw.begin(), raw.end()));
         if (name.substr(0, kGamePrefix.size()) != kGamePrefix) continue;
         const std::string_view id6 = trim(name.substr(kGamePrefix.size()));
+        if (trim(doc.get(name, "locked")) == "1") o.locked_.emplace_back(id6);
         const std::string_view ios = doc.get(name, "ios");
         if (const auto slot = parseIosValue(ios)) o.wiiIos_.emplace_back(std::string(id6), *slot);
         else if (isBadIosValue(ios)) o.bad_.push_back(std::string(name) + ".ios");
@@ -75,6 +76,12 @@ std::optional<u8> GameOverrides::wiiIos(std::string_view id6) const {
     for (const auto& [k, slot] : wiiIos_)
         if (k == id6) return slot;
     return std::nullopt;
+}
+
+bool GameOverrides::locked(std::string_view key) const {
+    for (const std::string& k : locked_)
+        if (k == key) return true;
+    return false;
 }
 
 std::optional<std::string_view> GameOverrides::emulatorProfile(std::string_view key) const {

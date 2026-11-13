@@ -80,6 +80,8 @@
 #include "ui/about_scene.hpp"
 #include "ui/cheats_scene.hpp"
 #include "ui/options_scene.hpp"
+#include "ui/parental_scene.hpp"
+#include "ui/pin_scene.hpp"
 #include "ui/setup_scene.hpp"
 #include "ui/sysinfo_scene.hpp"
 #include "core/sysinfo.hpp"
@@ -626,6 +628,32 @@ int main(int argc, char** argv) {
     mainScene.setDetails(&details, &store);
     details.setCovers(&covers);
     nl::ui::DialogScene dialog;
+    // Kindersicherung (M17, Spec v2 10.5): wirksam ist config.parental oder, mit use_wii, der Wii-Jugendschutz.
+    // Die PIN steht nie im Log; SYSCONF wird nur gelesen.
+    nl::ui::PinScene pinScene;
+    nl::ui::ParentalScene parentalScene;
+    parentalScene.setConfig(&config.parental);
+    nl::PinGate pinGate;
+    nl::ParentalConfig parental;
+    std::optional<nl::WiiParental> wiiParental;
+    bool wiiParentalRead = false;
+    std::array<u8, 16> wiiSalt{};
+    nl::platform::randomBytes(wiiSalt);
+    auto refreshParental = [&]() {
+        if (config.parental.useWii && !wiiParentalRead) {
+            wiiParental = nl::platform::readWiiParental();
+            wiiParentalRead = true;
+            if (wiiParental)
+                nl::log::line("NL_PARENTAL_WII %s system=%s age=%u", wiiParental->enabled ? "on" : "off",
+                              nl::ratingSystemName(wiiParental->system), static_cast<unsigned>(wiiParental->maxAge));
+            else nl::log::line("NL_PARENTAL_WII none");
+        }
+        parental = config.parental.useWii && wiiParental ? nl::applyWiiParental(config.parental, *wiiParental, wiiSalt)
+                                                          : config.parental;
+    };
+    refreshParental();
+    nl::log::line("NL_PARENTAL %s", parental.enabled ? "on" : "off");
+    mainScene.setParental(&parental, &overrides);
     nl::ui::VcMapScene vcMapScene;
     nl::platform::EmuWorker emu(netService);
     nl::platform::CheatWorker cheatWorker(netService);  // M15: Gecko-Codes laden
@@ -1290,6 +1318,65 @@ int main(int argc, char** argv) {
             nl::log::line("NL_WARN config.ini nicht gespeichert");
         }
     };
+    // PIN-Abfrage: Zweck merken, PIN prüfen (3 Fehler → 30 s Pause), danach den Zweck ausführen.
+    enum class PinPurpose : u8 { Launch, Parental, Setup };
+    PinPurpose pinPurpose = PinPurpose::Launch;
+    std::string pinGameKey, pendingLaunchKey;
+    auto launchByKey = [&](const std::string& key) {
+        for (const nl::Game& g : store.games())
+            if (key == g.key) {
+                launchGame(g);
+                return;
+            }
+        nl::log::line("NL_WARN %s fehlt", key.c_str());
+    };
+    auto submitPin = [&](std::string_view pin) {
+        const u32 now = msSince(bootTicks);
+        if (pinGate.blocked(now)) {
+            nl::log::line("NL_PARENTAL blocked");
+            return false;
+        }
+        const bool ok = pinGate.submit(nl::checkPin(parental, pin), now);
+        nl::log::line(ok ? "NL_PARENTAL ok" : "NL_PARENTAL denied");
+        return ok;
+    };
+    // fromScene: die PIN-Szene ist offen und schließt erst im nächsten Frame; Folgeszenen öffnen danach.
+    auto runPinPurpose = [&](bool fromScene) {
+        switch (pinPurpose) {
+            case PinPurpose::Launch:
+                if (fromScene) {
+                    pendingLaunchKey = pinGameKey;  // startet, sobald die PIN-Szene weg ist
+                    pinScene.accept();
+                } else {
+                    launchByKey(pinGameKey);
+                }
+                break;
+            case PinPurpose::Parental:
+                if (fromScene) pinScene.accept(&parentalScene);
+                else scenes.push(&parentalScene);
+                break;
+            case PinPurpose::Setup:
+                openSetup();
+                if (fromScene) pinScene.accept(&setupScene);
+                else scenes.push(&setupScene);
+                break;
+        }
+    };
+    auto askPin = [&](PinPurpose purpose, std::string gameKey) {
+        pinPurpose = purpose;
+        pinGameKey = std::move(gameKey);
+        if (!config.debugPinInput.empty()) {  // nur für Tests (M17): PIN ohne Szene beantworten
+            if (submitPin(config.debugPinInput)) runPinPurpose(false);
+            return;
+        }
+        pinScene.open(nl::ui::PinMode::Verify);
+        scenes.push(&pinScene);
+        nl::log::line("NL_PARENTAL ask");
+    };
+    auto requestLaunch = [&](const nl::Game& game) {
+        if (mainScene.isGameLocked(game)) askPin(PinPurpose::Launch, game.key);
+        else launchGame(game);
+    };
     auto runPendingAutostart = [&]() {
         if (!autostartPending) return;
         autostartPending = false;
@@ -1300,7 +1387,7 @@ int main(int argc, char** argv) {
         }
         if (found != nullptr) {
             nl::log::line("NL_AUTOSTART %s", key.c_str());
-            launchGame(*found);
+            requestLaunch(*found);
         } else {
             nl::log::line("NL_WARN autostart %s fehlt", key.c_str());
         }
@@ -1477,11 +1564,44 @@ int main(int argc, char** argv) {
                 music.setEnabled(config.music);
                 music.setVolume(config.musicVolume);
                 if (config.music) startMusic();  // beim Start ausgeschaltet gewesen
+                refreshParental();
                 break;
             }
             case nl::ui::AppCommand::SaveSettings:
                 config.themeMode = ctx.themeMode;
                 saveConfig();
+                refreshParental();
+                break;
+            case nl::ui::AppCommand::OpenParental:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (parental.enabled) askPin(PinPurpose::Parental, {});
+                else scenes.push(&parentalScene);
+                break;
+            case nl::ui::AppCommand::ChangePin:
+                pinScene.open(nl::ui::PinMode::Set);
+                scenes.push(&pinScene);
+                break;
+            case nl::ui::AppCommand::RemovePin:
+                config.parental = nl::withoutPin(config.parental);
+                saveConfig();
+                refreshParental();
+                nl::log::line("NL_PARENTAL removed");
+                break;
+            case nl::ui::AppCommand::PinEntered:  // kein NL_CMD: nichts von der Eingabe ins Log
+                if (pinScene.mode() == nl::ui::PinMode::Set) {
+                    std::array<u8, 16> salt{};
+                    nl::platform::randomBytes(salt);
+                    config.parental = nl::withPin(config.parental, pinScene.pinText(), salt);
+                    saveConfig();
+                    refreshParental();
+                    nl::log::line("NL_PARENTAL pin_set");
+                    pinScene.accept();
+                } else if (submitPin(pinScene.pinText())) {
+                    runPinPurpose(true);
+                } else {
+                    pinScene.reject(pinGate.blocked(msSince(bootTicks)) ? nl::ui::Str::PinBlocked : nl::ui::Str::PinWrong);
+                    audio.play(nl::UiSound::Error);
+                }
                 break;
             case nl::ui::AppCommand::Rescan:
                 if (worker.running()) break;  // läuft schon, das Ergebnis kommt über den Scan-Pfad unten
@@ -1513,7 +1633,7 @@ int main(int argc, char** argv) {
                 SYS_ResetSystem(cmd == nl::ui::AppCommand::WiiMenu ? SYS_RETURNTOMENU : SYS_POWEROFF, 0, 0);
                 break;
             case nl::ui::AppCommand::Launch:
-                if (req.game != nullptr) launchGame(*req.game);
+                if (req.game != nullptr) requestLaunch(*req.game);
                 break;
             case nl::ui::AppCommand::FetchCovers:
                 fetchCovers();
@@ -1571,6 +1691,10 @@ int main(int argc, char** argv) {
                 break;
             case nl::ui::AppCommand::OpenSetup:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (parental.enabled) {  // Spec v2 10.5: Einrichtung nur mit PIN
+                    askPin(PinPurpose::Setup, {});
+                    break;
+                }
                 openSetup();
                 scenes.push(&setupScene);
                 break;
@@ -1590,6 +1714,11 @@ int main(int argc, char** argv) {
                 break;
         }
         if (!running) break;
+        if (!pendingLaunchKey.empty() && !scenes.contains(&pinScene)) {  // PIN angenommen, Szene ausgeblendet
+            const std::string key = std::move(pendingLaunchKey);
+            pendingLaunchKey.clear();
+            launchByKey(key);
+        }
         pumpNet();
         pumpEmu(runPendingAutostart);
         pumpMusic();

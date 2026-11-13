@@ -33,7 +33,7 @@ void stepThemePack(Config& c, std::span<const std::string> packs, int dir) {
 
 bool isAction(SettingRow r) {
     return r == SettingRow::Rescan || r == SettingRow::FetchCovers || r == SettingRow::VcMap ||
-           r == SettingRow::Emulators || r == SettingRow::WiiGames || r == SettingRow::GcGames || r == SettingRow::Setup || r == SettingRow::SysInfo ||
+           r == SettingRow::Emulators || r == SettingRow::WiiGames || r == SettingRow::GcGames || r == SettingRow::Parental || r == SettingRow::Setup || r == SettingRow::SysInfo ||
            r == SettingRow::About;
 }
 
@@ -73,6 +73,7 @@ void stepSetting(Config& c, SettingRow r, int dir) {
         case SettingRow::Emulators:
         case SettingRow::WiiGames:
         case SettingRow::GcGames:
+        case SettingRow::Parental:
         case SettingRow::Setup:
         case SettingRow::SysInfo:
         case SettingRow::About:

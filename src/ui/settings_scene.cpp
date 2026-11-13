@@ -13,12 +13,12 @@ using gfx::FontSize;
 using gfx::FontWeight;
 using gfx::Rect;
 
-constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 19.0f, kHelpH = 24.0f;  // 20 Zeilen in 480
+constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 18.0f, kHelpH = 24.0f;  // 21 Zeilen in 480
 
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo, Str::ThemePack,  Str::Music,       Str::Volume,
     Str::Sounds,   Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::Rescan, Str::FetchCovers, Str::VcMapTitle,
-    Str::Emulators, Str::WiiGames, Str::GcGames, Str::Setup, Str::SysInfo, Str::About,
+    Str::Emulators, Str::WiiGames, Str::GcGames, Str::Parental, Str::Setup, Str::SysInfo, Str::About,
 };
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
@@ -39,6 +39,7 @@ AppCommand actionCommand(SettingRow r) {
         case SettingRow::Emulators: return AppCommand::OpenEmulators;
         case SettingRow::WiiGames:
         case SettingRow::GcGames: return AppCommand::OpenOptions;
+        case SettingRow::Parental: return AppCommand::OpenParental;
         case SettingRow::Setup: return AppCommand::OpenSetup;
         case SettingRow::SysInfo: return AppCommand::OpenSysInfo;
         case SettingRow::About: return AppCommand::OpenAbout;

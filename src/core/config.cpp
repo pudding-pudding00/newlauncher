@@ -73,6 +73,7 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     c.debugTlsCa = std::string(trim(ini.get("debug", "tls_ca")));
     c.debugWizard = std::string(trim(ini.get("debug", "wizard")));
     c.debugFilter = std::string(trim(ini.get("debug", "filter")));
+    c.debugPinInput = std::string(trim(ini.get("debug", "pin_input")));
 }
 
 Config configFromIni(const IniDoc& ini, bool tls) {
@@ -108,6 +109,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     const std::string_view cheatSource = trim(ini.get("cheats", "source"));
     const bool cheatSourceOk = cheatSource.starts_with("https://") || cheatSource.starts_with("http://");
     c.cheatSource = std::string(cheatSourceOk ? cheatSource : defaultCheatSource(tls));
+    c.parental = parentalFromIni(ini);
     const std::string_view ios = ini.get("wii", "ios");
     c.wiiIos = parseIosValue(ios);
     if (isBadIosValue(ios)) c.badKeys.emplace_back("wii.ios");
@@ -129,7 +131,7 @@ namespace {
 
 struct IniValue {
     const char* section;
-    const char* key;
+    std::string key;
     std::string value;
     bool written = false;
 };
@@ -137,7 +139,7 @@ struct IniValue {
 std::vector<IniValue> configValues(const Config& c) {
     const char* lang = c.language == Config::Language::De ? "de" : c.language == Config::Language::En ? "en" : "auto";
     const char* mode = c.themeMode == ThemeMode::Dark ? "dark" : c.themeMode == ThemeMode::Auto ? "auto" : "light";
-    return {
+    std::vector<IniValue> v = {
         {"general", "language", lang},
         {"general", "library", c.library == Config::LibraryDevice::Sd ? "sd" : "usb"},
         {"general", "usb_timeout", std::to_string(c.usbTimeoutSec)},
@@ -154,6 +156,8 @@ std::vector<IniValue> configValues(const Config& c) {
         {"emulators", "repo", c.emulatorRepo},
         {"wii", "ios", c.wiiIos ? std::to_string(static_cast<unsigned>(*c.wiiIos)) : std::string("auto")},
     };
+    for (auto& [key, value] : parentalIniValues(c.parental)) v.push_back({"parental", std::move(key), std::move(value)});
+    return v;
 }
 
 }  // namespace

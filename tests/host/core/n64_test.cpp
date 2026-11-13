@@ -87,3 +87,12 @@ TEST_CASE("setN64MethodText ändert nur [n64_method], Kommentare und andere Absc
           "; Meine Overrides\r\n[n64_method]\r\n# Notiz\r\n\r\n[game RMGP01]\r\nvideo = pal60\r\n");
     CHECK(nl::setN64MethodText("", "n64/b.z64", nl::N64Method::Wii64) == "[n64_method]\nn64/b.z64 = wii64\n");
 }
+
+TEST_CASE("GameOverrides: [game <schlüssel>] locked = 1 sperrt das Spiel (M17)") {
+    const GameOverrides o = GameOverrides::fromIni(
+        IniDoc::parse("[game RMCP01]\nlocked = 1\n[game nes/Zelda (Europe).nes]\nlocked = 1\n[game SMNP01]\nlocked = 0\n"));
+    CHECK(o.locked("RMCP01"));
+    CHECK(o.locked("nes/Zelda (Europe).nes"));
+    CHECK_FALSE(o.locked("SMNP01"));
+    CHECK_FALSE(o.locked("RSBP01"));
+}

@@ -480,6 +480,11 @@ void MainScene::requestCovers() {
     }
 }
 
+bool MainScene::isGameLocked(const Game& g) const {
+    if (parental_ == nullptr) return false;
+    return isLocked(*parental_, g.rating, overrides_ != nullptr && overrides_->locked(g.key));
+}
+
 void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rect r, bool focused) const {
     const Theme& t = *ctx.theme;
     const gfx::AtlasShapes& s = *ctx.shapes;
@@ -515,6 +520,13 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
     const float tagW = gfx::measureText(label, tag) + 12.0f;
     gfx::roundRect(dl, s, Rect{r.x + 8, r.y + 8, tagW, 18}, 9, t.accentSoft);
     if (store_ != nullptr && store_->isFavorite(g.key)) gfx::circle(dl, s, r.x + r.w - 14, r.y + 17, 4, t.accent);
+    if (isGameLocked(g)) {  // Schloss: Bügel als Ring, Körper als Rechteck, auf einer Plakette links vom Favoritenpunkt
+        const float cx = r.x + r.w - 34, cy = r.y + 17;
+        gfx::roundRect(dl, s, Rect{cx - 9, cy - 9, 18, 18}, 9, t.accentSoft);
+        gfx::circle(dl, s, cx, cy - 2, 3.5f, t.accentSoftText);
+        gfx::circle(dl, s, cx, cy - 2, 2.0f, t.accentSoft);
+        gfx::fillRect(dl, s, Rect{cx - 4, cy - 1, 8, 6}, t.accentSoftText);
+    }
     gfx::drawText(dl, label, r.x + 14, r.y + 8 + 9 + (label.ascent - label.descent) / 2, tag, t.accentSoftText);
 }
 

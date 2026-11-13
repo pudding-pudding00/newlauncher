@@ -1,4 +1,6 @@
 #include "core/library_store.hpp"
+#include "core/n64.hpp"
+#include "core/parental.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/test_library.hpp"
@@ -649,4 +651,30 @@ TEST_CASE_FIXTURE(Fixture, "MainScene: Details öffnen zeigt die Statistik des S
     m.setFocusForTest(0);  // Alpha = nes/a
     REQUIRE(step(m, action(Action::Confirm)).push == &d);
     CHECK(std::string(d.statsText()) == "2-mal gestartet, zuletzt am 03.11.2025");
+}
+
+TEST_CASE_FIXTURE(Fixture, "MainScene: gesperrte Spiele tragen ein Schloss (M17)") {
+    FilterLib fl;
+    fl.games[2].rating = Rating{RatingSystem::Pegi, 16};
+    MainScene m(fl.lib());
+    m.selectBarForTest(barOf(m, "NES"));
+    m.setFocusForTest(0);
+    CHECK_FALSE(m.isGameLocked(fl.games[1]));  // ohne Kindersicherung nie
+    dl.clear();
+    m.draw(ctx, dl);
+    const u32 unlockedQuads = dl.quadCount();
+
+    constexpr std::array<u8, 16> salt{};
+    ParentalConfig p = withPin(ParentalConfig{}, "1234", salt);
+    p.maxAge = 12;
+    const GameOverrides o = GameOverrides::fromIni(IniDoc::parse("[game nes/b]\nlocked = 1\n"));
+    m.setParental(&p, &o);
+    CHECK_FALSE(m.isGameLocked(fl.games[0]));
+    CHECK(m.isGameLocked(fl.games[1]));  // locked = 1
+    CHECK(m.isGameLocked(fl.games[2]));  // PEGI 16 > 12
+    dl.clear();
+    m.draw(ctx, dl);
+    CHECK(dl.quadCount() > unlockedQuads);
+    m.setParental(nullptr, nullptr);
+    CHECK_FALSE(m.isGameLocked(fl.games[1]));
 }

@@ -27,6 +27,7 @@ enum class SettingRow : u8 {
     Emulators,
     WiiGames,  // globale Spieloptionen Wii (M14)
     GcGames,   // globale Spieloptionen GameCube (M14)
+    Parental,  // Kindersicherung (M17)
     Setup,    // Einrichtungs-Assistent (M13)
     SysInfo,  // Systeminfo (M13)
     About,  // Version, Lizenz, Drittanbieter (M11)

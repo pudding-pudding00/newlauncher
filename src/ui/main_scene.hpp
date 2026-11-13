@@ -8,6 +8,8 @@
 #include "core/easing.hpp"
 #include "core/game_filter.hpp"
 #include "core/library_store.hpp"
+#include "core/n64.hpp"
+#include "core/parental.hpp"
 #include "core/play_stats.hpp"
 #include "ui/cover_provider.hpp"
 #include "ui/details_scene.hpp"
@@ -63,6 +65,13 @@ public:
     // Sortierung der Konsolenleisten (M17); Favoriten, Verlauf und Suche behalten ihre Reihenfolge.
     // Wirkt sofort; stats == nullptr = keine Statistik. Der Fokus bleibt am Spiel.
     void setSort(SortOrder order, const PlayStats* stats);
+    // Kindersicherung (M17): gesperrte Spiele zeigen ein Schloss. nullptr = keine Sperren. Beide Zeiger bleiben gültig,
+    // solange sie gesetzt sind.
+    void setParental(const ParentalConfig* parental, const GameOverrides* overrides) {
+        parental_ = parental;
+        overrides_ = overrides;
+    }
+    bool isGameLocked(const Game& g) const;
 
     // SearchTarget: nicht leere Anfrage → Such-Eintrag vorn in der Leiste mit Treffern aus allen Konsolen;
     // leere Anfrage → Suchmodus aus, vorheriger Eintrag wieder aktiv.
@@ -109,6 +118,8 @@ private:
     const Categories* cats_ = nullptr;
     SortOrder sort_ = SortOrder::Title;
     const PlayStats* playStats_ = nullptr;
+    const ParentalConfig* parental_ = nullptr;
+    const GameOverrides* overrides_ = nullptr;
     void loadBase(int index);  // base_ für den Leisten-Eintrag, Konsolen sortiert
     BarEntry filterEntry_{};
     bool filterEntryKnown_ = false;

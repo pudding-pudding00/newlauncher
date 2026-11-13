@@ -84,10 +84,45 @@ def scan_library(lib: Path) -> list[tuple[str, str, Path]]:
     return games
 
 
-def parse_wiitdb(path: Path, ids: set[str], lang: str) -> dict[str, tuple[str, int, int, str]]:
-    """ID6 → (Titel, Jahr, Spieler, Beschreibung); Sprache lang, sonst EN, sonst die erste."""
-    out: dict[str, tuple[str, int, int, str]] = {}
+# Hauptgenres in fester Reihenfolge = Bits der Genre-Maske (muss zu kGenres in src/core/meta_db.hpp passen).
+GENRES = ["theme", "general", "action", "sports", "adventure", "music", "racing",
+          "fighting", "simulation", "role-playing", "strategy", "traditional", "health", "others"]
+
+# Bewertungssysteme wie RatingSystem in src/core/meta_db.hpp.
+RATING_NONE, RATING_USK, RATING_PEGI, RATING_ESRB, RATING_CERO = range(5)
+ESRB_AGE = {"EC": 3, "E": 6, "E10+": 10, "T": 13, "M": 17, "AO": 18}
+CERO_AGE = {"A": 0, "B": 12, "C": 15, "D": 17, "Z": 18}
+
+
+def rating(system: str, value: str) -> tuple[int, int]:
+    """GameTDB-<rating type value> → (System, Alter); unbekannt oder leer → (RATING_NONE, 0)."""
+    system, value = (system or "").strip().upper(), (value or "").strip().upper()
+    if system == "ESRB" and value in ESRB_AGE:
+        return RATING_ESRB, ESRB_AGE[value]
+    if system == "CERO" and value in CERO_AGE:
+        return RATING_CERO, CERO_AGE[value]
+    if system in ("PEGI", "USK") and value.isdigit() and int(value) <= 21:
+        return (RATING_PEGI if system == "PEGI" else RATING_USK), int(value)
+    return RATING_NONE, 0
+
+
+def parse_wiitdb(path: Path, ids: set[str], lang: str,
+                 unknown_genres: dict[str, int] | None = None) -> dict[str, tuple[str, int, int, str, int, int, int]]:
+    """ID6 → (Titel, Jahr, Spieler, Beschreibung, Genres, Bewertungssystem, Alter).
+
+    Sprache lang, sonst EN, sonst die erste. Untergenres zählen für ihr Hauptgenre (aus <genres>);
+    unbekannte Genres werden ignoriert und in unknown_genres gezählt.
+    """
+    main_of = {g: g for g in GENRES}
+    out: dict[str, tuple[str, int, int, str, int, int, int]] = {}
     for _, elem in ET.iterparse(path, events=("end",)):
+        if elem.tag == "genres":
+            for main in elem.findall("maingenre"):
+                name = (main.get("name") or "").strip().lower()
+                for sub in main.findall("subgenre"):
+                    main_of.setdefault((sub.get("name") or "").strip().lower(), name)
+            elem.clear()
+            continue
         if elem.tag != "game":
             continue
         gid = (elem.findtext("id") or "").strip()
@@ -100,7 +135,17 @@ def parse_wiitdb(path: Path, ids: set[str], lang: str) -> dict[str, tuple[str, i
             year = _int(date.get("year") if date is not None else None)
             inp = elem.find("input")
             players = _int(inp.get("players") if inp is not None else None)
-            out[gid] = (title or gid, year, min(players, 255), desc)
+            mask = 0
+            for tag in (elem.findtext("genre") or "").split(","):
+                tag = tag.strip().lower()
+                main = main_of.get(tag)
+                if main in GENRES:
+                    mask |= 1 << GENRES.index(main)
+                elif tag and unknown_genres is not None:
+                    unknown_genres[tag] = unknown_genres.get(tag, 0) + 1
+            rt = elem.find("rating")
+            system, age = rating(rt.get("type", ""), rt.get("value", "")) if rt is not None else (RATING_NONE, 0)
+            out[gid] = (title or gid, year, min(players, 255), desc, mask, system, age)
         elem.clear()
     return out
 
@@ -165,9 +210,9 @@ def _lookup(table: dict[str, tuple[str, str]], name: str, crc_index: dict[str, s
     return _int(crc_index.get(crc()))
 
 
-def build_entries(games: list[tuple[str, str, Path]], wii_meta: dict[str, tuple[str, int, int, str]],
-                  dats: dict[str, dict[str, dict[str, tuple[str, str]]]]) -> dict[str, tuple[str, int, int, str]]:
-    entries: dict[str, tuple[str, int, int, str]] = {}
+def build_entries(games: list[tuple[str, str, Path]], wii_meta: dict[str, tuple],
+                  dats: dict[str, dict[str, dict[str, tuple[str, str]]]]) -> dict[str, tuple]:
+    entries: dict[str, tuple] = {}
     for key, console, path in games:
         if console in DISCS:
             if key in wii_meta:
@@ -238,7 +283,10 @@ def main(argv: list[str] | None = None) -> int:
 
     games = scan_library(args.lib)
     disc_ids = {key for key, console, _ in games if console in DISCS}
-    wii_meta = parse_wiitdb(args.wiitdb, disc_ids, args.lang.upper()) if args.wiitdb else {}
+    unknown: dict[str, int] = {}
+    wii_meta = parse_wiitdb(args.wiitdb, disc_ids, args.lang.upper(), unknown) if args.wiitdb else {}
+    if unknown:
+        print(f"Unbekannte Genres ignoriert: {sum(unknown.values())} ({', '.join(sorted(unknown))})")
     if not args.offline:
         fetch_dats(args.dat_dir)
     entries = build_entries(games, wii_meta, load_dats(args.dat_dir))

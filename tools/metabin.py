@@ -7,7 +7,7 @@ import struct
 from pathlib import Path
 
 MAGIC = b"NLMD"
-VERSION = 1
+VERSION = 2  # M17: je Eintrag zusätzlich u32 Genres, u8 Bewertungssystem, u8 Alter
 
 
 def meta_key(game_key: str) -> str:
@@ -25,22 +25,27 @@ def _pack_str(s: str) -> bytes:
     return struct.pack(">H", len(data)) + data
 
 
-def write_meta_bin(path: Path, entries: dict[str, tuple[str, int, int, str]]) -> None:
-    """entries: Schlüssel → (Titel, Jahr, Spieler, Beschreibung)."""
+def write_meta_bin(path: Path, entries: dict[str, tuple]) -> None:
+    """entries: Schlüssel → (Titel, Jahr, Spieler, Beschreibung[, Genres, Bewertungssystem, Alter]).
+
+    Ohne die letzten drei Werte: keine Genres, unbewertet.
+    """
     out = bytearray(MAGIC + struct.pack(">HHI", VERSION, 0, len(entries)))
     for key in sorted(entries, key=lambda k: k.encode("utf-8")):
-        title, year, players, desc = entries[key]
+        title, year, players, desc, genres, system, age = (tuple(entries[key]) + (0, 0, 0))[:7]
         out += _pack_str(key) + _pack_str(title) + struct.pack(">HB", year, players) + _pack_str(desc)
+        out += struct.pack(">IBB", genres, system, age)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(bytes(out))
 
 
-def read_meta_bin(path: Path) -> dict[str, tuple[str, int, int, str]]:
+def read_meta_bin(path: Path) -> dict[str, tuple[str, int, int, str, int, int, int]]:
+    """Liest Version 1 und 2; liefert immer 7-Tupel (v1: Genres 0, unbewertet)."""
     data = path.read_bytes()
     if data[:4] != MAGIC:
         raise ValueError("kein meta.bin")
     version, _, count = struct.unpack_from(">HHI", data, 4)
-    if version != VERSION:
+    if version not in (1, 2):
         raise ValueError("unbekannte Version")
     pos = 12
 
@@ -51,11 +56,16 @@ def read_meta_bin(path: Path) -> dict[str, tuple[str, int, int, str]]:
         pos += 2 + n
         return s
 
-    result: dict[str, tuple[str, int, int, str]] = {}
+    result: dict[str, tuple[str, int, int, str, int, int, int]] = {}
     for _ in range(count):
         key = read_str()
         title = read_str()
         year, players = struct.unpack_from(">HB", data, pos)
         pos += 3
-        result[key] = (title, year, players, read_str())
+        desc = read_str()
+        genres = system = age = 0
+        if version >= 2:
+            genres, system, age = struct.unpack_from(">IBB", data, pos)
+            pos += 6
+        result[key] = (title, year, players, desc, genres, system, age)
     return result

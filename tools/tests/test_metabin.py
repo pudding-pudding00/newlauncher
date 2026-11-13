@@ -13,16 +13,23 @@ class MetaBinTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "meta.bin"
             entries = {
-                "n64/b": ("B", 1999, 2, "Text B"),
-                "RMCP01": ("Mario Kart Wii", 2008, 4, "Rennen"),
-                "n64/ä": ("Ä", 0, 0, ""),
+                "n64/b": ("B", 1999, 2, "Text B", 0, 0, 0),
+                "RMCP01": ("Mario Kart Wii", 2008, 4, "Rennen", 0b101000, 3, 6),
+                "n64/ä": ("Ä", 0, 0, "", 0, 0, 0),
             }
             write_meta_bin(path, entries)
             data = path.read_bytes()
             self.assertEqual(data[:4], b"NLMD")
+            self.assertEqual(data[4:6], b"\x00\x02")  # M17: Version 2
             self.assertEqual(read_meta_bin(path), entries)
             keys = list(read_meta_bin(path).keys())
             self.assertEqual(keys, sorted(keys, key=lambda k: k.encode("utf-8")))
+
+    def test_four_tuples_get_empty_genres_and_rating(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "meta.bin"
+            write_meta_bin(path, {"nes/a": ("A", 1985, 2, "")})
+            self.assertEqual(read_meta_bin(path), {"nes/a": ("A", 1985, 2, "", 0, 0, 0)})
 
     def test_meta_key_lowers_ascii_only(self):
         self.assertEqual(meta_key("n64/Super Mario 64 (Europe).z64"), "n64/super mario 64 (europe)")

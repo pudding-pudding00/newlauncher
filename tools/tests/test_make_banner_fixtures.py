@@ -6,7 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from make_banner_fixtures import (ADPCM_COEFS, TEX_BYTES, bns, brlan, brlyt, channel_banner_app,  # noqa: E402
+from make_banner_fixtures import (ADPCM_COEFS, TEX_BYTES, big_banner_app, bns, brlan, brlyt,  # noqa: E402
+                                  channel_banner_app,
                                   encode_adpcm, gc_bnr, gc_iso, imd5,
                                   main, pane, rgb5a3_pixel, sample_bnr, tex_bytes, tile_rgb5a3, tpl,
                                   u8_archive)
@@ -158,11 +159,24 @@ class MakeBannerFixturesTest(unittest.TestCase):
         self.assertIn(b"sound.bin\0", data)
         self.assertIn(b"BNS " + bytes([0xFE, 0xFF, 0x01, 0x00]), data)
 
+    def test_big_banner_app(self):
+        """Budget-Fixture (M18 Task 8): drei C4 1024×1024 = 6 MiB hochgeladen (C4 → RGB5A3), LZ77-gepackt klein."""
+        data = big_banner_app()
+        self.assertEqual(data[0x80:0x84], b"IMET")
+        self.assertLess(len(data), 64 * 1024)
+        at = data.index(b"IMD5") + 32
+        self.assertEqual(data[at:at + 5], b"LZ77")
+        unpacked = struct.unpack_from("<I", data, at + 5)[0] & 0xFFFFFF
+        self.assertGreater(unpacked, 3 * tex_bytes(8, 1024, 1024))
+        self.assertLessEqual(unpacked, 4 * 1024 * 1024)  # kBannerBinMax: Laden klappt, erst das Budget greift
+        self.assertGreater(3 * tex_bytes(5, 1024, 1024), 5 * 1024 * 1024)
+
     def test_main_writes_bnr(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(main(Path(d)), 0)
             self.assertEqual((Path(d) / "opening.bnr").read_bytes(), sample_bnr())
             self.assertEqual((Path(d) / "banner.app").read_bytes(), channel_banner_app())
+            self.assertEqual((Path(d) / "banner_big.app").read_bytes(), big_banner_app())
 
 
 if __name__ == "__main__":

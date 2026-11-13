@@ -159,3 +159,14 @@ TEST_CASE("stepSetting: Sortierung zyklisch (M17)") {
     CHECK(c.sortOrder == SortOrder::Most);
     CHECK_FALSE(isAction(SettingRow::Sort));
 }
+
+TEST_CASE("Zeile Banner folgt auf Klänge und schaltet [ui] banners (M18)") {
+    CHECK(static_cast<int>(SettingRow::Sounds) + 1 == static_cast<int>(SettingRow::Banners));
+    CHECK_FALSE(isAction(SettingRow::Banners));
+    Config c;
+    CHECK(settingEnabled(c, SettingRow::Banners));
+    stepSetting(c, SettingRow::Banners, 1);
+    CHECK_FALSE(c.banners);
+    stepSetting(c, SettingRow::Banners, -1);
+    CHECK(c.banners);
+}

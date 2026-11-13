@@ -28,6 +28,7 @@ struct ChannelBanner {
     std::shared_ptr<const std::vector<u8>> archive;
     Layout layout;
     std::vector<TplImage> textures;  // je Eintrag in layout.textures das erste Bild der TPL
+    std::size_t baseTextures = 0;    // Texturen aus txl1; dahinter die Mustertexturen der Animation
     std::optional<Anim> start, loop;
     bool animInvalid = false;
     std::optional<BnsSound> sound;  // meta/sound.bin; fehlt er oder ist kaputt, bleibt das Banner stumm

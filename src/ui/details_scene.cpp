@@ -234,7 +234,7 @@ int DetailsScene::upperRowFocus() const {
 void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
     FocusSound sound(out, focus_);
     if (covers_ != nullptr && hasGame_) covers_->want(game_, CoverPriority::Visible);
-    if (banners_ != nullptr && hasGame_ && game_.console == Console::Gc) banners_->want(game_);
+    if (banners_ != nullptr && hasGame_) banners_->want(game_);  // der Dienst entscheidet, was ein Banner hat
     if (ctx.minuteOfDay != clockMinute_) {
         clockMinute_ = ctx.minuteOfDay;
         formatClock(clockMinute_, clock_, sizeof clock_);
@@ -338,7 +338,7 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const char* label = consoleInfo(game_.console).label;
     const float lw = gfx::measureText(big, label);
     gfx::drawText(dl, big, cover.x + (cover.w - lw) / 2, cover.y + cover.h / 2, label, t.accentSoftText);
-    const BannerView bv = banners_ != nullptr && game_.console == Console::Gc ? banners_->view(game_) : BannerView{};
+    const BannerView bv = banners_ != nullptr ? banners_->view(game_) : BannerView{};
     if (bv.frame != nullptr) {
         // Kanal-Banner (M18) statt des Covers: 4:3 in Cover-Breite, senkrecht mittig, außen abgeschnitten.
         const float bh = cover.w * 3.0f / 4.0f;

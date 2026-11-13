@@ -8,10 +8,12 @@
 
 #include <optional>
 
+#include "core/banner_budget.hpp"
 #include "core/banner_scene.hpp"
 #include "core/banner_sound.hpp"
 #include "core/brlan.hpp"
 #include "core/fs.hpp"
+#include "core/vc_map.hpp"
 #include "gfx/renderer.hpp"
 #include "platform/audio.hpp"
 #include "platform/banner_tex.hpp"
@@ -35,8 +37,14 @@ public:
         audio_ = audio;
         music_ = music;
     }
+    // Kanäle: VC-Zuordnung Spiel → Kanal-Titel (v1); NAND-content0 des Kanals liefert das Banner.
+    void setVcMap(const VcMap* map) { vcMap_ = map; }
+    void setLogSounds(bool on) { logSounds_ = on; }  // [debug] log_sounds: NL_SOUND banner
+    void setEnabled(bool on);  // [ui] banners; aus → sofort freigeben
+    // Ein Auftrag startet erst nach so langem Fokus; ein Wechsel davor lädt nichts.
+    static constexpr u32 kFocusDelayMs = 1000;
     void pump();      // Ergebnis übernehmen, nächsten Auftrag starten
-    void release();   // Banner freigeben (Bibliothek neu, Szene verlassen)
+    void release();   // Banner freigeben (Bibliothek neu, Szene verlassen); ohne Banner ein No-op
     void shutdown();  // vor dem Aushängen der Laufwerke
 
     // ui::BannerProvider
@@ -57,7 +65,12 @@ private:
     std::vector<std::string> roots_;
     bool german_ = false;
     std::string key_, path_;   // gewünschtes Spiel
-    bool requested_ = false;   // Auftrag für key_ gestartet
+    bool requested_ = false;   // Auftrag für key_ gestartet (oder nichts zu laden)
+    bool gc_ = false;          // key_ ist ein GC-Spiel
+    std::optional<u64> titleId_;  // Kanal-Titel aus der VC-Zuordnung
+    const VcMap* vcMap_ = nullptr;
+    bool enabled_ = true;
+    bool logSounds_ = false;
     void* texels_ = nullptr;   // RGB5A3 96×32 für key_, 32-Byte-ausgerichtet
     std::string debugFile_;
     platform::BannerTextures textures_;  // Kanal-Banner für key_

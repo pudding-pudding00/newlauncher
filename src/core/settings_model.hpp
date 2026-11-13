@@ -18,6 +18,7 @@ enum class SettingRow : u8 {
     Music,
     Volume,
     Sounds,
+    Banners,  // [ui] banners (M18)
     Library,
     Sort,  // Sortierung der Konsolenleisten (M17)
     CoverRegion,

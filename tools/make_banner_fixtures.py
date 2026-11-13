@@ -425,17 +425,39 @@ def channel_banner_app() -> bytes:
     inner = u8_archive({"arc": {"anim": {"banner_Loop.brlan": loop, "banner_Start.brlan": start},
                                 "blyt": {"banner.brlyt": layout},
                                 "timg": {"bg.tpl": bg, "logo.tpl": logo, "logo2.tpl": logo2}}})
-    outer = u8_archive({"meta": {"banner.bin": imd5(inner), "sound.bin": imd5(sample_bns())}})
+    return _content0(u8_archive({"meta": {"banner.bin": imd5(inner), "sound.bin": imd5(sample_bns())}}))
+
+
+def _content0(outer: bytes) -> bytes:
+    """0x40 Byte frei, IMET-Kopf bis 0x640, dann das äußere U8-Archiv."""
     head = bytearray(0x640)
     head[0x80:0x84] = b"IMET"
     struct.pack_into(">II", head, 0x84, 0x600, 3)
     return bytes(head) + outer
 
 
+@functools.lru_cache(maxsize=None)
+def big_banner_app() -> bytes:
+    """Budget-Fixture (M18 Task 8): drei einfarbige C4-Texturen 1024×1024. Entpackt 1,5 MiB (unter
+    kBannerBinMax), hochgeladen als RGB5A3 aber 6 MiB > 4 MiB Budget → Rückfall aufs Cover.
+    banner.bin ist LZ77 (Typ 0x11) gepackt, damit die Datei im Repo klein bleibt."""
+    from gen_lz77_samples import compress  # gleicher Ordner; nur hier gebraucht
+
+    palette = [rgb5a3_pixel(40, 90, 200), rgb5a3_pixel(250, 250, 250)]
+    names = ["a.tpl", "b.tpl", "c.tpl"]
+    big = tpl([(8, 1024, 1024, lambda x, y: 0, palette)])
+    root = pane("pan1", "RootPane", 0, 0, 608, 456, children=[
+        pane("pic1", f"p{i}", 0, 0, 608, 456, material=i) for i in range(3)])
+    layout = brlyt(608, 456, names, [(f"m{i}", i, None) for i in range(3)], [root])
+    inner = u8_archive({"arc": {"blyt": {"banner.brlyt": layout}, "timg": {n: big for n in names}}})
+    return _content0(u8_archive({"meta": {"banner.bin": imd5(compress(inner, 0x11, magic=True))}}))
+
+
 def main(out: Path) -> int:
     out.mkdir(parents=True, exist_ok=True)
     (out / "opening.bnr").write_bytes(sample_bnr())
     (out / "banner.app").write_bytes(channel_banner_app())
+    (out / "banner_big.app").write_bytes(big_banner_app())
     return 0
 
 

@@ -59,8 +59,10 @@ void Music::setVolume(int percent) {
 }
 
 void Music::duck(bool on) {
+    if (on == ducked_) return;
     ducked_ = on;
     volume_ = on ? duckVolume(base_) : base_;
+    log("NL_MUSIC vol=" + std::to_string(volume_));  // Haupt-Thread; erscheint mit den Musik-Markern
 }
 
 void Music::stop() {

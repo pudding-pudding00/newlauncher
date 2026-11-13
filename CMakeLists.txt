@@ -105,6 +105,7 @@ add_library(nl_core STATIC
     src/core/bns.cpp
     src/core/banner_sound.cpp
     src/core/channel_banner.cpp
+    src/core/banner_budget.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp

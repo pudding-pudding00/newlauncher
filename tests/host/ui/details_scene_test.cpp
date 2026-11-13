@@ -430,13 +430,14 @@ TEST_CASE_FIXTURE(Fixture, "Details: GC-Spiel möchte ein Banner und zeichnet es
     CHECK(found);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Details: andere Konsolen fragen kein Banner an") {
+TEST_CASE_FIXTURE(Fixture, "Details: jede Konsole fragt an, der Dienst entscheidet (VC-Kanal-Banner, M18 Task 8)") {
     FakeBanners b;
     DetailsScene d;
     d.setBanners(&b);
     d.open(Game{Console::Nes, "nes/a", "A", 0, 0}, false, 0);
     step(d, InputFrame{});
-    CHECK(b.wanted.empty());
+    REQUIRE(b.wanted.size() == 1);
+    CHECK(b.wanted[0] == "nes/a");
 }
 
 TEST_CASE_FIXTURE(Fixture, "Details: Kanal-Banner-Bild ersetzt das Cover, 4:3 im Cover-Feld, mit Clip (M18)") {

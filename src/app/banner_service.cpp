@@ -51,6 +51,7 @@ void BannerService::updateSound() {
             audio_->playBanner();
             if (music_ != nullptr) music_->duck(true);
             log::line("NL_BANNER sound play");
+            if (logSounds_) log::line("NL_SOUND banner");
             break;
         case BannerSoundGate::Action::Stop:
             audio_->stopBanner();
@@ -74,6 +75,17 @@ void BannerService::freeFrame() {
 }
 
 void BannerService::takeChannel(ChannelBanner& banner) {
+    // Budget (≤ 4 MiB MEM2 mit Texturen und PCM) vor jedem Hochladen: voll → nur erstes Bild → Cover.
+    const BannerPlan plan = planBanner(banner);
+    log::line("NL_BANNER budget=%u level=%s", static_cast<unsigned>(plan.cost.total()), bannerLevelName(plan.level));
+    if (plan.level == BannerLevel::Cover) {
+        log::line("NL_BANNER_FALLBACK cover budget");
+        return;
+    }
+    if (plan.budgetCut) {
+        reduceToStatic(banner);
+        log::line("NL_BANNER_FALLBACK static budget");
+    }
     if (!textures_.upload(banner, renderer_)) {
         log::line("NL_BANNER_FALLBACK cover memory");
         return;
@@ -120,7 +132,14 @@ void BannerService::animate() {
     player_.step();
 }
 
+void BannerService::setEnabled(bool on) {
+    enabled_ = on;
+    if (!on) release();
+}
+
 void BannerService::release() {
+    if (key_.empty() && texels_ == nullptr && !haveFrame_) return;  // läuft jeden Frame außerhalb der Detailansicht
+    if (haveFrame_ || texels_ != nullptr) log::line("NL_BANNER stop");  // nur wenn ein Banner da war
     freeTexels();
     freeFrame();
     key_.clear();
@@ -129,13 +148,17 @@ void BannerService::release() {
 
 void BannerService::want(const Game& game) {
     const char* key = game.key != nullptr ? game.key : "";
-    if (key_ == key) return;
+    if (!enabled_ || key_ == key) return;
     // Anderes Spiel: Freigabe erst in pump(), der Renderer kann das alte Banner im laufenden Frame noch zeichnen.
     key_ = key;
     requested_ = false;
     focusTicks_ = gettime();
     path_.clear();
-    if (game.device < roots_.size() && game.path != nullptr) path_ = joinPath(roots_[game.device], game.path);
+    gc_ = game.console == Console::Gc;
+    titleId_ = gc_ || vcMap_ == nullptr ? std::nullopt : vcMap_->titleFor(key);
+    // Wii-Spiele erst mit Task 9; Konsolen ohne Banner leise aufs Cover (kein Auftrag, kein Log).
+    if (!gc_ && !titleId_ && debugFile_.empty()) requested_ = true;
+    if (gc_ && game.device < roots_.size() && game.path != nullptr) path_ = joinPath(roots_[game.device], game.path);
 }
 
 ui::BannerView BannerService::view(const Game& game) const {
@@ -171,11 +194,16 @@ void BannerService::pump() {
     if (haveFrame_) animate();  // 60 Bilder je Sekunde: pump() läuft einmal je Frame
     updateSound();
     if (key_.empty() || requested_ || worker_.running()) return;
+    if (ticks_to_millisecs(gettime() - focusTicks_) < kFocusDelayMs) return;  // Fokus erst 1 s halten
     requested_ = true;
     freeTexels();  // altes Spiel: Renderer hat den Vorframe mit GX_DrawDone beendet
     freeFrame();
     if (!debugFile_.empty()) {
         if (!worker_.startChannel(fs_, key_, 0, debugFile_)) log::line("NL_BANNER_FALLBACK cover thread");
+        return;
+    }
+    if (titleId_) {
+        if (!worker_.startChannel(fs_, key_, *titleId_, std::string())) log::line("NL_BANNER_FALLBACK cover thread");
         return;
     }
     if (path_.empty()) {

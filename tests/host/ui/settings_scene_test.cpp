@@ -175,7 +175,7 @@ TEST_CASE_FIXTURE(Fixture, "Zeiger auf Zeile 3 setzt Fokus 3") {
 TEST_CASE_FIXTURE(Fixture, "kein Umlauf am Listenrand") {
     press(Action::Up);
     CHECK(s.focus() == 0);
-    for (int i = 0; i < 20; ++i) press(Action::Down);
+    for (int i = 0; i < static_cast<int>(SettingRow::Count) + 2; ++i) press(Action::Down);
     CHECK(s.focus() == static_cast<int>(SettingRow::Count) - 1);
 }
 
@@ -264,4 +264,16 @@ TEST_CASE_FIXTURE(Fixture, "A auf Kindersicherung meldet OpenParental (M17)") {
     CHECK(r.pop);
     CHECK(r.command == AppCommand::OpenParental);
     CHECK(std::string(appCommandName(AppCommand::OpenParental)) == "open_parental");
+}
+
+TEST_CASE_FIXTURE(Fixture, "Zeile Banner: Ein/Aus, Änderung macht dirty (M18)") {
+    focusRow(SettingRow::Banners);
+    const SceneRequests r = press(Action::Confirm);
+    CHECK_FALSE(cfg.banners);
+    CHECK(r.command == AppCommand::SettingsChanged);
+    CHECK(press(Action::Back).command == AppCommand::SaveSettings);  // geändert → speichern
+    for (Lang lang : {Lang::De, Lang::En}) {
+        setLanguage(lang);
+        CHECK(std::string(tr(Str::Banners)) == (lang == Lang::De ? "Banner" : "Banners"));
+    }
 }

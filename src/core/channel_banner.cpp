@@ -75,6 +75,7 @@ Result<ChannelBanner> loadChannelBanner(std::span<const u8> content0) {
     b.loop = loadAnim(inner.value(), "arc/anim/banner_Loop.brlan", b.animInvalid);
     if (!b.loop && !b.animInvalid) b.loop = loadAnim(inner.value(), "arc/anim/banner.brlan", b.animInvalid);
     const std::size_t baseTextures = b.textures.size();
+    b.baseTextures = baseTextures;
     if (b.animInvalid || (b.start && !addPatterns(inner.value(), *b.start, b)) || (b.loop && !addPatterns(inner.value(), *b.loop, b))) {
         b.animInvalid = true;
         b.start.reset();

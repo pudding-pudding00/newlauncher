@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "core/utf8.hpp"
+
 namespace nl {
 namespace {
 
@@ -22,51 +24,63 @@ int hexValue(char c) {
     return -1;
 }
 
-// Ein Codewort: genau 8 Zeichen aus Hex oder X/x. X wird zu 0 und setzt placeholder.
+// Ein Codewort: genau 8 alphanumerische Zeichen. Echte Listen markieren einzutragende Werte mit beliebigen
+// Buchstaben (XXXX, KK, YYYYYY, ZZZZzzzz); jedes Nicht-Hex-Zeichen wird zu 0 und setzt placeholder.
 bool parseWord(std::string_view tok, u32& out, bool& placeholder) {
     if (tok.size() != 8) return false;
     u32 v = 0;
     for (char c : tok) {
+        if (!isAlnum(c)) return false;
         int h = hexValue(c);
-        if (c == 'X' || c == 'x') {
+        if (h < 0) {
             h = 0;
             placeholder = true;
         }
-        if (h < 0) return false;
         v = (v << 4) | static_cast<u32>(h);
     }
     out = v;
     return true;
 }
 
-std::string_view firstToken(std::string_view line) {
-    size_t i = 0;
-    while (i < line.size() && !isSpace(line[i])) ++i;
-    return line.substr(0, i);
+bool hasDigit(std::string_view s) {
+    for (char c : s) {
+        if (c >= '0' && c <= '9') return true;
+    }
+    return false;
 }
 
-// Beginnt die Zeile wie eine Codezeile (erstes Token 8 Hex/X)?
-bool looksLikeCode(std::string_view line) {
-    u32 v = 0;
-    bool ph = false;
-    return parseWord(firstToken(line), v, ph);
-}
-
-// Genau zwei Codewörter, sonst false.
-bool parseCodeLine(std::string_view line, GeckoCode& code) {
-    std::string_view toks[3];
+// Bis zu drei Tokens; n ist die Gesamtzahl (höchstens 3 gezählt).
+size_t tokens(std::string_view line, std::string_view (&toks)[3]) {
     size_t n = 0;
     size_t i = 0;
-    while (i < line.size()) {
+    while (i < line.size() && n < 3) {
         while (i < line.size() && isSpace(line[i])) ++i;
         if (i >= line.size()) break;
         size_t j = i;
         while (j < line.size() && !isSpace(line[j])) ++j;
-        if (n == 3) return false;
         toks[n++] = line.substr(i, j - i);
         i = j;
     }
-    if (n != 2) return false;
+    return n;
+}
+
+// Beginnt die Zeile wie eine Codezeile? Erstes Token: Codewort mit mindestens einer Ziffer, damit Text wie
+// „Infinite Energies“ nicht als Code gilt.
+bool looksLikeCode(std::string_view line) {
+    std::string_view toks[3];
+    if (tokens(line, toks) == 0) return false;
+    u32 v = 0;
+    bool ph = false;
+    return hasDigit(toks[0]) && parseWord(toks[0], v, ph);
+}
+
+// Zwei Codewörter, optional gefolgt von einem Kommentar, der nicht mit Buchstabe/Ziffer beginnt
+// („[Autor]“, „* …“, „(…)“). Alles andere ist mehrdeutig.
+bool parseCodeLine(std::string_view line, GeckoCode& code) {
+    std::string_view toks[3];
+    const size_t n = tokens(line, toks);
+    if (n < 2) return false;
+    if (n == 3 && isAlnum(toks[2].front())) return false;
     u32 a = 0;
     u32 b = 0;
     bool ph = false;
@@ -75,6 +89,26 @@ bool parseCodeLine(std::string_view line, GeckoCode& code) {
     code.words.push_back(b);
     code.hasPlaceholder = code.hasPlaceholder || ph;
     return true;
+}
+
+// Ungültiges UTF-8 (z. B. „é“ als 0xE9) heißt: die Datei ist Latin-1. decodeUtf8 meldet Fehler als '?'.
+bool isValidUtf8(std::string_view s) {
+    size_t pos = 0;
+    while (pos < s.size()) {
+        const size_t start = pos;
+        if (decodeUtf8(s, pos) == '?' && s[start] != '?') return false;
+    }
+    return true;
+}
+
+std::string latin1ToUtf8(std::string_view s) {
+    std::string out;
+    out.reserve(s.size() + s.size() / 8);
+    for (char c : s) {
+        const auto b = static_cast<unsigned char>(c);
+        appendUtf8(out, (b >= 0x80 && b < 0xA0) ? u32{'?'} : u32{b});  // C1-Steuerzeichen nicht übernehmen
+    }
+    return out;
 }
 
 void splitNameAuthor(std::string_view line, GeckoCode& code) {
@@ -115,6 +149,11 @@ private:
 
 Result<GeckoFile> parseGeckoTxt(std::string_view text) {
     if (text.substr(0, 3) == "\xEF\xBB\xBF") text.remove_prefix(3);
+    std::string converted;
+    if (!isValidUtf8(text)) {
+        converted = latin1ToUtf8(text);
+        text = converted;
+    }
     LineReader reader(text);
     std::string_view line;
     GeckoFile file;
@@ -159,8 +198,8 @@ Result<GeckoFile> parseGeckoTxt(std::string_view text) {
         }
         if (broken) continue;
         if (looksLikeCode(line)) {
-            if (!parseCodeLine(line, cur)) broken = true;
-            continue;
+            if (parseCodeLine(line, cur)) continue;
+            cur.hasPlaceholder = true;  // mehrdeutig (Wertetabelle oder halber Code): zeigen, aber nicht wählbar
         }
         if (!cur.comment.empty()) cur.comment += '\n';
         cur.comment.append(line);

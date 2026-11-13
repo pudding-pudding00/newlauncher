@@ -71,6 +71,51 @@ TEST_CASE("parseGeckoTxt: kaputte Blöcke werden übersprungen und gezählt") {
     CHECK(r.value().codes[0].name == "Gut");
 }
 
+TEST_CASE("parseGeckoTxt: andere Platzhalterbuchstaben und Kommentar hinter der Codezeile") {
+    const auto r = parseGeckoTxt(
+        "RMGP01\nT\n\n"
+        "Wert\n0442BBDC ZZZZzzzz\n\n"
+        "Wert2\n906400A8 398000KK\n\n"
+        "Mit Autor dahinter\n00FDCD1C 00000037 [Tester]\n");
+    REQUIRE(r.isOk());
+    const auto& c = r.value().codes;
+    REQUIRE(c.size() == 3);
+    CHECK(c[0].hasPlaceholder);
+    CHECK(c[1].hasPlaceholder);
+    CHECK_FALSE(c[2].hasPlaceholder);
+    CHECK(c[2].words == std::vector<u32>{0x00FDCD1C, 0x00000037});
+}
+
+TEST_CASE("parseGeckoTxt: mehrdeutige Hex-Zeile wird Kommentar und macht den Code unwählbar") {
+    const auto r = parseGeckoTxt(
+        "RMGP01\nT\n\n"
+        "Tempo\n04001234 00000000\n43960000 = 300 km/h\n\n"
+        "Halber Rest\n04001234 00000001\n04001238 0001\n\n"
+        "Wort am Zeilenanfang\n04001234 00000001\nInfinite Energies\n");
+    REQUIRE(r.isOk());
+    const auto& c = r.value().codes;
+    REQUIRE(c.size() == 3);
+    CHECK(c[0].hasPlaceholder);
+    CHECK(c[0].comment == "43960000 = 300 km/h");
+    CHECK(c[0].words.size() == 2);
+    CHECK(c[1].hasPlaceholder);
+    CHECK(c[1].words.size() == 2);
+    CHECK_FALSE(c[2].hasPlaceholder);  // „Infinite“ hat keine Ziffer, ist also Text
+    CHECK(c[2].comment == "Infinite Energies");
+}
+
+TEST_CASE("parseGeckoTxt: Latin-1 wird nach UTF-8 umgewandelt, gültiges UTF-8 bleibt") {
+    const auto l1 = parseGeckoTxt("RSBP01\nT\n\nCaf\xE9 [Ren\xE9]\n04001234 00000001\n");
+    REQUIRE(l1.isOk());
+    REQUIRE(l1.value().codes.size() == 1);
+    CHECK(l1.value().codes[0].name == "Caf\xC3\xA9");
+    CHECK(l1.value().codes[0].author == "Ren\xC3\xA9");
+    const auto utf = parseGeckoTxt("RSBP01\nT\n\nCaf\xC3\xA9 ?\n04001234 00000001\n");
+    REQUIRE(utf.isOk());
+    REQUIRE(utf.value().codes.size() == 1);
+    CHECK(utf.value().codes[0].name == "Caf\xC3\xA9 ?");
+}
+
 TEST_CASE("parseGeckoTxt: Name ohne Codezeilen zählt als übersprungen") {
     const auto r = parseGeckoTxt("RMGP01\nT\n\nNur Name\n\nGut\n04001234 00000001\n");
     REQUIRE(r.isOk());

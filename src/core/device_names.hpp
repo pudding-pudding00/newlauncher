@@ -12,18 +12,32 @@ namespace nl {
 
 inline constexpr u32 kMaxUsbMounts = 8;
 
+// Welche Dateisysteme außer FAT dieser Build einhängen kann (M16; Build-Schalter NL_FS_NTFS).
+struct FsSupport {
+    bool ntfs = false;
+    bool ext = false;   // Spike M16 negativ: bleibt im Launcher false
+    bool wbfs = false;
+};
+
+// Warum eine Partition keinen Namen bekommt (Log deutsch, Systeminfo DE/EN).
+enum class SkipReason : u8 { None, ExFat, NtfsUnsupported, ExtUnsupported, WbfsUnsupported, UnknownFs, BeyondLimit, TooMany };
+
 struct DeviceSlot {
     std::string name;    // ohne Doppelpunkt; leer, wenn die Partition nicht eingehängt wird
     bool usb;
     u64 lba;             // Partitionsanfang; 0 bei der SD (libfat sucht dort selbst)
     FsKind kind;
     bool mount;
-    std::string reason;  // warum nicht eingehängt (fürs Log)
+    SkipReason skip = SkipReason::None;
+    bool readOnly = false;  // NTFS/ext: nur lesend eingehängt
 };
 
-// SD (falls vorhanden) → "sd"; USB-Partitionen in Tabellenreihenfolge: erste FAT → "usb", weitere → "usb2"…"usb8".
-// Andere Dateisysteme und FAT-Partitionen über die achte hinaus bleiben ohne Namen, mit Grund.
-std::vector<DeviceSlot> assignDevices(bool sdPresent, FsKind sdKind, std::span<const PartitionInfo> usbParts);
+// SD (falls vorhanden) → "sd"; USB-Partitionen in Tabellenreihenfolge: jede einhängbare Partition (FAT, dazu
+// NTFS/ext laut support) bekommt den nächsten Namen "usb", "usb2"…"usb8". Andere bleiben ohne Namen, mit Grund.
+std::vector<DeviceSlot> assignDevices(bool sdPresent, FsKind sdKind, std::span<const PartitionInfo> usbParts,
+                                      FsSupport support = {});
+
+const char* skipReasonText(SkipReason r, bool german);
 
 const char* fsKindName(FsKind kind);
 

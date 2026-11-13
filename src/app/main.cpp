@@ -273,6 +273,7 @@ int main(int argc, char** argv) {
             nl::log::line("NL_DEBUG_INI");
         }
     }
+    nl::platform::deviceTable().setSdAsDisk(config.debugSdAsDisk);  // vor dem ersten mountUsb (M16-Smoke)
     const bool systemGerman = CONF_GetLanguage() == CONF_LANG_GERMAN;
     nl::ui::setLanguage(nl::ui::resolveLanguage(config.language, systemGerman));
     nl::log::line("NL_LANG %s", nl::ui::langKey(nl::ui::language()));
@@ -613,8 +614,20 @@ int main(int argc, char** argv) {
         s.ciosSlot = nl::chooseCios(s.cios, std::nullopt, config.wiiIos).slot.value_or(0);
         s.gcPorts = s.platform != nl::Platform::VWii;
         for (const nl::platform::Device& d : devTable.devices()) {
-            if (!d.mounted) continue;
-            nl::DeviceSummary sum{d.slot.name, nl::fsKindName(d.slot.kind), d.totalBytes, d.freeBytes, 0};
+            if (!d.mounted && d.slot.skip == nl::SkipReason::None) continue;
+            nl::DeviceSummary sum;
+            sum.name = d.slot.name;
+            sum.fs = nl::fsKindName(d.slot.kind);
+            sum.total = d.totalBytes;
+            sum.free = d.freeBytes;
+            sum.readOnly = d.mounted && !d.writable;
+            if (!d.mounted) {  // Spec v2 9.3: nicht eingehängte Partitionen mit Grund (M16)
+                sum.mounted = false;
+                sum.reasonDe = nl::skipReasonText(d.slot.skip, true);
+                sum.reasonEn = nl::skipReasonText(d.slot.skip, false);
+                s.devices.push_back(std::move(sum));
+                continue;
+            }
             for (const nl::Game& g : store.games())
                 if (g.device < store.devices().size() && store.devices()[g.device] == d.slot.name) ++sum.games;
             s.devices.push_back(std::move(sum));

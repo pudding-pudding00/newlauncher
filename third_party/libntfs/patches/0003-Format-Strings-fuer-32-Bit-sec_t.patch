@@ -1,0 +1,93 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nl <nl@localhost>
+Date: Fri, 13 Nov 2026 13:06:13 +0100
+Subject: [PATCH 3/4] Format-Strings fuer 32-Bit-sec_t
+
+---
+ source/gekko_io.c | 14 +++++++-------
+ source/ntfs.c     |  4 ++--
+ 2 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/source/gekko_io.c b/source/gekko_io.c
+index 165198b..c8b1347 100644
+--- a/source/gekko_io.c
++++ b/source/gekko_io.c
+@@ -118,7 +118,7 @@ static int ntfs_device_gekko_io_open(struct ntfs_device *dev, int flags)
+     }
+ 
+     if (!interface->readSectors(fd->startSector, 1, boot)) {
+-        ntfs_log_perror("read failure @ sector %lld\n", fd->startSector);
++        ntfs_log_perror("read failure @ sector %llu\n", (unsigned long long)(fd->startSector));
+         errno = EIO;
+         ntfs_free(boot);
+         return -1;
+@@ -317,7 +317,7 @@ static s64 ntfs_device_gekko_io_readbytes(struct ntfs_device *dev, s64 offset, s
+         // Read from the device
+         ntfs_log_trace("direct read from sector %lld (%lld sector(s) long)\n", sec_start, sec_count);
+         if (!ntfs_device_gekko_io_readsectors(dev, sec_start, sec_count, buf)) {
+-            ntfs_log_perror("direct read failure @ sector %lld (%lld sector(s) long)\n", sec_start, sec_count);
++            ntfs_log_perror("direct read failure @ sector %llu (%llu sector(s) long)\n", (unsigned long long)(sec_start), (unsigned long long)(sec_count));
+             errno = EIO;
+             return -1;
+         }
+@@ -338,7 +338,7 @@ static s64 ntfs_device_gekko_io_readbytes(struct ntfs_device *dev, s64 offset, s
+         ntfs_log_trace("buffered read from sector %lld (%lld sector(s) long)\n", sec_start, sec_count);
+         ntfs_log_trace("count: %d  sec_count:%d  fd->sectorSize: %d )\n", (u32)count, (u32)sec_count,(u32)fd->sectorSize);
+         if (!ntfs_device_gekko_io_readsectors(dev, sec_start, sec_count, buffer)) {
+-            ntfs_log_perror("buffered read failure @ sector %lld (%lld sector(s) long)\n", sec_start, sec_count);
++            ntfs_log_perror("buffered read failure @ sector %llu (%llu sector(s) long)\n", (unsigned long long)(sec_start), (unsigned long long)(sec_count));
+             ntfs_free(buffer);
+             errno = EIO;
+             return -1;
+@@ -407,7 +407,7 @@ static s64 ntfs_device_gekko_io_writebytes(struct ntfs_device *dev, s64 offset,
+         // Write to the device
+         ntfs_log_trace("direct write to sector %lld (%lld sector(s) long)\n", sec_start, sec_count);
+         if (!ntfs_device_gekko_io_writesectors(dev, sec_start, sec_count, buf)) {
+-            ntfs_log_perror("direct write failure @ sector %lld (%lld sector(s) long)\n", sec_start, sec_count);
++            ntfs_log_perror("direct write failure @ sector %llu (%llu sector(s) long)\n", (unsigned long long)(sec_start), (unsigned long long)(sec_count));
+             errno = EIO;
+             return -1;
+         }
+@@ -427,7 +427,7 @@ static s64 ntfs_device_gekko_io_writebytes(struct ntfs_device *dev, s64 offset,
+         if(buffer_offset != 0)
+         {
+             if (!ntfs_device_gekko_io_readsectors(dev, sec_start, 1, buffer)) {
+-                ntfs_log_perror("read failure @ sector %lld\n", sec_start);
++                ntfs_log_perror("read failure @ sector %llu\n", (unsigned long long)(sec_start));
+                 ntfs_free(buffer);
+                 errno = EIO;
+                 return -1;
+@@ -436,7 +436,7 @@ static s64 ntfs_device_gekko_io_writebytes(struct ntfs_device *dev, s64 offset,
+         if((buffer_offset+count) % fd->sectorSize != 0)
+         {
+             if (!ntfs_device_gekko_io_readsectors(dev, sec_start + sec_count - 1, 1, buffer + ((sec_count-1) * fd->sectorSize))) {
+-                ntfs_log_perror("read failure @ sector %lld\n", sec_start + sec_count - 1);
++                ntfs_log_perror("read failure @ sector %llu\n", (unsigned long long)(sec_start + sec_count - 1));
+                 ntfs_free(buffer);
+                 errno = EIO;
+                 return -1;
+@@ -449,7 +449,7 @@ static s64 ntfs_device_gekko_io_writebytes(struct ntfs_device *dev, s64 offset,
+         // Write to the device
+         ntfs_log_trace("buffered write to sector %lld (%lld sector(s) long)\n", sec_start, sec_count);
+         if (!ntfs_device_gekko_io_writesectors(dev, sec_start, sec_count, buffer)) {
+-            ntfs_log_perror("buffered write failure @ sector %lld\n", sec_start);
++            ntfs_log_perror("buffered write failure @ sector %llu\n", (unsigned long long)(sec_start));
+             ntfs_free(buffer);
+             errno = EIO;
+             return -1;
+diff --git a/source/ntfs.c b/source/ntfs.c
+index 1e7f4ab..354a659 100644
+--- a/source/ntfs.c
++++ b/source/ntfs.c
+@@ -213,9 +213,9 @@ int ntfsFindPartitions (const DISC_INTERFACE *interface, sec_t **partitions)
+                                 // Check if this partition has a valid NTFS boot record
+                                 if (interface->readSectors(part_lba, 1, &sector)) {
+                                     if (ntfs_boot_sector_is_ntfs(&sector.boot)) {
+-                                        ntfs_log_debug("Logical Partition @ %lld: Valid NTFS boot sector found\n", part_lba);
++                                        ntfs_log_debug("Logical Partition @ %llu: Valid NTFS boot sector found\n", (unsigned long long)(part_lba));
+                                         if(sector.ebr.partition.type != PARTITION_TYPE_NTFS) {
+-                                            ntfs_log_warning("Logical Partition @ %lld: Is NTFS but type is 0x%x; 0x%x was expected\n", part_lba, sector.ebr.partition.type, PARTITION_TYPE_NTFS);
++                                            ntfs_log_warning("Logical Partition @ %llu: Is NTFS but type is 0x%x; 0x%x was expected\n", (unsigned long long)(part_lba), sector.ebr.partition.type, PARTITION_TYPE_NTFS);
+                                         }
+                                         if (partition_count < NTFS_MAX_PARTITIONS) {
+                                             partition_starts[partition_count] = part_lba;

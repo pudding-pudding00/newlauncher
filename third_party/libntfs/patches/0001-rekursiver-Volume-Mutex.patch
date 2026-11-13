@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nl <nl@localhost>
+Date: Fri, 13 Nov 2026 13:03:52 +0100
+Subject: [PATCH 1/4] rekursiver Volume-Mutex
+
+---
+ source/ntfsinternal.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/source/ntfsinternal.c b/source/ntfsinternal.c
+index 6bbee5e..718e92a 100644
+--- a/source/ntfsinternal.c
++++ b/source/ntfsinternal.c
+@@ -153,7 +153,7 @@ int ntfsInitVolume (ntfs_vd *vd)
+     }
+ 
+     // Initialise the volume lock
+-    LWP_MutexInit(&vd->lock, false);
++    LWP_MutexInit(&vd->lock, true);
+ 
+     // Reset the volumes name cache
+     vd->name[0] = '\0';

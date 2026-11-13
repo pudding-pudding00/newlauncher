@@ -26,7 +26,7 @@ class DevkitProTest(unittest.TestCase):
 
     def test_linux_invocation_runs_cmake_directly(self):
         cmd, env = wii_build_invocation(Path("/src/repo"), "linux")
-        self.assertEqual(cmd, ["sh", "-c", "cmake --preset wii -DNL_TLS=ON && cmake --build --preset wii --parallel $(nproc)"])
+        self.assertEqual(cmd, ["sh", "-c", "cmake --preset wii -DNL_TLS=ON -DNL_FS_NTFS=ON && cmake --build --preset wii --parallel $(nproc)"])
         self.assertEqual(env, {})
 
     def test_no_tls_switches_option_off(self):
@@ -39,8 +39,17 @@ class DevkitProTest(unittest.TestCase):
     def test_no_tls_builds_in_own_directory(self):
         # Eigener Ordner je Variante: ein Wechsel ON/OFF im selben Ordner baut sonst fast alles neu (~1 min).
         cmd, _ = wii_build_invocation(Path("/src/repo"), "linux", tls=False)
-        self.assertEqual(cmd[2], "cmake --preset wii -B build/wii-notls -DNL_TLS=OFF && "
+        self.assertEqual(cmd[2], "cmake --preset wii -B build/wii-notls -DNL_TLS=OFF -DNL_FS_NTFS=OFF && "
                                  "cmake --build build/wii-notls --parallel $(nproc)")
+
+    def test_ntfs_follows_tls_variant(self):
+        # M16: CI baut ON/ON und OFF/OFF; der Schalter steht explizit im Befehl (CMake-Cache).
+        cmd, _ = wii_build_invocation(Path("/src/repo"), "linux")
+        self.assertIn("-DNL_FS_NTFS=ON", cmd[2])
+        cmd, _ = wii_build_invocation(Path(r"C:\x\repo"), "win32")
+        self.assertIn("-DNL_FS_NTFS=ON", cmd[2])
+        cmd, _ = wii_build_invocation(Path("/src/repo"), "linux", tls=False)
+        self.assertIn("-DNL_FS_NTFS=OFF", cmd[2])
 
     def test_windows_tls_uses_local_mbedtls_source(self):
         # MSYS-tar kann die Symlinks im Mbed-TLS-Archiv nicht anlegen (tools/mbedtls_src.py).

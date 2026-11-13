@@ -1,0 +1,7 @@
+name=libntfs
+commit=ae00fc8f22a5ba7d9db73755570687299a7dd64b
+date=2026-11-13T12:07:40+00:00
+source=https://github.com/extremscorner/libntfs.git
+license=GPL-2.0-or-later (cache2.c, bit_ops.h: BSD-3-Clause)
+removed=source/realpath.c,source/realpath.h
+patches=0001-rekursiver-Volume-Mutex.patch,0002-EROFS-fuer-Schreiboperationen-auf-nur-lesenden-Volum.patch,0003-Format-Strings-fuer-32-Bit-sec_t.patch,0004-realpath.h-nicht-einbinden-nur-unter-HAVE_MNTENT_H-g.patch

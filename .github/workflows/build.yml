@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        nl_tls: [ON, OFF]  # HTTPS über wii_tls an/aus (M11, Spec v2 4.1)
+        nl_tls: [ON, OFF]  # HTTPS über wii_tls an/aus (M11, Spec v2 4.1); NTFS (M16) folgt: ON/ON, OFF/OFF
     steps:
       - uses: actions/checkout@v4
       - name: CMake bereitstellen (Presets v6 brauchen >= 3.25)
@@ -28,7 +28,7 @@ jobs:
           test -f "$DEVKITPRO/portlibs/ppc/lib/libpng.a" || dkp-pacman -S --noconfirm --needed ppc-libpng
           test -f "$DEVKITPRO/portlibs/ppc/lib/libvorbisidec.a" || dkp-pacman -S --noconfirm --needed ppc-libvorbisidec ppc-libogg
       - name: DOL bauen
-        run: cmake --preset wii -DNL_TLS=${{ matrix.nl_tls }} && cmake --build --preset wii --parallel $(nproc)
+        run: cmake --preset wii -DNL_TLS=${{ matrix.nl_tls }} -DNL_FS_NTFS=${{ matrix.nl_tls }} && cmake --build --preset wii --parallel $(nproc)
       - name: Lizenzeinträge prüfen (Spec v2 3.4)
         run: |
           command -v python3 || (apt-get update && apt-get install -y --no-install-recommends python3)

@@ -1,0 +1,97 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nl <nl@localhost>
+Date: Fri, 13 Nov 2026 13:05:52 +0100
+Subject: [PATCH 2/4] EROFS fuer Schreiboperationen auf nur lesenden Volumes
+
+---
+ source/ntfsdir.c  | 30 ++++++++++++++++++++++++++++++
+ source/ntfsfile.c |  7 +++++++
+ 2 files changed, 37 insertions(+)
+
+diff --git a/source/ntfsdir.c b/source/ntfsdir.c
+index e572b6b..1218f1b 100644
+--- a/source/ntfsdir.c
++++ b/source/ntfsdir.c
+@@ -174,6 +174,12 @@ int ntfs_symlink_r (struct _reent *r, const char *target, const char *linkpath)
+         return -1;
+     }
+ 
++    // newlauncher: nur lesend eingehaengte Volumes lehnen Aenderungen ab
++    if (NVolReadOnly(vd->vol)) {
++        r->_errno = EROFS;
++        return -1;
++    }
++
+     // Lock
+     ntfsLock(vd);
+ 
+@@ -207,6 +213,12 @@ int ntfs_unlink_r (struct _reent *r, const char *name)
+         return -1;
+     }
+ 
++    // newlauncher: nur lesend eingehaengte Volumes lehnen Aenderungen ab
++    if (NVolReadOnly(vd->vol)) {
++        r->_errno = EROFS;
++        return -1;
++    }
++
+     // Unlink the entry
+     int ret = ntfsUnlink(vd, name, S_IFLNK);
+     if (ret)
+@@ -275,6 +287,12 @@ int ntfs_rename_r (struct _reent *r, const char *oldName, const char *newName)
+         return -1;
+     }
+ 
++    // newlauncher: nur lesend eingehaengte Volumes lehnen Aenderungen ab
++    if (NVolReadOnly(vd->vol)) {
++        r->_errno = EROFS;
++        return -1;
++    }
++
+     // Lock
+     ntfsLock(vd);
+ 
+@@ -330,6 +348,12 @@ int ntfs_mkdir_r (struct _reent *r, const char *path, int mode)
+         return -1;
+     }
+ 
++    // newlauncher: nur lesend eingehaengte Volumes lehnen Aenderungen ab
++    if (NVolReadOnly(vd->vol)) {
++        r->_errno = EROFS;
++        return -1;
++    }
++
+     // Lock
+     ntfsLock(vd);
+ 
+@@ -363,6 +387,12 @@ int ntfs_rmdir_r (struct _reent *r, const char *path)
+         return -1;
+     }
+ 
++    // newlauncher: nur lesend eingehaengte Volumes lehnen Aenderungen ab
++    if (NVolReadOnly(vd->vol)) {
++        r->_errno = EROFS;
++        return -1;
++    }
++
+     // Unlink the entry
+     int ret = ntfsUnlink(vd, path, S_IFDIR);
+     if (ret)
+diff --git a/source/ntfsfile.c b/source/ntfsfile.c
+index 10dec6c..d2789b8 100644
+--- a/source/ntfsfile.c
++++ b/source/ntfsfile.c
+@@ -126,6 +126,13 @@ int ntfs_open_r (struct _reent *r, void *fileStruct, const char *path, int flags
+         return -1;
+     }
+ 
++    // newlauncher: Schreib-Opens auf nur lesend eingehaengten Volumes sofort ablehnen
++    if ((file->write || (flags & (O_CREAT | O_TRUNC))) && NVolReadOnly(file->vd->vol)) {
++        ntfsUnlock(file->vd);
++        r->_errno = EROFS;
++        return -1;
++    }
++
+     // Try and find the file and (if found) ensure that it is not a directory
+     file->ni = ntfsOpenEntry(file->vd, path);
+     if (file->ni && (file->ni->mrec->flags & MFT_RECORD_IS_DIRECTORY)) {

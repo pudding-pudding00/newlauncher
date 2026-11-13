@@ -18,6 +18,7 @@ Die Einstellungsseite „Über“ zeigt Name, Version und Lizenz aus dieser Tabe
 | M PLUS Rounded 1c | 1.059 | OFL-1.1 | https://github.com/google/fonts/tree/main/ofl/mplusrounded1c | Latin-1-Teilmenge eingebettet; `LICENSES/OFL-1.1.txt` |
 | libogc (mit libasnd, libbte, libwiiuse) | 3.2.1 | Zlib, BSD-2-Clause | https://github.com/devkitPro/libogc | statisch gelinkt; `LICENSES/libogc.txt` |
 | libfat | 2.1.0 | ZPL-2.1 | https://github.com/devkitPro/libfat | statisch gelinkt; `LICENSES/ZPL-2.1.txt` |
+| libntfs | ae00fc8 (mit 4 Patches, siehe `third_party/libntfs/VENDORED.txt`) | GPL-2.0-or-later (hier unter GPLv3); `cache2.c`, `bit_ops.h`: BSD-3-Clause | https://github.com/extremscorner/libntfs | vendort unter `third_party/libntfs`, statisch gelinkt, nur mit `NL_FS_NTFS=ON`, nur lesend; GPLv3-Text in `LICENSE`, Upstream-GPLv2-Text in `third_party/libntfs/upstream/LICENSE`, `LICENSES/BSD-3-Clause.txt` |
 | FreeType | 2.14.1 | FTL | https://freetype.org | statisch gelinkt; `LICENSES/FTL.txt` (Portions of this software are copyright © The FreeType Project (www.freetype.org). All rights reserved.) |
 | libpng | 1.6.55 | libpng-2.0 | https://www.libpng.org/pub/png/libpng.html | statisch gelinkt; `LICENSES/libpng.txt` |
 | zlib | 1.3.1 | Zlib | https://zlib.net | statisch gelinkt; `LICENSES/Zlib.txt` |

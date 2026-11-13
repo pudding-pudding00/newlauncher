@@ -141,6 +141,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         unset(CMAKE_POLICY_VERSION_MINIMUM)
     endif()
 
+    # NTFS nur lesend (M16, Spec v2 9.1): libntfs vendort nach third_party/libntfs (tools/vendor_fs.py).
+    # Ohne NL_FS_NTFS bleibt NTFS „nicht eingehängt“ mit Grund, wie in M12. ext ist laut Spike negativ.
+    option(NL_FS_NTFS "NTFS-Partitionen nur lesend einhängen" ON)
+    if(NL_FS_NTFS)
+        add_subdirectory(third_party/libntfs EXCLUDE_FROM_ALL)
+    endif()
+
     # Schriften (Spec 3.7), per tools/subset_fonts.py auf Latin-1 + „…" reduziert.
     dkp_add_embedded_binary_library(nl_fonts
         ${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts/MPLUSRounded1c-Regular-latin1.ttf
@@ -269,6 +276,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         if(NL_TLS)
             target_link_libraries(${name} PRIVATE wiitls)
             target_compile_definitions(${name} PRIVATE NL_TLS=1)
+        endif()
+        if(NL_FS_NTFS)
+            target_link_libraries(${name} PRIVATE ntfs)
+            target_compile_definitions(${name} PRIVATE NL_FS_NTFS=1)
         endif()
         nl_apply_flags(${name})
         ogc_create_dol(${name})

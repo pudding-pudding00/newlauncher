@@ -83,6 +83,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
 
     if (ini.get("general", "library") == "sd") c.library = Config::LibraryDevice::Sd;
     c.libraryRules = libraryRulesFromIni(ini);
+    c.sortOrder = parseSortOrder(ini.get("library", "sort")).value_or(SortOrder::Title);
     c.usbTimeoutSec = parseIntIn(ini.get("general", "usb_timeout"), 1, 120, c.usbTimeoutSec);
 
     const std::string_view mode = ini.get("theme", "mode");
@@ -141,6 +142,7 @@ std::vector<IniValue> configValues(const Config& c) {
         {"general", "library", c.library == Config::LibraryDevice::Sd ? "sd" : "usb"},
         {"general", "usb_timeout", std::to_string(c.usbTimeoutSec)},
         {"library", "sources", sourcesToText(c.libraryRules.sources)},
+        {"library", "sort", sortOrderName(c.sortOrder)},
         {"theme", "mode", mode},
         {"theme", "dark_from", formatClock(c.darkFromMin)},
         {"theme", "dark_to", formatClock(c.darkToMin)},

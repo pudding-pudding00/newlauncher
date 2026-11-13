@@ -19,6 +19,7 @@ enum class SettingRow : u8 {
     Volume,
     Sounds,
     Library,
+    Sort,  // Sortierung der Konsolenleisten (M17)
     CoverRegion,
     Rescan,
     FetchCovers,

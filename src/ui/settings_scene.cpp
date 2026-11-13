@@ -13,11 +13,11 @@ using gfx::FontSize;
 using gfx::FontWeight;
 using gfx::Rect;
 
-constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 20.0f, kHelpH = 24.0f;  // 19 Zeilen in 480
+constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 19.0f, kHelpH = 24.0f;  // 20 Zeilen in 480
 
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo, Str::ThemePack,  Str::Music,       Str::Volume,
-    Str::Sounds,   Str::LibraryDevice, Str::CoverRegion, Str::Rescan, Str::FetchCovers, Str::VcMapTitle,
+    Str::Sounds,   Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::Rescan, Str::FetchCovers, Str::VcMapTitle,
     Str::Emulators, Str::WiiGames, Str::GcGames, Str::Setup, Str::SysInfo, Str::About,
 };
 
@@ -28,7 +28,7 @@ bool sameSettings(const Config& a, const Config& b) {
            a.usbTimeoutSec == b.usbTimeoutSec &&
            a.themeMode == b.themeMode && a.themePack == b.themePack && a.darkFromMin == b.darkFromMin && a.darkToMin == b.darkToMin &&
            a.music == b.music && a.musicVolume == b.musicVolume && a.sounds == b.sounds &&
-           a.coverRegion == b.coverRegion;
+           a.coverRegion == b.coverRegion && a.sortOrder == b.sortOrder;
 }
 
 AppCommand actionCommand(SettingRow r) {
@@ -73,6 +73,10 @@ std::string valueText(const Config& c, SettingRow r) {
                 case SourceChoice::Custom: break;
             }
             return sourcesToText(c.libraryRules.sources);
+        case SettingRow::Sort: {
+            constexpr Str kNames[] = {Str::SortTitle, Str::SortYear, Str::SortRecent, Str::SortMost};
+            return tr(kNames[static_cast<int>(c.sortOrder) & 3]);
+        }
         case SettingRow::CoverRegion: return c.coverRegion == "auto" ? std::string(tr(Str::LangAuto)) : c.coverRegion;
         default: return {};
     }

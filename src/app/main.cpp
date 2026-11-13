@@ -504,6 +504,10 @@ int main(int argc, char** argv) {
     const std::string categoriesPath = data.path("categories.ini");
     nl::Categories categories = nl::Categories::fromText(data.readable ? readText(fs, categoriesPath.c_str()) : std::string());
     nl::log::line("NL_CATEGORIES n=%u", static_cast<unsigned>(categories.names().size()));
+    // M17: Spielstatistik, unabhängig von history.ini
+    const std::string statsPath = data.path("stats.ini");
+    nl::PlayStats playStats = nl::PlayStats::fromText(data.readable ? readText(fs, statsPath.c_str()) : std::string());
+    nl::log::line("NL_STATS n=%u", static_cast<unsigned>(playStats.size()));
 
     // N64-Startwege (Spec 6.6): Kanäle im NAND und die beiden Emulator-DOLs, einmal pro Sitzung.
     const std::vector<u64> installedTitles = nl::platform::installedTitleIds();
@@ -613,6 +617,7 @@ int main(int argc, char** argv) {
     nl::platform::NetWorker net(netService);
     mainScene.setFavoriteKeys(&store);
     mainScene.setCategories(&categories);
+    mainScene.setSort(config.sortOrder, &playStats);
     nl::ui::JumpBar jumpBar(mainScene);
     mainScene.setJumpBar(&jumpBar);
     nl::ui::Keyboard keyboard(mainScene);
@@ -859,6 +864,17 @@ int main(int argc, char** argv) {
     };
 
     std::string warnedLaunch;  // Spec 7.3: Spiel, dessen Preflight-Hinweis schon gezeigt wurde; nächstes A startet
+    // M17: vor jedem Start (auch im Wii-Dry-Run) zählen und sofort schreiben: nach dem Start kommt der Launcher
+    // nicht mehr zurück.
+    auto recordStats = [&](const std::string& key) {
+        playStats.record(key, static_cast<u32>(std::time(nullptr)));
+        const nl::PlayStat st = playStats.get(key);
+        if (data.writable && writeText(fs, statsPath.c_str(), playStats.toText()))
+            nl::log::line("NL_STATS_SAVED %s starts=%u", key.c_str(), static_cast<unsigned>(st.starts));
+        else
+            nl::log::line("NL_WARN stats.ini nicht gespeichert");
+    };
+
     auto launchGame = [&](const nl::Game& game) {
         const std::string key = game.key;  // game kann auf Bibliotheksdaten zeigen
         auto showError = [&](const nl::LaunchError& e) {
@@ -904,6 +920,7 @@ int main(int argc, char** argv) {
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
             if (auto plan = prepareWii(game, configDoc, gamesDoc); plan.isOk()) {
                 if (config.debugWiiDryRun) {
+                    recordStats(key);
                     nl::log::line("NL_WII_DRYRUN %s", plan.value().id6.c_str());
                     return;
                 }
@@ -964,6 +981,7 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_WARN GCT nicht geschrieben: %s", gctPath.c_str());
             }
         }
+        recordStats(key);
         store.recordPlayed(key, static_cast<u32>(std::time(nullptr)));
         if (data.writable && writeText(fs, historyPath.c_str(), store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
         else nl::log::line("NL_WARN history.ini nicht gespeichert");
@@ -1454,6 +1472,7 @@ int main(int argc, char** argv) {
                 ctx.themeMode = config.themeMode;
                 theme.setTarget(nl::isDarkAt(ctx.themeMode, ctx.minuteOfDay, config.darkFromMin, config.darkToMin), true);
                 if (config.themePack != appliedThemePack) applyThemePack();
+                mainScene.setSort(config.sortOrder, &playStats);
                 audio.setSounds(config.sounds);
                 music.setEnabled(config.music);
                 music.setVolume(config.musicVolume);

@@ -8,6 +8,7 @@
 #include "core/easing.hpp"
 #include "core/game_filter.hpp"
 #include "core/library_store.hpp"
+#include "core/play_stats.hpp"
 #include "ui/cover_provider.hpp"
 #include "ui/details_scene.hpp"
 #include "ui/jump_bar.hpp"
@@ -59,6 +60,9 @@ public:
     void syncDetailsCategories(std::string_view key);  // Kategorienzeile der Detailansicht für dieses Spiel
     const GameFilter& filter() const { return filter_; }
     void selectBarForTest(int index) { selectBar(index, gridWidth_, gridHeight_); }
+    // Sortierung der Konsolenleisten (M17); Favoriten, Verlauf und Suche behalten ihre Reihenfolge.
+    // Wirkt sofort; stats == nullptr = keine Statistik. Der Fokus bleibt am Spiel.
+    void setSort(SortOrder order, const PlayStats* stats);
 
     // SearchTarget: nicht leere Anfrage → Such-Eintrag vorn in der Leiste mit Treffern aus allen Konsolen;
     // leere Anfrage → Suchmodus aus, vorheriger Eintrag wieder aktiv.
@@ -103,6 +107,9 @@ private:
     std::vector<GameFilter> choices_;
     GameFilter filter_;
     const Categories* cats_ = nullptr;
+    SortOrder sort_ = SortOrder::Title;
+    const PlayStats* playStats_ = nullptr;
+    void loadBase(int index);  // base_ für den Leisten-Eintrag, Konsolen sortiert
     BarEntry filterEntry_{};
     bool filterEntryKnown_ = false;
     GridModel grid_;

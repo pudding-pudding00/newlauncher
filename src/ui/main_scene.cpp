@@ -108,11 +108,33 @@ void MainScene::selectBar(int index, float width, float height) {
     filterEntry_ = bar_[index];
     filterEntryKnown_ = true;
     barIndex_ = index;
-    base_ = bar_[index].kind == BarKind::Search ? std::span<const Game* const>(searchResults_)
-                                                 : gamesFor(lib_, bar_[index], scratch_);
+    loadBase(index);
     gridWidth_ = width;
     gridHeight_ = height;
     applyCurrentFilter({});
+}
+
+void MainScene::loadBase(int index) {
+    if (bar_[index].kind == BarKind::Search) {
+        base_ = searchResults_;
+        return;
+    }
+    base_ = gamesFor(lib_, bar_[index], scratch_);
+    if (bar_[index].kind == BarKind::ConsoleEntry && sort_ != SortOrder::Title) {
+        static const PlayStats kNoStats;
+        // Konsolen-Einträge liegen in scratch_ (gamesFor), also dort sortieren.
+        sortGames(std::span<const Game*>(scratch_.data(), base_.size()), sort_,
+                  playStats_ != nullptr ? *playStats_ : kNoStats);
+    }
+}
+
+void MainScene::setSort(SortOrder order, const PlayStats* stats) {
+    sort_ = order;
+    playStats_ = stats;
+    if (barIndex_ < 0 || barIndex_ >= barCount_ || bar_[barIndex_].kind != BarKind::ConsoleEntry) return;
+    const std::string key = focusedKey();
+    loadBase(barIndex_);
+    applyCurrentFilter(key);
 }
 
 void MainScene::applyCurrentFilter(std::string_view keepKey) {
@@ -420,6 +442,7 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
             const bool fav = detailsStore_ != nullptr && detailsStore_->isFavorite(g->key);
             const u32 last = detailsStore_ != nullptr ? detailsStore_->lastPlayed(g->key) : 0;
             details_->open(*g, fav, last);
+            if (playStats_ != nullptr) details_->setStats(playStats_->get(g->key));
             if (detailsStore_ != nullptr)
                 details_->setDeviceLine(detailsDeviceLine(detailsStore_->devices(), g->device, detailsStore_->alsoOn(*g)));
             syncDetailsCategories(g->key);

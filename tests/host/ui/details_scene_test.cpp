@@ -356,3 +356,34 @@ TEST_CASE_FIXTURE(Fixture, "Details: Kategorien liegen zwischen Knöpfen und Che
     step(d, action(Action::Up));
     CHECK(d.focusedButton() == DetailsScene::kFocusCheats);
 }
+
+TEST_CASE("detailsStatsLine: DE/EN, einmal, nie gestartet; Datum je Sprache") {
+    char buf[128];
+    setLanguage(Lang::De);
+    detailsStatsLine(PlayStat{12, 1762128000u}, buf, sizeof buf);  // 2025-11-03
+    CHECK(std::string(buf) == "12-mal gestartet, zuletzt am 03.11.2025");
+    detailsStatsLine(PlayStat{1, 0}, buf, sizeof buf);
+    CHECK(std::string(buf) == "Einmal gestartet");
+    detailsStatsLine(PlayStat{0, 5}, buf, sizeof buf);
+    CHECK(std::string(buf).empty());
+    setLanguage(Lang::En);
+    detailsStatsLine(PlayStat{12, 1762128000u}, buf, sizeof buf);
+    CHECK(std::string(buf) == "Started 12 times, last on 2025-11-03");
+    detailsStatsLine(PlayStat{1, 1762128000u}, buf, sizeof buf);
+    CHECK(std::string(buf) == "Started once, last on 2025-11-03");
+    detailsInfoLine(Game{Console::N64, "n64/x", "X", 0, 0}, 1762128000u, buf, sizeof buf);
+    CHECK(std::string(buf).find("2025-11-03") != std::string::npos);
+    setLanguage(Lang::De);
+}
+
+TEST_CASE("DetailsScene::setStats: mit Starts entfällt das Verlaufsdatum in der Infozeile") {
+    DetailsScene d;
+    d.open(Game{Console::Nes, "nes/x", "X", 0, 0}, false, 1762128000u);
+    CHECK(std::string(d.infoText()).find("03.11.2025") != std::string::npos);
+    CHECK(std::string(d.statsText()).empty());
+    d.setStats(PlayStat{3, 1762128000u});
+    CHECK(std::string(d.infoText()).find("03.11.2025") == std::string::npos);
+    CHECK(std::string(d.statsText()) == "3-mal gestartet, zuletzt am 03.11.2025");
+    d.setStats(PlayStat{});
+    CHECK(std::string(d.infoText()).find("03.11.2025") != std::string::npos);
+}

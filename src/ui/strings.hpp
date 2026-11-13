@@ -37,6 +37,14 @@
     X(Filter, "Filter", "Filter") \
     X(FilterAll, "Alle", "All") \
     X(Categories, "Kategorien", "Categories") \
+    X(SortOrder, "Sortierung", "Sort order") \
+    X(SortTitle, "Titel", "Title") \
+    X(SortYear, "Jahr", "Year") \
+    X(SortRecent, "Zuletzt gestartet", "Recently played") \
+    X(SortMost, "Am häufigsten", "Most played") \
+    X(StatsStarts, "%u-mal gestartet", "Started %u times") \
+    X(StatsOnce, "Einmal gestartet", "Started once") \
+    X(StatsLast, ", zuletzt am %s", ", last on %s") \
     X(GenreTheme, "Thema", "Theme") \
     X(GenreGeneral, "Allgemein", "General") \
     X(GenreAction, "Action", "Action") \

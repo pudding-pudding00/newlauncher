@@ -47,6 +47,7 @@ void stepSetting(Config& c, SettingRow r, int dir) {
         case SettingRow::Music: c.music = !c.music; break;
         case SettingRow::Volume: c.musicVolume = std::clamp(c.musicVolume + dir * 10, 0, 100); break;
         case SettingRow::Sounds: c.sounds = !c.sounds; break;
+        case SettingRow::Sort: c.sortOrder = cycle(c.sortOrder, 4, dir); break;
         case SettingRow::Library:
         {
             // Umlauf Auto → USB → SD; eine eigene Liste aus config.ini steht vor Auto.

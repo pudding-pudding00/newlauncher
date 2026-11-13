@@ -610,3 +610,43 @@ TEST_CASE_FIXTURE(Fixture, "MainScene: Details öffnen setzt die Kategorien mit 
     d.update(ctx, action(Action::Up), 16, out);
     CHECK(d.focusedButton() == DetailsScene::kFocusCategories);
 }
+
+TEST_CASE("MainScene::setSort sortiert Konsoleneinträge sofort; Favoriten bleiben in ihrer Reihenfolge") {
+    FilterLib fl;
+    MainScene m(fl.lib());
+    PlayStats stats;
+    stats.record("nes/c", 10);
+    stats.record("nes/c", 20);
+    stats.record("nes/b", 30);
+    const int nes = barOf(m, "NES");
+    REQUIRE(nes >= 0);
+    m.selectBarForTest(nes);
+    m.setFocusForTest(0);
+    CHECK(m.focusedKey() == "nes/a");
+    m.setSort(SortOrder::Most, &stats);
+    m.setFocusForTest(0);
+    CHECK(m.focusedKey() == "nes/c");
+    m.setFocusForTest(2);
+    CHECK(m.focusedKey() == "nes/a");
+    m.setSort(SortOrder::Recent, &stats);
+    m.setFocusForTest(0);
+    CHECK(m.focusedKey() == "nes/b");
+    m.setSort(SortOrder::Title, nullptr);
+    m.setFocusForTest(0);
+    CHECK(m.focusedKey() == "nes/a");
+}
+
+TEST_CASE_FIXTURE(Fixture, "MainScene: Details öffnen zeigt die Statistik des Spiels (M17)") {
+    FilterLib fl;
+    MainScene m(fl.lib());
+    DetailsScene d;
+    m.setDetails(&d, nullptr);
+    PlayStats stats;
+    stats.record("nes/a", 1762128000u);
+    stats.record("nes/a", 1762128000u);
+    m.setSort(SortOrder::Title, &stats);
+    m.selectBarForTest(barOf(m, "NES"));
+    m.setFocusForTest(0);  // Alpha = nes/a
+    REQUIRE(step(m, action(Action::Confirm)).push == &d);
+    CHECK(std::string(d.statsText()) == "2-mal gestartet, zuletzt am 03.11.2025");
+}

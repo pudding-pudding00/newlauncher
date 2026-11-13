@@ -144,3 +144,18 @@ TEST_CASE("stepThemePack: unbekanntes Paket aus config.ini springt auf den Anfan
     CHECK(settingEnabled(c, SettingRow::ThemePack));
     CHECK_FALSE(isAction(SettingRow::ThemePack));
 }
+
+TEST_CASE("stepSetting: Sortierung zyklisch (M17)") {
+    Config c;
+    stepSetting(c, SettingRow::Sort, +1);
+    CHECK(c.sortOrder == SortOrder::Year);
+    stepSetting(c, SettingRow::Sort, +1);
+    CHECK(c.sortOrder == SortOrder::Recent);
+    stepSetting(c, SettingRow::Sort, +1);
+    CHECK(c.sortOrder == SortOrder::Most);
+    stepSetting(c, SettingRow::Sort, +1);
+    CHECK(c.sortOrder == SortOrder::Title);
+    stepSetting(c, SettingRow::Sort, -1);
+    CHECK(c.sortOrder == SortOrder::Most);
+    CHECK_FALSE(isAction(SettingRow::Sort));
+}

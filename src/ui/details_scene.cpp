@@ -86,14 +86,47 @@ int detailsInfoLine(const Game& g, u32 lastPlayedUnix, char* out, std::size_t ca
         appendf(out, cap, len, " %s", tr(Str::Player));
     }
     if (lastPlayedUnix != 0) {
-        int y = 0, m = 0, d = 0;
-        civilFromDays(static_cast<long>(lastPlayedUnix / 86400u), y, m, d);
         char date[32];
-        std::snprintf(date, sizeof date, "%02d.%02d.%04d", d, m, y);
+        formatDate(lastPlayedUnix, date, sizeof date);
         appendf(out, cap, len, " \xC2\xB7 %s", tr(Str::LastPlayed));
         appendf(out, cap, len, " %s", date);
     }
     return len;
+}
+
+int formatDate(u32 unixTime, char* out, std::size_t cap) {
+    if (cap == 0) return 0;
+    int y = 0, m = 0, d = 0;
+    civilFromDays(static_cast<long>(unixTime / 86400u), y, m, d);
+    const int n = language() == Lang::En ? std::snprintf(out, cap, "%04d-%02d-%02d", y, m, d)
+                                         : std::snprintf(out, cap, "%02d.%02d.%04d", d, m, y);
+    return n < 0 ? 0 : std::min(n, static_cast<int>(cap) - 1);
+}
+
+int detailsStatsLine(PlayStat s, char* out, std::size_t cap) {
+    if (cap == 0) return 0;
+    out[0] = '\0';
+    if (s.starts == 0) return 0;
+    const auto fill = [](const char* fmt, std::string_view tag, const std::string& v) {
+        std::string r(fmt);
+        const std::size_t at = r.find(tag);
+        if (at != std::string::npos) r.replace(at, tag.size(), v);
+        return r;
+    };
+    std::string line = s.starts == 1 ? std::string(tr(Str::StatsOnce))
+                                     : fill(tr(Str::StatsStarts), "%u", std::to_string(s.starts));
+    if (s.last != 0) {
+        char date[32];
+        formatDate(s.last, date, sizeof date);
+        line += fill(tr(Str::StatsLast), "%s", date);
+    }
+    return static_cast<int>(copyEllipsized(out, cap, line));
+}
+
+void DetailsScene::setStats(PlayStat s) {
+    if (!hasGame_) return;
+    detailsStatsLine(s, stats_, sizeof stats_);
+    detailsInfoLine(game_, s.starts != 0 ? 0u : lastPlayed_, info_, sizeof info_);
 }
 
 int n64HintLine(const N64Decision& d, char* out, std::size_t cap) {
@@ -164,6 +197,7 @@ void DetailsScene::open(const Game& game, bool favorite, u32 lastPlayedUnix) {
     catNames_.clear();
     catChecked_.clear();
     catIndex_ = 0;
+    stats_[0] = '\0';
     detailsInfoLine(game_, lastPlayed_, info_, sizeof info_);
 }
 
@@ -326,6 +360,10 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     y += 4.0f;
     gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, info_, t.text2);
     y += body.lineHeight;
+    if (stats_[0] != '\0') {
+        gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, stats_, t.text2);
+        y += body.lineHeight;
+    }
     if (!device_.empty()) {
         gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, device_, t.text2);
         y += body.lineHeight;
@@ -333,7 +371,8 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     y += 12.0f;
     const std::string_view desc(description_);
     const int descLines =
-        std::max(0, (hasN64_ || hasCheats_ ? 2 : 3) - (device_.empty() ? 0 : 1) - (hasCategories() ? 1 : 0));
+        std::max(0, (hasN64_ || hasCheats_ ? 2 : 3) - (device_.empty() ? 0 : 1) - (hasCategories() ? 1 : 0) -
+                        (stats_[0] != '\0' ? 1 : 0));
     n = gfx::wrapText(body, desc, w, std::span<gfx::Line>(lines, static_cast<std::size_t>(descLines)));
     for (int i = 0; i < n; ++i) {
         gfx::drawTextEllipsis(dl, body, x, y + body.ascent, w, desc.substr(lines[i].start, lines[i].length), t.text);

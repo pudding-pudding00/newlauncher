@@ -315,3 +315,13 @@ TEST_CASE("configFromIni: [debug] option_set (M14)") {
     CHECK(configFromIni(IniDoc::parse("")).debugOptionSet.empty());
     CHECK(configFromIni(IniDoc::parse("[debug]\noption_set = video=pal60\n")).debugOptionSet == "video=pal60");
 }
+
+TEST_CASE("Config: [library] sort (M17)") {
+    CHECK(configFromIni(IniDoc::parse("")).sortOrder == SortOrder::Title);
+    CHECK(configFromIni(IniDoc::parse("[library]\nsort = most\n")).sortOrder == SortOrder::Most);
+    const Config bad = configFromIni(IniDoc::parse("[library]\nsort = zufall\n"));
+    CHECK(bad.sortOrder == SortOrder::Title);
+    Config c;
+    c.sortOrder = SortOrder::Recent;
+    CHECK(configToIniText(c, "").find("sort = recent") != std::string::npos);
+}

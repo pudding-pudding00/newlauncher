@@ -100,6 +100,7 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
     std::optional<GcOptions> gc;
     std::vector<LaunchWarning> warnings;
     NinConfigInput in{gamePath, key, usb};
+    std::string cheatPath;  // muss bis buildNinCfg leben (in.cheatPath ist eine Sicht)
     if (opts != nullptr) {
         gc = resolveGcOptions(opts->config, opts->games, key.substr(0, std::min<std::size_t>(6, key.size())), *ver);
         in = gc->nin;
@@ -108,6 +109,11 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
         in.usb = usb;
         if (!opts->gcPorts && gc->memcardReal) warnings.push_back(LaunchWarning::MemcardRealNoPorts);
         if (!opts->gcPorts && gc->nativeSi) warnings.push_back(LaunchWarning::NativeSiNoPorts);
+        if (gc->cheats && !opts->gcCheats.empty()) {
+            if (opts->gcCheats.size() > kNinCheatBytes) return err(LaunchFailure::CheatsTooLarge, std::to_string(opts->gcCheats.size()));
+            cheatPath = ninCheatPath(key.substr(0, std::min<std::size_t>(6, key.size())));
+            in.cheatPath = cheatPath;
+        }
     }
     auto cfg = buildNinCfg(in);
     if (!cfg.isOk()) {
@@ -126,6 +132,11 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
     t.nintendont = ver;
     t.gc = std::move(gc);
     t.warnings = std::move(warnings);
+    if (!cheatPath.empty()) {
+        // Nintendont mountet nur das Spielgerät: die GCT liegt dort, nicht im Datenordner (Spec v2 8).
+        t.gct.assign(opts->gcCheats.begin(), opts->gcCheats.end());
+        t.gctPath = joinPath(libRoot.substr(0, libRoot.find(':') + 1), cheatPath.substr(1));
+    }
     return TargetResult::ok(std::move(t));
 }
 TargetResult dolTarget(PlanResult plan, std::optional<N64Method> n64) {

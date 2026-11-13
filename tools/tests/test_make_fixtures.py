@@ -80,6 +80,8 @@ class MakeFixturesTest(unittest.TestCase):
         self.assertIn("Unendlich Energie [Fixture]\n04001000 00000063\n", text)
         self.assertIn("0400XXXX", text)
         self.assertIn("\nNur Name\n\n", text)
+        # M15 Task 6: Auswahl für den GC-Smoke (ein wählbarer Code → GCT mit 24 Bytes)
+        self.assertEqual((self.out / "newlauncher/codes/GM8P01.sel").read_text(encoding="utf-8"), "Alle Raketen\n")
 
     def test_cheat_selection_for_wii_game(self):
         # M15 Task 5: Wii-Spiel mit Liste und Auswahl, damit der Dry-Run-Smoke eine GCT bauen kann.

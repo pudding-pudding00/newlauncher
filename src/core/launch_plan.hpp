@@ -40,6 +40,7 @@ struct GameOptionInputs {
     const IniDoc& config;
     const IniDoc& games;
     bool gcPorts = true;
+    std::span<const u8> gcCheats = {};  // M15: GCT aus .txt/.sel; wirkt nur mit GC-Option „cheats“
 };
 
 struct LaunchError {
@@ -100,6 +101,8 @@ struct LaunchTarget {
     std::optional<WiiBootPlan> wii;        // Kind::Wii: erst nach preflightWii gesetzt
     std::optional<GcOptions> gc;           // GC mit opts: aufgelöste Optionen (Marker NL_NIN_CFG, NL_OPT_*)
     std::vector<LaunchWarning> warnings;   // M14: Hinweise, Start trotzdem möglich
+    std::vector<u8> gct;                   // M15 GC: vor dem Start nach gctPath schreiben (Nintendont CheatPath)
+    std::string gctPath;                   // <spielgerät>:/newlauncher/cache/<ID6>.gct
 };
 
 // Wie preflightEmulator, N64 zusätzlich über die Auto-Wahl (n64 == nullptr zählt als „kein Weg“).

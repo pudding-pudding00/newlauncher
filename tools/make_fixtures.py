@@ -111,6 +111,7 @@ def main(out: Path) -> int:
     write(out, "roms/gbc/.keep", b"")
     write(out, "games/Metroid Prime [GM8P01]/game.iso", bytes(disc_header("GM8P01", "Metroid Prime", wii=False)))
     write(out, "newlauncher/codes/GM8P01.txt", CHEATS_GM8P01)
+    write(out, "newlauncher/codes/GM8P01.sel", "Alle Raketen\n")  # M15 Task 6: GC-Smoke mit Cheats
     write(out, "newlauncher/codes/RMGP01.txt", CHEATS_RMGP01)
     write(out, "newlauncher/codes/RMGP01.sel", "Sternenbits\n")  # Name ohne Autor-Tag
     write(out, "wbfs/Mario Kart Wii [RMCP01]/RMCP01.wbfs", wbfs_file("RMCP01", "MARIO KART WII"))

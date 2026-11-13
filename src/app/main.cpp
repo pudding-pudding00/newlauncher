@@ -824,9 +824,17 @@ int main(int argc, char** argv) {
         // Spieloptionen (Spec v2 7) bei jedem Start frisch lesen: die Options-Szene ändert games.ini/config.ini.
         const nl::IniDoc configDoc = data.readable ? readIni(fs, configPath.c_str()) : nl::IniDoc{};
         const nl::IniDoc gamesDoc = data.readable ? readIni(fs, gamesPath.c_str()) : nl::IniDoc{};
+        // M15: GC-Cheats gehen über Nintendont; die GCT entsteht hier, wirksam nur mit Option „cheats“.
+        std::vector<u8> gcGct;
+        if (game.console == nl::Console::Gc && game.key != nullptr) {
+            std::string txt, sel;
+            readCheatFiles(std::string(game.key).substr(0, 6), txt, sel);
+            gcGct = nl::gctForSelection(txt, sel);
+        }
         const nl::GameOptionInputs optionInputs{
             configDoc, gamesDoc,
-            nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected()) != nl::Platform::VWii};
+            nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected()) != nl::Platform::VWii,
+            gcGct};
         auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, hwAccess, &optionInputs);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
             if (auto plan = prepareWii(game, configDoc, gamesDoc); plan.isOk()) {
@@ -880,6 +888,17 @@ int main(int argc, char** argv) {
             return;
         }
         warnedLaunch.clear();
+        if (const std::string& gctPath = target.value().gctPath; !gctPath.empty()) {
+            // Nintendont liest CheatPath auf dem Spielgerät. Schlägt das Schreiben fehl, darf keine alte Auswahl
+            // liegen bleiben: Datei entfernen, Start ohne Codes (Nintendont meldet die fehlende Datei nur im Log).
+            const std::string dir = gctPath.substr(0, gctPath.rfind('/'));
+            if (fs.makeDirs(dir).isOk() && fs.writeAtomic(gctPath, target.value().gct).isOk()) {
+                nl::log::line("NL_NIN_CHEAT %s bytes=%u", gctPath.c_str(), static_cast<unsigned>(target.value().gct.size()));
+            } else {
+                static_cast<void>(fs.removeFile(gctPath));
+                nl::log::line("NL_WARN GCT nicht geschrieben: %s", gctPath.c_str());
+            }
+        }
         store.recordPlayed(key, static_cast<u32>(std::time(nullptr)));
         if (data.writable && writeText(fs, historyPath.c_str(), store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
         else nl::log::line("NL_WARN history.ini nicht gespeichert");

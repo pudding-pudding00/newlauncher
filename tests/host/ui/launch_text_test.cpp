@@ -113,6 +113,17 @@ TEST_CASE("launchErrorText: Wii-Fehler in DE und EN") {
     setLanguage(saved);
 }
 
+TEST_CASE("launchErrorText: FileNotContiguousReadable bittet ums Umkopieren (DE/EN, M16)") {
+    const Lang saved = language();
+    setLanguage(Lang::De);
+    CHECK(std::string(render(LaunchFailure::FileNotContiguousReadable, "usb2:/wii/a.iso").text) ==
+          "Datei nicht direkt lesbar.\nDatei ist komprimiert oder lückenhaft – bitte unkomprimiert kopieren (usb2:/wii/a.iso).");
+    setLanguage(Lang::En);
+    CHECK(std::string(render(LaunchFailure::FileNotContiguousReadable, "usb2:/wii/a.iso").text) ==
+          "File not directly readable.\nThe file is compressed or sparse – please copy it uncompressed (usb2:/wii/a.iso).");
+    setLanguage(saved);
+}
+
 TEST_CASE("launchErrorText: CheatsTooLarge nennt die Größe in Bytes (DE/EN)") {
     const Lang saved = language();
     setLanguage(Lang::De);
@@ -140,5 +151,22 @@ TEST_CASE("launchWarningText: GC-Ports fehlen, Hinweis vor dem Start in DE und E
     launchWarningText({LaunchWarning::NativeSiNoPorts}, title, sizeof title, text, sizeof text);
     CHECK(std::string(title) == "Note");
     CHECK(std::string(text).find("Press A again") != std::string::npos);
+    setLanguage(saved);
+}
+
+TEST_CASE("M16: NintendontNeedsFat und Hinweis EmulatorFs mit Emulatorname (DE/EN)") {
+    const Lang saved = language();
+    char title[64];
+    char text[320];
+    setLanguage(Lang::De);
+    CHECK(std::string(render(LaunchFailure::NintendontNeedsFat, "USB 2").text) ==
+          "Nintendont braucht FAT32.\nGameCube-Spiele auf eine FAT32-Partition kopieren (USB 2).");
+    launchWarningText({LaunchWarning::EmulatorFs}, title, sizeof title, text, sizeof text, "Snes9x GX");
+    CHECK(std::string(text).find("Snes9x GX liest dieses Dateisystem eventuell nicht.") == 0);
+    setLanguage(Lang::En);
+    CHECK(std::string(render(LaunchFailure::NintendontNeedsFat, "USB 1").text) ==
+          "Nintendont needs FAT32.\nCopy GameCube games to a FAT32 partition (USB 1).");
+    launchWarningText({LaunchWarning::EmulatorFs}, title, sizeof title, text, sizeof text, "Snes9x GX");
+    CHECK(std::string(text).find("Snes9x GX may not read this file system.") == 0);
     setLanguage(saved);
 }

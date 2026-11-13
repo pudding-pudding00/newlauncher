@@ -55,10 +55,14 @@ std::string ciosLine(const CiosEntry& c, u8 chosen) {
 }
 
 std::string deviceLine(const DeviceSummary& d, bool de) {
+    if (!d.mounted)
+        return "  " + (d.name.empty() ? std::string("-") : d.name) + " " + (d.fs.empty() ? "?" : d.fs) +
+               (de ? " nicht eingehängt: " + d.reasonDe : " not mounted: " + d.reasonEn);
     std::string l = "  " + d.name + " " + (d.fs.empty() ? "?" : d.fs) + " ";
     if (d.total == 0) l += "?";
     else l += gib(d.total) + (de ? ", frei " : ", free ") + gib(d.free);
     l += ", " + std::to_string(d.games) + (de ? " Spiele" : " games");
+    if (d.readOnly) l += de ? ", nur lesend" : ", read-only";
     return l;
 }
 

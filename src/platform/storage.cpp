@@ -3,6 +3,9 @@
 #include <fat.h>
 #include <ogc/usbstorage.h>
 #include <sdcard/wiisd_io.h>
+#ifdef NL_FS_NTFS
+#include <ntfs.h>
+#endif
 
 #include "core/partition_table.hpp"
 #include "platform/log.hpp"
@@ -15,13 +18,46 @@ constexpr float kRetryMs = 500.0f;
 constexpr u32 kCachePages = 8;  // je Partition 8 × 64 Sektoren Cache
 constexpr u32 kSectorsPerPage = 64;
 
+constexpr FsSupport kFsSupport{
+#ifdef NL_FS_NTFS
+    .ntfs = true,
+#endif
+    .wbfs = true,
+};
+
 void logSlot(const Device& d) {
     const DeviceSlot& s = d.slot;
     if (d.mounted)
-        log::line("NL_DEV %s %s mounted lba=%llu", s.name.c_str(), fsKindName(s.kind), static_cast<unsigned long long>(s.lba));
+        log::line("NL_DEV %s %s mounted%s lba=%llu", s.name.c_str(), fsKindName(s.kind), d.writable ? "" : " ro",
+                  static_cast<unsigned long long>(s.lba));
     else
         log::line("NL_DEV %s %s skipped lba=%llu (%s)", s.name.empty() ? "-" : s.name.c_str(), fsKindName(s.kind),
-                  static_cast<unsigned long long>(s.lba), s.reason.empty() ? "Mount fehlgeschlagen" : s.reason.c_str());
+                  static_cast<unsigned long long>(s.lba),
+                  s.skip == SkipReason::None ? "Mount fehlgeschlagen" : skipReasonText(s.skip, true));
+}
+
+// Hängt eine Partition je nach Dateisystem ein. NTFS immer nur lesend und nie mit NTFS_RECOVER (Spike M16).
+bool mountSlot(const DeviceSlot& s, const DISC_INTERFACE* io) {
+    switch (s.kind) {
+        case FsKind::Fat: return fatMount(s.name.c_str(), io, s.lba, kCachePages, kSectorsPerPage);
+#ifdef NL_FS_NTFS
+        case FsKind::Ntfs:
+            return ntfsMount(s.name.c_str(), io, s.lba, kCachePages, kSectorsPerPage, NTFS_READ_ONLY | NTFS_SHOW_HIDDEN_FILES);
+#endif
+        case FsKind::Wbfs: return true;  // kein devoptab: Scanner und Fragmentliste lesen die Slots roh (M16)
+        default: return false;
+    }
+}
+
+void unmountSlot(const DeviceSlot& s) {
+    if (s.kind == FsKind::Wbfs) return;
+#ifdef NL_FS_NTFS
+    if (s.kind == FsKind::Ntfs) {
+        ntfsUnmount(s.name.c_str(), true);
+        return;
+    }
+#endif
+    fatUnmount(s.name.c_str());
 }
 
 bool isUsbMounted(const std::vector<Device>& devices) {
@@ -51,11 +87,18 @@ bool DeviceTable::mountSd() {
     return ok;
 }
 
+bool DeviceTable::setSdAsDisk(bool on) {
+    if (on != sdAsDisk_ && isUsbMounted(devices_)) return false;
+    sdAsDisk_ = on;
+    return true;
+}
+
 bool DeviceTable::mountUsb() {
     if (isUsbMounted(devices_)) return true;
-    if (!__io_usbstorage.startup() || !__io_usbstorage.isInserted()) return false;
+    const DISC_INTERFACE* io = sdAsDisk_ ? &__io_wiisd : &__io_usbstorage;
+    if (!io->startup() || !io->isInserted()) return false;
 
-    RawDevice raw(true);
+    RawDevice raw(!sdAsDisk_);
     auto parts = readPartitions(raw, 0);  // libogc nennt die Gerätegröße nicht
     if (!parts.isOk()) {
         if (!usbLogged_) log::line("NL_DEV usb table %s", parts.error().context.c_str());
@@ -63,9 +106,13 @@ bool DeviceTable::mountUsb() {
         return false;
     }
     std::vector<Device> found;
-    for (const DeviceSlot& s : assignDevices(false, FsKind::Unknown, parts.value())) {
+    for (const DeviceSlot& s : assignDevices(false, FsKind::Unknown, parts.value(), kFsSupport)) {
         Device d{s, false, false, 0, 0};
-        if (s.mount) d.mounted = d.writable = fatMount(s.name.c_str(), &__io_usbstorage, s.lba, kCachePages, kSectorsPerPage);
+        if (s.mount) d.mounted = mountSlot(s, io);
+        if (s.mount && !d.mounted) d.slot.skip = SkipReason::MountFailed;  // Systeminfo zeigt den Grund (DE/EN)
+        // NTFS ist immer nur lesend; sd_as_disk hängt die FAT-Partition der SD ein zweites Mal ein und darf
+        // deshalb nie schreiben.
+        d.writable = d.mounted && !s.readOnly && !sdAsDisk_;
         for (const PartitionInfo& p : parts.value())
             if (p.lba == s.lba) d.totalBytes = p.sectors * raw.sectorSize();
         found.push_back(std::move(d));
@@ -76,7 +123,7 @@ bool DeviceTable::mountUsb() {
     usbLogged_ = true;
     if (!ok) {
         for (const Device& d : found)
-            if (d.mounted) fatUnmount(d.slot.name.c_str());
+            if (d.mounted) unmountSlot(d.slot);
         return false;
     }
     for (Device& d : found) devices_.push_back(std::move(d));
@@ -98,7 +145,7 @@ std::string DeviceTable::root(u8 index) const {
 void DeviceTable::unmountAll() {
     // USB zuerst, wie bisher; die SD trägt das Log.
     for (auto it = devices_.rbegin(); it != devices_.rend(); ++it)
-        if (it->mounted) fatUnmount(it->slot.name.c_str());
+        if (it->mounted) unmountSlot(it->slot);
     devices_.clear();
     usbLogged_ = false;
 }

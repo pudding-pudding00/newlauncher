@@ -34,7 +34,7 @@ struct EmuProfile {
     u8 consoleMask;        // Bit = Console-Wert
     const char* args;
     bool acceptsZip;
-    bool fatOnly;  // liest ROMs nur von FAT (alle eingebauten; das Feld bleibt für eigene Profile)
+    u8 fsMask;  // M16: Dateisysteme, von denen der Emulator ROMs liest (fsBit); alle eingebauten nur FAT
 };
 
 std::span<const EmuProfile> builtinProfiles();
@@ -49,6 +49,7 @@ struct ResolvedEmu {
     std::string profile;      // leer bei eigenem INI-Pfad ohne Profil oder wenn nichts installiert ist
     bool fromIni = false;     // Pfad stammt aus einem Abschnitt in emulators.ini
     bool badProfile = false;  // gameProfile unbekannt oder für diese Konsole nicht zuständig (NL_OPT_BAD)
+    u8 fsMask = 0;            // M16: fs aus dem INI-Abschnitt; 0 = Vorgabe des Profils
 };
 
 // nullopt nur für Konsolen ohne Emulator-Eintrag (N64, GC, Wii).
@@ -60,6 +61,9 @@ EmulatorTable resolveTable(const EmulatorTable& ini, std::span<const FoundApp> f
 
 // Bit je ROM-Konsole: Profil mit acceptsZip; ohne Profil (eigener Pfad, nichts gefunden) das Standardbit.
 u8 zipConsoles(const EmulatorTable& resolved);
+
+// M16: fs aus emulators.ini, sonst die Maske des Profils, sonst nur FAT.
+u8 emulatorFsMask(const EmulatorEntry& e);
 
 bool isV1Default(std::string_view section, std::string_view dol);  // exakt der v1-Standardpfad
 

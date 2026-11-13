@@ -49,12 +49,31 @@ EmulatorEntry readEntry(const IniDoc& doc, const IniDoc& defaults, std::string_v
     e.dol = std::string(dol.empty() ? defaults.get(section, "dol") : dol);
     e.fromFile = !dol.empty();
     e.args = std::string(doc.get(section, "args", defaults.get(section, "args")));
+    e.fsMask = parseFsMask(doc.get(section, "fs", ""));
     return e;
 }
 
 }  // namespace
 
 std::string defaultEmulatorsText() { return kHeaderText; }
+
+u8 parseFsMask(std::string_view text) {
+    u8 mask = 0;
+    while (!text.empty()) {
+        const std::size_t comma = text.find(',');
+        std::string_view name = text.substr(0, comma);
+        text = comma == std::string_view::npos ? std::string_view{} : text.substr(comma + 1);
+        while (!name.empty() && (name.front() == ' ' || name.front() == '\t')) name.remove_prefix(1);
+        while (!name.empty() && (name.back() == ' ' || name.back() == '\t' || name.back() == '\r')) name.remove_suffix(1);
+        std::string low(name);
+        for (char& c : low)
+            if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        if (low == "fat" || low == "fat32") mask = static_cast<u8>(mask | fsBit(FsKind::Fat));
+        else if (low == "ntfs") mask = static_cast<u8>(mask | fsBit(FsKind::Ntfs));
+        else if (low == "ext" || low == "ext4") mask = static_cast<u8>(mask | fsBit(FsKind::Ext));
+    }
+    return mask;
+}
 
 std::string_view v1DefaultDol(std::string_view section) {
     static const IniDoc defaults = IniDoc::parse(kDefaultText);

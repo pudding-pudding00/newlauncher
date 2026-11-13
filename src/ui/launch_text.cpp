@@ -41,11 +41,15 @@ std::size_t copyEllipsized(char* out, std::size_t cap, std::string_view src) {
 }
 
 int launchWarningText(const std::vector<LaunchWarning>& warnings, char* title, std::size_t titleCap, char* text,
-                      std::size_t textCap) {
+                      std::size_t textCap, std::string_view emuName) {
     copyEllipsized(title, titleCap, tr(Str::LaunchNote));
     std::string msg;
     for (LaunchWarning w : warnings) {
-        msg += tr(w == LaunchWarning::MemcardRealNoPorts ? Str::WarnMemcardNoPorts : Str::WarnNativeSiNoPorts);
+        switch (w) {
+            case LaunchWarning::MemcardRealNoPorts: msg += tr(Str::WarnMemcardNoPorts); break;
+            case LaunchWarning::NativeSiNoPorts: msg += tr(Str::WarnNativeSiNoPorts); break;
+            case LaunchWarning::EmulatorFs: msg += fill(tr(Str::WarnEmulatorFs), emuName); break;
+        }
         msg += '\n';
     }
     msg += tr(Str::WarnLaunchAgain);
@@ -74,6 +78,8 @@ int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, cha
         case LaunchFailure::WiiFileBroken: msg = fill(tr(Str::WiiFileBroken), e.context); break;
         case LaunchFailure::DeviceUnsupported: msg = fill(tr(Str::DeviceUnsupported), e.context); break;
         case LaunchFailure::CheatsTooLarge: msg = fill(tr(Str::CheatsTooLarge), e.context); break;
+        case LaunchFailure::FileNotContiguousReadable: msg = fill(tr(Str::FileNotContiguousReadable), e.context); break;
+        case LaunchFailure::NintendontNeedsFat: msg = fill(tr(Str::NintendontNeedsFat), e.context); break;
     }
     return static_cast<int>(copyEllipsized(text, textCap, msg));
 }

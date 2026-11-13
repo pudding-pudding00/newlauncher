@@ -70,12 +70,14 @@ add_library(nl_core STATIC
     src/core/nin_cfg.cpp
     src/core/fat_chain.cpp
     src/core/wbfs_map.cpp
+    src/core/wbfs_part.cpp
     src/core/partition_table.cpp
     src/core/device_names.cpp
     src/core/data_dir.cpp
     src/core/library_merge.cpp
     src/core/library_sources.cpp
     src/core/frag_list.cpp
+    src/core/extent_units.cpp
     src/core/ios_info.cpp
     src/core/cios_scan.cpp
     src/core/emu_profiles.cpp
@@ -139,6 +141,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
         add_subdirectory(third_party/wii_tls EXCLUDE_FROM_ALL)
         unset(CMAKE_POLICY_VERSION_MINIMUM)
+    endif()
+
+    # NTFS nur lesend (M16, Spec v2 9.1): libntfs vendort nach third_party/libntfs (tools/vendor_fs.py).
+    # Ohne NL_FS_NTFS bleibt NTFS „nicht eingehängt“ mit Grund, wie in M12. ext ist laut Spike negativ.
+    option(NL_FS_NTFS "NTFS-Partitionen nur lesend einhängen" ON)
+    if(NL_FS_NTFS)
+        add_subdirectory(third_party/libntfs EXCLUDE_FROM_ALL)
     endif()
 
     # Schriften (Spec 3.7), per tools/subset_fonts.py auf Latin-1 + „…" reduziert.
@@ -253,6 +262,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/audio.cpp
         src/platform/music.cpp
         src/platform/wii_disc.cpp
+        src/platform/fs_extents.cpp
         src/app/cover_service.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp
@@ -269,6 +279,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         if(NL_TLS)
             target_link_libraries(${name} PRIVATE wiitls)
             target_compile_definitions(${name} PRIVATE NL_TLS=1)
+        endif()
+        if(NL_FS_NTFS)
+            target_link_libraries(${name} PRIVATE ntfs)
+            target_compile_definitions(${name} PRIVATE NL_FS_NTFS=1)
         endif()
         nl_apply_flags(${name})
         ogc_create_dol(${name})

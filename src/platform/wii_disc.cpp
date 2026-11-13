@@ -12,7 +12,9 @@
 #include <cstring>
 #include <memory>
 
+#include "core/wbfs_part.hpp"
 #include "core/wii_title.hpp"
+#include "platform/fs_extents.hpp"
 #include "platform/log.hpp"
 
 namespace nl::platform {
@@ -59,18 +61,53 @@ u32 lbaFor(const std::vector<Extent>& ext, u32 s) {
 bool verifySector(FileSystem& fs, BlockDevice& dev, const Part& p, u32 sector) {
     const u32 lba = lbaFor(p.file.extents, sector);
     if (lba == 0) return false;
-    u8 raw[512];
+    // Extents zählen 512-Byte-Sektoren; eine 4-KiB-Platte (nur NTFS, M16) liest ganze Gerätesektoren.
+    const u32 perDev = dev.sectorSize() / 512;
+    if (perDev == 0) return false;
+    std::vector<u8> raw(dev.sectorSize());
     u8 viaFs[512];
-    if (!dev.read(lba, 1, raw)) return false;
+    if (!dev.read(lba / perDev, 1, raw)) return false;
     auto got = fs.read(p.path, u64{sector} * 512, viaFs);
     if (!got.isOk() || got.value() == 0) return false;
-    return std::memcmp(raw, viaFs, got.value()) == 0;
+    return std::memcmp(raw.data() + (lba % perDev) * 512, viaFs, got.value()) == 0;
 }
 
 bool verifyPart(FileSystem& fs, BlockDevice& dev, const Part& p) {
     if (p.file.size == 0) return true;
     const u32 last = static_cast<u32>((p.file.size + 511) / 512 - 1);
     return verifySector(fs, dev, p, 0) && verifySector(fs, dev, p, last);
+}
+
+}  // namespace
+
+namespace {
+
+// WBFS-Partition (M16 Task 5): Liste aus Kopf und Disc-Info des Slots; Gegenprobe = erster Disc-Sektor über die
+// Liste roh gelesen trägt die ID6 des Spiels.
+Result<FragList, LaunchError> wbfsSlotFragsChecked(const Game& g, const Device& device, u32 slot, const std::string& context,
+                                                   u32* partLbaOut) {
+    using R = Result<FragList, LaunchError>;
+    if (device.slot.kind != FsKind::Wbfs || device.slot.lba > 0xFFFFFFFFull) return R::err({LaunchFailure::RomMissing, context});
+    RawDevice dev(device.slot.usb && !deviceTable().sdAsDisk());
+    auto list = wbfsSlotFrags(dev, device.slot.lba, slot);
+    if (!list.isOk()) return R::err(fromFragError(list.error(), context));
+    if (partLbaOut != nullptr) *partLbaOut = static_cast<u32>(device.slot.lba);
+
+    const FragList& f = list.value();
+    const std::string_view key = g.key != nullptr ? g.key : "";
+    const u32 perDev = dev.sectorSize() / 512;
+    bool ok = !f.entries.empty() && f.entries[0].offset == 0 && perDev != 0 && key.size() >= 6;
+    if (ok) {
+        std::vector<u8> raw(dev.sectorSize());
+        const u32 lba = f.entries[0].sector;
+        ok = dev.read(lba / perDev, 1, raw) && std::memcmp(raw.data() + (lba % perDev) * 512, key.data(), 6) == 0;
+    }
+    if (!ok) {
+        log::line("NL_FRAG_VERIFY fail %s", context.c_str());
+        return R::err({LaunchFailure::WiiFileBroken, context});
+    }
+    log::line("NL_FRAG_VERIFY ok");
+    return R::ok(std::move(list.value()));
 }
 
 }  // namespace
@@ -99,6 +136,7 @@ Result<FragList, LaunchError> computeWiiFrags(FileSystem& fs, const Game& g, con
     using R = Result<FragList, LaunchError>;
     const std::string libRoot = device.slot.name + ":";
     const std::string main = joinPath(libRoot, g.path != nullptr ? g.path : "");
+    if (auto slot = wbfsSlotOf(g.path != nullptr ? g.path : "")) return wbfsSlotFragsChecked(g, device, *slot, main, partLbaOut);
     const bool wbfs = endsWithNoCase(main, ".wbfs");
 
     std::vector<Part> parts;
@@ -113,16 +151,28 @@ Result<FragList, LaunchError> computeWiiFrags(FileSystem& fs, const Game& g, con
         parts.push_back({path, static_cast<u32>(st.st_ino), {static_cast<u64>(st.st_size), {}}});
     }
 
-    RawDevice dev(device.slot.usb);
+    // sd_as_disk (M16-Smoke): usb-Geräte liegen dann auf der SD.
+    RawDevice dev(device.slot.usb && !deviceTable().sdAsDisk());
     if (device.slot.lba > 0xFFFFFFFFull) return R::err({LaunchFailure::WiiFileBroken, main});
-    auto vol = findFatVolumeAt(dev, static_cast<u32>(device.slot.lba));
-    if (!vol.isOk()) return R::err(fromFatError(vol.error(), main));
-    if (partLbaOut != nullptr) *partLbaOut = vol.value().partLba;
+    if (device.slot.kind == FsKind::Ntfs) {
+        // M16: Läufe aus libntfs; komprimiert/sparse/resident → FileNotContiguousReadable (Review Focus 1).
+        if (partLbaOut != nullptr) *partLbaOut = static_cast<u32>(device.slot.lba);
+        for (Part& p : parts) {
+            auto ext = fileExtentsFor(device, p.path);
+            if (!ext.isOk()) return R::err(fromExtentError(ext.error(), p.path));
+            if (ext.value().size != p.file.size) return R::err({LaunchFailure::WiiFileBroken, p.path});
+            p.file.extents = std::move(ext.value().extents);
+        }
+    } else {
+        auto vol = findFatVolumeAt(dev, static_cast<u32>(device.slot.lba));
+        if (!vol.isOk()) return R::err(fromFatError(vol.error(), main));
+        if (partLbaOut != nullptr) *partLbaOut = vol.value().partLba;
 
-    for (Part& p : parts) {
-        auto ext = fileExtents(dev, vol.value(), p.startCluster, p.file.size);
-        if (!ext.isOk()) return R::err(fromFatError(ext.error(), p.path));
-        p.file.extents = std::move(ext.value());
+        for (Part& p : parts) {
+            auto ext = fileExtents(dev, vol.value(), p.startCluster, p.file.size);
+            if (!ext.isOk()) return R::err(fromFatError(ext.error(), p.path));
+            p.file.extents = std::move(ext.value());
+        }
     }
 
     Result<FragList, FragError> list = Result<FragList, FragError>::err(FragError::WbfsInvalid);

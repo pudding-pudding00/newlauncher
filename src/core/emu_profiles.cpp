@@ -10,25 +10,27 @@ namespace {
 
 constexpr u8 bit(Console c) { return static_cast<u8>(1u << static_cast<unsigned>(c)); }
 
+constexpr u8 kFsFat = fsBit(FsKind::Fat);  // M16: alle eingebauten Profile lesen nur FAT
+
 constexpr u8 kDefaultZipConsoles = 0b0101'0111;  // wie ScanRules: Nes, Snes, Gb, Gbc, Gba
 
 // Spike M13 (docs/superpowers/spikes/m13-retroarch.md): RetroArch verbindet argv[1] und argv[2] → {dir}|{file}.
 constexpr std::array<EmuProfile, 10> kProfiles{{
-    {"fceugx", "fceugx", "boot.dol", "FCE Ultra GX", bit(Console::Nes), "{dir}|{file}", true, true},
-    {"snes9xgx", "snes9xgx", "boot.dol", "Snes9x GX", bit(Console::Snes), "{dir}|{file}", true, true},
+    {"fceugx", "fceugx", "boot.dol", "FCE Ultra GX", bit(Console::Nes), "{dir}|{file}", true, kFsFat},
+    {"snes9xgx", "snes9xgx", "boot.dol", "Snes9x GX", bit(Console::Snes), "{dir}|{file}", true, kFsFat},
     {"vbagx", "vbagx", "boot.dol", "Visual Boy Advance GX",
-     static_cast<u8>(bit(Console::Gb) | bit(Console::Gbc) | bit(Console::Gba)), "{dir}|{file}", true, true},
-    {"not64", "not64", "boot.dol", "Not64", bit(Console::N64), "{path}", false, true},
-    {"wii64", "wii64", "boot.dol", "Wii64", bit(Console::N64), "{path}", false, true},
-    {"nintendont", "nintendont", "boot.dol", "Nintendont", bit(Console::Gc), "", false, true},
+     static_cast<u8>(bit(Console::Gb) | bit(Console::Gbc) | bit(Console::Gba)), "{dir}|{file}", true, kFsFat},
+    {"not64", "not64", "boot.dol", "Not64", bit(Console::N64), "{path}", false, kFsFat},
+    {"wii64", "wii64", "boot.dol", "Wii64", bit(Console::N64), "{path}", false, kFsFat},
+    {"nintendont", "nintendont", "boot.dol", "Nintendont", bit(Console::Gc), "", false, kFsFat},
     {"retroarch-fceumm", "retroarch-wii", "fceumm_libretro_wii.dol", nullptr, bit(Console::Nes), "{dir}|{file}",
-     false, true},
+     false, kFsFat},
     {"retroarch-snes9x2010", "retroarch-wii", "snes9x2010_libretro_wii.dol", nullptr, bit(Console::Snes),
-     "{dir}|{file}", false, true},
+     "{dir}|{file}", false, kFsFat},
     {"retroarch-gambatte", "retroarch-wii", "gambatte_libretro_wii.dol", nullptr,
-     static_cast<u8>(bit(Console::Gb) | bit(Console::Gbc)), "{dir}|{file}", false, true},
+     static_cast<u8>(bit(Console::Gb) | bit(Console::Gbc)), "{dir}|{file}", false, kFsFat},
     {"retroarch-mgba", "retroarch-wii", "mgba_libretro_wii.dol", nullptr, bit(Console::Gba), "{dir}|{file}", false,
-     true},
+     kFsFat},
 }};
 
 constexpr std::array<const char*, 2> kOrderNes{"fceugx", "retroarch-fceumm"};
@@ -92,7 +94,7 @@ const char* profileOfDol(std::string_view dol, std::span<const FoundApp> found) 
 }
 
 ResolvedEmu fromProfile(const EmuProfile& p, const FoundApp& a, bool bad) {
-    return ResolvedEmu{a.dol, p.args, p.id, false, bad};
+    return ResolvedEmu{a.dol, p.args, p.id, false, bad, 0};
 }
 
 ResolvedEmu resolveSection(const Section& s, const EmulatorEntry& e, std::span<const FoundApp> found,
@@ -101,7 +103,7 @@ ResolvedEmu resolveSection(const Section& s, const EmulatorEntry& e, std::span<c
     //    RetroArch-Kern), trägt er dessen id, damit zipConsoles dessen ZIP-Fähigkeit kennt.
     if (e.fromFile && !isV1Default(s.name, e.dol)) {
         const char* id = profileOfDol(e.dol, found);
-        return ResolvedEmu{e.dol, e.args, id != nullptr ? id : "", true, false};
+        return ResolvedEmu{e.dol, e.args, id != nullptr ? id : "", true, false, 0};
     }
     // 2. games.ini [emulator]
     bool bad = false;
@@ -115,7 +117,7 @@ ResolvedEmu resolveSection(const Section& s, const EmulatorEntry& e, std::span<c
     }
     // Ab hier ist e die v1-Vorgabe: v1 schrieb sie immer, sie ist keine Nutzerentscheidung → fromIni = false.
     // 3. v1-Vorgabe, deren Datei es gibt: bleibt, wie v1 sie startete
-    if (const char* id = profileOfDol(e.dol, found)) return ResolvedEmu{e.dol, e.args, id, false, bad};
+    if (const char* id = profileOfDol(e.dol, found)) return ResolvedEmu{e.dol, e.args, id, false, bad, 0};
     // 4. Profilreihenfolge
     for (const char* id : s.order) {
         const EmuProfile* p = findProfile(id);
@@ -123,7 +125,7 @@ ResolvedEmu resolveSection(const Section& s, const EmulatorEntry& e, std::span<c
         if (const FoundApp* a = findApp(*p, found)) return fromProfile(*p, *a, bad);
     }
     // 5. nichts installiert: v1-Vorgabe bleibt (Preflight meldet dann „Emulator fehlt“)
-    return ResolvedEmu{e.dol, e.args, "", false, bad};
+    return ResolvedEmu{e.dol, e.args, "", false, bad, 0};
 }
 
 std::span<const char* const> orderOf(Console c) {
@@ -166,7 +168,9 @@ std::optional<ResolvedEmu> resolveEmulator(Console c, const EmulatorTable& ini, 
                                            std::optional<std::string_view> gameProfile) {
     const EmulatorEntry* e = ini.forConsole(c);
     if (e == nullptr) return std::nullopt;
-    return resolveSection(Section{consoleInfo(c).key, bit(c), orderOf(c)}, *e, found, gameProfile);
+    ResolvedEmu r = resolveSection(Section{consoleInfo(c).key, bit(c), orderOf(c)}, *e, found, gameProfile);
+    r.fsMask = e->fsMask;  // M16: fs gehört zum Abschnitt, gleich welcher Emulator gewählt wird
+    return r;
 }
 
 EmulatorTable resolveTable(const EmulatorTable& ini, std::span<const FoundApp> found) {
@@ -174,14 +178,21 @@ EmulatorTable resolveTable(const EmulatorTable& ini, std::span<const FoundApp> f
     auto apply = [&](const Section& s) {
         const EmulatorEntry* e = ini.section(s.name);
         if (e == nullptr) return;
-        const ResolvedEmu r = resolveSection(s, *e, found, std::nullopt);
-        out.set(s.name, EmulatorEntry{r.dol, r.args, r.fromIni, r.profile});
+        ResolvedEmu r = resolveSection(s, *e, found, std::nullopt);
+        r.fsMask = e->fsMask;
+        out.set(s.name, EmulatorEntry{r.dol, r.args, r.fromIni, r.profile, r.fsMask});
     };
     for (Console c : kRomConsoles) apply(Section{consoleInfo(c).key, bit(c), orderOf(c)});
     apply(Section{"n64_not64", bit(Console::N64), kOrderNot64});
     apply(Section{"n64_wii64", bit(Console::N64), kOrderWii64});
     apply(Section{"nintendont", bit(Console::Gc), kOrderNintendont});
     return out;
+}
+
+u8 emulatorFsMask(const EmulatorEntry& e) {
+    if (e.fsMask != 0) return e.fsMask;
+    if (const EmuProfile* p = e.profile.empty() ? nullptr : findProfile(e.profile)) return p->fsMask;
+    return kFsFat;
 }
 
 u8 zipConsoles(const EmulatorTable& resolved) {

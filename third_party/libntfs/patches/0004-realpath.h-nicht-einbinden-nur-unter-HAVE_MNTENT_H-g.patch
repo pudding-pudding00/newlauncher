@@ -1,0 +1,22 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: nl <nl@localhost>
+Date: Fri, 13 Nov 2026 13:06:13 +0100
+Subject: [PATCH 4/4] realpath.h nicht einbinden (nur unter HAVE_MNTENT_H
+ genutzt)
+
+---
+ source/volume.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/source/volume.c b/source/volume.c
+index a6d467b..4d73663 100644
+--- a/source/volume.c
++++ b/source/volume.c
+@@ -72,7 +72,6 @@
+ #include "dir.h"
+ #include "logging.h"
+ #include "cache.h"
+-#include "realpath.h"
+ #include "misc.h"
+ #include "security.h"
+ 

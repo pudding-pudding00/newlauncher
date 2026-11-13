@@ -24,7 +24,13 @@ struct Device {
 class DeviceTable {
 public:
     bool mountSd();   // "sd:"; true, wenn eingehängt
-    bool mountUsb();  // liest die Partitionstabelle und hängt jede FAT-Partition ein; true, wenn "usb:" da ist
+    bool mountUsb();  // liest die Partitionstabelle, hängt FAT (und mit NL_FS_NTFS NTFS nur lesend) ein; true, wenn "usb:" da ist
+    // [debug] sd_as_disk (M16): mountUsb liest die Partitionstabelle der SD statt der USB-Platte und hängt
+    // alles nur lesend ein (Dolphin emuliert keine USB-Platte). "sd:" bleibt unverändert.
+    // Debug (M16-Smoke): wirkt nur, solange USB noch nicht eingehängt ist; sonst lesen RawDevice und Mount
+    // verschiedene Geräte. Liefert, ob der Wert gilt.
+    bool setSdAsDisk(bool on);
+    bool sdAsDisk() const { return sdAsDisk_; }
     std::span<const Device> devices() const { return devices_; }
     const Device* byName(std::string_view name) const;  // "usb2" oder "usb2:"
     std::string root(u8 index) const;                    // "usb2:"; leer, wenn nicht eingehängt
@@ -33,6 +39,7 @@ public:
 private:
     std::vector<Device> devices_;
     bool usbLogged_ = false;
+    bool sdAsDisk_ = false;
 };
 
 DeviceTable& deviceTable();

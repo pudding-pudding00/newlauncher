@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from deploy_dolphin import FIXTURES_DIR, deploy  # noqa: E402
 from deploy_dolphin import main as deploy_main  # noqa: E402
-from dolphin import (dolphin_command, log_path, reset_log, wait_for_markers,  # noqa: E402
+from dolphin import (dolphin_command, log_path, reset_log, sd_sync_dir, wait_for_markers,  # noqa: E402
                      write_dev_config)
 from dolphin_smoke import main as smoke_main  # noqa: E402
 from dolphin_smoke import missing_ini_lines, sysinfo_problems  # noqa: E402
@@ -62,6 +62,13 @@ class DolphinToolsTest(unittest.TestCase):
     def test_dolphin_command_always_isolates_user_dir(self):
         cmd = dolphin_command(Path("D.exe"), self.user, Path("a.dol"))
         self.assertEqual(cmd, ["D.exe", "-u", str(self.user), "-b", "-C", "Dolphin.DSP.Volume=0", "-e", "a.dol"])
+
+    def test_dolphin_command_with_sd_image_uses_raw_card(self):
+        # M16: SD-Karte als Rohgerät; ohne Ordner-Sync liest Dolphin das Image direkt.
+        cmd = dolphin_command(Path("D.exe"), self.user, Path("a.dol"), sd_image=Path("x.raw"))
+        self.assertEqual(cmd, ["D.exe", "-u", str(self.user), "-b", "-C", "Dolphin.DSP.Volume=0",
+                               "-C", "Dolphin.General.WiiSDCardPath=x.raw",
+                               "-C", "Dolphin.Core.WiiSDCardEnableFolderSync=False", "-e", "a.dol"])
 
     def test_reset_log_removes_stale_marker(self):
         log_path(self.user).parent.mkdir(parents=True)
@@ -483,6 +490,102 @@ class DolphinToolsTest(unittest.TestCase):
             self.assertEqual(self._frag_run("NL_FRAG irgendwas", fat16=True), 0)
         printed = "".join(str(c.args[0]) for c in out.write.call_args_list if c.args)
         self.assertIn("SMOKE HINWEIS: SD-Image nicht FAT32, Abgleich übersprungen", printed)
+
+    # --- M16: --sd-disk baut ein Platten-Image aus der SD und einer NTFS-Partition ---
+    def _sd_disk_run(self, logged: list[str], layout: str = "fat32,ntfs", extra: list[str] | None = None):
+        calls = []
+        self.ntfs_files = {}
+
+        def fake_make_image(out, specs, native=False):
+            calls.append((out, specs, (specs[1][1] / "nl_ntfs.txt").is_file() if len(specs) > 1 else None))
+            if len(specs) > 1:
+                root = specs[1][1]
+                self.ntfs_files = {f.relative_to(root).as_posix(): f.read_bytes() for f in root.rglob("*") if f.is_file()}
+            out.write_bytes(b"x" * 512)
+            return 0
+
+        body = ['OSREPORT: NL_READY', '<argv>'] + logged
+        self._fake_dolphin(
+            "import pathlib, sys, time\n"
+            f"lines = {body!r}\n"
+            "lines[1] = ' '.join(sys.argv)\n"
+            "log = pathlib.Path(__file__).parent / 'Logs' / 'dolphin.log'\n"
+            "log.parent.mkdir(parents=True, exist_ok=True)\n"
+            "log.write_text(''.join(x + chr(10) for x in lines))\n"
+            "time.sleep(60)\n")
+        with mock.patch("dolphin_smoke.make_image", side_effect=fake_make_image):
+            rc = smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                             "--timeout", "5", "--sd-disk", layout] + (extra or []))
+        return rc, calls
+
+    def test_smoke_sd_disk_builds_image_from_sd(self):
+        rc, calls = self._sd_disk_run(["OSREPORT: NL_DEV usb fat mounted lba=2048",
+                                       "OSREPORT: NL_DEV usb2 ntfs mounted ro lba=133120"])
+        self.assertEqual(rc, 0)
+        out, specs, ntfs_filled = calls[0]
+        self.assertEqual(out, self.user.resolve() / "sd_disk.raw")
+        self.assertEqual(specs[0], ("fat32", sd_sync_dir(self.user.resolve())))
+        self.assertEqual(specs[1][0], "ntfs")
+        self.assertTrue(ntfs_filled)
+        text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertIn("sd_as_disk = 1", text)
+        # Fixture-config.ini sagt library = sd; ohne „auto“ fragt der Launcher die Platte nie ab.
+        self.assertIn("[library]\nsources = auto\n[debug]", text)
+        log = (self.user / "Logs/dolphin.log").read_text()
+        self.assertIn("WiiSDCardPath=" + str(out), log)
+
+    def test_smoke_sd_disk_requires_ntfs_marker(self):
+        rc, _ = self._sd_disk_run(["OSREPORT: NL_DEV usb fat mounted lba=2048"])
+        self.assertEqual(rc, 1)
+
+    def test_smoke_ntfs_iso_puts_contiguous_wii_iso_on_ntfs(self):
+        rc, _ = self._sd_disk_run(["OSREPORT: NL_DEV usb fat mounted lba=2048",
+                                   "OSREPORT: NL_DEV usb2 ntfs mounted ro lba=133120"],
+                                  extra=["--ntfs-iso", "RNLE01:1M", "--ntfs-iso", "RNLR01:512"])
+        self.assertEqual(rc, 0)
+        big = self.ntfs_files["wbfs/Test [RNLE01]/RNLE01.iso"]
+        self.assertEqual(len(big), 1 << 20)
+        self.assertEqual(big[:6], b"RNLE01")
+        self.assertEqual(big[0x18:0x1C], bytes.fromhex("5D1C9EA3"))  # Wii-Magic
+        # Kein Sektor nur aus Nullen: cp/ntfs-3g dürfen keine Löcher (sparse) daraus machen.
+        self.assertTrue(all(any(big[i:i + 512]) for i in range(0, len(big), 512)))
+        self.assertEqual(len(self.ntfs_files["wbfs/Test [RNLR01]/RNLR01.iso"]), 512)  # klein → resident
+
+    def test_smoke_ntfs_iso_rejects_bad_spec(self):
+        for spec in ["RNLE0:1M", "RNLE01", "RNLE01:abc", "RNLE01:100"]:
+            rc, calls = self._sd_disk_run([], extra=["--ntfs-iso", spec])
+            self.assertEqual(rc, 2, spec)
+            self.assertEqual(calls, [], spec)
+
+    def test_smoke_ntfs_iso_needs_ntfs_partition(self):
+        rc, calls = self._sd_disk_run([], layout="fat32", extra=["--ntfs-iso", "RNLE01:1M"])
+        self.assertEqual(rc, 2)
+        self.assertEqual(calls, [])
+
+    def test_smoke_wbfs_iso_goes_to_wbfs_partition_in_order(self):
+        rc, _ = self._sd_disk_run(["OSREPORT: NL_DEV usb fat mounted lba=2048",
+                                   "OSREPORT: NL_DEV usb2 wbfs mounted ro lba=133120"], layout="fat32,wbfs",
+                                  extra=["--wbfs-iso", "RNLA01:1M", "--wbfs-iso", "RNLB01:1M:broken"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(sorted(self.ntfs_files), ["00_RNLA01.iso", "01_RNLB01.broken.iso"])
+        self.assertEqual(self.ntfs_files["00_RNLA01.iso"][:6], b"RNLA01")
+        self.assertEqual(len(self.ntfs_files["01_RNLB01.broken.iso"]), 1 << 20)
+
+    def test_smoke_wbfs_layout_expects_ro_mount(self):
+        rc, _ = self._sd_disk_run(["OSREPORT: NL_DEV usb fat mounted lba=2048",
+                                   "OSREPORT: NL_DEV usb2 wbfs skipped lba=133120"], layout="fat32,wbfs")
+        self.assertNotEqual(rc, 0)
+
+    def test_smoke_wbfs_iso_needs_wbfs_partition(self):
+        for extra in (["--wbfs-iso", "RNLA01:1M"], ["--wbfs-iso", "RNLA01:1M:kaputt"]):
+            rc, calls = self._sd_disk_run([], layout="fat32,ntfs" if len(extra[1]) < 12 else "fat32,wbfs", extra=extra)
+            self.assertEqual(rc, 2, extra)
+            self.assertEqual(calls, [], extra)
+
+    def test_smoke_sd_disk_first_partition_must_be_fat32(self):
+        rc, calls = self._sd_disk_run([], layout="ntfs,fat32")
+        self.assertEqual(rc, 2)
+        self.assertEqual(calls, [])
 
     def test_smoke_reports_unstartable_dolphin(self):
         bad = self.tmp / "kaputt.exe"

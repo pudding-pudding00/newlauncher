@@ -273,6 +273,8 @@ int main(int argc, char** argv) {
             nl::log::line("NL_DEBUG_INI");
         }
     }
+    // M16-Smoke: Liegt der Datenordner schon auf USB, bleibt die echte USB-Platte eingehängt.
+    if (!nl::platform::deviceTable().setSdAsDisk(config.debugSdAsDisk)) nl::log::line("NL_DEV sd_as_disk ignoriert");
     const bool systemGerman = CONF_GetLanguage() == CONF_LANG_GERMAN;
     nl::ui::setLanguage(nl::ui::resolveLanguage(config.language, systemGerman));
     nl::log::line("NL_LANG %s", nl::ui::langKey(nl::ui::language()));
@@ -511,7 +513,13 @@ int main(int argc, char** argv) {
     auto logGames = [&]() {
         if (!config.debugListGames) return;
         for (const nl::Game& g : store.games())
-            nl::log::line("NL_GAME %s %s", g.key, store.devices()[g.device].c_str());
+            nl::log::line("NL_GAME %s %s path=%s", g.key, store.devices()[g.device].c_str(), g.path != nullptr ? g.path : "");
+    };
+    // Review Focus 3: kaputte WBFS-Slots fallen still aus der Bibliothek, das Log nennt sie (Haupt-Thread, log ist
+    // nicht threadfest).
+    auto logWbfsSkips = [](const nl::MultiScan& m) {
+        for (const auto& [dev, slot] : m.wbfsSkips)
+            nl::log::line("NL_WBFS_SKIP %u dev=%s", static_cast<unsigned>(slot), dev.c_str());
     };
     auto applyIndexes = [&]() {
         store.setGames(nl::mergeIndexes(deviceIndexes), metaPtr);
@@ -542,6 +550,7 @@ int main(int argc, char** argv) {
         }
         if (result->isOk()) {
             const nl::ScanStats st = result->value().stats;
+            logWbfsSkips(result->value());
             deviceIndexes = std::move(*result).value().indexes;
             applyIndexes();
             nl::log::line("NL_SCAN_DONE games=%u added=%u removed=%u", static_cast<unsigned>(store.games().size()),
@@ -613,8 +622,20 @@ int main(int argc, char** argv) {
         s.ciosSlot = nl::chooseCios(s.cios, std::nullopt, config.wiiIos).slot.value_or(0);
         s.gcPorts = s.platform != nl::Platform::VWii;
         for (const nl::platform::Device& d : devTable.devices()) {
-            if (!d.mounted) continue;
-            nl::DeviceSummary sum{d.slot.name, nl::fsKindName(d.slot.kind), d.totalBytes, d.freeBytes, 0};
+            if (!d.mounted && d.slot.skip == nl::SkipReason::None) continue;
+            nl::DeviceSummary sum;
+            sum.name = d.slot.name;
+            sum.fs = nl::fsKindName(d.slot.kind);
+            sum.total = d.totalBytes;
+            sum.free = d.freeBytes;
+            sum.readOnly = d.mounted && !d.writable;
+            if (!d.mounted) {  // Spec v2 9.3: nicht eingehängte Partitionen mit Grund (M16)
+                sum.mounted = false;
+                sum.reasonDe = nl::skipReasonText(d.slot.skip, true);
+                sum.reasonEn = nl::skipReasonText(d.slot.skip, false);
+                s.devices.push_back(std::move(sum));
+                continue;
+            }
             for (const nl::Game& g : store.games())
                 if (g.device < store.devices().size() && store.devices()[g.device] == d.slot.name) ++sum.games;
             s.devices.push_back(std::move(sum));
@@ -829,7 +850,7 @@ int main(int argc, char** argv) {
         if (const auto profile = overrides.emulatorProfile(game.key)) {
             if (const auto r = nl::resolveEmulator(game.console, emulatorIni, foundApps, *profile)) {
                 if (r->badProfile) nl::log::line("NL_OPT_BAD emulator %s", game.key);
-                gameEmus.set(nl::consoleInfo(game.console).key, nl::EmulatorEntry{r->dol, r->args, r->fromIni, r->profile});
+                gameEmus.set(nl::consoleInfo(game.console).key, nl::EmulatorEntry{r->dol, r->args, r->fromIni, r->profile, r->fsMask});
             }
         }
         // Spieloptionen (Spec v2 7) bei jedem Start frisch lesen: die Options-Szene ändert games.ini/config.ini.
@@ -846,7 +867,10 @@ int main(int argc, char** argv) {
             configDoc, gamesDoc,
             nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected()) != nl::Platform::VWii,
             gcGct};
-        auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, hwAccess, &optionInputs);
+        // M16: Dateisystem des Spielgeräts (Nintendont nur FAT, Emulatoren laut fsMask).
+        const nl::platform::Device* gameDev = nl::platform::deviceTable().byName(rootOf(game));
+        const nl::FsKind gameFs = gameDev != nullptr ? gameDev->slot.kind : nl::FsKind::Fat;
+        auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, hwAccess, &optionInputs, gameFs);
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
             if (auto plan = prepareWii(game, configDoc, gamesDoc); plan.isOk()) {
                 if (config.debugWiiDryRun) {
@@ -891,7 +915,7 @@ int main(int argc, char** argv) {
             warnedLaunch = key;
             char title[64];
             char text[320];
-            nl::ui::launchWarningText(warnings, title, sizeof title, text, sizeof text);
+            nl::ui::launchWarningText(warnings, title, sizeof title, text, sizeof text, target.value().emuName);
             dialog.open(title, text);
             scenes.push(&dialog);
             audio.play(nl::UiSound::Error);
@@ -1267,6 +1291,7 @@ int main(int argc, char** argv) {
         if (auto result = worker.take()) {
             if (result->isOk()) {
                 const nl::ScanStats st = result->value().stats;
+                logWbfsSkips(result->value());
                 const std::string focusKey = mainScene.focusedKey();  // vor setGames: danach sind die Zeiger ungültig
                 deviceIndexes = std::move(*result).value().indexes;
                 applyIndexes();

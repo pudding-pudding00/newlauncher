@@ -54,10 +54,10 @@ TEST_CASE("fromFile, section und set") {
     CHECK(t.section("n64_wii64") == t.forN64(N64Method::Wii64));
     CHECK(t.section("wii") == nullptr);
     EmulatorTable u = t;
-    u.set("nintendont", EmulatorEntry{"usb:/apps/nintendont/boot.dol", "x", false, "nintendont"});
+    u.set("nintendont", EmulatorEntry{"usb:/apps/nintendont/boot.dol", "x", false, "nintendont", 0});
     CHECK(u.nintendont().dol == "usb:/apps/nintendont/boot.dol");
     CHECK(u.nintendont().args.empty());
-    u.set("snes", EmulatorEntry{"sd:/apps/retroarch-wii/snes9x2010_libretro_wii.dol", "{dir}|{file}", false, "retroarch-snes9x2010"});
+    u.set("snes", EmulatorEntry{"sd:/apps/retroarch-wii/snes9x2010_libretro_wii.dol", "{dir}|{file}", false, "retroarch-snes9x2010", 0});
     CHECK(u.forConsole(Console::Snes)->profile == "retroarch-snes9x2010");
 }
 

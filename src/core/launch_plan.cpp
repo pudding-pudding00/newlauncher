@@ -4,6 +4,7 @@
 #include <array>
 
 #include "core/dol.hpp"
+#include "core/emu_profiles.hpp"
 #include "core/launch_args.hpp"
 #include "core/launch_layout.hpp"
 #include "core/library_merge.hpp"
@@ -147,6 +148,27 @@ TargetResult dolTarget(PlanResult plan, std::optional<N64Method> n64) {
     return TargetResult::ok(std::move(t));
 }
 
+std::string deviceOf(std::string_view libRoot) { return std::string(libRoot.substr(0, libRoot.find(':'))); }
+
+// Name für den Hinweis: <name> des Profils, sonst der Ordner unter apps/ („fceugx“), sonst der DOL-Pfad.
+std::string emulatorName(const EmulatorEntry& e) {
+    if (const EmuProfile* p = e.profile.empty() ? nullptr : findProfile(e.profile); p != nullptr && p->metaName != nullptr)
+        return p->metaName;
+    const std::size_t apps = e.dol.find("/apps/");
+    if (apps == std::string::npos) return e.dol;
+    const std::size_t start = apps + 6;
+    return e.dol.substr(start, e.dol.find('/', start) - start);
+}
+
+// M16: Emulator liest dieses Dateisystem laut fsMask nicht → Hinweis, Start nach Bestätigung.
+TargetResult withFsWarning(TargetResult r, const EmulatorEntry* emu, FsKind deviceFs) {
+    if (!r.isOk() || emu == nullptr || (emulatorFsMask(*emu) & fsBit(deviceFs)) != 0) return r;
+    LaunchTarget t = std::move(r).value();
+    t.warnings.push_back(LaunchWarning::EmulatorFs);
+    t.emuName = emulatorName(*emu);
+    return TargetResult::ok(std::move(t));
+}
+
 }  // namespace
 
 std::optional<u64> fileSize(FileSystem& fs, std::string_view path) {
@@ -163,6 +185,7 @@ std::optional<u64> fileSize(FileSystem& fs, std::string_view path) {
 const char* launchWarningName(LaunchWarning w) {
     switch (w) {
         case LaunchWarning::MemcardRealNoPorts: return "memcard_real_no_ports";
+        case LaunchWarning::EmulatorFs: return "emulator_fs";
         case LaunchWarning::NativeSiNoPorts: return "native_si_no_ports";
     }
     return "?";
@@ -188,6 +211,8 @@ const char* launchFailureName(LaunchFailure f) {
         case LaunchFailure::WiiFileBroken: return "WiiFileBroken";
         case LaunchFailure::DeviceUnsupported: return "DeviceUnsupported";
         case LaunchFailure::CheatsTooLarge: return "CheatsTooLarge";
+        case LaunchFailure::FileNotContiguousReadable: return "FileNotContiguousReadable";
+        case LaunchFailure::NintendontNeedsFat: return "NintendontNeedsFat";
     }
     return "?";
 }
@@ -206,6 +231,12 @@ LaunchError fromFatError(FatError e, std::string context) {
 
 LaunchError fromFragError(FragError e, std::string context) {
     if (e == FragError::PartMissing) return {LaunchFailure::RomMissing, std::move(context)};
+    return {LaunchFailure::WiiFileBroken, std::move(context)};
+}
+
+LaunchError fromExtentError(ExtentError e, std::string context) {
+    // Unsupported: Die Bibliothek kann die Datei lesen, aber nicht als Gerätesektoren zeigen (Review Focus 1).
+    if (e == ExtentError::Unsupported) return {LaunchFailure::FileNotContiguousReadable, std::move(context)};
     return {LaunchFailure::WiiFileBroken, std::move(context)};
 }
 
@@ -243,14 +274,22 @@ Result<LaunchPlan, LaunchError> preflightEmulator(FileSystem& fs, const Game& g,
 }
 
 Result<LaunchTarget, LaunchError> preflightGame(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus,
-                                                const N64Inputs* n64, bool ahbprotOff, const GameOptionInputs* opts) {
-    if (g.console == Console::Gc) return gcTarget(fs, g, libRoot, emus.nintendont(), ahbprotOff, opts);
+                                                const N64Inputs* n64, bool ahbprotOff, const GameOptionInputs* opts,
+                                                FsKind deviceFs) {
+    if (g.console == Console::Gc) {
+        // Nintendont liest nur FAT; das ist der eigentliche Grund, auch wenn das Gerät zusätzlich usb2… ist.
+        if (deviceFs != FsKind::Fat) return TargetResult::err({LaunchFailure::NintendontNeedsFat, deviceLabel(deviceOf(libRoot))});
+        return gcTarget(fs, g, libRoot, emus.nintendont(), ahbprotOff, opts);
+    }
     if (g.console == Console::Wii) {
         LaunchTarget t;
         t.kind = LaunchTarget::Kind::Wii;
         return TargetResult::ok(std::move(t));
     }
-    if (g.console != Console::N64) return dolTarget(preflightEmulator(fs, g, libRoot, emus), std::nullopt);
+    if (g.console != Console::N64) {
+        const EmulatorEntry* emu = emus.forConsole(g.console);
+        return withFsWarning(dolTarget(preflightEmulator(fs, g, libRoot, emus), std::nullopt), emu, deviceFs);
+    }
 
     const N64Decision d = n64 != nullptr ? decideN64(*n64) : N64Decision{};
     if (!d.chosen) return TargetResult::err({LaunchFailure::NoN64Path, consoleInfo(g.console).name});
@@ -261,7 +300,8 @@ Result<LaunchTarget, LaunchError> preflightGame(FileSystem& fs, const Game& g, s
         t.n64 = N64Method::Vc;
         return TargetResult::ok(std::move(t));
     }
-    return dolTarget(planFor(fs, g, libRoot, *emus.forN64(*d.chosen)), d.chosen);
+    const EmulatorEntry* emu = emus.forN64(*d.chosen);
+    return withFsWarning(dolTarget(planFor(fs, g, libRoot, *emu), d.chosen), emu, deviceFs);
 }
 
 }  // namespace nl

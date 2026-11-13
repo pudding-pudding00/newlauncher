@@ -99,6 +99,25 @@ TEST_CASE("formatSysInfo: englisch und vWii ohne GameCube-Ports") {
     CHECK(t.find("cIOS: none") != std::string::npos);
 }
 
+TEST_CASE("formatSysInfo: nur lesend und nicht eingehängt (M16)") {
+    SystemInfo s = sample();
+    DeviceSummary ntfs{"usb3", "ntfs", 0, 0, 2};
+    ntfs.readOnly = true;
+    DeviceSummary ext{"", "ext", 0, 0, 0};
+    ext.mounted = false;
+    ext.reasonDe = "ext wird nicht unterstützt";
+    ext.reasonEn = "ext is not supported";
+    s.devices.push_back(ntfs);
+    s.devices.push_back(ext);
+    const std::string de = formatSysInfo(s, true);
+    CHECK(de.find("usb3 ntfs ?, 2 Spiele, nur lesend") != std::string::npos);
+    CHECK(de.find("- ext nicht eingehängt: ext wird nicht unterstützt") != std::string::npos);
+    CHECK(de.find("usb2 FAT 465.8 GiB, frei 1.0 GiB, 40 Spiele\n") != std::string::npos);  // FAT unverändert
+    const std::string en = formatSysInfo(s, false);
+    CHECK(en.find("usb3 ntfs ?, 2 games, read-only") != std::string::npos);
+    CHECK(en.find("- ext not mounted: ext is not supported") != std::string::npos);
+}
+
 TEST_CASE("formatSysInfo enthält keine MAC- und keine IPv4-Adresse") {
     const std::string t = formatSysInfo(sample(), true) + formatSysInfo(sample(), false);
     CHECK_FALSE(std::regex_search(t, std::regex("[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}")));
@@ -115,9 +134,9 @@ TEST_CASE("sysInfoLines: dieselben Zeilen wie die Datei") {
 
 TEST_CASE("emuSummaries: feste Reihenfolge, Herkunft ini/detected/default, leere Pfade fehlen") {
     EmulatorTable t;
-    t.set("snes", EmulatorEntry{"sd:/apps/eigen/boot.dol", "", true, ""});
-    t.set("nes", EmulatorEntry{"usb2:/apps/fceugx/boot.dol", "", false, "fceugx"});
-    t.set("gba", EmulatorEntry{"sd:/apps/vbagx/boot.dol", "", false, ""});
+    t.set("snes", EmulatorEntry{"sd:/apps/eigen/boot.dol", "", true, "", 0});
+    t.set("nes", EmulatorEntry{"usb2:/apps/fceugx/boot.dol", "", false, "fceugx", 0});
+    t.set("gba", EmulatorEntry{"sd:/apps/vbagx/boot.dol", "", false, "", 0});
     const auto v = emuSummaries(t);
     REQUIRE(v.size() == 3);
     CHECK(v[0].section == "nes");

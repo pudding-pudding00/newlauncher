@@ -83,7 +83,6 @@ TEST_CASE("CheatModel: Wii ohne Booter-Cheats → WiiUnavailable, GC unberührt"
     CHECK(w.status() == CheatStatus::WiiUnavailable);
     CHECK(w.rows() == 0);
     CHECK(CheatModel(Console::Gc, kTxt, "", false).status() == CheatStatus::Ready);
-    CHECK(kWiiCheats == (NL_WII_CHEATS != 0));
 }
 
 TEST_CASE("CheatModel: übersprungene Blöcke werden gezählt") {

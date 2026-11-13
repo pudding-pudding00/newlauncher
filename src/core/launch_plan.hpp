@@ -3,6 +3,7 @@
 // schiefgehen kann, solange der Launcher noch Fehler anzeigen kann. Schreibt nichts.
 
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -26,6 +27,7 @@ enum class LaunchFailure : u8 {
     NinMissing, NinUnknown, NinTooOld, NinPathTooLong, AhbProt, NinFormat,  // M8/M12: GameCube über Nintendont
     CiosMissing, WiiFsUnsupported, WiiFileBroken,                 // M9: Wii-Spiele nativ; CiosMissing: Kontext Slot
     DeviceUnsupported,  // M12: GC/ROM auf usb2…usb8 – Nintendont und GX-Emulatoren sehen nur sd: und usb:
+    CheatsTooLarge,     // M15: GCT passt nicht in die Codeliste; Kontext Größe in Bytes
 };
 const char* launchFailureName(LaunchFailure f);  // Log-Marker NL_PREFLIGHT_FAIL
 
@@ -64,6 +66,10 @@ Result<LaunchPlan, LaunchError> preflightEmulator(FileSystem& fs, const Game& g,
 LaunchError fromFatError(FatError e, std::string context);
 LaunchError fromFragError(FragError e, std::string context);
 
+// M15: Platz für die GCT hinter dem Codehandler, 0x80002338 (Symbol codelist des gebauten Handlers) bis
+// 0x80003000 (Beginn der OS-Globals, wie upstream WiiFlow). Der Wii-Build prüft beide Grenzen gegen den Handler.
+inline constexpr u32 kWiiCodelistBytes = 0x80003000u - 0x80002338u;
+
 // Alles, was der Game-Booter braucht; the_CFG entsteht daraus erst auf der Plattform (Task 6).
 struct WiiBootPlan {
     std::string id6;
@@ -72,14 +78,17 @@ struct WiiBootPlan {
     u8 iosSlot = kDefaultCiosSlot;  // M13: IOS_ReloadIOS und the_CFG.IOS.Version (= cios.slot)
     std::vector<u8> fragBytes;  // serializeFragList, genau kFragListBytes
     WiiOptions options;         // M14: the_CFG-Felder, ios und Rückkehr
+    std::vector<u8> gct;        // M15: gewählte Codes als GCT; leer = ohne Cheats
+    u8 hookType = 0;            // M15: the_CFG.hooktype, 0 ohne Codes
 };
 
 // Reihenfolge: cIOS Missing → CiosMissing (Kontext Slot, z. B. "222"); bei dryRun nur durchgelassen (die
-// Plattform loggt es); dann Fragmentfehler durchreichen; Schlüssel ohne ID6 → Unsupported; sonst Plan.
+// Plattform loggt es); dann Fragmentfehler durchreichen; Schlüssel ohne ID6 → Unsupported; GCT größer als
+// kWiiCodelistBytes → CheatsTooLarge (Kontext Größe in Bytes, auch im Dry-Run); sonst Plan.
 // cios kommt aus ciosStatusFor (core/cios_scan); usb folgt aus libRoot („usb:“).
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
                                               const Result<FragList, LaunchError>& frags, bool dryRun,
-                                              const WiiOptions& options = {});
+                                              const WiiOptions& options = {}, std::span<const u8> gct = {});
 
 // Ziel eines Starts: ein DOL über den Chainloader, ein Kanal im NAND (VC-Inject) oder ein Wii-Spiel.
 struct LaunchTarget {

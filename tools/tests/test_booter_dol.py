@@ -3,11 +3,13 @@
 Ohne Wii-Build (build/wii/game_booter.dol fehlt) wird der Test übersprungen, damit die Werkzeug-Tests überall laufen.
 """
 
+import hashlib
 import struct
 import unittest
 from pathlib import Path
 
 DOL = Path(__file__).resolve().parents[2] / "build" / "wii" / "game_booter.dol"
+HANDLER = DOL.parent / "codehandler" / "codehandler.bin"  # M15: im Build aus boot/nl/codehandler/codehandler.s
 BASE = 0x80A80000
 END = 0x81800000  # Ende MEM1 (24 MiB, gecacht)
 MAX_SIZE = 10 * 1024 * 1024
@@ -49,12 +51,22 @@ class BooterDolTest(unittest.TestCase):
         self.assertLessEqual(len(self.data), MAX_SIZE)
 
     def test_no_codehandler_blob(self):
-        # M11 Task 2: der Ocarina-Codehandler (Binärblob ohne Quelle) ist nicht mehr im Booter.
+        # M11 Task 2: der Ocarina-Codehandler (Binärblob ohne Quelle) ist nicht im Booter.
         # Fingerabdrücke: je 16 Byte Maschinencode aus codehandler.h (0x2b4) und codehandleronly.h (0x244).
         for name, fp in CODEHANDLER_FINGERPRINTS.items():
             with self.subTest(blob=name):
                 self.assertEqual(self.data.count(bytes.fromhex(fp)), 0)
-        self.assertEqual(self.data.count(b"codehandler"), 0)
+
+    def test_codehandler_from_own_build(self):
+        # M15: der Booter enthält genau den Handler, den der Build aus codehandler.s assembliert hat.
+        handler = HANDLER.read_bytes()
+        self.assertGreater(len(handler), 0x10C)
+        self.assertEqual(handler[0x104:0x106], bytes.fromhex("3de0"))  # lis r15, codelist@h
+        self.assertEqual(handler[0x108:0x10A], bytes.fromhex("61ef"))  # ori r15, r15, codelist@l
+        at = self.data.find(handler)
+        self.assertGreaterEqual(at, 0, "Codehandler aus dem Build fehlt im game_booter.dol")
+        block = self.data[at:at + len(handler)]
+        self.assertEqual(hashlib.sha256(block).hexdigest(), hashlib.sha256(handler).hexdigest())
 
 
 class DolParserTest(unittest.TestCase):

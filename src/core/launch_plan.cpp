@@ -176,6 +176,7 @@ const char* launchFailureName(LaunchFailure f) {
         case LaunchFailure::WiiFsUnsupported: return "WiiFsUnsupported";
         case LaunchFailure::WiiFileBroken: return "WiiFileBroken";
         case LaunchFailure::DeviceUnsupported: return "DeviceUnsupported";
+        case LaunchFailure::CheatsTooLarge: return "CheatsTooLarge";
     }
     return "?";
 }
@@ -199,7 +200,7 @@ LaunchError fromFragError(FragError e, std::string context) {
 
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
                                               const Result<FragList, LaunchError>& frags, bool dryRun,
-                                              const WiiOptions& options) {
+                                              const WiiOptions& options, std::span<const u8> gct) {
     using R = Result<WiiBootPlan, LaunchError>;
     if (!dryRun && cios.state == CiosState::Missing) {
         return R::err({LaunchFailure::CiosMissing, std::to_string(static_cast<unsigned>(cios.slot))});
@@ -207,6 +208,7 @@ Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view li
     if (!frags.isOk()) return R::err(frags.error());
     const std::string_view key = g.key != nullptr ? g.key : "";
     if (key.size() < 6) return R::err({LaunchFailure::Unsupported, consoleInfo(g.console).name});  // Scanner liefert immer ID6
+    if (gct.size() > kWiiCodelistBytes) return R::err({LaunchFailure::CheatsTooLarge, std::to_string(gct.size())});
 
     WiiBootPlan p;
     p.id6 = std::string(key.substr(0, 6));
@@ -215,6 +217,8 @@ Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view li
     p.iosSlot = cios.slot;
     p.fragBytes = serializeFragList(frags.value());
     p.options = options;
+    p.gct.assign(gct.begin(), gct.end());
+    p.hookType = gct.empty() ? 0 : options.hookType;  // Spec v2 8: ohne Codes kein Hook
     if (cios.state != CiosState::D2x) p.options.cfg.returnTo = 0;  // Spec 7.2: Rückkehr nur mit d2x
     return R::ok(std::move(p));
 }

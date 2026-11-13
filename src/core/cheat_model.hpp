@@ -12,21 +12,15 @@
 #include "core/gecko_txt.hpp"
 #include "core/types.hpp"
 
-// 1, sobald der Wii-Booter einen Codehandler aus Quelltext mitbringt (M15 Task 5, zusammen mit NL_BOOTER_CHEATS).
-#ifndef NL_WII_CHEATS
-#define NL_WII_CHEATS 0
-#endif
-
 namespace nl {
-
-inline constexpr bool kWiiCheats = NL_WII_CHEATS != 0;
 
 enum class CheatStatus : u8 { NoFile, Ready, WiiUnavailable };
 
 class CheatModel {
 public:
-    // txt: Inhalt der Codeliste (leer = keine Datei), sel: Inhalt der Auswahl.
-    CheatModel(Console console, std::string_view txt, std::string_view sel, bool wiiCheats = kWiiCheats);
+    // txt: Inhalt der Codeliste (leer = keine Datei), sel: Inhalt der Auswahl. wiiCheats: der Build bringt einen
+    // Codehandler mit (Launcher-Define NL_WII_CHEATS); sonst zeigt eine Wii-Liste nur „nicht verfügbar“.
+    CheatModel(Console console, std::string_view txt, std::string_view sel, bool wiiCheats);
 
     CheatStatus status() const { return status_; }
     std::size_t rows() const { return rows_.size(); }

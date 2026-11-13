@@ -33,6 +33,7 @@
 #include "core/n64.hpp"
 #include "core/options_model.hpp"
 #include "core/nin_cfg.hpp"
+#include "core/cheat_select.hpp"
 #include "core/cheat_source.hpp"
 #include "core/cios_scan.hpp"
 #include "core/n64_choice.hpp"
@@ -62,6 +63,11 @@
 #include "platform/system_probe.hpp"
 #include "platform/video.hpp"
 #include "platform/wii_disc.hpp"
+
+// M15: 1, wenn der Game-Booter den Codehandler aus Quelltext mitbringt (CMake setzt es zusammen mit NL_BOOTER_CHEATS).
+#ifndef NL_WII_CHEATS
+#define NL_WII_CHEATS 0
+#endif
 #include "platform/wii_input.hpp"
 #include "ui/settings_scene.hpp"
 #include "ui/debug_overlay.hpp"
@@ -712,6 +718,21 @@ int main(int argc, char** argv) {
         details.setN64(nl::decideN64(n64Inputs(*g)), overrides.n64Method(g->key));
     };
 
+    // M15: <ID6>.txt und <ID6>.sel lesen (fehlend oder zu groß → leer); true, wenn die .txt vorliegt.
+    auto readCheatFiles = [&](const std::string& id6, std::string& txt, std::string& sel) {
+        txt.clear();
+        sel.clear();
+        if (!data.readable) return false;
+        const std::string txtPath = nl::cheatTxtPath(data.dir, id6);
+        std::array<u8, 1> probe{};
+        const bool exists = fs.read(txtPath, 0, probe).isOk();
+        if (auto r = fs.readAll(txtPath, nl::kMaxCheatTxtBytes); r.isOk())
+            txt.assign(reinterpret_cast<const char*>(r.value().data()), r.value().size());
+        if (auto r = fs.readAll(nl::cheatSelPath(data.dir, id6), kMaxIniBytes); r.isOk())
+            sel.assign(reinterpret_cast<const char*>(r.value().data()), r.value().size());
+        return exists;
+    };
+
     // Spec 9: Preflight, Verlauf, Chainload. Kehrt nur zurück, wenn der Start scheitert (dann mit Dialog).
     // Wii-Spiele (M9 Task 5): cIOS prüfen, Fragmentliste rechnen und gegenprüfen, dann preflightWii.
     auto prepareWii = [&](const nl::Game& game, const nl::IniDoc& configDoc, const nl::IniDoc& gamesDoc) {
@@ -752,7 +773,18 @@ int main(int argc, char** argv) {
                           static_cast<unsigned>(partLba), static_cast<unsigned>(f.entries.size()), static_cast<unsigned>(f.size),
                           static_cast<unsigned>(nl::fragListCrc(bytes)), first);
         }
-        auto plan = nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options);
+        // M15: Cheats nur mit Codehandler im Build und Option „Cheats“ (Spec v2 8); sonst leere GCT, hooktype 0.
+        std::vector<u8> gct;
+        if (NL_WII_CHEATS != 0 && options.cheats) {
+            std::string txt, sel;
+            readCheatFiles(id6, txt, sel);
+            gct = nl::gctForSelection(txt, sel);
+        }
+        auto plan = nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options, gct);
+        if (plan.isOk() && !plan.value().gct.empty()) {
+            nl::log::line("NL_WII_CHEATS bytes=%u hook=%u", static_cast<unsigned>(plan.value().gct.size()),
+                          static_cast<unsigned>(plan.value().hookType));
+        }
         if (plan.isOk()) {
             const nl::WiiCfgFields& c = plan.value().options.cfg;
             nl::log::line("NL_WII_CFG vid=%u vpatch=%u lang=%02x aspect=%d defl=%u width=%u online=%u ios=%u ret=%08x",
@@ -957,17 +989,8 @@ int main(int argc, char** argv) {
     // Codeliste und Auswahl eines Spiels lesen; exists: <ID6>.txt liegt vor (auch wenn zu groß oder kaputt).
     auto loadCheatModel = [&](nl::Console c, const std::string& id6, bool& exists) {
         std::string txt, sel;
-        exists = false;
-        if (data.readable) {
-            const std::string txtPath = nl::cheatTxtPath(data.dir, id6);
-            std::array<u8, 1> probe{};
-            exists = fs.read(txtPath, 0, probe).isOk();
-            if (auto r = fs.readAll(txtPath, nl::kMaxCheatTxtBytes); r.isOk())
-                txt.assign(reinterpret_cast<const char*>(r.value().data()), r.value().size());
-            if (auto r = fs.readAll(nl::cheatSelPath(data.dir, id6), kMaxIniBytes); r.isOk())
-                sel.assign(reinterpret_cast<const char*>(r.value().data()), r.value().size());
-        }
-        nl::CheatModel m(c, txt, sel);
+        exists = readCheatFiles(id6, txt, sel);
+        nl::CheatModel m(c, txt, sel, NL_WII_CHEATS != 0);
         if (m.status() == nl::CheatStatus::Ready && m.skipped() > 0)
             nl::log::line("NL_CHEAT_SKIP %u", static_cast<unsigned>(m.skipped()));
         return m;

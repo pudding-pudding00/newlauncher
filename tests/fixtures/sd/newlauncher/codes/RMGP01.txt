@@ -1,0 +1,8 @@
+RMGP01
+Super Mario Galaxy
+
+Sternenbits [Fixture]
+04001000 0000270F
+
+Leben [Fixture]
+04001004 00000063

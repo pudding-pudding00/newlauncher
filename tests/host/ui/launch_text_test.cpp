@@ -113,6 +113,17 @@ TEST_CASE("launchErrorText: Wii-Fehler in DE und EN") {
     setLanguage(saved);
 }
 
+TEST_CASE("launchErrorText: CheatsTooLarge nennt die Größe in Bytes (DE/EN)") {
+    const Lang saved = language();
+    setLanguage(Lang::De);
+    CHECK(std::string(render(LaunchFailure::CheatsTooLarge, "4000").text) ==
+          "Zu viele Cheats.\nDie gewählten Codes belegen 4000 Bytes, zu viel für die Codeliste. Bitte weniger Codes wählen.");
+    setLanguage(Lang::En);
+    CHECK(std::string(render(LaunchFailure::CheatsTooLarge, "4000").text) ==
+          "Too many cheats.\nThe selected codes take 4000 bytes, too much for the code list. Please select fewer codes.");
+    setLanguage(saved);
+}
+
 TEST_CASE("launchWarningText: GC-Ports fehlen, Hinweis vor dem Start in DE und EN") {
     const Lang saved = language();
     char title[64];

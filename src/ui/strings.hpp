@@ -85,6 +85,8 @@
       "Game file damaged.\n%s is damaged or too fragmented.") \
     X(DeviceUnsupported, "Gerät nicht unterstützt.\nDas Spiel liegt auf %s. Nintendont und die Emulatoren lesen nur SD und die erste USB-Partition.", \
       "Device not supported.\nThe game is on %s. Nintendont and the emulators only read SD and the first USB partition.") \
+    X(CheatsTooLarge, "Zu viele Cheats.\nDie gewählten Codes belegen %s Bytes, zu viel für die Codeliste. Bitte weniger Codes wählen.", \
+      "Too many cheats.\nThe selected codes take %s bytes, too much for the code list. Please select fewer codes.") \
     X(OverrideIgnored,"Gewählter Weg nicht verfügbar – automatisch gewählt.", "Chosen method unavailable – picked automatically.") \
     X(VcMapTitle, "VC-Injects zuordnen", "Map VC injects") \
     X(VcNone, "—", "—") \

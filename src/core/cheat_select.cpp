@@ -1,5 +1,7 @@
 #include "core/cheat_select.hpp"
 
+#include "core/gct.hpp"
+
 #include <algorithm>
 
 namespace nl {
@@ -47,6 +49,15 @@ std::vector<const GeckoCode*> selectedCodes(const GeckoFile& f, std::span<const 
         out.push_back(&c);
     }
     return out;
+}
+
+std::vector<u8> gctForSelection(std::string_view txt, std::string_view sel) {
+    auto file = parseGeckoTxt(txt);
+    if (!file.isOk()) return {};
+    const std::vector<std::string> names = parseSel(sel);
+    const std::vector<const GeckoCode*> codes = selectedCodes(file.value(), names);
+    if (codes.empty()) return {};
+    return buildGct(codes);
 }
 
 }  // namespace nl

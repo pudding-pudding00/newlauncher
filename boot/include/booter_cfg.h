@@ -25,6 +25,10 @@ extern "C" {
 /* --- Speicher (Plan M9, Global Constraints) ------------------------------------------------- */
 #define NL_WII_CFG_ADDR   0x93200000u /* the_CFG; der Booter liest hier statt über den Zeiger bei 0x90100000 */
 #define NL_FRAG_LIST_ADDR 0x93201000u /* FragList in voller Größe (sizeof(FragList)) */
+/* M15: Übergabepuffer der GCT (the_CFG.cheats). Der Booter kopiert sie früh in eigenen Speicher und beim Start
+ * in die Codeliste hinter dem Codehandler (codelist…codelistend in MEM1); der Handler liest nie aus MEM2. */
+#define NL_GCT_ADDR       0x93240000u
+#define NL_GCT_MAX        0x10000u
 
 /* --- types.h ---------------------------------------------------------------------------------- */
 enum
@@ -163,6 +167,12 @@ static_assert(sizeof(FragList) == 12 + MAX_FRAG * 12, "FragList-Layout weicht vo
 _Static_assert(sizeof(struct the_CFG) == 121, "the_CFG-Layout weicht von upstream ab");
 _Static_assert(sizeof(FragList) == 12 + MAX_FRAG * 12, "FragList-Layout weicht von upstream ab");
 #endif
+#endif
+/* M15: GCT-Puffer hinter the_CFG und FragList, ohne Überlappung. */
+#ifdef __cplusplus
+static_assert(NL_FRAG_LIST_ADDR + sizeof(FragList) <= NL_GCT_ADDR, "GCT-Puffer überlappt die FragList");
+#else
+_Static_assert(NL_FRAG_LIST_ADDR + sizeof(FragList) <= NL_GCT_ADDR, "GCT-Puffer überlappt die FragList");
 #endif
 
 #ifdef __cplusplus

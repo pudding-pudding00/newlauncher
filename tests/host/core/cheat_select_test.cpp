@@ -30,3 +30,16 @@ TEST_CASE("selectedCodes: Dateireihenfolge, ohne Unbekanntes, Duplikate und Plat
     CHECK(sel[0] == &f.codes[0]);
     CHECK(sel[1] == &f.codes[2]);
 }
+
+TEST_CASE("gctForSelection: nur gewählte, wählbare Codes; ohne Auswahl oder Liste leer") {
+    const std::string txt = "RMGP01\nGalaxy\n\nEins\n04001000 00000063\n\nZwei\n04001004 000000FF\n";
+    const std::vector<u8> gct = gctForSelection(txt, "Zwei\nGibtsNicht\n");
+    REQUIRE(gct.size() == 24);  // Kopf 8 + ein Code 8 + Ende 8
+    CHECK(gct[8] == 0x04);
+    CHECK(gct[11] == 0x04);  // 04001004
+    CHECK(gct[15] == 0xFF);
+    CHECK(gctForSelection(txt, "").empty());
+    CHECK(gctForSelection(txt, "GibtsNicht\n").empty());
+    CHECK(gctForSelection("", "Zwei\n").empty());
+    CHECK(gctForSelection("<html>kaputt</html>", "Zwei\n").empty());
+}

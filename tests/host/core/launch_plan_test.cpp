@@ -375,6 +375,36 @@ TEST_CASE("preflightWii: unbestätigtes cIOS startet") {
     CHECK(preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::Unverified, 56, ""}, goodFrags(), false).isOk());
 }
 
+TEST_CASE("preflightWii: Cheats (M15) – GCT und Hook im Plan, ohne Cheats hooktype 0") {
+    WiiOptions o;
+    o.cheats = true;
+    o.hookType = 3;
+    const std::vector<u8> gct(24, 0xAB);
+    auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::D2x, 56, "v10"}, goodFrags(), false, o, gct);
+    REQUIRE(r.isOk());
+    CHECK(r.value().gct == gct);
+    CHECK(r.value().hookType == 3);
+
+    auto none = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::D2x, 56, "v10"}, goodFrags(), false, o);
+    REQUIRE(none.isOk());
+    CHECK(none.value().gct.empty());
+    CHECK(none.value().hookType == 0);  // keine gewählten Codes → kein Hook
+}
+
+TEST_CASE("preflightWii: GCT über der Codelisten-Grenze → CheatsTooLarge mit Größe") {
+    WiiOptions o;
+    o.cheats = true;
+    CHECK(kWiiCodelistBytes == 0x80003000u - 0x80002338u);  // Codelistenbereich hinter dem Codehandler
+    const std::vector<u8> fits(kWiiCodelistBytes, 0);
+    CHECK(preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::D2x, 56, "v10"}, goodFrags(), false, o, fits).isOk());
+    const std::vector<u8> big(kWiiCodelistBytes + 8, 0);
+    auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::D2x, 56, "v10"}, goodFrags(), true, o, big);
+    REQUIRE_FALSE(r.isOk());
+    CHECK(r.error().kind == LaunchFailure::CheatsTooLarge);
+    CHECK(r.error().context == std::to_string(kWiiCodelistBytes + 8));
+    CHECK(std::string(launchFailureName(LaunchFailure::CheatsTooLarge)) == "CheatsTooLarge");
+}
+
 TEST_CASE("preflightWii: cIOS-Fehler vor Fragmentfehler") {
     auto frags = Result<FragList, LaunchError>::err(fromFatError(FatError::NotFat32, "usb:"));
     auto r = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::Missing, 56, ""}, frags, false);

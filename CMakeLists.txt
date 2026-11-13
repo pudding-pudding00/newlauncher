@@ -166,6 +166,26 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     dkp_set_target_file(nl_app_booter ${NL_BOOTER_BIN})
     dkp_add_embedded_binary_library(nl_booter nl_app_booter)
 
+    # Gecko-Codehandler (M15, Spec v2 3.3): aus Quelltext (Dolphin docs/codehandler.s, MIT) ab 0x80001800 assembliert.
+    # NlCodehandler.cmake erzeugt das Byte-Array für den Booter und die Adressen für Booter und Launcher und bricht ab,
+    # wenn die Patch-Stellen des Codelisten-Zeigers (0x104/0x108) nicht passen.
+    set(NL_CH_SRC ${CMAKE_CURRENT_SOURCE_DIR}/boot/nl/codehandler/codehandler.s)
+    set(NL_CH_DIR ${CMAKE_CURRENT_BINARY_DIR}/codehandler)
+    add_custom_command(
+        OUTPUT ${NL_CH_DIR}/codehandler.h ${NL_CH_DIR}/codehandler_info.h ${NL_CH_DIR}/codehandler.bin
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${NL_CH_DIR}
+        COMMAND ${CMAKE_C_COMPILER} -x assembler -Wa,-mgekko -Wa,-mno-regnames -nostdlib -nostartfiles
+                -Wl,-Ttext=0x80001800 -Wl,-e,_start -Wl,--no-warn-rwx-segments
+                -o ${NL_CH_DIR}/codehandler.elf ${NL_CH_SRC}
+        COMMAND ${DKP_OBJCOPY} -O binary ${NL_CH_DIR}/codehandler.elf ${NL_CH_DIR}/codehandler.bin
+        COMMAND ${CMAKE_COMMAND} -DBIN=${NL_CH_DIR}/codehandler.bin -DELF=${NL_CH_DIR}/codehandler.elf
+                -DOUT_DIR=${NL_CH_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NlCodehandler.cmake
+        DEPENDS ${NL_CH_SRC} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/NlCodehandler.cmake
+        COMMENT "Codehandler assemblieren"
+        VERBATIM
+    )
+    add_custom_target(nl_codehandler DEPENDS ${NL_CH_DIR}/codehandler.h ${NL_CH_DIR}/codehandler_info.h)
+
     # Game-Booter für Wii-Spiele (M9, Spec 5.1): Fremdcode aus WiiFlow Lite, siehe boot/UPSTREAM.md.
     # Läuft ab 0x80A80000 hinter dem Launcher-Bereich; die Warnoptionen entsprechen dem upstream-Makefile.
     file(GLOB NL_GAME_BOOTER_SOURCES CONFIGURE_DEPENDS
@@ -182,9 +202,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     set_target_properties(nl_game_booter PROPERTIES OUTPUT_NAME game_booter)
     target_include_directories(nl_game_booter PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/boot/source ${CMAKE_CURRENT_SOURCE_DIR}/boot/include
-        ${CMAKE_CURRENT_SOURCE_DIR}/boot ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    # NL_BOOTER_CHEATS=0: der Ocarina-Codehandler (Blob ohne Quelle) bleibt aus dem Build (M11, Spec v2 3.2).
-    target_compile_definitions(nl_game_booter PRIVATE HAVE_CONFIG_H NL_VERSION="${PROJECT_VERSION}" NL_BOOTER_CHEATS=0)
+        ${CMAKE_CURRENT_SOURCE_DIR}/boot ${CMAKE_CURRENT_SOURCE_DIR}/src ${NL_CH_DIR})
+    add_dependencies(nl_game_booter nl_codehandler)
+    # NL_BOOTER_CHEATS=1 (M15): Codehandler aus Quelltext statt des Ocarina-Blobs (M11, Spec v2 3.2).
+    target_compile_definitions(nl_game_booter PRIVATE HAVE_CONFIG_H NL_VERSION="${PROJECT_VERSION}" NL_BOOTER_CHEATS=1)
     target_compile_options(nl_game_booter PRIVATE $<$<COMPILE_LANGUAGE:C>:-std=gnu17> -O1 -Wall -Wextra -Wno-shift-negative-value
         -Wno-array-bounds -Wno-stringop-overflow -Wno-stringop-overread)
     target_link_options(nl_game_booter PRIVATE -Wl,--section-start,.init=0x80A80000)
@@ -238,10 +259,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
 
     function(nl_wii_target name)
         add_executable(${name} ${ARGN})
-        target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS} ${PNG_STATIC_INCLUDE_DIRS} boot/include)
+        target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS} ${PNG_STATIC_INCLUDE_DIRS} boot/include ${NL_CH_DIR})
+        add_dependencies(${name} nl_codehandler)
         target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
         target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} nl_game_booter_blob fat wiiuse bte asnd vorbisidec ogg)
-        target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}")
+        # NL_WII_CHEATS=1 (M15): der Booter bringt den Codehandler mit, die Cheat-Szene bietet Wii-Codes an.
+        target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}" NL_WII_CHEATS=1)
         if(NL_TLS)
             target_link_libraries(${name} PRIVATE wiitls)
             target_compile_definitions(${name} PRIVATE NL_TLS=1)

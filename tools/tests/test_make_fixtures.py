@@ -81,6 +81,14 @@ class MakeFixturesTest(unittest.TestCase):
         self.assertIn("0400XXXX", text)
         self.assertIn("\nNur Name\n\n", text)
 
+    def test_cheat_selection_for_wii_game(self):
+        # M15 Task 5: Wii-Spiel mit Liste und Auswahl, damit der Dry-Run-Smoke eine GCT bauen kann.
+        text = (self.out / "newlauncher/codes/RMGP01.txt").read_text(encoding="utf-8")
+        self.assertTrue(text.startswith("RMGP01\nSuper Mario Galaxy\n\n"))
+        self.assertIn("Sternenbits [Fixture]\n04001000 0000270F\n", text)
+        sel = (self.out / "newlauncher/codes/RMGP01.sel").read_text(encoding="utf-8")
+        self.assertEqual(sel, "Sternenbits\n")  # .sel nennt den Namen ohne Autor-Tag „[Fixture]“
+
     def test_deploy_copies_fixtures(self):
         sd = Path(self._tmp.name) / "deployed"
         dist = Path(self._tmp.name) / "dist"

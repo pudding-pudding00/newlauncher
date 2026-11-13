@@ -113,6 +113,17 @@ TEST_CASE("launchErrorText: Wii-Fehler in DE und EN") {
     setLanguage(saved);
 }
 
+TEST_CASE("launchErrorText: FileNotContiguousReadable bittet ums Umkopieren (DE/EN, M16)") {
+    const Lang saved = language();
+    setLanguage(Lang::De);
+    CHECK(std::string(render(LaunchFailure::FileNotContiguousReadable, "usb2:/wii/a.iso").text) ==
+          "Datei nicht direkt lesbar.\nDatei ist komprimiert oder lückenhaft – bitte unkomprimiert kopieren (usb2:/wii/a.iso).");
+    setLanguage(Lang::En);
+    CHECK(std::string(render(LaunchFailure::FileNotContiguousReadable, "usb2:/wii/a.iso").text) ==
+          "File not directly readable.\nThe file is compressed or sparse – please copy it uncompressed (usb2:/wii/a.iso).");
+    setLanguage(saved);
+}
+
 TEST_CASE("launchErrorText: CheatsTooLarge nennt die Größe in Bytes (DE/EN)") {
     const Lang saved = language();
     setLanguage(Lang::De);

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "core/emulators.hpp"
+#include "core/extent_units.hpp"
 #include "core/fat_chain.hpp"
 #include "core/frag_list.hpp"
 #include "core/ios_info.hpp"
@@ -29,6 +30,7 @@ enum class LaunchFailure : u8 {
     CiosMissing, WiiFsUnsupported, WiiFileBroken,                 // M9: Wii-Spiele nativ; CiosMissing: Kontext Slot
     DeviceUnsupported,  // M12: GC/ROM auf usb2…usb8 – Nintendont und GX-Emulatoren sehen nur sd: und usb:
     CheatsTooLarge,     // M15: GCT passt nicht in die Codeliste; Kontext Größe in Bytes
+    FileNotContiguousReadable,  // M16: NTFS-Datei komprimiert, sparse oder resident; Kontext Pfad
 };
 const char* launchFailureName(LaunchFailure f);  // Log-Marker NL_PREFLIGHT_FAIL
 
@@ -67,6 +69,7 @@ Result<LaunchPlan, LaunchError> preflightEmulator(FileSystem& fs, const Game& g,
 // PartMissing → RomMissing (Kontext: Pfad des fehlenden Teils), alles andere → WiiFileBroken.
 LaunchError fromFatError(FatError e, std::string context);
 LaunchError fromFragError(FragError e, std::string context);
+LaunchError fromExtentError(ExtentError e, std::string context);  // M16: Extents aus NTFS
 
 // M15: Platz für die GCT hinter dem Codehandler, 0x80002338 (Symbol codelist des gebauten Handlers) bis
 // 0x80003000 (Beginn der OS-Globals, wie upstream WiiFlow). Der Wii-Build prüft beide Grenzen gegen den Handler.

@@ -442,6 +442,14 @@ TEST_CASE("preflightWii: NTFS-Fehler wird WiiFsUnsupported") {
     CHECK(std::string(launchFailureName(LaunchFailure::WiiFileBroken)) == "WiiFileBroken");
 }
 
+TEST_CASE("fromExtentError: NTFS komprimiert/sparse/resident → FileNotContiguousReadable (M16)") {
+    CHECK(fromExtentError(ExtentError::Unsupported, "usb2:/wii/a.iso").kind == LaunchFailure::FileNotContiguousReadable);
+    CHECK(fromExtentError(ExtentError::Unsupported, "usb2:/wii/a.iso").context == "usb2:/wii/a.iso");
+    CHECK(fromExtentError(ExtentError::Gap, "x").kind == LaunchFailure::WiiFileBroken);
+    CHECK(fromExtentError(ExtentError::Overflow, "x").kind == LaunchFailure::WiiFileBroken);
+    CHECK(std::string(launchFailureName(LaunchFailure::FileNotContiguousReadable)) == "FileNotContiguousReadable");
+}
+
 TEST_CASE("preflightWii: Split-Teil fehlt wird RomMissing") {
     const LaunchError e = fromFragError(FragError::PartMissing, "usb:/wbfs/X [RMCP01]/RMCP01.wbf1");
     CHECK(e.kind == LaunchFailure::RomMissing);

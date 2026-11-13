@@ -28,6 +28,7 @@ public:
     // [debug] sd_as_disk (M16): mountUsb liest die Partitionstabelle der SD statt der USB-Platte und hängt
     // alles nur lesend ein (Dolphin emuliert keine USB-Platte). "sd:" bleibt unverändert.
     void setSdAsDisk(bool on) { sdAsDisk_ = on; }
+    bool sdAsDisk() const { return sdAsDisk_; }
     std::span<const Device> devices() const { return devices_; }
     const Device* byName(std::string_view name) const;  // "usb2" oder "usb2:"
     std::string root(u8 index) const;                    // "usb2:"; leer, wenn nicht eingehängt

@@ -188,6 +188,7 @@ const char* launchFailureName(LaunchFailure f) {
         case LaunchFailure::WiiFileBroken: return "WiiFileBroken";
         case LaunchFailure::DeviceUnsupported: return "DeviceUnsupported";
         case LaunchFailure::CheatsTooLarge: return "CheatsTooLarge";
+        case LaunchFailure::FileNotContiguousReadable: return "FileNotContiguousReadable";
     }
     return "?";
 }
@@ -206,6 +207,12 @@ LaunchError fromFatError(FatError e, std::string context) {
 
 LaunchError fromFragError(FragError e, std::string context) {
     if (e == FragError::PartMissing) return {LaunchFailure::RomMissing, std::move(context)};
+    return {LaunchFailure::WiiFileBroken, std::move(context)};
+}
+
+LaunchError fromExtentError(ExtentError e, std::string context) {
+    // Unsupported: Die Bibliothek kann die Datei lesen, aber nicht als Gerätesektoren zeigen (Review Focus 1).
+    if (e == ExtentError::Unsupported) return {LaunchFailure::FileNotContiguousReadable, std::move(context)};
     return {LaunchFailure::WiiFileBroken, std::move(context)};
 }
 

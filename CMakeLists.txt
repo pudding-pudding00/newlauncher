@@ -76,6 +76,7 @@ add_library(nl_core STATIC
     src/core/library_merge.cpp
     src/core/library_sources.cpp
     src/core/frag_list.cpp
+    src/core/extent_units.cpp
     src/core/ios_info.cpp
     src/core/cios_scan.cpp
     src/core/emu_profiles.cpp
@@ -260,6 +261,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/audio.cpp
         src/platform/music.cpp
         src/platform/wii_disc.cpp
+        src/platform/fs_extents.cpp
         src/app/cover_service.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp

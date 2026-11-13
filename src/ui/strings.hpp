@@ -87,6 +87,8 @@
       "Device not supported.\nThe game is on %s. Nintendont and the emulators only read SD and the first USB partition.") \
     X(CheatsTooLarge, "Zu viele Cheats.\nDie gewählten Codes belegen %s Bytes, zu viel für die Codeliste. Bitte weniger Codes wählen.", \
       "Too many cheats.\nThe selected codes take %s bytes, too much for the code list. Please select fewer codes.") \
+    X(FileNotContiguousReadable, "Datei nicht direkt lesbar.\nDatei ist komprimiert oder lückenhaft – bitte unkomprimiert kopieren (%s).", \
+      "File not directly readable.\nThe file is compressed or sparse – please copy it uncompressed (%s).") \
     X(OverrideIgnored,"Gewählter Weg nicht verfügbar – automatisch gewählt.", "Chosen method unavailable – picked automatically.") \
     X(VcMapTitle, "VC-Injects zuordnen", "Map VC injects") \
     X(VcNone, "—", "—") \

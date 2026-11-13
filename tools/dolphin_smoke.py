@@ -20,6 +20,7 @@ from pathlib import Path
 from deploy_dolphin import ARGV_ECHO_DOL, DEFAULT_DOL, DIST_DIR, FIXTURES_DIR, deploy
 from fat_frag import NotFat32Error, expected_frag_line, read_file
 from make_disk_image import make_image
+from make_fixtures import disc_header
 from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_path, reset_log,
                      sd_sync_dir, wait_for_markers, write_dev_config)
 from pngfile import solid_png
@@ -216,6 +217,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sd-disk", metavar="LAYOUT",
                         help="SD als Platte (M16), z. B. fat32,ntfs: baut ein Image mit MBR; die erste Partition "
                              "(fat32) ist der SD-Inhalt, weitere enthalten nl_ntfs.txt. Braucht Docker")
+    parser.add_argument("--ntfs-iso", metavar="ID6:GRÖSSE", action="append", default=[],
+                        help="mit --sd-disk: selbst erzeugtes Wii-Test-ISO auf die erste NTFS-Partition "
+                             "(wbfs/Test [ID6]/ID6.iso), Größe in Bytes oder mit M, Vielfaches von 512")
     args = parser.parse_args(argv)
     tls = args.tls or args.tls_wrong_ca
     if tls and not (args.cover_server or args.emu_server or args.cheat_server):
@@ -229,6 +233,13 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         args.sd_disk_layout = layout
         markers = markers + sd_disk_markers(layout)
+    args.ntfs_isos = []
+    for spec in args.ntfs_iso:
+        iso = parse_ntfs_iso(spec)
+        if iso is None or not args.sd_disk_layout or "ntfs" not in args.sd_disk_layout:
+            print(f"SMOKE FEHLER: --ntfs-iso braucht ID6:GRÖSSE (Vielfaches von 512) und --sd-disk mit ntfs: {spec}")
+            return 2
+        args.ntfs_isos.append(iso)
 
     for name, path in (("Dolphin", args.dolphin), ("DOL", args.dol)):
         if not path.is_file():
@@ -320,11 +331,43 @@ def sd_disk_markers(layout: list[str]) -> list[str]:
     return out
 
 
-def _build_sd_disk(layout: list[str], sd: Path, out: Path) -> int:
+def parse_ntfs_iso(spec: str) -> tuple[str, int] | None:
+    """ID6:GRÖSSE → (ID6, Bytes); None bei falscher ID oder Größe, die kein Vielfaches von 512 ist."""
+    id6, _, size = spec.partition(":")
+    if not re.fullmatch(r"[A-Z0-9]{6}", id6) or not re.fullmatch(r"\d+M?", size):
+        return None
+    n = int(size.rstrip("M")) * (1 << 20 if size.endswith("M") else 1)
+    return (id6, n) if n > 0 and n % 512 == 0 else None
+
+
+def _write_test_iso(root: Path, id6: str, size: int) -> None:
+    """Wii-Kopf plus Füllmuster ohne Null-Sektoren, damit cp/ntfs-3g keine Löcher (sparse) anlegen."""
+    path = root / "wbfs" / f"Test [{id6}]" / f"{id6}.iso"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    head = bytes(disc_header(id6, f"NTFS Test {id6}", wii=True))[:512]
+    fill = bytes(((i * 7) & 0xFF) or 1 for i in range(1 << 16))
+    with path.open("wb") as f:
+        f.write(head)
+        left = size - len(head)
+        while left > 0:
+            n = min(left, len(fill))
+            f.write(fill[:n])
+            left -= n
+
+
+def _build_sd_disk(layout: list[str], sd: Path, out: Path, isos: list[tuple[str, int]] | None = None) -> int:
     with tempfile.TemporaryDirectory(prefix="nl_sddisk_") as tmp:
-        probe = Path(tmp)
+        probe = Path(tmp) / "probe"
+        probe.mkdir()
         (probe / SD_DISK_PROBE).write_text("newlauncher M16\n", encoding="utf-8", newline="\n")
         specs = [("fat32", sd)] + [(kind, probe) for kind in layout[1:]]
+        if isos:
+            # Nur die erste NTFS-Partition bekommt die Test-ISOs; weitere bleiben reine Proben.
+            games = Path(tmp) / "games"
+            shutil.copytree(probe, games)
+            for id6, size in isos:
+                _write_test_iso(games, id6, size)
+            specs[layout.index("ntfs")] = ("ntfs", games)
         rc = make_image(out, specs)
     if rc != 0:
         print(f"SMOKE FEHLER: SD-Image nicht gebaut (rc={rc})")
@@ -400,7 +443,7 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
 
     args.sd_image = None
     if getattr(args, "sd_disk_layout", None):
-        if _build_sd_disk(args.sd_disk_layout, sd, user_dir / "sd_disk.raw") != 0:
+        if _build_sd_disk(args.sd_disk_layout, sd, user_dir / "sd_disk.raw", args.ntfs_isos) != 0:
             return 2
         args.sd_image = user_dir / "sd_disk.raw"
     try:

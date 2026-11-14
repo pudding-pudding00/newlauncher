@@ -33,6 +33,8 @@ struct ChannelBanner {
     bool animInvalid = false;
     std::optional<BnsSound> sound;  // meta/sound.bin; fehlt er oder ist kaputt, bleibt das Banner stumm
     bool soundInvalid = false;
+    // Umgewandelte Palettenbilder (prepareBanner); textures[i].data zeigt dann hierhin.
+    std::vector<std::shared_ptr<const std::vector<u8>>> converted;
 };
 
 Result<ChannelBanner> loadChannelBanner(std::span<const u8> content0);

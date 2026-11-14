@@ -54,8 +54,8 @@ public:
 private:
     void freeTexels();
     void freeFrame();
-    void takeChannel(ChannelBanner& banner);
-    void animate();  // ein Bild der Animation weiter, Quads neu
+    void takeChannel(ChannelBanner& banner, const BannerPlan& plan);
+    void animate();  // Animation um die vergangene Zeit weiter, Quads neu
     void updateSound();
     void stopSound();  // Ton aus, Puffer frei, Musik wieder laut
 
@@ -64,6 +64,8 @@ private:
     platform::BannerWorker worker_;
     std::vector<std::string> roots_;
     bool german_ = false;
+    u64 animTicks_ = 0;  // gettime() des letzten animate(); 0 = erstes Bild
+    static constexpr float kAnimMaxStep = 6.0f;
     std::string key_, path_;   // gewünschtes Spiel
     bool requested_ = false;   // Auftrag für key_ gestartet (oder nichts zu laden)
     bool gc_ = false;          // key_ ist ein GC-Spiel

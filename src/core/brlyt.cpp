@@ -34,7 +34,8 @@ bool readLyt1(std::span<const u8> s, Layout& l) {
     if (s.size() < 0x14) return false;
     l.width = f32(s, 0x0C);
     l.height = f32(s, 0x10);
-    return true;
+    // 0, negativ, NaN oder unendlich: keine sinnvolle Fläche → ungültiges Banner (Cover statt leerer Fläche).
+    return std::isfinite(l.width) && std::isfinite(l.height) && l.width > 0 && l.height > 0;
 }
 
 // Abschnitt txl1: u16 Anzahl, Füllung, dann je Textur {u32 Namensversatz ab Tabellenanfang (+0x0C), u32 0}.

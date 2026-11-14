@@ -105,6 +105,7 @@ void BannerWorker::runChannel(BannerResult& r) {
         return;
     }
     r.channel.emplace(std::move(banner).value());
+    r.plan = prepareBanner(*r.channel);  // Budget, Static-Kürzung und Paletten-Umwandlung nicht im Haupt-Thread
 }
 
 std::optional<BannerResult> BannerWorker::take() {

@@ -1,6 +1,7 @@
 #include "core/banner_budget.hpp"
 
 #include <algorithm>
+#include <memory>
 
 #include "core/banner_scene.hpp"
 
@@ -65,10 +66,35 @@ BannerPlan planBanner(const ChannelBanner& b) {
     const BannerCost full = costOf(b, b.textures.size(), samplesOf(b));
     const BannerCost still = costOf(b, b.baseTextures, 0);
     const bool budgetOk = withinBudget(full);
+    // Der Renderer hat kBannerMaxTextures Slots: zu viele Muster → Static, zu viele Basistexturen → Cover.
+    const bool slotsOk = b.textures.size() <= kBannerMaxTextures;
+    const bool baseSlotsOk = std::min(b.baseTextures, b.textures.size()) <= kBannerMaxTextures;
     BannerPlan p;
-    p.level = chooseLevel(withinBudget(still), !b.animInvalid, budgetOk);
+    p.level = chooseLevel(withinBudget(still) && baseSlotsOk, !b.animInvalid, budgetOk && slotsOk);
     p.budgetCut = !budgetOk;
-    p.cost = budgetOk ? full : still;
+    p.textureCut = !slotsOk;
+    p.cost = budgetOk && slotsOk ? full : still;
+    return p;
+}
+
+BannerPlan prepareBanner(ChannelBanner& b) {
+    BannerPlan p = planBanner(b);
+    if (p.level == BannerLevel::Cover) return p;
+    if (p.budgetCut || p.textureCut) reduceToStatic(b);
+    for (TplImage& t : b.textures) {
+        if (!paletted(t.fmt)) continue;
+        auto tiles = std::make_shared<std::vector<u8>>(toRgb5a3Tiles(t));
+        if (tiles->empty()) {
+            p.level = BannerLevel::Cover;
+            p.convertFailed = true;
+            return p;
+        }
+        t.data = std::span<const u8>(*tiles);
+        t.fmt = TexFmt::RGB5A3;
+        t.palette = {};
+        t.palCount = 0;
+        b.converted.push_back(std::move(tiles));
+    }
     return p;
 }
 

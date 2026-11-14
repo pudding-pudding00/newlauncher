@@ -13,6 +13,7 @@
 namespace nl {
 
 inline constexpr u32 kBannerBudget = 4u * 1024 * 1024;
+inline constexpr std::size_t kBannerMaxTextures = 64;  // Textur-Slots des Renderers (gfx::kBannerTextureSlots)
 
 struct BannerCost {
     u32 textures = 0;  // hochgeladene Texel (Palettenformate als RGB5A3)
@@ -34,9 +35,14 @@ struct BannerPlan {
     BannerLevel level = BannerLevel::Cover;
     BannerCost cost;     // des gewählten Levels
     bool budgetCut = false;  // Level wegen des Budgets gesenkt
+    bool textureCut = false;     // Level wegen zu vieler Texturen (> kBannerMaxTextures) gesenkt
+    bool convertFailed = false;  // Palettenbild ließ sich nicht umwandeln → Cover
 };
 BannerPlan planBanner(const ChannelBanner& b);
 // Static: Animationen, Mustertexturen und Ton weg; die Basistexturen bleiben.
 void reduceToStatic(ChannelBanner& b);
+// Im Banner-Thread: planen, bei Bedarf auf Static kürzen und Palettenbilder (C4/C8/C14X2) in RGB5A3-Kacheln
+// umwandeln, damit der Haupt-Thread nur noch kopiert. Bei Cover bleibt das Banner unverändert.
+BannerPlan prepareBanner(ChannelBanner& b);
 
 }  // namespace nl

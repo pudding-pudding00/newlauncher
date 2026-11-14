@@ -266,12 +266,26 @@ void AnimPlayer::reset(const Anim* start, const Anim* loop) {
     frame_ = 0;
 }
 
-void AnimPlayer::step() {
-    if (current_ == nullptr || current_->frames == 0) return;
-    if (++frame_ < current_->frames) return;
-    frame_ = 0;
-    if (current_ == start_ && loop_ != nullptr) current_ = loop_;  // Start zu Ende: weiter mit der Schleife
-    else if (current_ == start_) frame_ = static_cast<u32>(current_->frames - 1);  // ohne Schleife: letztes Bild halten
+void AnimPlayer::advance(float frames) {
+    if (current_ == nullptr || current_->frames == 0 || !(frames > 0) || !std::isfinite(frames)) return;
+    frame_ += frames;
+    const float n = static_cast<float>(current_->frames);
+    if (frame_ < n) return;
+    if (current_ == start_ && loop_ == nullptr) {
+        frame_ = n - 1;  // ohne Schleife: letztes Bild halten
+        return;
+    }
+    if (current_ == start_) {  // Start zu Ende: Rest läuft in der Schleife weiter
+        frame_ -= n;
+        current_ = loop_;
+    }
+    if (current_->frames == 0) {
+        frame_ = 0;
+        return;
+    }
+    frame_ = std::fmod(frame_, static_cast<float>(current_->frames));
 }
+
+void AnimPlayer::step() { advance(1.0f); }
 
 }  // namespace nl

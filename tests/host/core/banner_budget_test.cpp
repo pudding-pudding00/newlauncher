@@ -1,5 +1,8 @@
 #include "core/banner_budget.hpp"
 
+#include "core/tpl.hpp"
+#include "support/tpl_images.hpp"
+
 #include <doctest/doctest.h>
 
 using namespace nl;
@@ -100,4 +103,62 @@ TEST_CASE("banner_budget: planBanner und reduceToStatic") {
     p = planBanner(b);
     CHECK(p.level == BannerLevel::Static);
     CHECK_FALSE(p.budgetCut);
+}
+
+TEST_CASE("banner_budget: mehr als kBannerMaxTextures Texturen") {
+    // Muster machen es zu viel, die Basis passt: stehendes Bild statt Cover.
+    std::vector<TplImage> many(kBannerMaxTextures + 1, img(TexFmt::RGB5A3, 8, 8));
+    auto b = bannerWith(many, 2, true, 0);
+    BannerPlan p = planBanner(b);
+    CHECK(p.level == BannerLevel::Static);
+    CHECK(p.textureCut);
+    CHECK_FALSE(p.budgetCut);
+    // Schon die Basis hat zu viele: Cover.
+    b = bannerWith(many, kBannerMaxTextures + 1, false, 0);
+    p = planBanner(b);
+    CHECK(p.level == BannerLevel::Cover);
+    CHECK(p.textureCut);
+    // Genau kBannerMaxTextures: alles gut.
+    b = bannerWith(std::vector<TplImage>(kBannerMaxTextures, img(TexFmt::RGB5A3, 8, 8)), 2, true, 0);
+    CHECK(planBanner(b).level == BannerLevel::Animated);
+}
+
+TEST_CASE("banner_budget: prepareBanner kürzt und wandelt Palettenbilder um") {
+    test::TplSpec c8{TexFmt::C8, 12, 6, {}, [](int x, int y) { return static_cast<u16>((x + y) % 3); },
+                     TexFmt::RGB5A3, {0xFC00, 0x83E0, 0x801F}};
+    const auto file = test::tplFile({c8});
+    auto parsed = parseTpl(file);
+    REQUIRE(parsed.isOk());
+    const TplImage src = parsed.value()[0];
+    const auto rgba = decodeToRgba(src);
+
+    // Animated: alle Bilder bleiben, das Palettenbild ist danach RGB5A3 mit gleichen Pixeln.
+    auto b = bannerWith({src, img(TexFmt::RGB5A3, 4, 4)}, 1, true, 0);
+    b.textures[1].data = std::span<const u8>(file.data(), texBytes(TexFmt::RGB5A3, 4, 4));
+    BannerPlan p = prepareBanner(b);
+    CHECK(p.level == BannerLevel::Animated);
+    REQUIRE(b.textures.size() == 2);
+    CHECK(b.textures[0].fmt == TexFmt::RGB5A3);
+    CHECK(b.textures[0].data.size() == texBytes(TexFmt::RGB5A3, 12, 6));
+    CHECK(decodeToRgba(b.textures[0]) == rgba);
+    auto copy = b;  // Kopien bleiben gültig (Daten gemeinsam gehalten)
+    b = ChannelBanner{};
+    CHECK(decodeToRgba(copy.textures[0]) == rgba);
+
+    // Zu viele Texturen: auf Static gekürzt, Animation weg.
+    std::vector<TplImage> many(kBannerMaxTextures + 1, src);
+    b = bannerWith(many, 1, true, 0);
+    p = prepareBanner(b);
+    CHECK(p.level == BannerLevel::Static);
+    CHECK(b.textures.size() == 1);
+    CHECK_FALSE(b.loop.has_value());
+    CHECK(b.textures[0].fmt == TexFmt::RGB5A3);
+
+    // Kaputtes Palettenbild (Daten zu kurz): Cover. Fehlende Paletteneinträge sind dagegen gewollt transparent.
+    TplImage broken = src;
+    broken.data = broken.data.first(4);
+    b = bannerWith({broken}, 1, false, 0);
+    p = prepareBanner(b);
+    CHECK(p.level == BannerLevel::Cover);
+    CHECK(p.convertFailed);
 }

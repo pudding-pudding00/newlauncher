@@ -232,6 +232,12 @@ TEST_CASE("configFromIni: [debug] open_scene (M11)") {
     CHECK(configFromIni(IniDoc::parse("[debug]\nopen_scene = about\n")).debugOpenScene == "about");
 }
 
+TEST_CASE("configFromIni: [debug] banner_file (M18)") {
+    CHECK(configFromIni(IniDoc::parse("")).debugBannerFile.empty());
+    CHECK(configFromIni(IniDoc::parse("[debug]\nbanner_file =  sd:/x/banner.app \n")).debugBannerFile ==
+          "sd:/x/banner.app");
+}
+
 TEST_CASE("configFromIni: [debug] filter (M17)") {
     CHECK(configFromIni(IniDoc::parse("")).debugFilter.empty());
     CHECK(configFromIni(IniDoc::parse("[debug]\nfilter = category:Party \n")).debugFilter == "category:Party");
@@ -361,4 +367,23 @@ TEST_CASE("Config: [parental] lock_until übersteht das Schreiben, 0 = leer") {
     c.parental.lockUntil = 0;
     CHECK(configToIniText(c, "").find("lock_until = \n") != std::string::npos);
     CHECK(configFromIni(IniDoc::parse("[parental]\nlock_until = x\n")).parental.lockUntil == 0);
+}
+
+TEST_CASE("configFromIni: [ui] banners (M18), Standard 1, Round-Trip") {
+    CHECK(configFromIni(IniDoc::parse("")).banners);
+    CHECK(configFromIni(IniDoc::parse(defaultConfigText())).banners);
+    CHECK_FALSE(configFromIni(IniDoc::parse("[ui]\nbanners = 0\n")).banners);
+    CHECK(configFromIni(IniDoc::parse("[ui]\nbanners = 7\n")).banners);  // ungültig → Standard
+    CHECK(defaultConfigText().find("[ui]\nbanners = 1\n") != std::string::npos);
+    Config c;
+    c.banners = false;
+    const std::string text = configToIniText(c, defaultConfigText());
+    CHECK(text.find("banners = 0") != std::string::npos);
+    CHECK_FALSE(configFromIni(IniDoc::parse(text)).banners);
+}
+
+TEST_CASE("configFromIni: [debug] details_back_ms (M18-Smoke)") {
+    CHECK(configFromIni(IniDoc::parse("")).debugDetailsBackMs == 0);
+    CHECK(configFromIni(IniDoc::parse("[debug]\ndetails_back_ms = 4000\n")).debugDetailsBackMs == 4000);
+    CHECK(configFromIni(IniDoc::parse("[debug]\ndetails_back_ms = 999999\n")).debugDetailsBackMs == 0);
 }

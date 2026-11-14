@@ -53,7 +53,17 @@ bool Music::start(std::vector<std::string> files, u32 seed) {
     return true;
 }
 
-void Music::setVolume(int percent) { volume_ = asndVolume(percent); }
+void Music::setVolume(int percent) {
+    base_ = asndVolume(percent);
+    volume_ = ducked_ ? duckVolume(base_) : base_;  // der Musik-Thread übernimmt den Wert im nächsten Puffer
+}
+
+void Music::duck(bool on) {
+    if (on == ducked_) return;
+    ducked_ = on;
+    volume_ = on ? duckVolume(base_) : base_;
+    log("NL_MUSIC vol=" + std::to_string(volume_));  // Haupt-Thread; erscheint mit den Musik-Markern
+}
 
 void Music::stop() {
     quit_ = true;

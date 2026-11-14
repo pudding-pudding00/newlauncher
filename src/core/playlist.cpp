@@ -51,6 +51,8 @@ int asndVolume(int percent) {
     return std::clamp(percent, 0, 100) * 255 / 100;
 }
 
+int duckVolume(int asnd) { return asnd * 20 / 100; }
+
 std::vector<std::string> musicFiles(FileSystem& fs, std::string_view dir) {
     std::vector<std::string> out;
     auto entries = fs.list(dir);

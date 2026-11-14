@@ -92,6 +92,22 @@ add_library(nl_core STATIC
     src/core/setup_wizard.cpp
     src/core/cover_download.cpp
     src/core/lz77.cpp
+    src/core/gc_fst.cpp
+    src/core/gc_banner.cpp
+    src/core/gc_disc.cpp
+    src/core/u8_archive.cpp
+    src/core/imd5.cpp
+    src/core/tpl.cpp
+    src/core/brlyt.cpp
+    src/core/banner_scene.cpp
+    src/core/brlan.cpp
+    src/core/dsp_adpcm.cpp
+    src/core/bns.cpp
+    src/core/banner_sound.cpp
+    src/core/channel_banner.cpp
+    src/core/banner_budget.cpp
+    src/core/aes128.cpp
+    src/core/wii_partition.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp
@@ -114,6 +130,7 @@ add_library(nl_core STATIC
     src/ui/startup_scene.cpp
     src/ui/jump_bar.cpp
     src/ui/keyboard.cpp
+    src/ui/banner_view.cpp
     src/ui/details_scene.cpp
     src/ui/options_scene.cpp
     src/ui/cheats_scene.cpp
@@ -261,6 +278,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/png_decode.cpp
         src/platform/theme_loader.cpp
         src/platform/cover_worker.cpp
+        src/platform/banner_source.cpp
+    src/platform/banner_tex.cpp
+        src/platform/banner_worker.cpp
         src/platform/http_client.cpp
         src/platform/net_service.cpp
         src/platform/net_worker.cpp
@@ -274,6 +294,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/wii_disc.cpp
         src/platform/fs_extents.cpp
         src/app/cover_service.cpp
+        src/app/banner_service.cpp
         src/gfx/renderer.cpp
         src/gfx/font_loader.cpp
     )

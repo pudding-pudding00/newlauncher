@@ -15,6 +15,7 @@ from pathlib import Path
 
 from metabin import write_meta_bin
 from pngfile import solid_png
+from make_banner_fixtures import big_banner_app, channel_banner_app, gc_iso, sample_bnr
 
 WII_MAGIC = 0x5D1C9EA3
 GC_MAGIC = 0xC2339F3D
@@ -115,7 +116,12 @@ def main(out: Path) -> int:
         write(out, rel, b"")
     write(out, "roms/nes/readme.txt", "Keine ROM – wird vom Scanner ignoriert.\n")
     write(out, "roms/gbc/.keep", b"")
-    write(out, "games/Metroid Prime [GM8P01]/game.iso", bytes(disc_header("GM8P01", "Metroid Prime", wii=False)))
+    # Mit FST und eigenem opening.bnr (M18), damit die Detailansicht ein GC-Banner zeigt.
+    write(out, "games/Metroid Prime [GM8P01]/game.iso",
+          gc_iso(bytes(disc_header("GM8P01", "Metroid Prime", wii=False)), [("opening.bnr", sample_bnr())]))
+    # Kanal-Banner-Smoke (M18): content0 mit IMET, geladen über [debug] banner_file.
+    write(out, "newlauncher/fixtures/banner.app", channel_banner_app())
+    write(out, "newlauncher/fixtures/banner_big.app", big_banner_app())
     write(out, "newlauncher/codes/GM8P01.txt", CHEATS_GM8P01)
     write(out, "newlauncher/codes/GM8P01.sel", "Alle Raketen\n")  # M15 Task 6: GC-Smoke mit Cheats
     write(out, "newlauncher/codes/RMGP01.txt", CHEATS_RMGP01)

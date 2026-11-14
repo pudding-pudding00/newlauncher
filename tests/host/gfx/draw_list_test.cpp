@@ -90,3 +90,40 @@ TEST_CASE("clear setzt Zähler und dropped zurück") {
     dl.quad(0, Rect{0, 0, 1, 1}, kUv, kWhite);
     CHECK(dl.vertices()[0].color.a == 255);  // clear leert auch den Alpha-Stapel
 }
+
+TEST_CASE("quadVerts übernimmt freie Ecken und den Alpha-Stapel (M18)") {
+    DrawList dl(4, 4);
+    const Vertex v[4] = {{0, 0, 0, 0, kWhite}, {10, 1, 1, 0, kWhite}, {9, 11, 1, 1, kWhite}, {-1, 10, 0, 1, kWhite}};
+    dl.pushAlpha(0.5f);
+    dl.quadVerts(5, v);
+    dl.quadVerts(5, v);
+    REQUIRE(dl.quadCount() == 2);
+    REQUIRE(dl.batches().size() == 1);
+    CHECK(dl.vertices()[1].x == 10.0f);
+    CHECK(dl.vertices()[2].u == 1.0f);
+    CHECK(dl.vertices()[3].x == -1.0f);
+    CHECK(dl.vertices()[0].color.a >= 127);
+    CHECK(dl.vertices()[0].color.a <= 128);
+}
+
+TEST_CASE("setClip trennt Batches und merkt sich das Rechteck (M18)") {
+    DrawList dl(8, 8);
+    dl.quad(0, Rect{0, 0, 1, 1}, kUv, kWhite);
+    dl.setClip(Rect{10, 20, 30, 40});
+    dl.quad(0, Rect{0, 0, 1, 1}, kUv, kWhite);
+    dl.quad(0, Rect{0, 0, 1, 1}, kUv, kWhite);
+    dl.clearClip();
+    dl.quad(0, Rect{0, 0, 1, 1}, kUv, kWhite);
+    const auto b = dl.batches();
+    REQUIRE(b.size() == 3);
+    CHECK_FALSE(b[0].clipped);
+    CHECK(b[1].clipped);
+    CHECK(b[1].vertexCount == 8);
+    CHECK(b[1].clip.w == 30.0f);
+    CHECK_FALSE(b[2].clipped);
+    dl.clear();
+    dl.setClip(Rect{0, 0, 1, 1});
+    dl.clear();  // clear hebt den Clip auf
+    dl.quad(0, Rect{0, 0, 1, 1}, kUv, kWhite);
+    CHECK_FALSE(dl.batches()[0].clipped);
+}

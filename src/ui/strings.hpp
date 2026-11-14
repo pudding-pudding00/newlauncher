@@ -161,6 +161,7 @@
     X(Music, "Musik", "Music") \
     X(Volume, "Lautstärke", "Volume") \
     X(Sounds, "Klänge", "Sounds") \
+    X(Banners, "Banner", "Banners") \
     X(On, "An", "On") \
     X(Off, "Aus", "Off") \
     X(LibraryDevice, "Bibliotheksgerät", "Library device") \

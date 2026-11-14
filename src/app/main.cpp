@@ -75,6 +75,7 @@
 #include "ui/settings_scene.hpp"
 #include "ui/debug_overlay.hpp"
 #include "ui/details_scene.hpp"
+#include "app/banner_service.hpp"
 #include "ui/dialog_scene.hpp"
 #include "ui/emulators_scene.hpp"
 #include "ui/about_scene.hpp"
@@ -256,6 +257,7 @@ u32 msSince(u64 start) { return static_cast<u32>(ticks_to_millisecs(diff_ticks(s
 }  // namespace
 
 int main(int argc, char** argv) {
+    u64 detailsBackAt = 0;  // [debug] details_back_ms: Zeitpunkt des eingespeisten „Zurück“ (M18-Smoke)
     const u64 bootTicks = gettime();  // Perf: Startzeiten relativ zum Einsprung
     // Spec 9: MEM2 ab kDolBufferAddr gehört dem Chainloader. Vor jeder Allokation reservieren.
     const bool launchAllowed = reinterpret_cast<u32>(SYS_GetArena2Hi()) > nl::kDolBufferAddr;
@@ -639,6 +641,20 @@ int main(int argc, char** argv) {
     nl::ui::DetailsScene details;
     mainScene.setDetails(&details, &store);
     details.setCovers(&covers);
+    nl::app::BannerService banners(fs, renderer);
+    auto bannerRootsOf = [](std::span<const std::string> devices) {
+        std::vector<std::string> roots;
+        for (const std::string& dev : devices) roots.push_back(dev + ":");
+        return roots;
+    };
+    banners.setRoots(bannerRootsOf(store.devices()));
+    banners.setGerman(nl::ui::language() == nl::ui::Lang::De);
+    banners.setDebugFile(config.debugBannerFile);
+    banners.setAudio(&audio, &music);
+    banners.setVcMap(&vcMapping);
+    banners.setLogSounds(config.debugLogSounds);
+    banners.setEnabled(config.banners);
+    details.setBanners(&banners);
     nl::ui::DialogScene dialog;
     // Kindersicherung (M17, Spec v2 10.5): wirksam ist config.parental oder, mit use_wii, der Wii-Jugendschutz.
     // Die PIN steht nie im Log; SYSCONF wird nur gelesen.
@@ -1049,6 +1065,7 @@ int main(int argc, char** argv) {
         cheatWorker.join();
         netService.shutdown();  // wtls_shutdown im Netz-Thread, dann Thread beendet
         covers.shutdown();
+        banners.shutdown();
 
         if (target.value().kind == nl::LaunchTarget::Kind::Channel) {
             const u64 titleId = target.value().titleId;
@@ -1462,10 +1479,17 @@ int main(int argc, char** argv) {
                                                  &details, &vcMapScene, &settings, &config, &covers,
                                                  data.writable ? &fs : nullptr, logPath.c_str()};
         input.poll();  // Geräte weiter abfragen, Eingaben kommen aber aus dem Skript
-        const nl::ui::InputFrame in = frame.begin(nl::app::selftestInput(frameNo, view));
+        nl::ui::InputFrame in = frame.begin(nl::app::selftestInput(frameNo, view));
 #else
-        const nl::ui::InputFrame in = frame.begin(input.poll());
+        nl::ui::InputFrame in = frame.begin(input.poll());
 #endif
+        if (detailsBackAt != 0 && gettime() >= detailsBackAt) {  // nur für Tests (M18): [debug] details_back_ms
+            detailsBackAt = 0;
+            if (scenes.top() == &details) {
+                in.actions |= 1u << static_cast<u32>(nl::ui::Action::Back);
+                nl::log::line("NL_DEBUG details back");
+            }
+        }
         ctx.battery = input.battery();
         // Ergebnis des Hintergrund-Scans übernehmen (Spec 6.1 Schritt 6)
         if (auto result = worker.take()) {
@@ -1477,6 +1501,7 @@ int main(int argc, char** argv) {
                 applyIndexes();
                 covers.setRoots(coverRootsOf(store.devices()));
                 covers.libraryChanged();
+                banners.setRoots(bannerRootsOf(store.devices()));
                 mainScene.setLibrary(libraryView(), focusKey);
                 nl::log::line("NL_SCAN_DONE games=%u added=%u removed=%u", static_cast<unsigned>(store.games().size()),
                               static_cast<unsigned>(st.added), static_cast<unsigned>(st.removed));
@@ -1606,6 +1631,7 @@ int main(int argc, char** argv) {
                 if (config.themePack != appliedThemePack) applyThemePack();
                 mainScene.setSort(config.sortOrder, &playStats);
                 audio.setSounds(config.sounds);
+                banners.setEnabled(config.banners);
                 music.setEnabled(config.music);
                 music.setVolume(config.musicVolume);
                 if (config.music) startMusic();  // beim Start ausgeschaltet gewesen
@@ -1670,6 +1696,7 @@ int main(int argc, char** argv) {
                 cheatWorker.join();
                 netService.shutdown();
                 covers.shutdown();
+                banners.shutdown();
                 stopAudio();
                 logPerfSummary();
                 if (data.writable) nl::log::flushLogFile(fs, logPath);
@@ -1768,6 +1795,10 @@ int main(int argc, char** argv) {
         pumpEmu(runPendingAutostart);
         pumpMusic();
         covers.pump();  // nach update (Wünsche dieses Frames), vor draw; Freigaben erst nach GX_DrawDone des Vorframes
+        if (scenes.top() == &details)
+            banners.pump();
+        else
+            banners.release();  // Detailansicht verlassen oder überdeckt: Ton aus, Musik laut, Texturen frei
 
         dl.clear();
         scenes.draw(ctx, dl);
@@ -1818,6 +1849,22 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_SCENE about");
             }
             if (config.debugOpenScene == "sysinfo") openSysInfo();  // nur für Tests (M13)
+            if (config.debugOpenScene.rfind("details:", 0) == 0) {  // nur für Tests (M18): details:<ID6>
+                const std::string id = config.debugOpenScene.substr(8);
+                const nl::Game* found = nullptr;
+                for (const nl::Game& g : store.games())
+                    if (id == g.key) found = &g;
+                if (found != nullptr) {
+                    details.open(*found, store.isFavorite(found->key), 0);
+                    scenes.push(&details);
+                    refreshDetailsN64();
+                    nl::log::line("NL_SCENE details %s", id.c_str());
+                    if (config.debugDetailsBackMs > 0)
+                        detailsBackAt = gettime() + millisecs_to_ticks(static_cast<u64>(config.debugDetailsBackMs));
+                } else {
+                    nl::log::line("NL_WARN details %s fehlt", id.c_str());
+                }
+            }
             if (config.debugOpenScene.rfind("cheats:", 0) == 0) {  // nur für Tests (M15): cheats:<ID6>
                 const std::string id = config.debugOpenScene.substr(7);
                 const nl::Game* found = nullptr;
@@ -1877,6 +1924,7 @@ int main(int argc, char** argv) {
     cheatWorker.join();
     netService.shutdown();
     covers.shutdown();
+    banners.shutdown();
     stopAudio();
     logPerfSummary();
     if (data.writable) nl::log::flushLogFile(fs, logPath);

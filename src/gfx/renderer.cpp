@@ -13,6 +13,8 @@ GXTexObj g_atlasTex;
 
 GXTexObj g_coverTex;
 GXTexObj g_backgroundTex;
+GXTexObj g_bannerTex[kBannerTextureSlots];
+static_assert(kTexFormatRgb5a3 == GX_TF_RGB5A3);
 
 GXColor toGx(Color c) { return GXColor{c.r, c.g, c.b, c.a}; }
 
@@ -30,6 +32,8 @@ Result<void> Renderer::init(platform::Video& video) {
     GXRModeObj* mode = video.mode();
     logicalWidth_ = video.widescreen() ? 854.0f : 640.0f;
     pixelScaleX_ = static_cast<float>(mode->fbWidth) / logicalWidth_;
+    fbWidth_ = mode->fbWidth;
+    efbHeight_ = mode->efbHeight;
 
     fifo_ = std::aligned_alloc(32, kFifoSize);
     if (fifo_ == nullptr) return Result<void>::err(Error{ErrorCode::InvalidData, "kein Speicher für die GX-FIFO"});
@@ -111,6 +115,30 @@ void Renderer::setBackground(const void* texels, u16 width, u16 height) {
     GX_InvalidateTexAll();  // gleiche Adresse kann jetzt ein anderes Bild sein
 }
 
+void Renderer::setBannerTexture(u16 slot, const void* texels, u16 width, u16 height, u8 gxFormat) {
+    if (slot >= kBannerTextureSlots) return;
+    banner_[slot] = texels;
+    if (texels != nullptr) {
+        GX_InitTexObj(&g_bannerTex[slot], const_cast<void*>(texels), width, height, gxFormat, GX_CLAMP, GX_CLAMP, GX_FALSE);
+        GX_InitTexObjLOD(&g_bannerTex[slot], GX_LINEAR, GX_LINEAR, 0.0f, 0.0f, 0.0f, GX_FALSE, GX_FALSE, GX_ANISO_1);
+    }
+    GX_InvalidateTexAll();
+}
+
+// Clip-Rechteck eines Batches (logisch) → Scissor in EFB-Pixeln; ohne Clip der ganze EFB.
+void Renderer::setClip(const Batch& b) {
+    if (!b.clipped) {
+        GX_SetScissor(0, 0, fbWidth_, efbHeight_);
+        return;
+    }
+    const float sy = static_cast<float>(efbHeight_) / logicalHeight();
+    auto clampTo = [](float v, u16 hi) { return static_cast<u32>(v < 0.0f ? 0.0f : v > hi ? hi : v); };
+    const u32 x0 = clampTo(b.clip.x * pixelScaleX_, fbWidth_), y0 = clampTo(b.clip.y * sy, efbHeight_);
+    const u32 x1 = clampTo((b.clip.x + b.clip.w) * pixelScaleX_, fbWidth_);
+    const u32 y1 = clampTo((b.clip.y + b.clip.h) * sy, efbHeight_);
+    GX_SetScissor(x0, y0, x1 > x0 ? x1 - x0 : 0, y1 > y0 ? y1 - y0 : 0);
+}
+
 void Renderer::submit(const DrawList& list, const CoverTextures* covers) {
     // Cover-Slots wurden neu belegt oder freigegeben: gleiche Adresse kann jetzt anderes Bild sein.
     if (covers != nullptr && covers->generation() != coverGeneration_) {
@@ -119,12 +147,22 @@ void Renderer::submit(const DrawList& list, const CoverTextures* covers) {
     }
     const auto vertices = list.vertices();
     TextureId bound = 0;
+    bool clipped = false;
     for (const Batch& b : list.batches()) {
         if (b.vertexCount == 0) continue;
+        if (b.clipped || clipped) {
+            setClip(b);
+            clipped = b.clipped;
+        }
         if (b.texture != bound) {
             if (b.texture == 0) {
                 GX_LoadTexObj(&g_atlasTex, GX_TEXMAP0);
                 useAtlasTev();
+            } else if (b.texture >= kBannerTextureBase && b.texture < kBannerTextureBase + kBannerTextureSlots) {
+                const u16 slot = static_cast<u16>(b.texture - kBannerTextureBase);
+                if (banner_[slot] == nullptr) continue;
+                GX_LoadTexObj(&g_bannerTex[slot], GX_TEXMAP0);
+                GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);
             } else if (b.texture == kBackgroundTexture) {
                 if (background_ == nullptr) continue;
                 GX_LoadTexObj(&g_backgroundTex, GX_TEXMAP0);
@@ -150,6 +188,7 @@ void Renderer::submit(const DrawList& list, const CoverTextures* covers) {
         GX_End();
         ++drawCalls_;
     }
+    if (clipped) GX_SetScissor(0, 0, fbWidth_, efbHeight_);
     if (bound != 0) {  // nächster Frame beginnt wieder mit dem Atlas
         GX_LoadTexObj(&g_atlasTex, GX_TEXMAP0);
         useAtlasTev();

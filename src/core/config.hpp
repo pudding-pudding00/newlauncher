@@ -32,6 +32,7 @@ struct Config {
     bool music = true;
     int musicVolume = 60;
     bool sounds = true;
+    bool banners = true;  // [ui] banners: Kanal-/GC-Banner in der Detailansicht (M18)
     std::string coverRegion = "auto";
     std::string emulatorRepo = std::string(defaultEmuRepo(true));  // [emulators] repo (Spec 6.9), http:// oder https://
     std::string coverBase = std::string(defaultCoverBase(true));   // [covers] base (M11): Cover-Quelle, http:// oder https://
@@ -49,6 +50,8 @@ struct Config {
     bool debugIgnoreAhbprot = false;  // [debug] ignore_ahbprot = 1: AHBPROT-Prüfung für GC überbrücken (Dolphin-Smoke, M8)
     std::string debugTlsCa;         // [debug] tls_ca: PEM der Test-CA statt Mozilla-Bundle (Smoke, M11)
     std::string debugOptionSet;     // [debug] option_set = <schlüssel>=<wert>: in der Options-Szene setzen und schließen (M14)
+    std::string debugBannerFile;    // [debug] banner_file: Kanal-content0 statt NAND für die Detailansicht (Smoke, M18)
+    int debugDetailsBackMs = 0;     // [debug] details_back_ms: so lange nach open_scene=details ein „Zurück“ einspeisen (Smoke, M18)
     std::string debugOpenScene;     // [debug] open_scene = about: Szene nach NL_READY öffnen (Smoke, M11)
     bool debugWiiDryRun = false;    // [debug] wii_dry_run = 1: Wii-Spiel nur prüfen (NL_WII_DRYRUN), nicht starten (M9)
     bool debugLogSounds = false;    // [debug] log_sounds = 1: NL_SOUND <name> je gespieltem Klang (Smoke-Test)

@@ -69,6 +69,8 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     c.debugIgnoreAhbprot = parseIntIn(ini.get("debug", "ignore_ahbprot"), 0, 1, 0) == 1;
     c.debugWiiDryRun = parseIntIn(ini.get("debug", "wii_dry_run"), 0, 1, 0) == 1;
     c.debugOpenScene = std::string(trim(ini.get("debug", "open_scene")));
+    c.debugBannerFile = std::string(trim(ini.get("debug", "banner_file")));
+    c.debugDetailsBackMs = parseIntIn(ini.get("debug", "details_back_ms"), 0, 60000, 0);
     c.debugOptionSet = std::string(trim(ini.get("debug", "option_set")));
     c.debugTlsCa = std::string(trim(ini.get("debug", "tls_ca")));
     c.debugWizard = std::string(trim(ini.get("debug", "wizard")));
@@ -100,6 +102,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     c.music = parseIntIn(ini.get("audio", "music"), 0, 1, 1) == 1;
     c.musicVolume = parseIntIn(ini.get("audio", "music_volume"), 0, 100, c.musicVolume);
     c.sounds = parseIntIn(ini.get("audio", "sounds"), 0, 1, 1) == 1;
+    c.banners = parseIntIn(ini.get("ui", "banners"), 0, 1, 1) == 1;
 
     const std::string_view region = ini.get("covers", "region");
     for (std::string_view allowed : {"auto", "EN", "DE", "FR", "US", "JA"}) {
@@ -155,6 +158,7 @@ std::vector<IniValue> configValues(const Config& c) {
         {"audio", "music", c.music ? "1" : "0"},
         {"audio", "music_volume", std::to_string(std::clamp(c.musicVolume, 0, 100))},
         {"audio", "sounds", c.sounds ? "1" : "0"},
+        {"ui", "banners", c.banners ? "1" : "0"},
         {"covers", "region", c.coverRegion},
         {"emulators", "repo", c.emulatorRepo},
         {"wii", "ios", c.wiiIos ? std::to_string(static_cast<unsigned>(*c.wiiIos)) : std::string("auto")},
@@ -257,6 +261,8 @@ std::string defaultConfigText(bool tls) {
            "music = 1\n"
            "music_volume = 60\n"
            "sounds = 1\n"
+           "[ui]\n"
+           "banners = 1\n"
            "[covers]\n"
            "region = auto\n"
            "[emulators]\n"

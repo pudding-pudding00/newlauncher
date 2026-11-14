@@ -13,11 +13,11 @@ using gfx::FontSize;
 using gfx::FontWeight;
 using gfx::Rect;
 
-constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 18.0f, kHelpH = 24.0f;  // 21 Zeilen in 480
+constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 17.0f, kHelpH = 24.0f;  // 22 Zeilen in 480
 
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo, Str::ThemePack,  Str::Music,       Str::Volume,
-    Str::Sounds,   Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::Rescan, Str::FetchCovers, Str::VcMapTitle,
+    Str::Sounds,   Str::Banners, Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::Rescan, Str::FetchCovers, Str::VcMapTitle,
     Str::Emulators, Str::WiiGames, Str::GcGames, Str::Parental, Str::Setup, Str::SysInfo, Str::About,
 };
 
@@ -28,6 +28,7 @@ bool sameSettings(const Config& a, const Config& b) {
            a.usbTimeoutSec == b.usbTimeoutSec &&
            a.themeMode == b.themeMode && a.themePack == b.themePack && a.darkFromMin == b.darkFromMin && a.darkToMin == b.darkToMin &&
            a.music == b.music && a.musicVolume == b.musicVolume && a.sounds == b.sounds &&
+           a.banners == b.banners &&
            a.coverRegion == b.coverRegion && a.sortOrder == b.sortOrder;
 }
 
@@ -66,6 +67,7 @@ std::string valueText(const Config& c, SettingRow r) {
             return buf;
         }
         case SettingRow::Sounds: return tr(c.sounds ? Str::On : Str::Off);
+        case SettingRow::Banners: return tr(c.banners ? Str::On : Str::Off);
         case SettingRow::Library:
             switch (sourceChoice(c.libraryRules.sources)) {
                 case SourceChoice::Auto: return std::string(tr(Str::LangAuto));

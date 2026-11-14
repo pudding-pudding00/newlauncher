@@ -26,6 +26,7 @@ public:
     bool started() const { return thread_ != LWP_THREAD_NULL; }
     void setEnabled(bool on) { enabled_ = on; }
     void setVolume(int percent);
+    void duck(bool on);  // Banner-Ton (M18): Musik auf 20 % der eingestellten Lautstärke
     void stop();  // Thread beenden und joinen, Stimme 0 stoppen; vor audio.shutdown()
     std::vector<std::string> takeLogLines();
 
@@ -47,7 +48,9 @@ private:
     std::array<u8*, kBuffers> buffers_{};
     volatile bool quit_ = false;
     volatile bool enabled_ = true;
-    volatile int volume_ = 153;  // ASND 0..255
+    volatile int volume_ = 153;  // ASND 0..255, wirksam (gedrückt oder nicht)
+    int base_ = 153;             // eingestellte Lautstärke, nur Haupt-Thread
+    bool ducked_ = false;        // nur Haupt-Thread
 };
 
 }  // namespace nl::platform

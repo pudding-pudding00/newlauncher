@@ -80,4 +80,13 @@ std::string imetChannelName(std::span<const u8> d, BannerLang lang) {
     return {};
 }
 
+std::optional<u32> imetArchiveOffset(std::span<const u8> d) {
+    auto imetAt = [&](std::size_t at) {
+        return d.size() >= at + 4 && d[at] == 'I' && d[at + 1] == 'M' && d[at + 2] == 'E' && d[at + 3] == 'T';
+    };
+    if (imetAt(0x40)) return 0x600u;
+    if (imetAt(0x80)) return 0x640u;
+    return std::nullopt;
+}
+
 }  // namespace nl

@@ -24,6 +24,8 @@ AlignedBuf alignedAlloc(std::size_t bytes) {
     return AlignedBuf(static_cast<u8*>(memalign(32, rounded == 0 ? 32 : rounded)));
 }
 
+}  // namespace
+
 std::optional<u32> bannerContentId(u64 titleId) {
     u32 size = 0;
     if (ES_GetStoredTMDSize(titleId, &size) < 0 || size == 0) return std::nullopt;
@@ -34,6 +36,8 @@ std::optional<u32> bannerContentId(u64 titleId) {
     if (!tmd.isOk()) return std::nullopt;
     return contentIdForIndex(tmd.value(), 0);
 }
+
+namespace {
 
 std::string channelName(u64 titleId, BannerLang lang) {
     const std::optional<u32> cid = bannerContentId(titleId);

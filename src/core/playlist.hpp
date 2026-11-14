@@ -37,6 +37,7 @@ private:
 };
 
 int asndVolume(int percent);  // 0..100 → 0..255, außerhalb begrenzt
+int duckVolume(int asnd);     // Musik unter dem Banner-Ton (M18): 20 % von asnd
 
 // Volle Pfade aller .ogg-Dateien (Groß/klein egal) in dir, sortiert; Ordner übergangen, fehlt dir → leer.
 std::vector<std::string> musicFiles(FileSystem& fs, std::string_view dir);

@@ -13,21 +13,26 @@ namespace nl::gfx {
 using TextureId = u16;  // 0 = UI-Atlas, ab kCoverTextureBase die Cover-Slots
 inline constexpr TextureId kCoverTextureBase = 1;  // Cover-Slot s ist kCoverTextureBase + s
 inline constexpr TextureId kBackgroundTexture = 0xFFFF;  // Hintergrundbild des Theme-Pakets (M17)
+// Banner-Texturen (M18): kBannerTextureBase + Slot, Slots < kBannerTextureSlots; vor kBackgroundTexture.
+inline constexpr TextureId kBannerTextureBase = 0xF000;
+inline constexpr TextureId kBannerTextureSlots = 64;
 
 struct Vertex {
     float x, y, u, v;
     Color color;
-};
-struct Batch {
-    TextureId texture;
-    u32 firstVertex;
-    u32 vertexCount;
 };
 struct UvRect {
     float u0, v0, u1, v1;
 };
 struct Rect {
     float x, y, w, h;
+};
+struct Batch {
+    TextureId texture;
+    u32 firstVertex;
+    u32 vertexCount;
+    bool clipped = false;  // M18: nur innerhalb von clip zeichnen (logische Koordinaten)
+    Rect clip{};
 };
 
 class DrawList {
@@ -37,6 +42,12 @@ public:
     void clear();
     // Ecken im Uhrzeigersinn ab links oben.
     void quad(TextureId tex, Rect dst, UvRect uv, Color c);
+    // Freies Viereck (M18, Banner): Ecken im Uhrzeigersinn ab links oben, Alpha-Stapel wirkt wie bei quad.
+    void quadVerts(TextureId tex, const Vertex (&v)[4]);
+
+    // Clip-Rechteck für alle folgenden Quads bis clearClip/clear; ein Wechsel beginnt einen neuen Batch.
+    void setClip(Rect r);
+    void clearClip();
 
     // Multiplikativer Alpha-Stapel für Überblendungen (Tiefe 8).
     void pushAlpha(float a);
@@ -50,6 +61,8 @@ public:
 private:
     static constexpr int kAlphaDepth = 8;
 
+    Vertex* reserve(TextureId tex);  // nullptr: voll, gezählt in dropped_
+
     u32 maxQuads_, maxBatches_;
     std::unique_ptr<Vertex[]> vertices_;
     std::unique_ptr<Batch[]> batches_;
@@ -58,6 +71,8 @@ private:
     int alphaDepth_ = 0;
     int ignoredPushes_ = 0;
     float alpha_ = 1.0f;
+    bool clipped_ = false;
+    Rect clip_{};
 };
 
 }  // namespace nl::gfx

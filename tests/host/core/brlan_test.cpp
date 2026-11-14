@@ -157,6 +157,34 @@ TEST_CASE("brlan: AnimPlayer spielt Start einmal, dann Loop in Schleife") {
     CHECK(p.current() == nullptr);
 }
 
+TEST_CASE("brlan: AnimPlayer::advance läuft nach Zeit, auch in Bruchteilen") {
+    Anim start, loop;
+    start.frames = 3;
+    loop.frames = 2;
+    AnimPlayer p;
+    p.reset(&start, &loop);
+    p.advance(1.2f);  // ein PAL-Bild (50 Hz) = 1,2 Animationsbilder
+    CHECK(p.frame() == doctest::Approx(1.2f));
+    p.advance(1.2f);
+    CHECK(p.current() == &start);
+    CHECK(p.frame() == doctest::Approx(2.4f));
+    p.advance(1.2f);  // 3,6 → Start zu Ende, 0,6 in der Schleife
+    CHECK(p.current() == &loop);
+    CHECK(p.frame() == doctest::Approx(0.6f));
+    p.advance(1.6f);  // 2,2 → Schleife umgelaufen
+    CHECK(p.current() == &loop);
+    CHECK(p.frame() == doctest::Approx(0.2f));
+    p.advance(1001.0f);  // großer Sprung: bleibt im Bereich
+    CHECK(p.frame() >= 0.0f);
+    CHECK(p.frame() < 2.0f);
+    p.reset(&start, nullptr);
+    p.advance(10.0f);  // ohne Schleife: letztes Bild halten
+    CHECK(p.current() == &start);
+    CHECK(p.frame() == doctest::Approx(2.0f));
+    p.advance(-5.0f);  // rückwärts gibt es nicht
+    CHECK(p.frame() == doctest::Approx(2.0f));
+}
+
 TEST_CASE("brlan: Grenzen gegen Speicher-Aufblähen") {
     SUBCASE("Mustername über 255 Zeichen") {
         CHECK_FALSE(parseBrlan(test::buildBrlan(10, true, {std::string(300, 'p')}, {})).isOk());

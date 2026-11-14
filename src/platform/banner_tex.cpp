@@ -20,17 +20,11 @@ bool BannerTextures::upload(const ChannelBanner& banner, gfx::Renderer& renderer
     renderer_ = &renderer;
     for (std::size_t i = 0; i < banner.textures.size(); ++i) {
         const TplImage& img = banner.textures[i];
-        std::vector<u8> converted;
-        std::span<const u8> data = img.data;
-        TexFmt fmt = img.fmt;
-        if (isPaletted(fmt)) {
-            converted = toRgb5a3Tiles(img);
-            if (converted.empty()) {
-                release();
-                return false;
-            }
-            data = converted;
-            fmt = TexFmt::RGB5A3;
+        const std::span<const u8> data = img.data;
+        const TexFmt fmt = img.fmt;
+        if (isPaletted(fmt)) {  // prepareBanner hat umgewandelt; ohne TLUT nicht darstellbar
+            release();
+            return false;
         }
         void* p = memalign(32, data.size());
         if (p == nullptr) {

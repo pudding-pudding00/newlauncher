@@ -8,6 +8,7 @@
 #include <ogc/lwp.h>
 #include <ogc/mutex.h>
 
+#include "core/banner_budget.hpp"
 #include "core/channel_banner.hpp"
 #include "core/fs.hpp"
 #include "core/gc_banner.hpp"
@@ -18,6 +19,7 @@ struct BannerResult {
     std::string key;
     std::optional<GcBanner> gc;            // GC-Auftrag; leer: Fehler, Grund in error
     std::optional<ChannelBanner> channel;  // Kanal-Auftrag (M18 Task 5); leer: Fehler
+    BannerPlan plan;                       // zu channel: im Banner-Thread geplant, gekürzt, umgewandelt
     ErrorCode error = ErrorCode::NotFound;
     std::string context;
 };

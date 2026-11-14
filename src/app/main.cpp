@@ -834,6 +834,7 @@ int main(int argc, char** argv) {
         const nl::ui::Lang lang = nl::ui::resolveLanguage(config.language, systemGerman);
         if (lang != nl::ui::language()) {
             nl::ui::setLanguage(lang);
+            banners.setGerman(lang == nl::ui::Lang::De);  // GC-Banner: Titel beim nächsten Laden in der neuen Sprache
             channelsLoaded = false;
             nl::log::line("NL_LANG %s", nl::ui::langKey(lang));
         }
@@ -1623,6 +1624,7 @@ int main(int argc, char** argv) {
                 const nl::ui::Lang lang = nl::ui::resolveLanguage(config.language, systemGerman);
                 if (lang != nl::ui::language()) {
                     nl::ui::setLanguage(lang);
+                    banners.setGerman(lang == nl::ui::Lang::De);  // Detailansicht lädt ihr Banner danach neu
                     channelsLoaded = false;  // Kanalnamen beim nächsten Öffnen in der neuen Sprache laden
                     nl::log::line("NL_LANG %s", nl::ui::langKey(lang));
                 }

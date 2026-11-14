@@ -66,14 +66,16 @@ class AnimPlayer {
 public:
     void reset(const Anim* start, const Anim* loop);
     void step();  // ein Bild weiter
+    // frames Bilder (zu 1/60 s) weiter, auch Bruchteile: das Tempo hängt nicht an der Bildrate (PAL 50 Hz).
+    void advance(float frames);
     const Anim* current() const { return current_; }
-    float frame() const { return static_cast<float>(frame_); }
+    float frame() const { return frame_; }
 
 private:
     const Anim* start_ = nullptr;
     const Anim* loop_ = nullptr;
     const Anim* current_ = nullptr;
-    u32 frame_ = 0;
+    float frame_ = 0;
 };
 
 }  // namespace nl

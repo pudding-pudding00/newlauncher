@@ -68,6 +68,7 @@ void BannerService::freeFrame() {
     textures_.release();
     quads_.clear();
     player_.reset(nullptr, nullptr);
+    animTicks_ = 0;
     start_.reset();
     loop_.reset();
     layout_ = Layout{};
@@ -75,18 +76,16 @@ void BannerService::freeFrame() {
     haveFrame_ = false;
 }
 
-void BannerService::takeChannel(ChannelBanner& banner) {
-    // Budget (≤ 4 MiB MEM2 mit Texturen und PCM) vor jedem Hochladen: voll → nur erstes Bild → Cover.
-    const BannerPlan plan = planBanner(banner);
+void BannerService::takeChannel(ChannelBanner& banner, const BannerPlan& plan) {
+    // Budget (≤ 4 MiB MEM2 mit Texturen und PCM) und Texturgrenze plant der Banner-Thread (prepareBanner):
+    // voll → nur erstes Bild → Cover. Gekürzt und umgewandelt ist schon; hier wird nur noch hochgeladen.
     log::line("NL_BANNER budget=%u level=%s", static_cast<unsigned>(plan.cost.total()), bannerLevelName(plan.level));
     if (plan.level == BannerLevel::Cover) {
-        log::line("NL_BANNER_FALLBACK cover budget");
+        log::line("NL_BANNER_FALLBACK cover %s", plan.convertFailed ? "tpl" : plan.textureCut ? "textures" : "budget");
         return;
     }
-    if (plan.budgetCut) {
-        reduceToStatic(banner);
-        log::line("NL_BANNER_FALLBACK static budget");
-    }
+    if (plan.budgetCut) log::line("NL_BANNER_FALLBACK static budget");
+    else if (plan.textureCut) log::line("NL_BANNER_FALLBACK static textures");
     if (!textures_.upload(banner, renderer_)) {
         log::line("NL_BANNER_FALLBACK cover memory");
         return;
@@ -124,13 +123,20 @@ void BannerService::takeChannel(ChannelBanner& banner) {
 }
 
 void BannerService::animate() {
+    if (player_.current() == nullptr) return;
+    // Nach Zeit statt je Aufruf: BRLAN-Bilder sind 1/60 s, PAL (50 Hz) liefe sonst 17 % zu langsam.
+    // Nach einem Hänger höchstens kAnimMaxStep Bilder auf einmal.
+    const u64 now = gettime();
+    if (animTicks_ != 0) {
+        const float frames = static_cast<float>(ticks_to_microsecs(now - animTicks_)) * 60.0f / 1000000.0f;
+        player_.advance(frames < kAnimMaxStep ? frames : kAnimMaxStep);
+    }
+    animTicks_ = now;
     const Anim* a = player_.current();
-    if (a == nullptr) return;
     std::vector<PaneState> state = initialState(layout_);
     applyAnim(layout_, *a, player_.frame(), state);
     quads_ = buildQuads(layout_, state);
     frame_.quads = quads_;
-    player_.step();
 }
 
 void BannerService::setEnabled(bool on) {
@@ -177,7 +183,7 @@ void BannerService::pump() {
             freeTexels();
             freeFrame();
             if (r->channel) {
-                takeChannel(*r->channel);
+                takeChannel(*r->channel, r->plan);
             } else if (r->gc) {
                 void* p = memalign(32, r->gc->rgb5a3.size());
                 if (p != nullptr) {
@@ -194,7 +200,7 @@ void BannerService::pump() {
             }
         }
     }
-    if (haveFrame_) animate();  // 60 Bilder je Sekunde: pump() läuft einmal je Frame
+    if (haveFrame_) animate();  // pump() läuft einmal je Frame; animate() rechnet nach Zeit
     updateSound();
     if (key_.empty() || requested_ || worker_.running()) return;
     if (ticks_to_millisecs(gettime() - focusTicks_) < kFocusDelayMs) return;  // Fokus erst 1 s halten

@@ -1,6 +1,8 @@
 #include "core/brlyt.hpp"
 #include "support/brlyt_images.hpp"
 
+#include <limits>
+
 #include <doctest/doctest.h>
 
 using namespace nl;
@@ -92,6 +94,19 @@ TEST_CASE("brlyt: kaputte Dateien → InvalidData") {
     test::putBe32(extra, 8, static_cast<u32>(extra.size()));
     extra[0x0F] = static_cast<u8>(extra[0x0F] + 1);
     CHECK(parseBrlyt(extra).error().code == ErrorCode::InvalidData);
+}
+
+TEST_CASE("brlyt: Breite oder Höhe 0, negativ, NaN oder unendlich → InvalidData") {
+    PaneSpec root = test::pane("pan1", "r", 0, 0, 1, 1);
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    for (float w : {0.0f, -10.0f, nan, inf}) {
+        const auto wide = parseBrlyt(test::buildBrlyt(w, 456, {}, {}, {root}));
+        const auto tall = parseBrlyt(test::buildBrlyt(608, w, {}, {}, {root}));
+        CHECK((!wide.isOk() && wide.error().code == ErrorCode::InvalidData));
+        CHECK((!tall.isOk() && tall.error().code == ErrorCode::InvalidData));
+    }
+    CHECK(parseBrlyt(test::buildBrlyt(608, 456, {}, {}, {root})).isOk());
 }
 
 TEST_CASE("brlyt: Bild mit Materialindex außerhalb behält material = -1") {

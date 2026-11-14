@@ -39,6 +39,8 @@ Result<BnsSound> parseBns(std::span<const u8> file, u32 maxSamples) {
     const u64 frameBytes = (static_cast<u64>(n) + kDspFrameSamples - 1) / kDspFrameSamples * kDspFrameBytes;
     const u32 table = be32(info, 16);
     if (table > info.size() || info.size() - table < 4u * channels) return invalid("bns: Kanaltabelle");
+    // Vor dem Allozieren: die Samplezahl muss von den vorhandenen Daten gedeckt sein (sonst bis 24 GiB → Abbruch).
+    if (frameBytes > data.size()) return invalid("bns: Daten abgeschnitten");
 
     BnsSound out;
     out.sampleRate = rate;

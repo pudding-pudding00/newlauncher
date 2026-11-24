@@ -35,8 +35,9 @@ cmake -S . -B build-wii -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Wii.cmake && cma
 python tools/hwtest.py --wii <IP> --dol build-wii/tests/hw/wtls_hwtest.dol --suite selftest
 ```
 
-Den errno-Fix aus M11 (siehe unten) vorher auch im Upstream-Checkout einspielen. Sonst prüfen die Suiten
-eine andere `plat.h` als die, die im Launcher läuft.
+Seit Release v0.1.0 (`9b1689b`) ist der vendorte Stand gleich dem Upstream-Tag; der errno-Fix (siehe unten)
+ist upstream. Laut Release sind die Suiten dort schon auf einer echten Wii gelaufen. Hier genügt es, sie auf
+dieser Wii einmal zu wiederholen.
 
 | Suite | Ergebnis | Notiz |
 |---|---|---|
@@ -47,7 +48,7 @@ eine andere `plat.h` als die, die im Launcher läuft.
 | `tls` (gegen den PC-Testserver) | | |
 | `realworld` | | |
 
-M11 hat in `third_party/wii_tls/src/plat/plat.h` die errno-Werte auf die von newlib umgestellt (EAGAIN 11,
+Seit v0.1.0 stehen in `third_party/wii_tls/src/plat/plat.h` upstream die errno-Werte von newlib (EAGAIN 11,
 EINPROGRESS 119, EALREADY 120, EISCONN 127). libogc übersetzt die IOS-Codes vorher in diese Werte. Schlägt
 `plat` oder `tls` beim Verbindungsaufbau fehl, zuerst diesen Punkt ansehen.
 

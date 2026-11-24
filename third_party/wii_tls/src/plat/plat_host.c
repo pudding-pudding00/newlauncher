@@ -183,7 +183,9 @@ int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int 
             return WTLS_ERR_CONNECT;
         }
         short rev = 0;
+        uint64_t p0 = wtls_plat_now_us();
         int r = poll_one(s, POLLOUT, timeout_ms, &rev);
+        wtls_plat_poll_wait_us += wtls_plat_now_us() - p0; /* counted as poll wait */
         if (r == 0) {
             sock_close(s);
             return WTLS_ERR_TIMEOUT;

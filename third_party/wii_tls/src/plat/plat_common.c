@@ -45,3 +45,8 @@ int wtls_plat_ios_io_result(int32_t r, bool is_send, int attempt) {
 bool wtls_plat_ios_connect_pending(bool nonblocking, int32_t r) { return nonblocking && r < 0; }
 
 bool wtls_plat_ios_connected(int32_t r) { return r == 0 || r == -WTLS_IOS_EISCONN; }
+
+/* Only EALREADY: after a refused attempt (RST) the socket is closed again and a
+ * second connect starts a new attempt, answering EINPROGRESS (measured on a
+ * Wii: treating that as "running" turned a refused connect into a timeout). */
+bool wtls_plat_ios_connect_in_progress(int32_t r) { return r == -WTLS_IOS_EALREADY; }

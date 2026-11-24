@@ -14,6 +14,7 @@
 #include "wtls_dns.h"
 #include "wtls_scache.h"
 #include "wtls_internal.h"
+#include "wtls_prof.h"
 #include "wtls_time.h"
 
 #define DEF_CONNECT_MS 5000u
@@ -22,6 +23,8 @@
 
 static uint32_t s_last_verify_flags;
 
+wtls_prof wtls_prof_last;
+
 /* Serialized session scratch (single-threaded API; keeps 4 KiB off LWP stacks). */
 static uint8_t s_blob[WTLS_SESSION_BLOB_MAX];
 
@@ -29,9 +32,22 @@ uint32_t wtls_last_verify_flags(void) { return s_last_verify_flags; }
 
 /* ---- BIO ---------------------------------------------------------------- */
 
+/* Send/recv time of the running handshake step (wtls_prof). */
+static uint64_t s_step_io_us;
+
+static void prof_io(uint64_t t0, uint64_t *us, uint32_t *calls) {
+    uint64_t dt = wtls_plat_now_us() - t0;
+    s_step_io_us += dt;
+    *us += dt;
+    ++*calls;
+    wtls_prof_last.io_calls++;
+}
+
 static int bio_send(void *ctx, const unsigned char *buf, size_t len) {
     wtls_conn *c = ctx;
+    uint64_t t0 = wtls_plat_now_us();
     int r = wtls_plat_send(c->fd, buf, len);
+    prof_io(t0, &wtls_prof_last.send_us, &wtls_prof_last.send_calls);
     if (r > 0) return r;
     if (r == WTLS_WANT_WRITE) return MBEDTLS_ERR_SSL_WANT_WRITE;
     c->bio_err = WTLS_ERR_IO;
@@ -40,7 +56,10 @@ static int bio_send(void *ctx, const unsigned char *buf, size_t len) {
 
 static int bio_recv(void *ctx, unsigned char *buf, size_t len) {
     wtls_conn *c = ctx;
+    uint64_t t0 = wtls_plat_now_us();
     int r = wtls_plat_recv(c->fd, buf, len);
+    if (r > 0) prof_io(t0, &wtls_prof_last.recv_us, &wtls_prof_last.recv_calls);
+    else prof_io(t0, &wtls_prof_last.recv_empty_us, &wtls_prof_last.recv_empty_calls);
     if (r > 0) return r;
     if (r == 0) return MBEDTLS_ERR_SSL_CONN_EOF;
     if (r == WTLS_WANT_READ) return MBEDTLS_ERR_SSL_WANT_READ;
@@ -170,6 +189,8 @@ wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port, const
     c->no_resumption = opt->no_resumption || opt->insecure_skip_verify;
     c->io_timeout_ms = opt->io_timeout_ms ? opt->io_timeout_ms : DEF_IO_MS;
 
+    memset(&wtls_prof_last, 0, sizeof wtls_prof_last);
+    uint64_t p0 = wtls_plat_now_us(), w0 = wtls_plat_poll_wait_us;
     int st = wtls_plat_connect(ip, port, opt->connect_timeout_ms ? opt->connect_timeout_ms : DEF_CONNECT_MS,
                                &c->fd);
     if (st != WTLS_OK) {
@@ -179,6 +200,9 @@ wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port, const
         return (wtls_status)st;
     }
     uint64_t t0 = wtls_plat_now_ms();
+    uint64_t p1 = wtls_plat_now_us();
+    wtls_prof_last.connect_us = p1 - p0;
+    wtls_prof_last.connect_wait_us = wtls_plat_poll_wait_us - w0;
 
     int r = wtls_conf_setup(&c->conf, opt);
     if (r == 0) r = mbedtls_ssl_setup(&c->ssl, &c->conf);
@@ -194,11 +218,27 @@ wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port, const
 
     c->lookups_before = wtls_castore_lookups;
     uint64_t deadline = t0 + (opt->handshake_timeout_ms ? opt->handshake_timeout_ms : DEF_HANDSHAKE_MS);
+    wtls_prof_last.setup_us = wtls_plat_now_us() - p1;
+    w0 = wtls_plat_poll_wait_us;
     for (;;) {
-        r = mbedtls_ssl_handshake(&c->ssl);
+        /* mbedtls_ssl_handshake() is exactly this loop over steps; stepping
+         * here lets wtls_prof time each handshake state. */
+        r = 0;
+        while (r == 0 && !mbedtls_ssl_is_handshake_over(&c->ssl)) {
+            int state = c->ssl.MBEDTLS_PRIVATE(state); /* no public getter */
+            int slot = state >= 0 && state < WTLS_PROF_STATES ? state : WTLS_PROF_STATES - 1;
+            s_step_io_us = 0;
+            uint64_t s0 = wtls_plat_now_us();
+            r = mbedtls_ssl_handshake_step(&c->ssl);
+            wtls_prof_last.step_us[slot] += wtls_plat_now_us() - s0;
+            wtls_prof_last.step_io_us[slot] += s_step_io_us;
+            wtls_prof_last.io_us += s_step_io_us;
+            wtls_prof_last.step_n[slot]++;
+        }
         if (r == 0) break;
         if (r == MBEDTLS_ERR_SSL_WANT_READ || r == MBEDTLS_ERR_SSL_WANT_WRITE) {
             st = wait_io(c, r, deadline);
+            wtls_prof_last.wait_us = wtls_plat_poll_wait_us - w0;
             if (st == WTLS_OK) continue;
         } else if (r == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED || cert_rejected(c)) {
             /* The second case: rejected by the key-usage checks (e.g. a leaf

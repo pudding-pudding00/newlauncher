@@ -162,11 +162,21 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         set(WTLS_BUILD_HWTEST OFF CACHE BOOL "" FORCE)
         set(WTLS_BUILD_BENCH OFF CACHE BOOL "" FORCE)
         set(WTLS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        # Krypto-Einstellungen wie im getesteten Release 0.1.0 (auf der Wii gemessen); FORCE, damit ein alter
+        # Build-Cache mit den Standardwerten älterer Stände (Everest aus, O2) nicht hängen bleibt.
+        set(WTLS_EVEREST ON CACHE BOOL "" FORCE)
+        set(WTLS_ACCEL ON CACHE BOOL "" FORCE)
+        set(WTLS_OPT O3 CACHE STRING "" FORCE)
         # Mbed TLS 4.1.1 ruft cmake_minimum_required mit einer Version < 3.10 auf, neuere CMake-Versionen
         # warnen dafür. Die Mindest-Policy-Version hebt nur den Upstream-Code an; danach wieder aus.
         set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
         add_subdirectory(third_party/wii_tls EXCLUDE_FROM_ALL)
         unset(CMAKE_POLICY_VERSION_MINIMUM)
+        # GCC meldet bei -O3 in Mbed TLS x509.c (mbedtls_x509_dn_gets) einen Fehlalarm zu snprintf-Grenzen;
+        # nur für dieses Fremdziel abgeschaltet, unser Code bleibt bei 0 Warnungen.
+        if(TARGET mbedx509)
+            target_compile_options(mbedx509 PRIVATE -Wno-format-truncation)
+        endif()
     endif()
 
     # NTFS nur lesend (M16, Spec v2 9.1): libntfs vendort nach third_party/libntfs (tools/vendor_fs.py).

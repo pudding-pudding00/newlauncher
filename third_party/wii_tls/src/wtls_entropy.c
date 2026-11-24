@@ -24,7 +24,6 @@ int mbedtls_platform_get_entropy(psa_driver_get_entropy_flags_t flags,
     return 0;
 #else
     int r = wtls_jitter_conditioned(jitter_cb, NULL, output, output_size);
-    wtls_plat_jitter_release();
     if (r != WTLS_OK) {
         *estimate_bits = 0;
         return PSA_ERROR_INSUFFICIENT_ENTROPY; /* fail closed: psa_crypto_init fails */

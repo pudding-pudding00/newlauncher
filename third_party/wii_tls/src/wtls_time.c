@@ -52,6 +52,34 @@ mbedtls_time_t wtls_mbedtls_time(mbedtls_time_t *t) {
     return now;
 }
 
+#define SNTP_ATTEMPTS 3
+
+int wtls_sntp_query(wtls_udp_exchange_fn fn, void *ctx, uint32_t ipv4_be, uint64_t nonce,
+                    uint32_t timeout_ms, int64_t *unix_s) {
+    uint8_t req[48], resp[68];
+    wtls_sntp_build_request(req, nonce);
+    uint32_t each = timeout_ms / SNTP_ATTEMPTS;
+    if (each == 0) each = 1;
+    int r = WTLS_ERR_TIMEOUT;
+    for (int attempt = 0; attempt < SNTP_ATTEMPTS; attempt++) {
+        int n = fn(ctx, ipv4_be, NTP_PORT, req, sizeof req, resp, sizeof resp, each);
+        if (n == WTLS_ERR_TIMEOUT) {
+            r = n; /* lost request or reply: UDP over Wi-Fi drops packets */
+            continue;
+        }
+        if (n < 0) return n;
+        r = wtls_sntp_parse(resp, (size_t)n, nonce, unix_s);
+        if (r == WTLS_OK) return WTLS_OK;
+    }
+    return r;
+}
+
+static int plat_exchange(void *ctx, uint32_t ipv4_be, uint16_t port, const uint8_t *req,
+                         size_t req_len, uint8_t *resp, size_t resp_cap, uint32_t timeout_ms) {
+    (void)ctx;
+    return wtls_plat_udp_exchange(ipv4_be, port, req, req_len, resp, resp_cap, timeout_ms);
+}
+
 wtls_status wtls_time_sync_sntp(const char *server, uint32_t timeout_ms) {
     if (!server) server = "pool.ntp.org";
     if (timeout_ms == 0) return WTLS_ERR_ARG;
@@ -63,12 +91,9 @@ wtls_status wtls_time_sync_sntp(const char *server, uint32_t timeout_ms) {
         return WTLS_ERR_ENTROPY;
     uint32_t ip;
     if (wtls_plat_resolve(server, &ip) != WTLS_OK) return WTLS_ERR_DNS;
-    uint8_t req[48], resp[68];
-    wtls_sntp_build_request(req, nonce);
-    int n = wtls_plat_udp_exchange(ip, NTP_PORT, req, sizeof req, resp, sizeof resp, timeout_ms);
-    if (n < 0) return (wtls_status)n;
     int64_t unix_s;
-    if (wtls_sntp_parse(resp, (size_t)n, nonce, &unix_s) != WTLS_OK) return WTLS_ERR_IO;
+    int r = wtls_sntp_query(plat_exchange, NULL, ip, nonce, timeout_ms, &unix_s);
+    if (r != WTLS_OK) return (wtls_status)r;
     if (wtls_time_check(unix_s) != WTLS_OK) return WTLS_ERR_CLOCK; /* server is wrong */
     wtls_plat_set_unix_time_offset(0);
     wtls_plat_set_unix_time_offset(unix_s - wtls_plat_unix_time());

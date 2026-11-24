@@ -87,6 +87,7 @@ public:
     const char* infoTitle() const;
     const char* infoLineText() const;
     gfx::Rect homeRect(const UiContext& ctx) const;
+    gfx::Rect wifiRect(const UiContext& ctx) const;
     gfx::Rect gearRect(const UiContext& ctx) const;
     gfx::Rect barRect(int index) const;
     void drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, gfx::Rect r, bool focused) const;

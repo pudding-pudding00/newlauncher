@@ -5,6 +5,7 @@
 
 #include "core/easing.hpp"
 #include "core/game.hpp"
+#include "core/net_error.hpp"
 #include "core/theme.hpp"
 #include "core/ui_sound.hpp"
 #include "gfx/draw_list.hpp"
@@ -26,6 +27,7 @@ struct UiContext {
     int minuteOfDay = 0;  // 0..1439
     int day = 1, month = 1, year = 2026, weekday = 0;  // weekday 0 = Montag
     std::array<s8, 4> battery{-1, -1, -1, -1};         // Wiimote P1..P4: -1 = nicht verbunden, sonst 0..4 Balken
+    WifiStatus wifi = WifiStatus::Disconnected;        // aktueller WLAN-Stand für die untere Leiste
 };
 
 enum class AppCommand : u8 {

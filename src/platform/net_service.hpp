@@ -9,6 +9,7 @@
 #include <ogc/cond.h>
 
 #include "core/job_queue.hpp"
+#include "core/net_error.hpp"
 #include "core/types.hpp"
 
 namespace nl::platform {
@@ -23,6 +24,8 @@ public:
     // Reiht einen Auftrag ein und startet den Thread beim ersten Aufruf (64 KiB Stack). 0 = nicht angenommen
     // (nach shutdown oder wenn der Thread nicht startet).
     u32 submit(NetJobFn job);
+    // Startet bei Bedarf einen WLAN-Statuscheck im Netz-Thread ohne Heap-Allokation und ohne wtls_init().
+    void startWifiProbe();
     void cancel(u32 id);
     void cancelAndWait(u32 id);  // wartend → entfernt; laufend → abbrechen und auf sein Ende warten
     void shutdown();             // alles abbrechen, laufenden abwarten, wtls_shutdown (NL_TLS), Thread beendet
@@ -33,10 +36,13 @@ public:
     bool networkUp() const { return netUp_; }
     s32 lastNetCode() const { return netCode_; }
     bool tlsUp() const { return tlsUp_; }
+    WifiStatus wifiStatus() const { return static_cast<WifiStatus>(wifi_); }
 
 private:
     static void* entry(void* self);
+    bool ensureThreadLocked();
     void loop();
+    void probeWifi();
     void prepare();  // vor jedem Auftrag: net_init (3 Versuche), solange es nicht geklappt hat; dann wtls_init
 
     lwp_t thread_ = LWP_THREAD_NULL;
@@ -45,6 +51,9 @@ private:
     JobQueue queue_;
     bool stop_ = false;
     bool stopped_ = false;
+    bool probeRequested_ = false;
+    bool initialProbeDone_ = false;
+    volatile u8 wifi_ = static_cast<u8>(WifiStatus::Disconnected);
     volatile bool netUp_ = false;
     volatile s32 netCode_ = 0;
     volatile bool tlsUp_ = false;

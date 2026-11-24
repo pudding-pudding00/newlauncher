@@ -128,7 +128,7 @@ ui::RawInput selftestInput(int frame, const SelftestView& v) {
         case 388: return press(B::HomeBtn);  // erst nach dem Ausblenden der Einstellungen (200 ms)
         case 404: case 406: return press(B::DRight);
         case 410: return press(B::A);
-        case 450: return press(B::A);
+        case 456: return press(B::A);
         case 478:
             if (v.vcMap->focusedRow() != rowOf(*v.vcMap, kSm64)) return press(B::DDown);
             break;
@@ -140,10 +140,10 @@ ui::RawInput selftestInput(int frame, const SelftestView& v) {
     }
     if (frame >= 104 && frame <= 114 && isEven(frame)) return press(B::DRight);
     if (frame >= 142 && frame <= 156 && isEven(frame)) return press(B::DRight);
-    // Runter bis zur Zielzeile (bis zu 6× bzw. 13×): neue Einstellungszeilen verschieben das Ziel nicht mehr.
+    // Runter bis zur Zielzeile (bis zu 6× bzw. 16×): neue Einstellungszeilen verschieben das Ziel nicht mehr.
     if (frame >= 356 && frame <= 366 && isEven(frame) && v.settings->focus() != static_cast<int>(SettingRow::Volume))
         return press(B::DDown);  // → Lautstärke
-    if (frame >= 424 && frame <= 448 && isEven(frame) && v.settings->focus() != static_cast<int>(SettingRow::VcMap))
+    if (frame >= 424 && frame <= 454 && isEven(frame) && v.settings->focus() != static_cast<int>(SettingRow::VcMap))
         return press(B::DDown);  // → VC-Injects
     if (frame >= kTypeStart && frame < kTypeStart + 15) {
         const int i = (frame - kTypeStart) / 3, phase = (frame - kTypeStart) % 3;
@@ -213,7 +213,7 @@ void selftestAfterFrame(int frame, const SelftestView& v) {
         case 370: NL_ASSERT(v.config->musicVolume == 50); break;
         case 374: NL_ASSERT(v.config->musicVolume == 50); break;  // nach B: NL_CONFIG_SAVED
         case 426: NL_ASSERT(v.scenes.top() == v.settings); break;
-        case 449: NL_ASSERT(v.settings->focus() == static_cast<int>(SettingRow::VcMap)); break;
+        case 455: NL_ASSERT(v.settings->focus() == static_cast<int>(SettingRow::VcMap)); break;
         case 476: {
             NL_ASSERT(v.scenes.top() == v.vcMap);
             NL_ASSERT(v.vcMap->rows().size() == 2);

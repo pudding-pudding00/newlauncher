@@ -1,7 +1,7 @@
 #pragma once
 // Emulator-Verwaltung hinter Einstellungen → „Emulatoren“ (Spec 6.9): je Emulator eine Zeile mit Status,
-// darunter „Nach Updates suchen“ und „Alle aktualisieren“. Die Szene löst nur Befehle aus; main lädt die
-// Liste und installiert über den EmuWorker und meldet Zeilen, Fortschritt und Fehler zurück.
+// darunter „Nach Updates suchen“, „Alle installieren“ und „Alle aktualisieren“. Die Szene löst nur Befehle
+// aus; main lädt die Liste und installiert über den EmuWorker und meldet Zeilen, Fortschritt und Fehler zurück.
 // Kein Netz beim Öffnen.
 
 #include <map>
@@ -28,7 +28,10 @@ class EmulatorsScene final : public Scene {
 public:
     enum class ListState : u8 { NotLoaded, Loading, Loaded, Failed };
     static constexpr int kEmuRows = 6;
-    static constexpr int kRowCount = kEmuRows + 2;  // + Nach Updates suchen, Alle aktualisieren
+    static constexpr int kRowCheckUpdates = kEmuRows;
+    static constexpr int kRowInstallAll = kEmuRows + 1;
+    static constexpr int kRowUpdateAll = kEmuRows + 2;
+    static constexpr int kRowCount = kEmuRows + 3;  // + Nach Updates suchen, Alle installieren, Alle aktualisieren
 
     void update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) override;
     void draw(const UiContext& ctx, gfx::DrawList& dl) override;
@@ -41,18 +44,21 @@ public:
     void setListState(ListState s, NetError cause = NetError::Other) {
         list_ = s;
         listCause_ = cause;
+        if (s == ListState::Failed || s == ListState::NotLoaded) pending_ = PendingAction::None;
     }
     ListState listState() const { return list_; }
     void setError(std::string_view oscName, EmuInstallError e);
 
     int focus() const { return focus_; }
     const EmuRow* selectedRow() const;
-    std::vector<OscApp> takeTargets();  // Ziele des letzten EmuInstall/EmuInstallAll
+    std::vector<OscApp> takeTargets();         // Ziele des letzten EmuInstall/EmuInstallAll
+    std::vector<OscApp> takePendingTargets();  // vorgemerkte Ziele nach automatischem Laden der Liste
     std::string statusText(int row) const;
     std::string infoText() const;  // Infozeile ohne laufenden Auftrag
     gfx::Rect rowRect(const UiContext& ctx, int row) const;
 
 private:
+    enum class PendingAction : u8 { None, InstallAll, UpdateAll };
     bool working() const { return busy_.has_value() || list_ == ListState::Loading; }
     gfx::Rect cardRect(const UiContext& ctx) const;
     int hitTest(const UiContext& ctx, float x, float y) const;
@@ -61,6 +67,7 @@ private:
     std::optional<EmuProgress> busy_;
     ListState list_ = ListState::NotLoaded;
     NetError listCause_ = NetError::Other;
+    PendingAction pending_ = PendingAction::None;
     std::map<std::string, EmuInstallError, std::less<>> errors_;
     std::vector<OscApp> targets_;
     int focus_ = 0;

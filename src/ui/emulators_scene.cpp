@@ -39,14 +39,30 @@ Str stepStr(EmuStep s) {
     return Str::EmuStepDownload;
 }
 
+bool installable(const EmuRow& r) { return r.remote.has_value() && r.state == EmuState::NotInstalled; }
+
 bool updatable(const EmuRow& r) {
     return r.remote.has_value() && (r.state == EmuState::UpdateAvailable || r.state == EmuState::UnknownVersion);
+}
+
+std::vector<OscApp> collectTargets(const std::vector<EmuRow>& rows, bool installMissing) {
+    std::vector<OscApp> out;
+    for (const EmuRow& r : rows)
+        if (installMissing ? installable(r) : updatable(r)) out.push_back(*r.remote);
+    return out;
+}
+
+bool hasAnyTarget(const std::vector<EmuRow>& rows, bool installMissing) {
+    for (const EmuRow& r : rows)
+        if (installMissing ? installable(r) : updatable(r)) return true;
+    return false;
 }
 }  // namespace
 
 void EmulatorsScene::onEnter() {
     focus_ = 0;
     keysSincePointerMove_ = false;
+    pending_ = PendingAction::None;
 }
 
 void EmulatorsScene::setError(std::string_view oscName, EmuInstallError e) {
@@ -64,6 +80,15 @@ const EmuRow* EmulatorsScene::selectedRow() const {
 std::vector<OscApp> EmulatorsScene::takeTargets() {
     std::vector<OscApp> out = std::move(targets_);
     targets_.clear();
+    return out;
+}
+
+std::vector<OscApp> EmulatorsScene::takePendingTargets() {
+    if (pending_ == PendingAction::None || list_ != ListState::Loaded) return {};
+    const bool installMissing = pending_ == PendingAction::InstallAll;
+    pending_ = PendingAction::None;
+    std::vector<OscApp> out = collectTargets(rows_, installMissing);
+    for (const OscApp& a : out) errors_.erase(a.name);
     return out;
 }
 
@@ -127,6 +152,7 @@ void EmulatorsScene::update(const UiContext& ctx, const InputFrame& in, float, S
     const bool pointerOff = in.pointerValid && hit < 0 && !keysSincePointerMove_;
 
     if (in.pressed(Action::Back) || in.pressed(Action::Home)) {
+        pending_ = PendingAction::None;
         if (working())
             out.command = AppCommand::EmuCancel;
         else
@@ -135,17 +161,27 @@ void EmulatorsScene::update(const UiContext& ctx, const InputFrame& in, float, S
     }
     if (!in.pressed(Action::Confirm) || pointerOff || working()) return;
 
-    if (focus_ == kEmuRows) {
+    if (focus_ == kRowCheckUpdates) {
+        pending_ = PendingAction::None;
         out.command = AppCommand::EmuFetchList;
+        return;
+    }
+    if (focus_ == kRowInstallAll || focus_ == kRowUpdateAll) {
+        const bool installMissing = focus_ == kRowInstallAll;
+        if (list_ != ListState::Loaded) {
+            pending_ = installMissing ? PendingAction::InstallAll : PendingAction::UpdateAll;
+            out.command = AppCommand::EmuFetchList;
+            return;
+        }
+        pending_ = PendingAction::None;
+        targets_ = collectTargets(rows_, installMissing);
+        if (!targets_.empty()) out.command = AppCommand::EmuInstallAll;
+        for (const OscApp& a : targets_) errors_.erase(a.name);
         return;
     }
     if (list_ != ListState::Loaded) return;
     targets_.clear();
-    if (focus_ == kEmuRows + 1) {
-        for (const EmuRow& r : rows_)
-            if (updatable(r)) targets_.push_back(*r.remote);
-        if (!targets_.empty()) out.command = AppCommand::EmuInstallAll;
-    } else if (const EmuRow* r = selectedRow(); r != nullptr && r->remote) {
+    if (const EmuRow* r = selectedRow(); r != nullptr && r->remote) {
         targets_.push_back(*r->remote);
         out.command = AppCommand::EmuInstall;
     }
@@ -170,8 +206,12 @@ void EmulatorsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         if (i == focus_) gfx::roundRect(dl, s, Rect{r.x - 4, r.y + 1, r.w + 8, r.h - 2}, 8, t.tileFocus);
         const float base = r.y + r.h / 2 + (label.ascent - label.descent) / 2;
         if (i >= kEmuRows) {
-            const Str text = i == kEmuRows ? Str::EmuCheckUpdates : Str::EmuUpdateAll;
-            gfx::drawTextEllipsis(dl, label, r.x + 8, base, r.w - 16, tr(text), working() ? t.textMuted : t.accent);
+            const Str text = i == kRowCheckUpdates ? Str::EmuCheckUpdates
+                           : i == kRowInstallAll   ? Str::EmuInstallAll
+                                                   : Str::EmuUpdateAll;
+            const bool muted = working() || (list_ == ListState::Loaded && i != kRowCheckUpdates &&
+                                             !hasAnyTarget(rows_, i == kRowInstallAll));
+            gfx::drawTextEllipsis(dl, label, r.x + 8, base, r.w - 16, tr(text), muted ? t.textMuted : t.accent);
             continue;
         }
         if (i >= static_cast<int>(rows_.size())) continue;

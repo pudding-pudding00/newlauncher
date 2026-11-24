@@ -21,6 +21,7 @@
 #include "core/n64_choice.hpp"
 #include "core/nin_cfg.hpp"
 #include "core/result.hpp"
+#include "core/sysinfo.hpp"
 #include "core/wip_patch.hpp"
 
 namespace nl {
@@ -36,6 +37,7 @@ enum class LaunchFailure : u8 {
     NintendontNeedsFat,         // M16: GC-Spiel nicht auf FAT; Kontext Gerätename („USB 2“)
     DiscChanged,                // M19: eingelegte Disc weicht vor dem Start ab; Kontext neue ID6
     DiscUnreadable,             // M19: eingelegte Disc beim Start leer oder unlesbar
+    GcDiscUnsupported,          // M19: GC-Disc auf vWii oder Konsole ohne GC-Ports
 };
 const char* launchFailureName(LaunchFailure f);  // Log-Marker NL_PREFLIGHT_FAIL
 
@@ -52,6 +54,7 @@ struct GameOptionInputs {
     const IniDoc& games;
     bool gcPorts = true;
     std::span<const u8> gcCheats = {};  // M15: GCT aus .txt/.sel; wirkt nur mit GC-Option „cheats“
+    Platform platform = Platform::Wii;  // M19: Wii vs. vWii (GC-Disc, Standard wiiu_wide)
 };
 
 struct LaunchError {

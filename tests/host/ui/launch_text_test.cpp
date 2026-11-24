@@ -181,3 +181,12 @@ TEST_CASE("M19: DiscChanged und DiscUnreadable in DE und EN") {
     CHECK(std::string(render(LaunchFailure::DiscUnreadable, "RMCP01").text).find("not readable") != std::string::npos);
     setLanguage(saved);
 }
+
+TEST_CASE("M19: GcDiscUnsupported in DE und EN") {
+    const Lang saved = language();
+    setLanguage(Lang::De);
+    CHECK(std::string(render(LaunchFailure::GcDiscUnsupported, "").text).find("GameCube-Disc") != std::string::npos);
+    setLanguage(Lang::En);
+    CHECK(std::string(render(LaunchFailure::GcDiscUnsupported, "").text).find("GameCube disc") != std::string::npos);
+    setLanguage(saved);
+}

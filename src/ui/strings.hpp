@@ -322,7 +322,10 @@
     X(DiscChanged, "Andere Disc eingelegt.\nIm Laufwerk liegt eine andere Disc (%s). Die Liste wurde aktualisiert.", \
       "Different disc inserted.\nA different disc (%s) is in the drive. The list has been updated.") \
     X(DiscUnreadableErr, "Disc nicht lesbar.\nBitte prüfen, ob die Disc eingelegt und sauber ist.", \
-      "Disc not readable.\nPlease check that the disc is inserted and clean.")
+      "Disc not readable.\nPlease check that the disc is inserted and clean.") \
+    X(GcDiscUnsupported, \
+      "GameCube-Disc nicht unterstützt.\nDieses Laufwerk (vWii / ohne GameCube-Anschlüsse) kann keine GameCube-Discs lesen.", \
+      "GameCube disc not supported.\nThis drive (vWii / without GameCube ports) cannot read GameCube discs.")
 // clang-format on
 
 namespace nl::ui {

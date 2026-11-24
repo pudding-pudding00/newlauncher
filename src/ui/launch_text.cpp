@@ -82,6 +82,7 @@ int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, cha
         case LaunchFailure::NintendontNeedsFat: msg = fill(tr(Str::NintendontNeedsFat), e.context); break;
         case LaunchFailure::DiscChanged: msg = fill(tr(Str::DiscChanged), e.context); break;
         case LaunchFailure::DiscUnreadable: msg = tr(Str::DiscUnreadableErr); break;
+        case LaunchFailure::GcDiscUnsupported: msg = tr(Str::GcDiscUnsupported); break;
     }
     return static_cast<int>(copyEllipsized(text, textCap, msg));
 }

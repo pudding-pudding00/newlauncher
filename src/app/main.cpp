@@ -1038,10 +1038,25 @@ int main(int argc, char** argv) {
             readCheatFiles(std::string(game.key).substr(0, 6), txt, sel);
             gcGct = nl::gctForSelection(txt, sel);
         }
-        const nl::GameOptionInputs optionInputs{
-            configDoc, gamesDoc,
-            nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected()) != nl::Platform::VWii,
-            gcGct};
+        const nl::Platform currentPlatform =
+            nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected());
+        const nl::GameOptionInputs optionInputs{configDoc, gamesDoc, currentPlatform != nl::Platform::VWii, gcGct,
+                                                currentPlatform};
+        if (game.console == nl::Console::Gc && (game.flags & nl::kFlagDisc) != 0) {
+            const nl::platform::DiscReadResult cur = discDrive.readSync();
+            if (cur.status != nl::platform::DiscReadStatus::Ok) {
+                applyDiscResult(cur, false);
+                nl::log::line("NL_PREFLIGHT_FAIL %s %s", nl::launchFailureName(nl::LaunchFailure::DiscUnreadable), key.c_str());
+                showError({nl::LaunchFailure::DiscUnreadable, key});
+                return;
+            }
+            if (cur.disc.kind != nl::DiscKind::Gc || cur.disc.id6 != key.substr(0, 6)) {
+                applyDiscResult(cur, false);
+                nl::log::line("NL_PREFLIGHT_FAIL %s %s", nl::launchFailureName(nl::LaunchFailure::DiscChanged), key.c_str());
+                showError({nl::LaunchFailure::DiscChanged, cur.disc.id6});
+                return;
+            }
+        }
         // M16: Dateisystem des Spielgeräts (Nintendont nur FAT, Emulatoren laut fsMask).
         const nl::platform::Device* gameDev = nl::platform::deviceTable().byName(rootOf(game));
         const nl::FsKind gameFs = gameDev != nullptr ? gameDev->slot.kind : nl::FsKind::Fat;

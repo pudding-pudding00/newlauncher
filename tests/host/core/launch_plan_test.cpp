@@ -784,3 +784,37 @@ TEST_CASE("preflightWiiDisc: fehlendes cIOS sperrt außer im Dry-Run, übergroß
     REQUIRE_FALSE(cheats.isOk());
     CHECK(cheats.error().kind == LaunchFailure::CheatsTooLarge);
 }
+
+TEST_CASE("preflightGame: GC-Disc auf Wii erzeugt NIN_CFG mit GamePath=di und usb=0") {
+    auto fs = gcFs();
+    Game g{Console::Gc, "GM8P01", "Metroid Prime", 0, 0, nullptr, "disc:", kNoDevice, kFlagDisc};
+    const IniDoc cfg = IniDoc::parse("[gc]\ncheats = 1\nforce_wide = 1\n");
+    const IniDoc games;
+    const std::vector<u8> gct(16, 0x55);
+    GameOptionInputs opts{cfg, games, true, gct, Platform::Wii};
+    auto r = preflightGame(fs, g, "", emus(), nullptr, true, &opts, FsKind::Unknown);
+    REQUIRE(r.isOk());
+    CHECK(r.value().kind == LaunchTarget::Kind::Dol);
+    const std::string& nin = r.value().dol.args[1];
+    CHECK(std::string(nin.c_str() + 0x14) == "di");
+    CHECK((static_cast<u8>(nin[0x0A]) & 0x04) == 0);  // kNinCfgUsb aus
+    CHECK((static_cast<u8>(nin[0x0B]) & 0x20) != 0);  // kNinCfgForceWide
+    CHECK(r.value().gct == gct);
+    CHECK(r.value().gctPath == "sd:/newlauncher/cache/GM8P01.gct");
+}
+
+TEST_CASE("preflightGame: GC-Disc auf vWii oder ohne GC-Ports → GcDiscUnsupported") {
+    auto fs = gcFs();
+    Game g{Console::Gc, "GM8P01", "Metroid Prime", 0, 0, nullptr, "disc:", kNoDevice, kFlagDisc};
+    const IniDoc empty;
+    const GameOptionInputs vWiiOpts{empty, empty, false, {}, Platform::VWii};
+    auto vWiiRes = preflightGame(fs, g, "", emus(), nullptr, true, &vWiiOpts, FsKind::Unknown);
+    REQUIRE_FALSE(vWiiRes.isOk());
+    CHECK(vWiiRes.error().kind == LaunchFailure::GcDiscUnsupported);
+    CHECK(std::string(launchFailureName(LaunchFailure::GcDiscUnsupported)) == "GcDiscUnsupported");
+
+    const GameOptionInputs miniOpts{empty, empty, false, {}, Platform::Wii};
+    auto miniRes = preflightGame(fs, g, "", emus(), nullptr, true, &miniOpts, FsKind::Unknown);
+    REQUIRE_FALSE(miniRes.isOk());
+    CHECK(miniRes.error().kind == LaunchFailure::GcDiscUnsupported);
+}

@@ -45,6 +45,7 @@ inline constexpr u32 kNinLangAuto = 0xFFFFFFFFu;
 inline constexpr u32 kNinLangEn = 0, kNinLangDe = 1, kNinLangFr = 2, kNinLangEs = 3, kNinLangIt = 4, kNinLangNl = 5;
 inline constexpr std::size_t kNinMaxGamePath = 254;  // GamePath[255] mit NUL
 inline constexpr std::size_t kNinMaxCheatPath = 254;  // CheatPath[255] mit NUL
+inline constexpr std::string_view kNinDiscGamePath = "di";  // M19: GC-Disc über Laufwerk (Nintendont)
 // M15: Nintendont lädt die GCT zwischen sein Codehandler-Ende (0x1AA0) und den Patch-Bereich unter 0x3000, dessen
 // Größe je Spiel wächst (kernel/Patch.c, c683db3). Zu große Dateien ignoriert er still; der Preflight lässt deshalb
 // konservativ Platz für die Spiel-Patches.

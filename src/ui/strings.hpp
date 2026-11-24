@@ -313,7 +313,32 @@
     X(NetErrNoMem, "Zu wenig Speicher für die Verbindung", "Not enough memory for the connection") \
     X(NetErrTlsMissing, "HTTPS ist in diesem Build nicht enthalten", "HTTPS is not included in this build") \
     X(NetErrHttp, "Server meldet einen Fehler", "Server returned an error") \
-    X(NetErrOther, "Netzwerkfehler", "Network error")
+    X(NetErrOther, "Netzwerkfehler", "Network error") \
+    X(Disc, "Disc", "Disc") \
+    X(ReadDisc, "Disc lesen", "Read disc") \
+    X(ReadingDisc, "Disc wird gelesen …", "Reading disc …") \
+    X(DiscUnreadable, "Disc nicht lesbar", "Disc not readable") \
+    X(NoDisc, "Keine Disc eingelegt", "No disc inserted") \
+    X(DiscChanged, "Andere Disc eingelegt.\nIm Laufwerk liegt eine andere Disc (%s). Die Liste wurde aktualisiert.", \
+      "Different disc inserted.\nA different disc (%s) is in the drive. The list has been updated.") \
+    X(DiscUnreadableErr, "Disc nicht lesbar.\nBitte prüfen, ob die Disc eingelegt und sauber ist.", \
+      "Disc not readable.\nPlease check that the disc is inserted and clean.") \
+    X(GcDiscUnsupported, \
+      "GameCube-Disc nicht unterstützt.\nDieses Laufwerk (vWii / ohne GameCube-Anschlüsse) kann keine GameCube-Discs lesen.", \
+      "GameCube disc not supported.\nThis drive (vWii / without GameCube ports) cannot read GameCube discs.") \
+    X(Channels, "Kanäle", "Channels") \
+    X(OptSave, "Spielstände", "Save data") \
+    X(NoEmuNand, \
+      "Kein EmuNAND eingerichtet.\nBitte [emunand] path in config.ini angeben und prüfen, ob der Ordner existiert.", \
+      "No EmuNAND configured.\nSet [emunand] path in config.ini and check that the folder exists.") \
+    X(EmuNandNeedsD2x, "d2x-cIOS benötigt.\nEmuNAND erfordert ein d2x-cIOS (z. B. in Slot 249).", \
+      "d2x cIOS required.\nEmuNAND requires a d2x cIOS (e.g. in slot 249).") \
+    X(EmuNandNeedsFat, \
+      "EmuNAND braucht FAT32.\nDas EmuNAND muss auf der SD-Karte oder einer primären FAT32-Partition liegen (%s).", \
+      "EmuNAND needs FAT32.\nThe EmuNAND must be on the SD card or a primary FAT32 partition (%s).") \
+    X(OptNotOnVWii, "Auf vWii nicht verfügbar", "Not available on vWii") \
+    X(OptionsHelpVWii, "◀▶ Ändern · B Speichern · vWii: Wiimote + Classic / HID-Controller", \
+      "◀▶ Change · B Save · vWii: Wiimote + Classic / HID controller")
 // clang-format on
 
 namespace nl::ui {
@@ -336,6 +361,7 @@ const char* weekdayName(int weekday0Mon);  // 0 = Montag
 const char* monthName(int month1);         // 1 = Januar
 Str netErrorText(NetError e);              // Klartext je Netzfehler (M11)
 const char* genreLabel(u8 genre);          // Index in kGenres (M17); unbekannt → "Sonstiges"
+const char* consoleLabel(Console c);       // lokalisierte Konsolenbezeichnung (Kanäle DE/EN)
 // Text des Cover-Dialogs; bei failed > 0 und bekannter Ursache folgt der Klartext dazu in einer zweiten Zeile.
 std::string coversSummaryText(u32 ok, u32 missing, u32 failed, NetError lastError);
 

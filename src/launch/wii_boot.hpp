@@ -18,8 +18,9 @@ Result<void> loadDolBytesToBuffer(std::span<const u8> dol);
 // den Launcher bedienbar.
 Result<LaunchPlan> prepareWiiBoot(const WiiBootPlan& plan, std::string_view title);
 
-// Vorher: prepareWiiBoot erfolgreich, Laufwerke ausgehängt, Video schwarz. Lädt das cIOS in iosSlot
-// (WiiBootPlan::iosSlot); ist danach ein anderes IOS aktiv, zurück ins System-Menü. Kehrt nie zurück.
-[[noreturn]] void bootWiiGame(const LaunchPlan& booter, u8 iosSlot);
+// Vorher: prepareWiiBoot erfolgreich, Laufwerke ausgehängt, Video schwarz. Lädt das cIOS in plan.iosSlot,
+// schaltet bei Bedarf die d2x-NAND-Emulation (und bei Kanälen ES_Identify) ein und springt per chainload.
+// Kehrt nie zurück.
+[[noreturn]] void bootWiiGame(const LaunchPlan& booter, const WiiBootPlan& plan);
 
 }  // namespace nl::launch

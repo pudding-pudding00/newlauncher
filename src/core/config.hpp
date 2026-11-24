@@ -39,6 +39,7 @@ struct Config {
     std::string cheatSource = std::string(defaultCheatSource(true));  // [cheats] source (M15): {id6}-Vorlage, leer = kein Laden
     ParentalConfig parental;                 // [parental] (M17, Spec v2 10.5): PIN als Hash, nie im Klartext
     std::optional<u8> wiiIos;                // [wii] ios (M13, Spec 6.2): auto → nullopt, sonst Slot 200–255
+    std::string emuNandPath;                 // [emunand] path (M19): z. B. "usb:/nands/emu1", leer = aus
     std::vector<std::string> badKeys;        // ungültige Werte außerhalb von [library]/[paths] (NL_CFG_BAD), z. B. "wii.ios"
     std::string debugAutostart;  // [debug] autostart: Spielschlüssel, der nach NL_READY startet
     std::string debugCoverUrl;   // [debug] cover_url: ersetzt die GameTDB-Basis (Smoke-Test)
@@ -62,6 +63,7 @@ struct Config {
     std::string debugFilter;        // [debug] filter = <spec>: Filter der Startleiste setzen, NL_FILTER loggen (Smoke, M17)
     std::string debugPinInput;      // [debug] pin_input = <4 Ziffern>: PIN-Abfrage ohne Szene beantworten (Smoke, M17)
     std::string debugWizard;        // [debug] wizard = accept: Einrichtungs-Assistent nimmt jeden Vorschlag an (Smoke, M13)
+    std::string debugFakeDisc;      // [debug] fake_disc = <ID6>|gc:<ID6>: eingelegte Disc vortäuschen (Smoke, M19)
 };
 
 // tls: Build mit HTTPS (NL_TLS). Bestimmt die Standardquellen; die offiziellen Quellen in http- oder https-Form

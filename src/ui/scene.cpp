@@ -38,6 +38,7 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::EmuInstall: return "emu_install";
         case AppCommand::EmuInstallAll: return "emu_install_all";
         case AppCommand::EmuCancel: return "emu_cancel";
+        case AppCommand::ReadDisc: return "read_disc";
         case AppCommand::None: break;
     }
     return "none";

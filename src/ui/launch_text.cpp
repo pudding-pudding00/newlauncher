@@ -80,6 +80,12 @@ int launchErrorText(const LaunchError& e, char* title, std::size_t titleCap, cha
         case LaunchFailure::CheatsTooLarge: msg = fill(tr(Str::CheatsTooLarge), e.context); break;
         case LaunchFailure::FileNotContiguousReadable: msg = fill(tr(Str::FileNotContiguousReadable), e.context); break;
         case LaunchFailure::NintendontNeedsFat: msg = fill(tr(Str::NintendontNeedsFat), e.context); break;
+        case LaunchFailure::DiscChanged: msg = fill(tr(Str::DiscChanged), e.context); break;
+        case LaunchFailure::DiscUnreadable: msg = tr(Str::DiscUnreadableErr); break;
+        case LaunchFailure::GcDiscUnsupported: msg = tr(Str::GcDiscUnsupported); break;
+        case LaunchFailure::NoEmuNand: msg = tr(Str::NoEmuNand); break;
+        case LaunchFailure::EmuNandNeedsD2x: msg = tr(Str::EmuNandNeedsD2x); break;
+        case LaunchFailure::EmuNandNeedsFat: msg = fill(tr(Str::EmuNandNeedsFat), e.context); break;
     }
     return static_cast<int>(copyEllipsized(text, textCap, msg));
 }

@@ -7,6 +7,7 @@
 #include <ogc/cache.h>
 #include <ogc/lwp_watchdog.h>
 
+#include "core/index_file.hpp"
 #include "platform/log.hpp"
 
 namespace nl::app {
@@ -163,6 +164,17 @@ void BannerService::want(const Game& game) {
     path_.clear();
     gc_ = game.console == Console::Gc;
     wii_ = game.console == Console::Wii;
+    emuChannel_ = game.console == Console::Channel;
+    if ((game.flags & kFlagDisc) != 0) {
+        requested_ = true;
+        return;
+    }
+    if (emuChannel_) {
+        titleId_.reset();
+        path_ = game.path != nullptr ? game.path : "";
+        requested_ = path_.empty();
+        return;
+    }
     titleId_ = gc_ || wii_ || vcMap_ == nullptr ? std::nullopt : vcMap_->titleFor(key);
     // Konsolen ohne Banner (und Emulator-Spiele ohne VC-Zuordnung) leise aufs Cover: kein Auftrag, kein Log.
     if (!gc_ && !wii_ && !titleId_ && debugFile_.empty()) requested_ = true;
@@ -209,6 +221,10 @@ void BannerService::pump() {
     freeFrame();
     if (!debugFile_.empty()) {
         if (!worker_.startChannel(fs_, key_, 0, debugFile_)) log::line("NL_BANNER_FALLBACK cover thread");
+        return;
+    }
+    if (emuChannel_ && !path_.empty()) {
+        if (!worker_.startChannel(fs_, key_, 0, path_)) log::line("NL_BANNER_FALLBACK cover thread");
         return;
     }
     if (titleId_) {

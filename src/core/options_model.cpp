@@ -34,18 +34,19 @@ std::optional<std::string> optionsFileText(const Result<std::vector<u8>>& read) 
 }
 
 OptionsModel::OptionsModel(Console c, std::string id6, std::string configText, std::string gamesText,
-                           std::optional<NinVersion> nin)
+                           std::optional<NinVersion> nin, bool vWii)
     : console_(c),
       id6_(std::move(id6)),
       config_(std::move(configText)),
       games_(std::move(gamesText)),
       config0_(config_),
       games0_(games_),
-      nin_(nin) {
+      nin_(nin),
+      vWii_(vWii) {
     refresh();
 }
 
-void OptionsModel::refresh() { rows_ = listOptions(console_, IniDoc::parse(config_), IniDoc::parse(games_), id6_); }
+void OptionsModel::refresh() { rows_ = listOptions(console_, IniDoc::parse(config_), IniDoc::parse(games_), id6_, vWii_); }
 
 std::string OptionsModel::section() const {
     if (perGame()) return "game " + id6_;
@@ -77,6 +78,11 @@ std::optional<NinVersion> OptionsModel::requiredVersion(std::size_t r) const {
     for (const NinOptionGate& g : ninOptionGates())
         if (rows_[r].key == g.key && *nin_ < g.minVersion) return g.minVersion;
     return std::nullopt;
+}
+
+bool OptionsModel::disabledOnVWii(std::size_t r) const {
+    if (!vWii_ || console_ != Console::Gc || r >= rows_.size()) return false;
+    return rows_[r].key == "memcard" || rows_[r].key == "native_si";
 }
 
 void OptionsModel::write(std::string_view key, std::optional<std::string_view> value) {

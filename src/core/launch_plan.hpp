@@ -8,6 +8,8 @@
 #include <string_view>
 #include <vector>
 
+#include "core/disc_id.hpp"
+#include "core/emunand.hpp"
 #include "core/emulators.hpp"
 #include "core/partition_table.hpp"
 #include "core/extent_units.hpp"
@@ -20,6 +22,7 @@
 #include "core/n64_choice.hpp"
 #include "core/nin_cfg.hpp"
 #include "core/result.hpp"
+#include "core/sysinfo.hpp"
 #include "core/wip_patch.hpp"
 
 namespace nl {
@@ -33,6 +36,12 @@ enum class LaunchFailure : u8 {
     CheatsTooLarge,     // M15: GCT passt nicht in die Codeliste; Kontext Größe in Bytes
     FileNotContiguousReadable,  // M16: NTFS-Datei komprimiert, sparse oder resident; Kontext Pfad
     NintendontNeedsFat,         // M16: GC-Spiel nicht auf FAT; Kontext Gerätename („USB 2“)
+    DiscChanged,                // M19: eingelegte Disc weicht vor dem Start ab; Kontext neue ID6
+    DiscUnreadable,             // M19: eingelegte Disc beim Start leer oder unlesbar
+    GcDiscUnsupported,          // M19: GC-Disc auf vWii oder Konsole ohne GC-Ports
+    NoEmuNand,                  // M19: EmuNAND nicht eingerichtet oder Ordner fehlt
+    EmuNandNeedsD2x,            // M19: EmuNAND braucht ein d2x-cIOS
+    EmuNandNeedsFat,            // M19: EmuNAND braucht FAT32 auf primärer MBR-Partition / SD
 };
 const char* launchFailureName(LaunchFailure f);  // Log-Marker NL_PREFLIGHT_FAIL
 
@@ -49,6 +58,7 @@ struct GameOptionInputs {
     const IniDoc& games;
     bool gcPorts = true;
     std::span<const u8> gcCheats = {};  // M15: GCT aus .txt/.sel; wirkt nur mit GC-Option „cheats“
+    Platform platform = Platform::Wii;  // M19: Wii vs. vWii (GC-Disc, Standard wiiu_wide)
 };
 
 struct LaunchError {
@@ -80,17 +90,23 @@ LaunchError fromExtentError(ExtentError e, std::string context);  // M16: Extent
 // 0x80003000 (Beginn der OS-Globals, wie upstream WiiFlow). Der Wii-Build prüft beide Grenzen gegen den Handler.
 inline constexpr u32 kWiiCodelistBytes = 0x80003000u - 0x80002338u;
 
+enum class WiiBootSource : u8 { Usb, Disc, Channel };
+
 // Alles, was der Game-Booter braucht; the_CFG entsteht daraus erst auf der Plattform (Task 6).
 struct WiiBootPlan {
+    WiiBootSource source = WiiBootSource::Usb;
     std::string id6;
     bool usb = false;
     CiosStatus cios;
     u8 iosSlot = kDefaultCiosSlot;  // M13: IOS_ReloadIOS und the_CFG.IOS.Version (= cios.slot)
-    std::vector<u8> fragBytes;  // serializeFragList, genau kFragListBytes
+    std::vector<u8> fragBytes;  // serializeFragList, genau kFragListBytes (nur Usb)
     WiiOptions options;         // M14: the_CFG-Felder, ios und Rückkehr
     std::vector<u8> gct;        // M15: gewählte Codes als GCT; leer = ohne Cheats
     u8 hookType = 0;            // M15: the_CFG.hooktype, 0 ohne Codes
     std::vector<WipEntry> wip;  // M15: WIP-Patches aus <ID6>.wip, höchstens kWipMaxEntries
+    u64 channelTitleId = 0;     // M19: source == Channel
+    std::optional<EmuNandInfo> emuNand;  // M19: gesetzt bei save=emu oder Channel
+    bool emuNandFull = false;            // M19: false = nur Spielstände, true = kompletter NAND (Kanal)
 };
 
 // Reihenfolge: cIOS Missing → CiosMissing (Kontext Slot, z. B. "222"); bei dryRun nur durchgelassen (die
@@ -100,11 +116,22 @@ struct WiiBootPlan {
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
                                               const Result<FragList, LaunchError>& frags, bool dryRun,
                                               const WiiOptions& options = {}, std::span<const u8> gct = {},
-                                              std::span<const WipEntry> wip = {});
+                                              std::span<const WipEntry> wip = {}, const EmuNandInfo* emuNand = nullptr);
 
-// Ziel eines Starts: ein DOL über den Chainloader, ein Kanal im NAND (VC-Inject) oder ein Wii-Spiel.
+// M19: Wii-Disc vor dem Start gegen das tatsächlich eingelegte Medium prüfen (TYPE_WII_DISC, ohne Fragmente).
+Result<WiiBootPlan, LaunchError> preflightWiiDisc(const Game& g, std::optional<OpticalDisc> currentDisc,
+                                                  const CiosStatus& cios, bool dryRun,
+                                                  const WiiOptions& options = {}, std::span<const u8> gct = {},
+                                                  std::span<const WipEntry> wip = {},
+                                                  const EmuNandInfo* emuNand = nullptr);
+
+// M19: Kanal im EmuNAND (TYPE_CHANNEL + volle NAND-Emulation über d2x).
+Result<WiiBootPlan, LaunchError> preflightEmuChannel(const Game& g, const CiosStatus& cios, const EmuNandInfo& emuNand,
+                                                     bool dryRun, const WiiOptions& options = {});
+
+// Ziel eines Starts: ein DOL über den Chainloader, ein Kanal im NAND (VC-Inject), ein Wii-Spiel oder EmuNAND-Kanal.
 struct LaunchTarget {
-    enum class Kind : u8 { Dol, Channel, Wii } kind = Kind::Dol;
+    enum class Kind : u8 { Dol, Channel, Wii, EmuChannel } kind = Kind::Dol;
     LaunchPlan dol;                // Kind::Dol
     u64 titleId = 0;               // Kind::Channel
     std::optional<N64Method> n64;  // gewählter Weg bei N64-Spielen

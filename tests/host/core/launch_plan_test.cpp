@@ -2,6 +2,7 @@
 #include "core/launch_layout.hpp"
 #include "core/launch_plan.hpp"
 #include "core/cios_scan.hpp"
+#include "core/index_file.hpp"
 #include "support/dol_images.hpp"
 #include "support/mem_fs.hpp"
 #include <doctest/doctest.h>
@@ -712,4 +713,176 @@ TEST_CASE("preflightGame: Wii auf ext oder NTFS → kein Fehler, kein Hinweis") 
         CHECK(r.value().kind == LaunchTarget::Kind::Wii);
         CHECK(r.value().warnings.empty());
     }
+}
+
+TEST_CASE("preflightWiiDisc: gültige Wii-Disc erzeugt Plan ohne Fragmente mit Optionen") {
+    Game g = wiiGame();
+    g.path = "disc:";
+    g.device = kNoDevice;
+    g.flags = kFlagDisc;
+    const OpticalDisc disc{DiscKind::Wii, "RMCP01", "Mario Kart Wii"};
+    WiiOptions opts;
+    opts.cfg.aspectRatio = 1;
+    opts.cheats = true;
+    opts.hookType = 2;
+    const std::vector<u8> gct(16, 0x11);
+    auto r = preflightWiiDisc(g, disc, kD2x, false, opts, gct);
+    REQUIRE(r.isOk());
+    CHECK(r.value().source == WiiBootSource::Disc);
+    CHECK(r.value().id6 == "RMCP01");
+    CHECK_FALSE(r.value().usb);
+    CHECK(r.value().fragBytes.empty());
+    CHECK(r.value().iosSlot == kD2x.slot);
+    CHECK(r.value().options.cfg.aspectRatio == 1);
+    CHECK(r.value().gct == gct);
+    CHECK(r.value().hookType == 2);
+}
+
+TEST_CASE("preflightWiiDisc: andere Disc oder GC-Disc → DiscChanged, leer/unlesbar → DiscUnreadable") {
+    Game g = wiiGame();
+    g.path = "disc:";
+    g.device = kNoDevice;
+    g.flags = kFlagDisc;
+
+    auto swapped = preflightWiiDisc(g, OpticalDisc{DiscKind::Wii, "RSBP01", "Brawl"}, kD2x, true);
+    REQUIRE_FALSE(swapped.isOk());
+    CHECK(swapped.error().kind == LaunchFailure::DiscChanged);
+    CHECK(swapped.error().context == "RSBP01");
+    CHECK(std::string(launchFailureName(LaunchFailure::DiscChanged)) == "DiscChanged");
+
+    auto gc = preflightWiiDisc(g, OpticalDisc{DiscKind::Gc, "GM8P01", "Prime"}, kD2x, true);
+    REQUIRE_FALSE(gc.isOk());
+    CHECK(gc.error().kind == LaunchFailure::DiscChanged);
+    CHECK(gc.error().context == "GM8P01");
+
+    auto empty = preflightWiiDisc(g, std::nullopt, kD2x, true);
+    REQUIRE_FALSE(empty.isOk());
+    CHECK(empty.error().kind == LaunchFailure::DiscUnreadable);
+    CHECK(std::string(launchFailureName(LaunchFailure::DiscUnreadable)) == "DiscUnreadable");
+
+    auto unknown = preflightWiiDisc(g, OpticalDisc{DiscKind::Unknown, "", ""}, kD2x, true);
+    REQUIRE_FALSE(unknown.isOk());
+    CHECK(unknown.error().kind == LaunchFailure::DiscUnreadable);
+}
+
+TEST_CASE("preflightWiiDisc: fehlendes cIOS sperrt außer im Dry-Run, übergroße GCT → CheatsTooLarge") {
+    Game g = wiiGame();
+    g.flags = kFlagDisc;
+    const OpticalDisc disc{DiscKind::Wii, "RMCP01", "Mario Kart Wii"};
+    const CiosStatus missing{CiosState::Missing, 0, "", 249};
+    auto fail = preflightWiiDisc(g, disc, missing, false);
+    REQUIRE_FALSE(fail.isOk());
+    CHECK(fail.error().kind == LaunchFailure::CiosMissing);
+    CHECK(fail.error().context == "249");
+
+    auto dry = preflightWiiDisc(g, disc, missing, true);
+    REQUIRE(dry.isOk());
+    CHECK(dry.value().source == WiiBootSource::Disc);
+
+    const std::vector<u8> big(kWiiCodelistBytes + 8, 0);
+    auto cheats = preflightWiiDisc(g, disc, kD2x, true, {}, big);
+    REQUIRE_FALSE(cheats.isOk());
+    CHECK(cheats.error().kind == LaunchFailure::CheatsTooLarge);
+}
+
+TEST_CASE("preflightGame: GC-Disc auf Wii erzeugt NIN_CFG mit GamePath=di und usb=0") {
+    auto fs = gcFs();
+    Game g{Console::Gc, "GM8P01", "Metroid Prime", 0, 0, nullptr, "disc:", kNoDevice, kFlagDisc};
+    const IniDoc cfg = IniDoc::parse("[gc]\ncheats = 1\nforce_wide = 1\n");
+    const IniDoc games;
+    const std::vector<u8> gct(16, 0x55);
+    GameOptionInputs opts{cfg, games, true, gct, Platform::Wii};
+    auto r = preflightGame(fs, g, "", emus(), nullptr, true, &opts, FsKind::Unknown);
+    REQUIRE(r.isOk());
+    CHECK(r.value().kind == LaunchTarget::Kind::Dol);
+    const std::string& nin = r.value().dol.args[1];
+    CHECK(std::string(nin.c_str() + 0x14) == "di");
+    CHECK((static_cast<u8>(nin[0x0A]) & 0x04) == 0);  // kNinCfgUsb aus
+    CHECK((static_cast<u8>(nin[0x0B]) & 0x20) != 0);  // kNinCfgForceWide
+    CHECK(r.value().gct == gct);
+    CHECK(r.value().gctPath == "sd:/newlauncher/cache/GM8P01.gct");
+}
+
+TEST_CASE("preflightGame: GC-Disc auf vWii oder ohne GC-Ports → GcDiscUnsupported") {
+    auto fs = gcFs();
+    Game g{Console::Gc, "GM8P01", "Metroid Prime", 0, 0, nullptr, "disc:", kNoDevice, kFlagDisc};
+    const IniDoc empty;
+    const GameOptionInputs vWiiOpts{empty, empty, false, {}, Platform::VWii};
+    auto vWiiRes = preflightGame(fs, g, "", emus(), nullptr, true, &vWiiOpts, FsKind::Unknown);
+    REQUIRE_FALSE(vWiiRes.isOk());
+    CHECK(vWiiRes.error().kind == LaunchFailure::GcDiscUnsupported);
+    CHECK(std::string(launchFailureName(LaunchFailure::GcDiscUnsupported)) == "GcDiscUnsupported");
+
+    const GameOptionInputs miniOpts{empty, empty, false, {}, Platform::Wii};
+    auto miniRes = preflightGame(fs, g, "", emus(), nullptr, true, &miniOpts, FsKind::Unknown);
+    REQUIRE_FALSE(miniRes.isOk());
+    CHECK(miniRes.error().kind == LaunchFailure::GcDiscUnsupported);
+}
+
+TEST_CASE("preflightWii & preflightWiiDisc: save = emu prüft EmuNAND, FAT und d2x") {
+    WiiOptions emuOpt;
+    emuOpt.saveEmu = true;
+    const EmuNandInfo none{};
+    const EmuNandInfo ntfs{EmuNandStatus::NotFat, {"usb2", "/emunand"}, true, 1, "USB 2"};
+    const EmuNandInfo okNand{EmuNandStatus::Ok, {"usb", "/emunand"}, true, 0, "USB 1"};
+
+    auto rNo = preflightWii(wiiGame(), "usb:", kD2x, goodFrags(), false, emuOpt, {}, {}, &none);
+    REQUIRE_FALSE(rNo.isOk());
+    CHECK(rNo.error().kind == LaunchFailure::NoEmuNand);
+
+    auto rFat = preflightWii(wiiGame(), "usb:", kD2x, goodFrags(), false, emuOpt, {}, {}, &ntfs);
+    REQUIRE_FALSE(rFat.isOk());
+    CHECK(rFat.error().kind == LaunchFailure::EmuNandNeedsFat);
+
+    auto rD2x = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::Unverified, 56, "", 222}, goodFrags(), false,
+                             emuOpt, {}, {}, &okNand);
+    REQUIRE_FALSE(rD2x.isOk());
+    CHECK(rD2x.error().kind == LaunchFailure::EmuNandNeedsD2x);
+
+    auto rOk = preflightWii(wiiGame(), "usb:", kD2x, goodFrags(), false, emuOpt, {}, {}, &okNand);
+    REQUIRE(rOk.isOk());
+    REQUIRE(rOk.value().emuNand.has_value());
+    CHECK_FALSE(rOk.value().emuNandFull);
+
+    Game discG = wiiGame();
+    discG.flags = kFlagDisc;
+    auto dOk = preflightWiiDisc(discG, OpticalDisc{DiscKind::Wii, "RMCP01", "MKW"}, kD2x, false, emuOpt, {}, {}, &okNand);
+    REQUIRE(dOk.isOk());
+    REQUIRE(dOk.value().emuNand.has_value());
+    CHECK_FALSE(dOk.value().emuNandFull);
+}
+
+TEST_CASE("preflightEmuChannel und preflightGame für Console::Channel") {
+    test::MemFileSystem fs;
+    const Game ch{Console::Channel, "000100014E4C5443", "Testkanal", 0, 0, nullptr,
+                  "sd:/emunand/title/00010001/4e4c5443/content/00000000.app", kNoDevice, 0};
+    auto tgt = preflightGame(fs, ch, "", emus(), nullptr, false);
+    REQUIRE(tgt.isOk());
+    CHECK(tgt.value().kind == LaunchTarget::Kind::EmuChannel);
+
+    const EmuNandInfo okNand{EmuNandStatus::Ok, {"sd", "/emunand"}, false, 0, "SD"};
+    auto plan = preflightEmuChannel(ch, kD2x, okNand, false);
+    REQUIRE(plan.isOk());
+    CHECK(plan.value().source == WiiBootSource::Channel);
+    CHECK(plan.value().channelTitleId == 0x000100014E4C5443ull);
+    REQUIRE(plan.value().emuNand.has_value());
+    CHECK(plan.value().emuNandFull);
+    CHECK(plan.value().fragBytes.empty());
+
+    auto dryBadCios = preflightEmuChannel(ch, CiosStatus{CiosState::Unverified, 56, "", 222}, okNand, true);
+    CHECK(dryBadCios.isOk());
+}
+
+TEST_CASE("preflightGame: vWii ohne GC-Port-Warnungen und mit wiiu_wide-Standard") {
+    auto fs = gcFs();
+    const IniDoc cfg = IniDoc::parse("[gc]\nmemcard = real\nnative_si = 1\n");
+    const IniDoc games;
+    const GameOptionInputs opts{cfg, games, false, {}, Platform::VWii};
+    auto r = preflightGame(fs, gcGame(), "sd:", emus(), nullptr, true, &opts);
+    REQUIRE(r.isOk());
+    CHECK(r.value().warnings.empty());
+    // wiiu_wide (1 << 15) gesetzt, NATIVE_SI (1 << 14) aus, MEMCARDEMU (1 << 3) an
+    CHECK((static_cast<u8>(r.value().dol.args[1][0x00A]) & 0x80) != 0);
+    CHECK((static_cast<u8>(r.value().dol.args[1][0x00A]) & 0x40) == 0);
+    CHECK((static_cast<u8>(r.value().dol.args[1][0x00B]) & 0x08) != 0);
 }

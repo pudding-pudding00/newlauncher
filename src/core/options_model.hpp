@@ -25,11 +25,12 @@ class OptionsModel {
 public:
     // id6 leer = globale Standards. nin = erkannte Nintendont-Version; nullopt sperrt keine GC-Option.
     OptionsModel(Console c, std::string id6, std::string configText, std::string gamesText,
-                 std::optional<NinVersion> nin = std::nullopt);
+                 std::optional<NinVersion> nin = std::nullopt, bool vWii = false);
 
     Console console() const { return console_; }
     const std::string& id6() const { return id6_; }
     bool perGame() const { return !id6_.empty(); }
+    bool vWii() const { return vWii_; }
 
     std::size_t rows() const { return rows_.size(); }
     std::string_view key(std::size_t r) const { return rows_[r].key; }
@@ -40,9 +41,11 @@ public:
     std::vector<std::string> choices(std::size_t r) const;
     std::size_t choice(std::size_t r) const;  // Position des aktuellen Werts in choices()
 
-    bool enabled(std::size_t r) const { return !requiredVersion(r).has_value(); }
+    bool enabled(std::size_t r) const { return !requiredVersion(r).has_value() && !disabledOnVWii(r); }
     // Nintendont-Version, ab der die Option wirkt, wenn die erkannte älter ist; sonst nullopt.
     std::optional<NinVersion> requiredVersion(std::size_t r) const;
+    // Auf vWii sind echte GC-Memory-Card und Native SI mangels Ports nicht verfügbar.
+    bool disabledOnVWii(std::size_t r) const;
 
     void step(std::size_t r, int dir);  // zyklisch; gesperrte Zeilen bleiben
     bool set(std::string_view key, std::string_view value);  // „default“ erbt wieder; false bei Unbekanntem
@@ -61,6 +64,7 @@ private:
     std::string id6_;
     std::string config_, games_, config0_, games0_;
     std::optional<NinVersion> nin_;
+    bool vWii_ = false;
     std::vector<OptionValue> rows_;
 };
 

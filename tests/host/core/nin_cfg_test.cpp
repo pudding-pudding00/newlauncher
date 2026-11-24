@@ -291,3 +291,18 @@ TEST_CASE("nin_cfg: Mindestversion je Option") {
     CHECK(gate("max_pads") == NinVersion{1, 0});
     CHECK_FALSE(gate("unbekannt").has_value());
 }
+
+TEST_CASE("nin_cfg: GC-Disc setzt GamePath = \"di\", usb = 0 und behält Optionen") {
+    CHECK(kNinDiscGamePath == "di");
+    NinConfigInput in{kNinDiscGamePath, "GM8P01", false};
+    in.extraFlags = kNinCfgForceWide | kNinCfgForceProg;
+    in.videoMode = kNinVidForce | kNinVidPal60;
+    auto r = buildNinCfg(in);
+    REQUIRE(r.isOk());
+    const auto& b = r.value();
+    CHECK(std::string(reinterpret_cast<const char*>(b.data() + 0x014)) == "di");
+    CHECK((be32(b, 0x008) & kNinCfgAutoBoot) != 0u);
+    CHECK((be32(b, 0x008) & kNinCfgUsb) == 0u);
+    CHECK((be32(b, 0x008) & (kNinCfgForceWide | kNinCfgForceProg)) == (kNinCfgForceWide | kNinCfgForceProg));
+    CHECK(be32(b, 0x00C) == (kNinVidForce | kNinVidPal60));
+}

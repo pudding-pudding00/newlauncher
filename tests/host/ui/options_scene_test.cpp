@@ -52,10 +52,10 @@ struct Fixture {
 TEST_CASE_FIXTURE(Fixture, "Optionen: geerbter Wert zeigt Standard (…), Befehlsnamen") {
     open(OptionsModel(Console::Wii, "RMGP01", "[wii]\nvideo = pal60\n", ""), "Super Mario Galaxy");
     CHECK(s.isOverlay());
-    CHECK(s.rowCount() == 16);  // 15 Optionen + Zurücksetzen
+    CHECK(s.rowCount() == 17);  // 16 Optionen + Zurücksetzen
     CHECK(s.valueText(rowOf("video")) == "Standard (PAL 60)");
     CHECK(s.labelText(rowOf("video")) == "Videomodus");
-    CHECK(s.labelText(15) == "Auf Standard zurücksetzen");
+    CHECK(s.labelText(16) == "Auf Standard zurücksetzen");
     CHECK(s.labelText(rowOf("cheats")) == "Cheats");
     CHECK(s.labelText(rowOf("hook")) == "Cheat-Hook");
     CHECK(s.valueText(rowOf("hook")) == "Standard (VBI)");
@@ -97,7 +97,7 @@ TEST_CASE_FIXTURE(Fixture, "Optionen: ◀▶ ändert, B speichert nur bei Änder
 TEST_CASE_FIXTURE(Fixture, "Optionen: A auf Zurücksetzen entfernt den Spielabschnitt") {
     open(OptionsModel(Console::Wii, "RMGP01", "", "[game RMGP01]\nvideo = ntsc\n"));
     CHECK(s.valueText(rowOf("video")) == "NTSC");
-    focus(15);
+    focus(16);
     press(Action::Confirm);
     CHECK(s.model().gamesIniText().empty());
     CHECK(s.valueText(rowOf("video")) == "Standard (System)");
@@ -130,4 +130,16 @@ TEST_CASE_FIXTURE(Fixture, "Optionen: requestClose schließt im nächsten Frame 
     s.update(ctx, InputFrame{}, 16, r);
     CHECK(r.pop);
     CHECK(r.command == AppCommand::SaveOptions);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Optionen: vWii sperrt memcard und native_si mit Klartext (DE/EN)") {
+    open(OptionsModel(Console::Gc, "GM8P01", "", "", kMinNintendont, true));
+    CHECK(s.valueText(rowOf("memcard")) == "Auf vWii nicht verfügbar");
+    CHECK(s.valueText(rowOf("native_si")) == "Auf vWii nicht verfügbar");
+    setLanguage(Lang::En);
+    CHECK(s.valueText(rowOf("memcard")) == "Not available on vWii");
+    CHECK(s.valueText(rowOf("native_si")) == "Not available on vWii");
+    focus(rowOf("memcard"));
+    press(Action::Right);
+    CHECK_FALSE(s.model().dirty());
 }

@@ -50,6 +50,7 @@
 #include "launch/wii_boot.hpp"
 #include "platform/crash.hpp"
 #include "platform/cheat_worker.hpp"
+#include "platform/disc_drive.hpp"
 #include "platform/emu_worker.hpp"
 #include "platform/audio.hpp"
 #include "platform/log.hpp"
@@ -559,8 +560,12 @@ int main(int argc, char** argv) {
     };
     auto logGames = [&]() {
         if (!config.debugListGames) return;
-        for (const nl::Game& g : store.games())
-            nl::log::line("NL_GAME %s %s path=%s", g.key, store.devices()[g.device].c_str(), g.path != nullptr ? g.path : "");
+        for (const nl::Game& g : store.games()) {
+            const char* dev = (g.flags & nl::kFlagDisc) != 0 ? "disc"
+                            : g.device < store.devices().size() ? store.devices()[g.device].c_str()
+                                                                : "-";
+            nl::log::line("NL_GAME %s %s path=%s", g.key, dev, g.path != nullptr ? g.path : "");
+        }
     };
     // Review Focus 3: kaputte WBFS-Slots fallen still aus der Bibliothek, das Log nennt sie (Haupt-Thread, log ist
     // nicht threadfest).
@@ -571,6 +576,26 @@ int main(int argc, char** argv) {
     auto applyIndexes = [&]() {
         store.setGames(nl::mergeIndexes(deviceIndexes), metaPtr);
         logGames();
+    };
+    nl::EmuNandInfo emuNandInfo;
+    u32 emuNandCount = 0;
+    auto scanEmuNandChannels = [&]() {
+        std::vector<nl::DeviceSlot> mountedSlots;
+        for (const nl::platform::Device& d : devTable.devices())
+            if (d.mounted) mountedSlots.push_back(d.slot);
+        emuNandInfo = nl::checkEmuNand(fs, config.emuNandPath, mountedSlots);
+        if (emuNandInfo.status == nl::EmuNandStatus::Ok) {
+            u32 skipped = 0;
+            auto titles = nl::scanEmuNand(fs, emuNandInfo.path, nl::platform::bannerLangFor(nl::ui::language()), &skipped);
+            emuNandCount = static_cast<u32>(titles.size());
+            nl::log::line("NL_EMUNAND titles=%u skipped=%u", static_cast<unsigned>(emuNandCount),
+                          static_cast<unsigned>(skipped));
+            if (skipped > 0) nl::log::line("NL_EMUNAND_SKIP %u", static_cast<unsigned>(skipped));
+            store.setChannels(std::move(titles));
+        } else {
+            emuNandCount = 0;
+            store.setChannels({});
+        }
     };
 
     nl::platform::ScanWorker worker;
@@ -608,6 +633,7 @@ int main(int argc, char** argv) {
         }
         nl::log::line("NL_LIBRARY games=%u source=scan", static_cast<unsigned>(store.games().size()));
     }
+    scanEmuNandChannels();
     auto libraryView = [&]() { return nl::ui::Library{store.games(), store.favorites(), store.recent()}; };
 
     // 5. Hauptbildschirm
@@ -623,6 +649,7 @@ int main(int argc, char** argv) {
     settings.setActiveSources(libFellBack ? nl::SourceSpec{false, {"sd"}} : sources);
     // Wurzel des Geräts, auf dem ein Spiel liegt ("usb2:"); Game::device zählt in store.devices().
     auto rootOf = [&](const nl::Game& game) {
+        if (game.device == nl::kNoDevice) return std::string();
         return game.device < store.devices().size() ? store.devices()[game.device] + ":" : std::string("sd:");
     };
     homeMenu.setSettings(&settings);
@@ -655,6 +682,35 @@ int main(int argc, char** argv) {
     banners.setLogSounds(config.debugLogSounds);
     banners.setEnabled(config.banners);
     details.setBanners(&banners);
+    nl::platform::DiscDrive discDrive;
+    if (!config.debugFakeDisc.empty()) {
+        if (auto fake = nl::parseFakeDisc(config.debugFakeDisc)) discDrive.setFakeDisc(*fake);
+        else nl::log::line("NL_CFG_BAD debug.fake_disc");
+    }
+    bool hasDiscInStore = false;
+    auto applyDiscResult = [&](const nl::platform::DiscReadResult& r, bool userInitiated) {
+        if (r.status == nl::platform::DiscReadStatus::Ok) {
+            const std::string focusKey = mainScene.focusedKey();
+            store.setDisc(r.disc, metaPtr);
+            hasDiscInStore = true;
+            mainScene.setLibrary(libraryView(), focusKey);
+            nl::log::line("NL_DISC %s %s", r.disc.kind == nl::DiscKind::Gc ? "gc" : "wii", r.disc.id6.c_str());
+            logGames();
+        } else {
+            if (hasDiscInStore) {
+                const std::string focusKey = mainScene.focusedKey();
+                store.setDisc(std::nullopt);
+                hasDiscInStore = false;
+                mainScene.setLibrary(libraryView(), focusKey);
+            }
+            if (r.status == nl::platform::DiscReadStatus::Unreadable) {
+                nl::log::line("NL_DISC unreadable");
+                if (userInitiated) mainScene.showToast(nl::ui::tr(nl::ui::Str::DiscUnreadable));
+            } else if (userInitiated) {
+                mainScene.showToast(nl::ui::tr(nl::ui::Str::NoDisc));
+            }
+        }
+    };
     nl::ui::DialogScene dialog;
     // Kindersicherung (M17, Spec v2 10.5): wirksam ist config.parental oder, mit use_wii, der Wii-Jugendschutz.
     // Die PIN steht nie im Log; SYSCONF wird nur gelesen.
@@ -752,6 +808,8 @@ int main(int argc, char** argv) {
         s.netUp = netService.networkUp();  // Stand nach dem letzten Netzaufbau (volatile, nur gelesen)
         s.timeSynced = nl::platform::clockSynced();
         s.tls = kHasTls && netService.tlsUp();
+        s.emuNandDe = nl::emuNandStatusText(emuNandInfo, emuNandCount, true);
+        s.emuNandEn = nl::emuNandStatusText(emuNandInfo, emuNandCount, false);
         return s;
     };
     auto openSysInfo = [&]() {
@@ -836,6 +894,8 @@ int main(int argc, char** argv) {
             nl::ui::setLanguage(lang);
             banners.setGerman(lang == nl::ui::Lang::De);  // GC-Banner: Titel beim nächsten Laden in der neuen Sprache
             channelsLoaded = false;
+            scanEmuNandChannels();
+            mainScene.setLibrary(libraryView(), mainScene.focusedKey());
             nl::log::line("NL_LANG %s", nl::ui::langKey(lang));
         }
         mainScene.showToast(nl::ui::tr(ok ? nl::ui::Str::SetupSaved : nl::ui::Str::SetupSaveFailed));
@@ -886,23 +946,26 @@ int main(int argc, char** argv) {
             case nl::CiosState::Unverified: nl::log::line("NL_CIOS unverified"); break;
             case nl::CiosState::Missing: nl::log::line("NL_CIOS missing"); break;
         }
+        const bool isDisc = (game.flags & nl::kFlagDisc) != 0;
         u32 partLba = 0;
         const std::string libRoot = rootOf(game);
-        const nl::platform::Device* device = nl::platform::deviceTable().byName(libRoot);
-        auto frags = device != nullptr
-                         ? nl::platform::computeWiiFrags(fs, game, *device, &partLba)
-                         : nl::Result<nl::FragList, nl::LaunchError>::err({nl::LaunchFailure::RomMissing, libRoot});
-        if (frags.isOk()) {
-            const nl::FragList& f = frags.value();
-            const auto bytes = nl::serializeFragList(f);
-            char first[48] = "-";
-            if (!f.entries.empty()) {
-                std::snprintf(first, sizeof first, "%u:%u:%u", static_cast<unsigned>(f.entries[0].offset),
-                              static_cast<unsigned>(f.entries[0].sector), static_cast<unsigned>(f.entries[0].count));
+        nl::Result<nl::FragList, nl::LaunchError> frags =
+            nl::Result<nl::FragList, nl::LaunchError>::err({nl::LaunchFailure::RomMissing, libRoot});
+        if (!isDisc) {
+            const nl::platform::Device* device = nl::platform::deviceTable().byName(libRoot);
+            if (device != nullptr) frags = nl::platform::computeWiiFrags(fs, game, *device, &partLba);
+            if (frags.isOk()) {
+                const nl::FragList& f = frags.value();
+                const auto bytes = nl::serializeFragList(f);
+                char first[48] = "-";
+                if (!f.entries.empty()) {
+                    std::snprintf(first, sizeof first, "%u:%u:%u", static_cast<unsigned>(f.entries[0].offset),
+                                  static_cast<unsigned>(f.entries[0].sector), static_cast<unsigned>(f.entries[0].count));
+                }
+                nl::log::line("NL_FRAG dev=%s part_lba=%u n=%u size=%u crc=%08x first=%s", device->slot.name.c_str(),
+                              static_cast<unsigned>(partLba), static_cast<unsigned>(f.entries.size()),
+                              static_cast<unsigned>(f.size), static_cast<unsigned>(nl::fragListCrc(bytes)), first);
             }
-            nl::log::line("NL_FRAG dev=%s part_lba=%u n=%u size=%u crc=%08x first=%s", device->slot.name.c_str(),
-                          static_cast<unsigned>(partLba), static_cast<unsigned>(f.entries.size()), static_cast<unsigned>(f.size),
-                          static_cast<unsigned>(nl::fragListCrc(bytes)), first);
         }
         // M15: Cheats nur mit Codehandler im Build und Option „Cheats“ (Spec v2 8); sonst leere GCT, hooktype 0.
         std::vector<u8> gct;
@@ -921,7 +984,26 @@ int main(int argc, char** argv) {
                               static_cast<unsigned>(wip.skipped));
             }
         }
-        auto plan = nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options, gct, wip.entries);
+        auto plan = [&]() -> nl::Result<nl::WiiBootPlan, nl::LaunchError> {
+            if (!isDisc) {
+                return nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options, gct, wip.entries,
+                                        &emuNandInfo);
+            }
+            const nl::platform::DiscReadResult cur = discDrive.readSync();
+            std::optional<nl::OpticalDisc> curDisc;
+            if (cur.status == nl::platform::DiscReadStatus::Ok) curDisc = cur.disc;
+            auto p = nl::preflightWiiDisc(game, curDisc, cios, config.debugWiiDryRun, options, gct, wip.entries,
+                                          &emuNandInfo);
+            if (!p.isOk() && (p.error().kind == nl::LaunchFailure::DiscChanged ||
+                              p.error().kind == nl::LaunchFailure::DiscUnreadable)) {
+                applyDiscResult(cur, false);
+            }
+            return p;
+        }();
+        if (plan.isOk() && isDisc) {
+            nl::log::line("NL_WII_DISC id=%s ios=%u", plan.value().id6.c_str(),
+                          static_cast<unsigned>(plan.value().iosSlot));
+        }
         if (plan.isOk() && !plan.value().gct.empty()) {
             nl::log::line("NL_WII_CHEATS bytes=%u hook=%u", static_cast<unsigned>(plan.value().gct.size()),
                           static_cast<unsigned>(plan.value().hookType));
@@ -983,14 +1065,47 @@ int main(int argc, char** argv) {
             readCheatFiles(std::string(game.key).substr(0, 6), txt, sel);
             gcGct = nl::gctForSelection(txt, sel);
         }
-        const nl::GameOptionInputs optionInputs{
-            configDoc, gamesDoc,
-            nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected()) != nl::Platform::VWii,
-            gcGct};
+        const nl::Platform currentPlatform =
+            nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected());
+        const nl::GameOptionInputs optionInputs{configDoc, gamesDoc, currentPlatform != nl::Platform::VWii, gcGct,
+                                                currentPlatform};
+        if (game.console == nl::Console::Gc && (game.flags & nl::kFlagDisc) != 0) {
+            const nl::platform::DiscReadResult cur = discDrive.readSync();
+            if (cur.status != nl::platform::DiscReadStatus::Ok) {
+                applyDiscResult(cur, false);
+                nl::log::line("NL_PREFLIGHT_FAIL %s %s", nl::launchFailureName(nl::LaunchFailure::DiscUnreadable), key.c_str());
+                showError({nl::LaunchFailure::DiscUnreadable, key});
+                return;
+            }
+            if (cur.disc.kind != nl::DiscKind::Gc || cur.disc.id6 != key.substr(0, 6)) {
+                applyDiscResult(cur, false);
+                nl::log::line("NL_PREFLIGHT_FAIL %s %s", nl::launchFailureName(nl::LaunchFailure::DiscChanged), key.c_str());
+                showError({nl::LaunchFailure::DiscChanged, cur.disc.id6});
+                return;
+            }
+        }
         // M16: Dateisystem des Spielgeräts (Nintendont nur FAT, Emulatoren laut fsMask).
         const nl::platform::Device* gameDev = nl::platform::deviceTable().byName(rootOf(game));
         const nl::FsKind gameFs = gameDev != nullptr ? gameDev->slot.kind : nl::FsKind::Fat;
         auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, hwAccess, &optionInputs, gameFs);
+        if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::EmuChannel) {
+            const std::vector<nl::CiosEntry> found = nl::platform::scanCios();
+            const nl::WiiOptions options = nl::resolveWiiOptions(configDoc, gamesDoc, "");
+            const nl::CiosChoice choice = nl::chooseCios(found, options.ios, config.wiiIos);
+            const nl::CiosStatus cios = nl::ciosStatusFor(found, choice);
+            if (auto plan = nl::preflightEmuChannel(game, cios, emuNandInfo, config.debugWiiDryRun, options); plan.isOk()) {
+                nl::log::line("NL_CHANNEL %s emu=1", key.c_str());
+                if (config.debugWiiDryRun) {
+                    recordStats(key);
+                    nl::log::line("NL_WII_DRYRUN %s", key.c_str());
+                    return;
+                }
+                target.value().kind = nl::LaunchTarget::Kind::Wii;
+                target.value().wii = std::move(plan.value());
+            } else {
+                target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(plan.error());
+            }
+        }
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
             if (auto plan = prepareWii(game, configDoc, gamesDoc); plan.isOk()) {
                 if (config.debugWiiDryRun) {
@@ -1061,6 +1176,7 @@ int main(int argc, char** argv) {
         else nl::log::line("NL_WARN history.ini nicht gespeichert");
         nl::log::line("NL_LAUNCH %s", key.c_str());
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
+        discDrive.shutdown();
         net.join();
         emu.join();
         cheatWorker.join();
@@ -1096,7 +1212,7 @@ int main(int argc, char** argv) {
             input.shutdown();
             nl::platform::unmountAll();
             nl::platform::shutdownVideo();
-            nl::launch::bootWiiGame(booter.value(), target.value().wii->iosSlot);
+            nl::launch::bootWiiGame(booter.value(), *target.value().wii);
         }
 
         const nl::LaunchPlan& plan = target.value().dol;
@@ -1340,8 +1456,10 @@ int main(int argc, char** argv) {
         std::optional<nl::NinVersion> nin;  // unbekannt: nichts gesperrt
         if (c == nl::Console::Gc && !emulators.nintendont().dol.empty())
             nin = nl::findNintendontVersion(fs, emulators.nintendont().dol);
+        const bool isVWii =
+            nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected()) == nl::Platform::VWii;
         optionsScene.open(nl::OptionsModel(c, g != nullptr ? std::string(g->key) : std::string(), configText,
-                                           std::move(*gamesText), nin),
+                                           std::move(*gamesText), nin, isVWii),
                           g != nullptr && g->title != nullptr ? std::string(g->title) : std::string());
         scenes.push(&optionsScene);
         nl::log::line("NL_SCENE options");
@@ -1446,7 +1564,10 @@ int main(int argc, char** argv) {
         const std::string& key = config.debugAutostart;
         const nl::Game* found = nullptr;
         for (const nl::Game& g : store.games()) {
-            if (key == g.key) found = &g;
+            if (key == g.key) {
+                found = &g;
+                break;
+            }
         }
         if (found != nullptr) {
             nl::log::line("NL_AUTOSTART %s", key.c_str());
@@ -1511,6 +1632,8 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_WARN Scan fehlgeschlagen: %s", result->error().context.c_str());
             }
         }
+        bool discManual = false;
+        if (auto discRes = discDrive.poll(&discManual)) applyDiscResult(*discRes, discManual);
 
         if (setupScene.netStatus() == nl::ui::SetupScene::NetTest::Running && setupNet != 0) {
             const int r = setupNet;
@@ -1626,6 +1749,8 @@ int main(int argc, char** argv) {
                     nl::ui::setLanguage(lang);
                     banners.setGerman(lang == nl::ui::Lang::De);  // Detailansicht lädt ihr Banner danach neu
                     channelsLoaded = false;  // Kanalnamen beim nächsten Öffnen in der neuen Sprache laden
+                    scanEmuNandChannels();
+                    mainScene.setLibrary(libraryView(), mainScene.focusedKey());
                     nl::log::line("NL_LANG %s", nl::ui::langKey(lang));
                 }
                 ctx.themeMode = config.themeMode;
@@ -1677,6 +1802,9 @@ int main(int argc, char** argv) {
                 }
                 break;
             case nl::ui::AppCommand::Rescan:
+                discDrive.requestRead(false);
+                scanEmuNandChannels();
+                mainScene.setLibrary(libraryView(), mainScene.focusedKey());
                 if (worker.running()) break;  // läuft schon, das Ergebnis kommt über den Scan-Pfad unten
                 if (!worker.start(fs, libDevices, scanRules, {}, metaPtr)) {
                     nl::log::line("NL_WARN Neu-Scan nicht gestartet");
@@ -1684,6 +1812,10 @@ int main(int argc, char** argv) {
                 }
                 mainScene.showToast(nl::ui::tr(nl::ui::Str::Rescanning));
                 nl::log::line("NL_RESCAN start");
+                break;
+            case nl::ui::AppCommand::ReadDisc:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (discDrive.requestRead(true)) mainScene.showToast(nl::ui::tr(nl::ui::Str::ReadingDisc));
                 break;
             case nl::ui::AppCommand::ExitToHbc:  // Spec 6.8: aufräumen, exit(0)
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
@@ -1693,6 +1825,7 @@ int main(int argc, char** argv) {
             case nl::ui::AppCommand::PowerOff:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
+                discDrive.shutdown();
                 net.join();
                 emu.join();
                 cheatWorker.join();
@@ -1830,6 +1963,8 @@ int main(int argc, char** argv) {
             if (data.writable) nl::log::flushLogFile(fs, logPath);
             if (perf) perf->pause();  // Flush und Musikstart liegen im nächsten Abstand
             readyReported = true;
+            if (!config.debugFakeDisc.empty()) applyDiscResult(discDrive.readSync(), false);
+            else discDrive.requestRead(false);
             if (config.music) startMusic();
             autostartPending = !config.debugAutostart.empty();
             if (!emuDebugPending.empty()) startEmuList();  // nur für Tests; Autostart wartet auf die Installation
@@ -1855,7 +1990,10 @@ int main(int argc, char** argv) {
                 const std::string id = config.debugOpenScene.substr(8);
                 const nl::Game* found = nullptr;
                 for (const nl::Game& g : store.games())
-                    if (id == g.key) found = &g;
+                    if (id == g.key) {
+                        found = &g;
+                        break;
+                    }
                 if (found != nullptr) {
                     details.open(*found, store.isFavorite(found->key), 0);
                     scenes.push(&details);
@@ -1871,7 +2009,10 @@ int main(int argc, char** argv) {
                 const std::string id = config.debugOpenScene.substr(7);
                 const nl::Game* found = nullptr;
                 for (const nl::Game& g : store.games())
-                    if (id == g.key) found = &g;
+                    if (id == g.key) {
+                        found = &g;
+                        break;
+                    }
                 if (found != nullptr) {
                     cheatsConsole = found->console;
                     openCheats(*found);
@@ -1883,7 +2024,10 @@ int main(int argc, char** argv) {
                 const std::string id = config.debugOpenScene.substr(8);
                 const nl::Game* found = nullptr;
                 for (const nl::Game& g : store.games())
-                    if (id == g.key) found = &g;
+                    if (id == g.key) {
+                        found = &g;
+                        break;
+                    }
                 if (found != nullptr) openOptions(found->console, found);
                 else if (id == "wii" || id == "gc") openOptions(id == "gc" ? nl::Console::Gc : nl::Console::Wii, nullptr);
                 else nl::log::line("NL_WARN options %s fehlt", id.c_str());
@@ -1921,6 +2065,7 @@ int main(int argc, char** argv) {
 #endif
     }
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
+    discDrive.shutdown();
     net.join();
     emu.join();
     cheatWorker.join();

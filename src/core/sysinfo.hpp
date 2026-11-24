@@ -48,6 +48,8 @@ struct SystemInfo {
     bool netUp = false;
     bool timeSynced = false;
     bool tls = false;
+    std::string emuNandDe;  // {} = leer bei Tests ohne EmuNAND-Prüfung
+    std::string emuNandEn;
 };
 
 // 4.0–4.3 und vWii (Versionstabelle im M13-Ledger); andere Versionen '?'.

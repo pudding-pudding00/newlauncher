@@ -13,11 +13,12 @@ using gfx::FontWeight;
 using gfx::Rect;
 
 constexpr float kHeaderH = 64.0f, kFooterH = 56.0f;
-constexpr float kTileH = 150.0f, kTileGap = 20.0f, kMaxTileW = 150.0f;
+constexpr float kTileH = 150.0f, kTileGap = 16.0f, kMaxTileW = 150.0f;
 
-const Str kLabels[HomeMenu::kTileCount] = {Str::HomebrewChannel, Str::WiiMenu, Str::Settings, Str::PowerOff};
+const Str kLabels[HomeMenu::kTileCount] = {Str::HomebrewChannel, Str::WiiMenu, Str::Settings, Str::PowerOff,
+                                           Str::ReadDisc};
 const AppCommand kCommands[HomeMenu::kTileCount] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::None,
-                                                    AppCommand::PowerOff};
+                                                    AppCommand::PowerOff, AppCommand::ReadDisc};
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
 }  // namespace
@@ -28,7 +29,7 @@ void HomeMenu::onEnter() {
 }
 
 Rect HomeMenu::tileRect(const UiContext& ctx, int index) const {
-    float w = (ctx.width - 80.0f - 3.0f * kTileGap) / kTileCount;
+    float w = (ctx.width - 80.0f - static_cast<float>(kTileCount - 1) * kTileGap) / kTileCount;
     if (w > kMaxTileW) w = kMaxTileW;
     const float total = kTileCount * w + (kTileCount - 1) * kTileGap;
     const float x0 = (ctx.width - total) / 2.0f;
@@ -68,6 +69,7 @@ void HomeMenu::update(const UiContext& ctx, const InputFrame& in, float, SceneRe
             }
             return;
         }
+        if (focus_ == 4) out.pop = true;
         out.command = kCommands[focus_];
     }
 }

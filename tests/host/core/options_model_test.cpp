@@ -12,8 +12,8 @@ std::size_t rowOf(const OptionsModel& m, std::string_view key) {
 }
 }  // namespace
 
-TEST_CASE("OptionsModel: Wii 15 Zeilen, GC 11, andere Konsolen keine") {
-    CHECK(OptionsModel(Console::Wii, "RMGP01", "", "").rows() == 15);
+TEST_CASE("OptionsModel: Wii 16 Zeilen, GC 11, andere Konsolen keine") {
+    CHECK(OptionsModel(Console::Wii, "RMGP01", "", "").rows() == 16);
     CHECK(OptionsModel(Console::Gc, "GM8P01", "", "").rows() == 11);
     CHECK(OptionsModel(Console::Nes, "", "", "").rows() == 0);
 }
@@ -114,4 +114,17 @@ TEST_CASE("OptionsModel: reset behält die Kindersicherungs-Sperre locked = 1 (M
     OptionsModel plain(Console::Wii, "RMGP01", "", "[game RMGP01]\nvideo = pal60\n");
     plain.reset();
     CHECK(plain.gamesIniText().find("RMGP01") == std::string::npos);  // ohne Sperre: Abschnitt ganz weg
+}
+
+TEST_CASE("OptionsModel: vWii sperrt memcard und native_si, Standard wiiu_wide = 1 (M19)") {
+    OptionsModel m(Console::Gc, "GM8P01", "", "", kMinNintendont, true);
+    CHECK(m.vWii());
+    CHECK(m.shownValue(rowOf(m, "wiiu_wide")) == "1");
+    for (std::string_view k : {"memcard", "native_si"}) {
+        const std::size_t r = rowOf(m, k);
+        CHECK(m.disabledOnVWii(r));
+        CHECK_FALSE(m.enabled(r));
+        m.step(r, 1);
+    }
+    CHECK_FALSE(m.dirty());
 }

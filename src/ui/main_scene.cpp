@@ -30,7 +30,7 @@ Rect grow(Rect r, float d) { return Rect{r.x - d, r.y - d, r.w + 2 * d, r.h + 2 
 const char* barLabel(const BarEntry& e) {
     if (e.kind == BarKind::Favorites) return tr(Str::Favorites);
     if (e.kind == BarKind::Recent) return tr(Str::Recent);
-    return consoleInfo(e.console).label;
+    return consoleLabel(e.console);
 }
 
 void drawHomeIcon(gfx::DrawList& dl, const gfx::AtlasShapes& s, float cx, float cy, Color c) {
@@ -323,7 +323,7 @@ void MainScene::layoutBar(const UiContext& ctx) {
     // Platz nicht, rücken sie auf den Mindestabstand zusammen und die Leiste scrollt.
     const gfx::FontFace& pill = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
     const float margin = gridMetrics(ctx.width).marginX;
-    float widths[kMaxBarEntries];
+    float widths[kMaxBarEntries + 1];
     float sum = 0.0f;
     for (int i = 0; i < barCount_; ++i) {
         widths[i] = gfx::measureText(pill, barLabelText(i)) + 24.0f;
@@ -456,8 +456,17 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
             const u32 last = detailsStore_ != nullptr ? detailsStore_->lastPlayed(g->key) : 0;
             details_->open(*g, fav, last);
             if (playStats_ != nullptr) details_->setStats(playStats_->get(g->key));
-            if (detailsStore_ != nullptr)
+            if ((g->flags & kFlagDisc) != 0) {
+                char devLine[64];
+                std::snprintf(devLine, sizeof devLine, tr(Str::DeviceLine), tr(Str::Disc));
+                details_->setDeviceLine(devLine);
+            } else if (g->console == Console::Channel) {
+                char devLine[64];
+                std::snprintf(devLine, sizeof devLine, tr(Str::DeviceLine), "EmuNAND");
+                details_->setDeviceLine(devLine);
+            } else if (detailsStore_ != nullptr) {
                 details_->setDeviceLine(detailsDeviceLine(detailsStore_->devices(), g->device, detailsStore_->alsoOn(*g)));
+            }
             syncDetailsCategories(g->key);
             out.push = details_;
         }
@@ -529,7 +538,7 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
     }
 
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Small, FontWeight::Medium);
-    const char* tag = consoleInfo(g.console).label;
+    const char* tag = (g.flags & kFlagDisc) != 0 ? tr(Str::Disc) : consoleLabel(g.console);
     const float tagW = gfx::measureText(label, tag) + 12.0f;
     gfx::roundRect(dl, s, Rect{r.x + 8, r.y + 8, tagW, 18}, 9, t.accentSoft);
     if (store_ != nullptr && store_->isFavorite(g.key)) gfx::circle(dl, s, r.x + r.w - 14, r.y + 17, 4, t.accent);

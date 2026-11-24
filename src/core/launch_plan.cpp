@@ -5,6 +5,7 @@
 
 #include "core/dol.hpp"
 #include "core/emu_profiles.hpp"
+#include "core/index_file.hpp"
 #include "core/launch_args.hpp"
 #include "core/launch_layout.hpp"
 #include "core/library_merge.hpp"
@@ -72,7 +73,14 @@ PlanResult planFor(FileSystem& fs, const Game& g, std::string_view libRoot, cons
 TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorEntry& nin, bool ahbprotOff,
                       const GameOptionInputs* opts) {
     auto err = [](LaunchFailure k, std::string c) { return TargetResult::err({k, std::move(c)}); };
-    if (auto dev = secondaryUsb(libRoot)) return err(LaunchFailure::DeviceUnsupported, std::move(*dev));
+    const bool isDisc = (g.flags & kFlagDisc) != 0;
+    if (isDisc) {
+        if (opts != nullptr && (opts->platform == Platform::VWii || !opts->gcPorts)) {
+            return err(LaunchFailure::GcDiscUnsupported, "");
+        }
+    } else {
+        if (auto dev = secondaryUsb(libRoot)) return err(LaunchFailure::DeviceUnsupported, std::move(*dev));
+    }
     if (!ahbprotOff) return err(LaunchFailure::AhbProt, "");
     auto size = checkDol(fs, nin.dol, LaunchFailure::NinMissing);
     if (!size.isOk()) return TargetResult::err(size.error());
@@ -80,36 +88,44 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
     if (!ver) return err(LaunchFailure::NinUnknown, nin.dol);
     if (*ver < kMinNintendont) return err(LaunchFailure::NinTooOld, formatNinVersion(*ver));
 
-    const std::string rel = g.path != nullptr ? g.path : "";
-    const std::string game = joinPath(libRoot, rel);
-    // Entpacktes Abbild (FST): Nintendont hängt „sys/boot.bin“ direkt an den Pfad, er braucht also „/“ am Ende.
-    const bool fst = exists(fs, joinPath(game, "sys/boot.bin"));
-    if (!fst && !exists(fs, game)) return err(LaunchFailure::RomMissing, game);
-    if (!fst) {
-        // Nintendont (IsSupportedFileExt, Stand c683db3) prüft nur die letzte Endung.
-        const std::size_t dot = rel.rfind('.');
-        const std::size_t slash = rel.rfind('/');
-        const std::string ext = dot == std::string::npos || (slash != std::string::npos && dot < slash) ? "" : rel.substr(dot);
-        std::string low = ext;
-        for (char& ch : low)
-            if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
-        if (low != ".iso" && low != ".gcm" && low != ".cso" && low != ".ciso") return err(LaunchFailure::NinFormat, ext);
+    std::string gamePath;
+    bool usb = false;
+    if (isDisc) {
+        gamePath = std::string(kNinDiscGamePath);
+    } else {
+        const std::string rel = g.path != nullptr ? g.path : "";
+        const std::string game = joinPath(libRoot, rel);
+        // Entpacktes Abbild (FST): Nintendont hängt „sys/boot.bin“ direkt an den Pfad, er braucht also „/“ am Ende.
+        const bool fst = exists(fs, joinPath(game, "sys/boot.bin"));
+        if (!fst && !exists(fs, game)) return err(LaunchFailure::RomMissing, game);
+        if (!fst) {
+            // Nintendont (IsSupportedFileExt, Stand c683db3) prüft nur die letzte Endung.
+            const std::size_t dot = rel.rfind('.');
+            const std::size_t slash = rel.rfind('/');
+            const std::string ext =
+                dot == std::string::npos || (slash != std::string::npos && dot < slash) ? "" : rel.substr(dot);
+            std::string low = ext;
+            for (char& ch : low)
+                if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+            if (low != ".iso" && low != ".gcm" && low != ".cso" && low != ".ciso") return err(LaunchFailure::NinFormat, ext);
+        }
+        gamePath = fst ? ninGamePath(rel) + "/" : ninGamePath(rel);
+        usb = onUsb(libRoot);
     }
-    const std::string gamePath = fst ? ninGamePath(rel) + "/" : ninGamePath(rel);
-    const bool usb = onUsb(libRoot);
     const std::string_view key = g.key != nullptr ? g.key : "";
     std::optional<GcOptions> gc;
     std::vector<LaunchWarning> warnings;
     NinConfigInput in{gamePath, key, usb};
     std::string cheatPath;  // muss bis buildNinCfg leben (in.cheatPath ist eine Sicht)
     if (opts != nullptr) {
-        gc = resolveGcOptions(opts->config, opts->games, key.substr(0, std::min<std::size_t>(6, key.size())), *ver);
+        const bool vWii = opts->platform == Platform::VWii;
+        gc = resolveGcOptions(opts->config, opts->games, key.substr(0, std::min<std::size_t>(6, key.size())), *ver, vWii);
         in = gc->nin;
         in.gamePath = gamePath;
         in.id6 = key;
         in.usb = usb;
-        if (!opts->gcPorts && gc->memcardReal) warnings.push_back(LaunchWarning::MemcardRealNoPorts);
-        if (!opts->gcPorts && gc->nativeSi) warnings.push_back(LaunchWarning::NativeSiNoPorts);
+        if (!opts->gcPorts && !vWii && gc->memcardReal) warnings.push_back(LaunchWarning::MemcardRealNoPorts);
+        if (!opts->gcPorts && !vWii && gc->nativeSi) warnings.push_back(LaunchWarning::NativeSiNoPorts);
         if (gc->cheats && !opts->gcCheats.empty()) {
             if (opts->gcCheats.size() > kNinCheatBytes) return err(LaunchFailure::CheatsTooLarge, std::to_string(opts->gcCheats.size()));
             cheatPath = ninCheatPath(key.substr(0, std::min<std::size_t>(6, key.size())));
@@ -134,9 +150,13 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
     t.gc = std::move(gc);
     t.warnings = std::move(warnings);
     if (!cheatPath.empty()) {
-        // Nintendont mountet nur das Spielgerät: die GCT liegt dort, nicht im Datenordner (Spec v2 8).
+        // Nintendont mountet nur das Spielgerät: die GCT liegt dort, nicht im Datenordner (Spec v2 8); Disc nutzt Nintendont-Gerät.
         t.gct.assign(opts->gcCheats.begin(), opts->gcCheats.end());
-        t.gctPath = joinPath(libRoot.substr(0, libRoot.find(':') + 1), cheatPath.substr(1));
+        const std::size_t colon = isDisc ? nin.dol.find(':') : libRoot.find(':');
+        const std::string_view cheatDev = colon != std::string::npos
+                                              ? (isDisc ? std::string_view(nin.dol).substr(0, colon + 1) : libRoot.substr(0, colon + 1))
+                                              : std::string_view("sd:");
+        t.gctPath = joinPath(cheatDev, cheatPath.substr(1));
     }
     return TargetResult::ok(std::move(t));
 }
@@ -213,6 +233,12 @@ const char* launchFailureName(LaunchFailure f) {
         case LaunchFailure::CheatsTooLarge: return "CheatsTooLarge";
         case LaunchFailure::FileNotContiguousReadable: return "FileNotContiguousReadable";
         case LaunchFailure::NintendontNeedsFat: return "NintendontNeedsFat";
+        case LaunchFailure::DiscChanged: return "DiscChanged";
+        case LaunchFailure::DiscUnreadable: return "DiscUnreadable";
+        case LaunchFailure::GcDiscUnsupported: return "GcDiscUnsupported";
+        case LaunchFailure::NoEmuNand: return "NoEmuNand";
+        case LaunchFailure::EmuNandNeedsD2x: return "EmuNandNeedsD2x";
+        case LaunchFailure::EmuNandNeedsFat: return "EmuNandNeedsFat";
     }
     return "?";
 }
@@ -240,10 +266,62 @@ LaunchError fromExtentError(ExtentError e, std::string context) {
     return {LaunchFailure::WiiFileBroken, std::move(context)};
 }
 
+namespace {
+
+std::optional<LaunchError> checkEmuNandReady(const EmuNandInfo* emuNand, const CiosStatus& cios, bool dryRun) {
+    if (emuNand == nullptr) return LaunchError{LaunchFailure::NoEmuNand, ""};
+    switch (emuNand->status) {
+        case EmuNandStatus::Ok: break;
+        case EmuNandStatus::NotFat:
+        case EmuNandStatus::NotPrimaryMbr: return LaunchError{LaunchFailure::EmuNandNeedsFat, emuNand->detail};
+        case EmuNandStatus::NotConfigured:
+        case EmuNandStatus::InvalidPath:
+        case EmuNandStatus::DeviceMissing:
+        case EmuNandStatus::MissingTitleDir: return LaunchError{LaunchFailure::NoEmuNand, emuNand->detail};
+    }
+    if (!dryRun && cios.state != CiosState::D2x) {
+        return LaunchError{LaunchFailure::EmuNandNeedsD2x, std::to_string(static_cast<unsigned>(cios.slot))};
+    }
+    return std::nullopt;
+}
+
+Result<WiiBootPlan, LaunchError> buildWiiBootPlan(WiiBootSource source, std::string id6, bool usb, const CiosStatus& cios,
+                                                  bool dryRun, const WiiOptions& options, std::span<const u8> gct,
+                                                  std::span<const WipEntry> wip, const EmuNandInfo* emuNand,
+                                                  bool fullEmuNand) {
+    using R = Result<WiiBootPlan, LaunchError>;
+    if (!dryRun && cios.state == CiosState::Missing) {
+        return R::err({LaunchFailure::CiosMissing, std::to_string(static_cast<unsigned>(cios.slot))});
+    }
+    if (fullEmuNand || options.saveEmu) {
+        if (auto err = checkEmuNandReady(emuNand, cios, dryRun)) return R::err(std::move(*err));
+    }
+    if (gct.size() > kWiiCodelistBytes) return R::err({LaunchFailure::CheatsTooLarge, std::to_string(gct.size())});
+
+    WiiBootPlan p;
+    p.source = source;
+    p.id6 = std::move(id6);
+    p.usb = usb;
+    p.cios = cios;
+    p.iosSlot = cios.slot;
+    p.options = options;
+    p.gct.assign(gct.begin(), gct.end());
+    p.hookType = gct.empty() ? 0 : options.hookType;  // Spec v2 8: ohne Codes kein Hook
+    p.wip.assign(wip.begin(), wip.begin() + static_cast<std::ptrdiff_t>(std::min(wip.size(), kWipMaxEntries)));
+    if (cios.state != CiosState::D2x) p.options.cfg.returnTo = 0;  // Spec 7.2: Rückkehr nur mit d2x
+    if (fullEmuNand || options.saveEmu) {
+        p.emuNand = *emuNand;
+        p.emuNandFull = fullEmuNand;
+    }
+    return R::ok(std::move(p));
+}
+
+}  // namespace
+
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
                                               const Result<FragList, LaunchError>& frags, bool dryRun,
                                               const WiiOptions& options, std::span<const u8> gct,
-                                              std::span<const WipEntry> wip) {
+                                              std::span<const WipEntry> wip, const EmuNandInfo* emuNand) {
     using R = Result<WiiBootPlan, LaunchError>;
     if (!dryRun && cios.state == CiosState::Missing) {
         return R::err({LaunchFailure::CiosMissing, std::to_string(static_cast<unsigned>(cios.slot))});
@@ -251,20 +329,39 @@ Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view li
     if (!frags.isOk()) return R::err(frags.error());
     const std::string_view key = g.key != nullptr ? g.key : "";
     if (key.size() < 6) return R::err({LaunchFailure::Unsupported, consoleInfo(g.console).name});  // Scanner liefert immer ID6
-    if (gct.size() > kWiiCodelistBytes) return R::err({LaunchFailure::CheatsTooLarge, std::to_string(gct.size())});
+    auto plan = buildWiiBootPlan(WiiBootSource::Usb, std::string(key.substr(0, 6)), onUsb(libRoot), cios, dryRun, options,
+                                 gct, wip, emuNand, false);
+    if (plan.isOk()) plan.value().fragBytes = serializeFragList(frags.value());
+    return plan;
+}
 
-    WiiBootPlan p;
-    p.id6 = std::string(key.substr(0, 6));
-    p.usb = onUsb(libRoot);
-    p.cios = cios;
-    p.iosSlot = cios.slot;
-    p.fragBytes = serializeFragList(frags.value());
-    p.options = options;
-    p.gct.assign(gct.begin(), gct.end());
-    p.hookType = gct.empty() ? 0 : options.hookType;  // Spec v2 8: ohne Codes kein Hook
-    p.wip.assign(wip.begin(), wip.begin() + static_cast<std::ptrdiff_t>(std::min(wip.size(), kWipMaxEntries)));
-    if (cios.state != CiosState::D2x) p.options.cfg.returnTo = 0;  // Spec 7.2: Rückkehr nur mit d2x
-    return R::ok(std::move(p));
+Result<WiiBootPlan, LaunchError> preflightWiiDisc(const Game& g, std::optional<OpticalDisc> currentDisc,
+                                                  const CiosStatus& cios, bool dryRun, const WiiOptions& options,
+                                                  std::span<const u8> gct, std::span<const WipEntry> wip,
+                                                  const EmuNandInfo* emuNand) {
+    using R = Result<WiiBootPlan, LaunchError>;
+    const std::string_view key = g.key != nullptr ? g.key : "";
+    if (key.size() < 6) return R::err({LaunchFailure::Unsupported, consoleInfo(g.console).name});
+    const std::string id6(key.substr(0, 6));
+    if (!currentDisc || currentDisc->kind == DiscKind::None || currentDisc->kind == DiscKind::Unknown) {
+        return R::err({LaunchFailure::DiscUnreadable, id6});
+    }
+    if (currentDisc->kind != DiscKind::Wii || currentDisc->id6 != id6) {
+        return R::err({LaunchFailure::DiscChanged, currentDisc->id6});
+    }
+    return buildWiiBootPlan(WiiBootSource::Disc, id6, false, cios, dryRun, options, gct, wip, emuNand, false);
+}
+
+Result<WiiBootPlan, LaunchError> preflightEmuChannel(const Game& g, const CiosStatus& cios, const EmuNandInfo& emuNand,
+                                                     bool dryRun, const WiiOptions& options) {
+    using R = Result<WiiBootPlan, LaunchError>;
+    const std::string_view key = g.key != nullptr ? g.key : "";
+    const auto tid = parseTitleIdHex(key);
+    if (!tid) return R::err({LaunchFailure::Unsupported, consoleInfo(g.console).name});
+    auto plan = buildWiiBootPlan(WiiBootSource::Channel, std::string(key.substr(8, 6)), emuNand.usb, cios, dryRun,
+                                 options, {}, {}, &emuNand, true);
+    if (plan.isOk()) plan.value().channelTitleId = *tid;
+    return plan;
 }
 
 Result<LaunchPlan, LaunchError> preflightEmulator(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus) {
@@ -277,13 +374,21 @@ Result<LaunchTarget, LaunchError> preflightGame(FileSystem& fs, const Game& g, s
                                                 const N64Inputs* n64, bool ahbprotOff, const GameOptionInputs* opts,
                                                 FsKind deviceFs) {
     if (g.console == Console::Gc) {
+        const bool isDisc = (g.flags & kFlagDisc) != 0;
         // Nintendont liest nur FAT; das ist der eigentliche Grund, auch wenn das Gerät zusätzlich usb2… ist.
-        if (deviceFs != FsKind::Fat) return TargetResult::err({LaunchFailure::NintendontNeedsFat, deviceLabel(deviceOf(libRoot))});
+        if (!isDisc && deviceFs != FsKind::Fat) {
+            return TargetResult::err({LaunchFailure::NintendontNeedsFat, deviceLabel(deviceOf(libRoot))});
+        }
         return gcTarget(fs, g, libRoot, emus.nintendont(), ahbprotOff, opts);
     }
     if (g.console == Console::Wii) {
         LaunchTarget t;
         t.kind = LaunchTarget::Kind::Wii;
+        return TargetResult::ok(std::move(t));
+    }
+    if (g.console == Console::Channel) {
+        LaunchTarget t;
+        t.kind = LaunchTarget::Kind::EmuChannel;
         return TargetResult::ok(std::move(t));
     }
     if (g.console != Console::N64) {

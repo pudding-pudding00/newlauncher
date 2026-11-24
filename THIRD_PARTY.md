@@ -11,6 +11,7 @@ Die Einstellungsseite „Über“ zeigt Name, Version und Lizenz aus dieser Tabe
 | Name | Version | Lizenz | Quelle | verteilt als |
 |---|---|---|---|---|
 | WiiFlow Lite (Game-Booter) | Stand siehe `boot/UPSTREAM.md` | GPL-3.0-or-later / GPL-2.0-or-later | https://github.com/Fledge68/WiiFlow_Lite | Quelltext in `boot/`, gelinkt in `game_booter.dol` |
+| WiiFlow Lite (NAND-Emulation) | 69c0d4d (`source/channel/nand.cpp`) | Zlib, GPL-3.0-or-later | https://github.com/Fledge68/WiiFlow_Lite | portiert in `src/platform/nand_emu.cpp`; `LICENSES/Zlib.txt` |
 | Gecko-Codehandler (Dolphin `docs/codehandler.s`) | da9e932 | MIT | https://github.com/dolphin-emu/dolphin (© 2010–2017 Nuke, brkirch, Y.S, Kenobi, gamemasterplc) | Quelltext in `boot/nl/codehandler/`, im Build assembliert, im `game_booter.dol`; `LICENSES/MIT.txt` |
 | wii_tls | 0.1.0 (9b1689b, Release v0.1.0) | Apache-2.0 | Projekt des Autors, vendort unter `third_party/wii_tls` (Commit in `VENDORED.txt`) | statisch gelinkt, nur mit `NL_TLS=ON`; `LICENSES/Apache-2.0.txt` |
 | Mbed TLS | 4.1.1 | Apache-2.0 | https://github.com/Mbed-TLS/mbedtls (Release-Archiv, SHA256 in `third_party/wii_tls/CMakeLists.txt`) | statisch gelinkt über wii_tls, nur mit `NL_TLS=ON`; `LICENSES/Apache-2.0.txt` |

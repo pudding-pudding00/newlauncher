@@ -7,6 +7,8 @@
 
 namespace nl {
 
+inline constexpr u8 kNoDevice = 0xFF;  // virtuelle Einträge ohne Bibliotheksgerät (eingelegte Disc, EmuNAND-Kanal)
+
 struct Game {
     Console console;
     const char* key;    // Spiel-Schlüssel (Spec 5.2)

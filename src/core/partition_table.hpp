@@ -21,6 +21,7 @@ struct PartitionInfo {
     FsKind kind;   // aus dem Bootsektor bzw. Superblock, nicht aus dem Typbyte
     bool logical;  // aus einer EBR-Kette
     bool beyondLimit = false;  // endet hinter Sektor 2^32: nur fürs Log, wird nicht eingehängt
+    s8 mbrIndex = -1;          // 0..3 für primäre MBR-Partition oder Superfloppy, -1 für GPT/logisch (M19 EmuNAND)
 };
 
 inline constexpr std::size_t kMaxPartitions = 16;

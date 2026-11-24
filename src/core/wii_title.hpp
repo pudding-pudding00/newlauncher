@@ -37,7 +37,7 @@ std::optional<u32> contentIdForIndex(const TmdInfo& tmd, u16 index);
 // Reihenfolge der Namen im IMET-Header (danach folgen Chinesisch ×2 und Koreanisch).
 enum class BannerLang : u8 { Japanese, English, German, French, Spanish, Italian, Dutch };
 
-inline constexpr std::size_t kImetReadBytes = 0x600;  // so viel liest platform/ vom Content 0
+inline constexpr std::size_t kImetReadBytes = 0x640;  // reicht für IMET bei 0x40 und 0x80 (Kanal-Content 0)
 
 // Name in `lang`, sonst Englisch, sonst der erste nicht leere; "" ohne IMET oder bei abgeschnittenen Daten.
 std::string imetChannelName(std::span<const u8> content0, BannerLang lang);

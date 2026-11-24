@@ -8,8 +8,8 @@
 
 namespace nl {
 
-enum class Console : u8 { Nes, Snes, Gb, N64, Gbc, Gc, Gba, Wii };
-inline constexpr int kConsoleCount = 8;
+enum class Console : u8 { Nes, Snes, Gb, N64, Gbc, Gc, Gba, Wii, Channel };
+inline constexpr int kConsoleCount = 9;
 
 struct ConsoleInfo {
     Console id;

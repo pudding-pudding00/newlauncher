@@ -93,4 +93,9 @@ const char* langKey(Lang l) { return l == Lang::En ? "en" : "de"; }
 const char* weekdayName(int weekday0Mon) { return kWeekdays[gLang == Lang::En][clampi(weekday0Mon, 0, 6)]; }
 const char* monthName(int month1) { return kMonths[gLang == Lang::En][clampi(month1, 1, 12) - 1]; }
 
+const char* consoleLabel(Console c) {
+    if (c == Console::Channel) return tr(Str::Channels);
+    return consoleInfo(c).label;
+}
+
 }  // namespace nl::ui

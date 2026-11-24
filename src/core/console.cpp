@@ -12,6 +12,7 @@ const ConsoleInfo kConsoles[kConsoleCount] = {
     {Console::Gc, "gc", "GC", "GameCube", 6, false, {"games", "gc"}, {".iso", ".gcm", ".ciso"}},
     {Console::Gba, "gba", "GBA", "Game Boy Advance", 6, true, {"roms/gba", nullptr}, {".gba"}},
     {Console::Wii, "wii", "Wii", "Wii", 7, false, {"wbfs", "wii"}, {".wbfs", ".iso"}},
+    {Console::Channel, "channel", "Kanäle", "Kanäle", 8, false, {}, {}},
 };
 }  // namespace
 

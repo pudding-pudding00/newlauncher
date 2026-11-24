@@ -53,50 +53,72 @@ class DeployError(Exception):
 
 def set_ini_value(text: str, section: str, key: str, value: str | None) -> str:
     """Setzt `key = value` in [section] oder entfernt den Schlüssel (value=None). Kommentare, Reihenfolge
-    und Zeilenenden bleiben; ein fehlender Abschnitt kommt ans Ende."""
-    nl = "\r\n" if "\r\n" in text else "\n"
-    lines = text.splitlines(keepends=True)
+    und Zeilenenden bleiben; Verhalten wie core/ini (UTF-8-BOM ignoriert/bewahrt, case-sensitiv, alle
+    gleichnamigen Abschnitte berücksichtigt)."""
+    bom = "\ufeff" if text.startswith("\ufeff") else ""
+    body = text[len(bom):]
+    nl = "\r\n" if "\r\n" in body else ("\r" if "\r" in body and "\n" not in body else "\n")
+    lines = body.splitlines(keepends=True)
 
     def header(line: str) -> str | None:
         s = line.strip()
-        return s[1:-1].strip().lower() if s.startswith("[") and s.endswith("]") else None
+        if s.startswith("[") and s.endswith("]") and "=" not in s:
+            name = s[1:-1].strip()
+            return name or None
+        return None
 
     def key_of(line: str) -> str | None:
         s = line.strip()
         if not s or s[0] in ";#" or "=" not in s:
             return None
-        return s.split("=", 1)[0].strip().lower()
+        name = s.split("=", 1)[0].strip()
+        return name or None
 
-    start = next((i for i, l in enumerate(lines) if header(l) == section.lower()), None)
-    if start is None:
-        if value is None:
+    cur_section: str | None = None
+    first_section_idx: int | None = None
+    matches: list[int] = []
+    for i, line in enumerate(lines):
+        h = header(line)
+        if h is not None:
+            cur_section = h
+            if h == section and first_section_idx is None:
+                first_section_idx = i
+            continue
+        if cur_section == section and key_of(line) == key:
+            matches.append(i)
+
+    if value is None:
+        if not matches:
             return text
-        out = text
+        for i in reversed(matches):
+            del lines[i]
+        return bom + "".join(lines)
+
+    if matches:
+        first = matches[0]
+        ending = lines[first][len(lines[first].rstrip("\r\n")):] or nl
+        lines[first] = f"{key} = {value}{ending}"
+        for i in reversed(matches[1:]):
+            del lines[i]
+        return bom + "".join(lines)
+
+    if first_section_idx is None:
+        out = body
         if out and not out.endswith(("\n", "\r")):
             out += nl
         if out:
             out += nl
-        return out + f"[{section}]{nl}{key} = {value}{nl}"
+        return bom + out + f"[{section}]{nl}{key} = {value}{nl}"
 
-    end = next((i for i in range(start + 1, len(lines)) if header(lines[i]) is not None), len(lines))
-    for i in range(start + 1, end):
-        if key_of(lines[i]) == key.lower():
-            if value is None:
-                del lines[i]
-            else:
-                ending = lines[i][len(lines[i].rstrip("\r\n")):] or nl
-                lines[i] = f"{key} = {value}{ending}"
-            return "".join(lines)
-    if value is None:
-        return text
-    last = start
-    for i in range(start + 1, end):
+    end = next((i for i in range(first_section_idx + 1, len(lines)) if header(lines[i]) is not None), len(lines))
+    last = first_section_idx
+    for i in range(first_section_idx + 1, end):
         if lines[i].strip():
             last = i
     if not lines[last].endswith(("\n", "\r")):
         lines[last] += nl
     lines.insert(last + 1, f"{key} = {value}{nl}")
-    return "".join(lines)
+    return bom + "".join(lines)
 
 
 def _need_bytes(paths) -> int:
@@ -157,10 +179,12 @@ def deploy_release(sd: Path, dol: Path, init: bool) -> None:
 
 def set_perf(sd: Path, on: bool) -> None:
     cfg = sd / "newlauncher/config.ini"
+    if not cfg.is_file() and not on:
+        return
     raw = cfg.read_bytes() if cfg.is_file() else b""
     text = raw.decode("utf-8")
     out = set_ini_value(text, "debug", "perf", "1" if on else None)
-    if out != text or not cfg.is_file():
+    if out != text or (on and not cfg.is_file()):
         cfg.parent.mkdir(parents=True, exist_ok=True)
         cfg.write_bytes(out.encode("utf-8"))
 
@@ -223,6 +247,8 @@ def main(argv: list[str] | None = None) -> int:
                 raise DeployError(f"{sd} hat keinen apps/-Ordner: ist das die Homebrew-Karte?")
             return deploy_emulators(sd, args.emulators, args.repo, args.yes)
         if args.wiiload:
+            if args.drive or args.perf or args.init:
+                raise DeployError("--wiiload nicht zusammen mit Laufwerk, --perf oder --init verwenden")
             # Die Selbsttest-DOL schreibt Favoriten, Verlauf und Einstellungen auf die Karte in der Wii; per
             # wiiload lässt sich nicht prüfen, ob das eine leere Karte ist.
             if args.selftest or dol.name == SELFTEST_DOL.name:

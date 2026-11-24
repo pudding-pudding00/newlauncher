@@ -15,7 +15,7 @@ FAIL mit einer kurzen Notiz und einer Zeile unter [Befunde](#befunde).
    python tools/wii_deploy.py E: --perf on
    ```
    Kopiert `apps/newlauncher/boot.dol` und `meta.xml`. Vorhandene Daten unter `newlauncher/`
-   (`config.ini`, `emulators.ini`, Favoriten, Verlauf, `cache/`) bleibt unverändert. Einzige Ausnahme
+   (`config.ini`, `emulators.ini`, Favoriten, Verlauf, `cache/`) bleiben unverändert. Einzige Ausnahme
    ist `--perf on`: Es setzt in `config.ini` die Zeile `perf = 1` unter `[debug]`.
 3. Selbsttest-Karte (eine **zweite, leere** SD-Karte, nur für X1 und P3):
    ```bash

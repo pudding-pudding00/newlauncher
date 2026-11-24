@@ -57,15 +57,22 @@ def _pairs(rest: str) -> dict:
 
 def parse_log(text: str) -> PerfLog:
     log = PerfLog()
+    seen_summary = False
     for line in text.splitlines():
         if m := _MARKER.search(line):
             kind, values = m.group(1), _pairs(m.group(2))
             if kind == "boot":
+                log.windows.clear()
                 log.boot = values
+                seen_summary = False
             elif kind == "frames":
+                if seen_summary:
+                    log.windows.clear()
+                    seen_summary = False
                 log.windows.append(values)
             else:
                 log.summary = values  # die letzte zählt
+                seen_summary = True
         elif m := _ALLOC.search(line):
             log.alloc_idle = int(m.group(1))
         elif m := _TLS.search(line):
@@ -168,7 +175,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("logs", nargs="+", type=Path, help="log.txt von der SD-Karte")
     args = parser.parse_args(argv)
-    texts = [p.read_text(encoding="utf-8", errors="replace") for p in args.logs]
+    try:
+        texts = [p.read_text(encoding="utf-8", errors="replace") for p in args.logs]
+    except OSError as e:
+        print(f"check_perf: Datei nicht lesbar: {e}")
+        return 2
     log = parse_log("\n".join(texts))
     if log.summary is None:
         print("check_perf: keine NL_PERF summary gefunden ([debug] perf = 1 gesetzt? Launcher sauber beendet?)")

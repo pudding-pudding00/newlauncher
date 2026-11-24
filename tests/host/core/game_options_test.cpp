@@ -323,3 +323,21 @@ TEST_CASE("game_options: Wii save = real|emu (M19)") {
     CHECK_FALSE(bad.saveEmu);
     CHECK(bad.bad == std::vector<std::string>{"save"});
 }
+
+TEST_CASE("game_options: vWii setzt wiiu_wide standardmäßig und ignoriert memcard=real / native_si") {
+    const GcOptions vw = resolveGcOptions(IniDoc{}, IniDoc{}, "GM8P01", kMinNintendont, true);
+    CHECK((vw.nin.extraFlags & kNinCfgWiiuWide) != 0u);
+    CHECK_FALSE(vw.memcardReal);
+    CHECK_FALSE(vw.nativeSi);
+
+    const GcOptions off = resolveGcOptions(IniDoc::parse("[gc]\nwiiu_wide = 0\nmemcard = real\nnative_si = 1\n"),
+                                           IniDoc{}, "GM8P01", kMinNintendont, true);
+    CHECK((off.nin.extraFlags & kNinCfgWiiuWide) == 0u);
+    CHECK(off.nin.memcardEmu);
+    CHECK_FALSE(off.memcardReal);
+    CHECK_FALSE(off.nativeSi);
+    CHECK((off.nin.extraFlags & kNinCfgNativeSi) == 0u);
+
+    const GcOptions wii = resolveGcOptions(IniDoc{}, IniDoc{}, "GM8P01", kMinNintendont, false);
+    CHECK((wii.nin.extraFlags & kNinCfgWiiuWide) == 0u);
+}

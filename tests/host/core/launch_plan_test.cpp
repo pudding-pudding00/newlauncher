@@ -872,3 +872,17 @@ TEST_CASE("preflightEmuChannel und preflightGame für Console::Channel") {
     auto dryBadCios = preflightEmuChannel(ch, CiosStatus{CiosState::Unverified, 56, "", 222}, okNand, true);
     CHECK(dryBadCios.isOk());
 }
+
+TEST_CASE("preflightGame: vWii ohne GC-Port-Warnungen und mit wiiu_wide-Standard") {
+    auto fs = gcFs();
+    const IniDoc cfg = IniDoc::parse("[gc]\nmemcard = real\nnative_si = 1\n");
+    const IniDoc games;
+    const GameOptionInputs opts{cfg, games, false, {}, Platform::VWii};
+    auto r = preflightGame(fs, gcGame(), "sd:", emus(), nullptr, true, &opts);
+    REQUIRE(r.isOk());
+    CHECK(r.value().warnings.empty());
+    // wiiu_wide (1 << 15) gesetzt, NATIVE_SI (1 << 14) aus, MEMCARDEMU (1 << 3) an
+    CHECK((static_cast<u8>(r.value().dol.args[1][0x00A]) & 0x80) != 0);
+    CHECK((static_cast<u8>(r.value().dol.args[1][0x00A]) & 0x40) == 0);
+    CHECK((static_cast<u8>(r.value().dol.args[1][0x00B]) & 0x08) != 0);
+}

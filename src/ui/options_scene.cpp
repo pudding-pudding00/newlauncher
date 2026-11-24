@@ -118,6 +118,7 @@ std::string OptionsScene::labelText(int row) const {
 std::string OptionsScene::valueText(int row) const {
     if (!model_ || row < 0 || row >= static_cast<int>(model_->rows())) return {};
     const std::size_t r = static_cast<std::size_t>(row);
+    if (model_->disabledOnVWii(r)) return tr(Str::OptNotOnVWii);
     if (const std::optional<NinVersion> need = model_->requiredVersion(r))
         return format(Str::OptNeedsNin, formatNinVersion(*need));
     const std::string v = displayValue(model_->key(r), model_->shownValue(r));
@@ -216,7 +217,8 @@ void OptionsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     }
 
     const float helpBase = card.y + card.h - kPad - small.descent;
-    gfx::drawTextEllipsis(dl, small, card.x + kPad, helpBase, card.w - 2 * kPad, tr(Str::OptionsHelp), t.textMuted);
+    const Str help = model_->vWii() && model_->console() == Console::Gc ? Str::OptionsHelpVWii : Str::OptionsHelp;
+    gfx::drawTextEllipsis(dl, small, card.x + kPad, helpBase, card.w - 2 * kPad, tr(help), t.textMuted);
 }
 
 }  // namespace nl::ui

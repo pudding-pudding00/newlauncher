@@ -135,8 +135,8 @@ struct Resolved {
 
 // Spiel > global > Standard; ein unbekannter Wert (auf welcher Ebene auch immer) nimmt den Standard.
 Resolved resolve(const Def& d, std::string_view globalSection, const IniDoc& config, const IniDoc& games,
-                 std::string_view id6, std::vector<std::string>& bad) {
-    const std::string standard(d.values[d.def]);
+                 std::string_view id6, std::vector<std::string>& bad, bool vWii = false) {
+    const std::string standard(vWii && d.key == "wiiu_wide" ? std::string_view("1") : d.values[d.def]);
     auto checked = [&](std::optional<std::string> v) -> std::optional<std::string> {
         if (!v || *v == "default") return std::nullopt;
         if (valid(d, *v)) return v;
@@ -205,11 +205,12 @@ WiiOptions resolveWiiOptions(const IniDoc& config, const IniDoc& games, std::str
     return o;
 }
 
-GcOptions resolveGcOptions(const IniDoc& config, const IniDoc& games, std::string_view id6, NinVersion nin) {
+GcOptions resolveGcOptions(const IniDoc& config, const IniDoc& games, std::string_view id6, NinVersion nin, bool vWii) {
     GcOptions o;
     NinConfigInput& n = o.nin;
     for (const Def& d : kGcDefs) {
-        const Resolved r = resolve(d, "gc", config, games, id6, o.bad);
+        const Resolved r = resolve(d, "gc", config, games, id6, o.bad, vWii);
+        if (vWii && (d.key == "native_si" || (d.key == "memcard" && r.value == "real"))) continue;
         const std::size_t i = indexOf(d, r.value);
         if (i == d.def) continue;  // Standard: nichts zu setzen, nie „nicht unterstützt“
         bool supported = true;
@@ -254,17 +255,17 @@ u32 hbcReturnTo(std::span<const u64> installedTitles) {
     return old ? kReturnToHbcOld : 0;
 }
 
-std::vector<OptionValue> listOptions(Console c, const IniDoc& config, const IniDoc& games, std::string_view id6) {
+std::vector<OptionValue> listOptions(Console c, const IniDoc& config, const IniDoc& games, std::string_view id6, bool vWii) {
     std::vector<OptionValue> out;
     std::vector<std::string> ignored;
-    auto add = [&](std::span<const Def> defs, std::string_view section) {
+    auto add = [&](std::span<const Def> defs, std::string_view section, bool useVWii) {
         for (const Def& d : defs) {
-            Resolved r = resolve(d, section, config, games, id6, ignored);
+            Resolved r = resolve(d, section, config, games, id6, ignored, useVWii);
             out.push_back({d.key, std::move(r.value), r.inherited, std::move(r.inheritedValue)});
         }
     };
-    if (c == Console::Wii) add(kWiiDefs, "wii");
-    else if (c == Console::Gc) add(kGcDefs, "gc");
+    if (c == Console::Wii) add(kWiiDefs, "wii", false);
+    else if (c == Console::Gc) add(kGcDefs, "gc", vWii);
     return out;
 }
 

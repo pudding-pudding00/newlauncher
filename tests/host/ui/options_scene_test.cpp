@@ -131,3 +131,15 @@ TEST_CASE_FIXTURE(Fixture, "Optionen: requestClose schließt im nächsten Frame 
     CHECK(r.pop);
     CHECK(r.command == AppCommand::SaveOptions);
 }
+
+TEST_CASE_FIXTURE(Fixture, "Optionen: vWii sperrt memcard und native_si mit Klartext (DE/EN)") {
+    open(OptionsModel(Console::Gc, "GM8P01", "", "", kMinNintendont, true));
+    CHECK(s.valueText(rowOf("memcard")) == "Auf vWii nicht verfügbar");
+    CHECK(s.valueText(rowOf("native_si")) == "Auf vWii nicht verfügbar");
+    setLanguage(Lang::En);
+    CHECK(s.valueText(rowOf("memcard")) == "Not available on vWii");
+    CHECK(s.valueText(rowOf("native_si")) == "Not available on vWii");
+    focus(rowOf("memcard"));
+    press(Action::Right);
+    CHECK_FALSE(s.model().dirty());
+}

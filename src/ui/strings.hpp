@@ -335,7 +335,10 @@
       "d2x cIOS required.\nEmuNAND requires a d2x cIOS (e.g. in slot 249).") \
     X(EmuNandNeedsFat, \
       "EmuNAND braucht FAT32.\nDas EmuNAND muss auf der SD-Karte oder einer primären FAT32-Partition liegen (%s).", \
-      "EmuNAND needs FAT32.\nThe EmuNAND must be on the SD card or a primary FAT32 partition (%s).")
+      "EmuNAND needs FAT32.\nThe EmuNAND must be on the SD card or a primary FAT32 partition (%s).") \
+    X(OptNotOnVWii, "Auf vWii nicht verfügbar", "Not available on vWii") \
+    X(OptionsHelpVWii, "◀▶ Ändern · B Speichern · vWii: Wiimote + Classic / HID-Controller", \
+      "◀▶ Change · B Save · vWii: Wiimote + Classic / HID controller")
 // clang-format on
 
 namespace nl::ui {

@@ -115,3 +115,16 @@ TEST_CASE("OptionsModel: reset behält die Kindersicherungs-Sperre locked = 1 (M
     plain.reset();
     CHECK(plain.gamesIniText().find("RMGP01") == std::string::npos);  // ohne Sperre: Abschnitt ganz weg
 }
+
+TEST_CASE("OptionsModel: vWii sperrt memcard und native_si, Standard wiiu_wide = 1 (M19)") {
+    OptionsModel m(Console::Gc, "GM8P01", "", "", kMinNintendont, true);
+    CHECK(m.vWii());
+    CHECK(m.shownValue(rowOf(m, "wiiu_wide")) == "1");
+    for (std::string_view k : {"memcard", "native_si"}) {
+        const std::size_t r = rowOf(m, k);
+        CHECK(m.disabledOnVWii(r));
+        CHECK_FALSE(m.enabled(r));
+        m.step(r, 1);
+    }
+    CHECK_FALSE(m.dirty());
+}

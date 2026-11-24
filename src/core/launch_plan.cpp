@@ -118,13 +118,14 @@ TargetResult gcTarget(FileSystem& fs, const Game& g, std::string_view libRoot, c
     NinConfigInput in{gamePath, key, usb};
     std::string cheatPath;  // muss bis buildNinCfg leben (in.cheatPath ist eine Sicht)
     if (opts != nullptr) {
-        gc = resolveGcOptions(opts->config, opts->games, key.substr(0, std::min<std::size_t>(6, key.size())), *ver);
+        const bool vWii = opts->platform == Platform::VWii;
+        gc = resolveGcOptions(opts->config, opts->games, key.substr(0, std::min<std::size_t>(6, key.size())), *ver, vWii);
         in = gc->nin;
         in.gamePath = gamePath;
         in.id6 = key;
         in.usb = usb;
-        if (!opts->gcPorts && gc->memcardReal) warnings.push_back(LaunchWarning::MemcardRealNoPorts);
-        if (!opts->gcPorts && gc->nativeSi) warnings.push_back(LaunchWarning::NativeSiNoPorts);
+        if (!opts->gcPorts && !vWii && gc->memcardReal) warnings.push_back(LaunchWarning::MemcardRealNoPorts);
+        if (!opts->gcPorts && !vWii && gc->nativeSi) warnings.push_back(LaunchWarning::NativeSiNoPorts);
         if (gc->cheats && !opts->gcCheats.empty()) {
             if (opts->gcCheats.size() > kNinCheatBytes) return err(LaunchFailure::CheatsTooLarge, std::to_string(opts->gcCheats.size()));
             cheatPath = ninCheatPath(key.substr(0, std::min<std::size_t>(6, key.size())));

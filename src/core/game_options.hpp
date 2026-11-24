@@ -59,7 +59,8 @@ struct GcOptions {
 };
 
 WiiOptions resolveWiiOptions(const IniDoc& config, const IniDoc& games, std::string_view id6);
-GcOptions resolveGcOptions(const IniDoc& config, const IniDoc& games, std::string_view id6, NinVersion nin);
+GcOptions resolveGcOptions(const IniDoc& config, const IniDoc& games, std::string_view id6, NinVersion nin,
+                           bool vWii = false);
 
 // Eine Zeile der Options-Szene. Ohne id6 (globale Standards) ist nichts geerbt.
 struct OptionValue {
@@ -68,8 +69,9 @@ struct OptionValue {
     bool inherited = false;      // kein Wert im Spiel (oder „default“)
     std::string inheritedValue;  // globaler Wert bzw. Standard
 };
-// Wii 15, GC 11 Zeilen in Tabellenreihenfolge der Spec; andere Konsolen: leer.
-std::vector<OptionValue> listOptions(Console c, const IniDoc& config, const IniDoc& games, std::string_view id6);
+// Wii 16, GC 11 Zeilen in Tabellenreihenfolge der Spec; andere Konsolen: leer.
+std::vector<OptionValue> listOptions(Console c, const IniDoc& config, const IniDoc& games, std::string_view id6,
+                                     bool vWii = false);
 
 // Erlaubte Werte einer Option in Anzeigereihenfolge (für die Szene); ios und return_to: nur die festen Werte.
 std::vector<std::string_view> optionValues(Console c, std::string_view key);

@@ -1456,8 +1456,10 @@ int main(int argc, char** argv) {
         std::optional<nl::NinVersion> nin;  // unbekannt: nichts gesperrt
         if (c == nl::Console::Gc && !emulators.nintendont().dol.empty())
             nin = nl::findNintendontVersion(fs, emulators.nintendont().dol);
+        const bool isVWii =
+            nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected()) == nl::Platform::VWii;
         optionsScene.open(nl::OptionsModel(c, g != nullptr ? std::string(g->key) : std::string(), configText,
-                                           std::move(*gamesText), nin),
+                                           std::move(*gamesText), nin, isVWii),
                           g != nullptr && g->title != nullptr ? std::string(g->title) : std::string());
         scenes.push(&optionsScene);
         nl::log::line("NL_SCENE options");

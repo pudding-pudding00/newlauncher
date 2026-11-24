@@ -369,7 +369,7 @@ TEST_CASE("Config: [debug] pin_input wird beim Schreiben entfernt, andere debug-
     CHECK(text.find("perf = 1") != std::string::npos);
 }
 
-TEST_CASE("Config: [parental] lock_until übersteht das Schreiben, 0 = leer") {
+TEST_CASE("Config: [parental] lock_until übersteht das Schreiben, wird bei 0 nicht geschrieben und entfernt (M17-Review)") {
     Config c;
     CHECK(configFromIni(IniDoc::parse("")).parental.lockUntil == 0);
     c.parental.lockUntil = 1762700030;
@@ -377,7 +377,10 @@ TEST_CASE("Config: [parental] lock_until übersteht das Schreiben, 0 = leer") {
     CHECK(text.find("lock_until = 1762700030") != std::string::npos);
     CHECK(configFromIni(IniDoc::parse(text)).parental.lockUntil == 1762700030u);
     c.parental.lockUntil = 0;
-    CHECK(configToIniText(c, "").find("lock_until = \n") != std::string::npos);
+    CHECK(configToIniText(c, "").find("lock_until") == std::string::npos);
+    const std::string cleared = configToIniText(c, text);
+    CHECK(cleared.find("lock_until") == std::string::npos);
+    CHECK(configFromIni(IniDoc::parse(cleared)).parental.lockUntil == 0);
     CHECK(configFromIni(IniDoc::parse("[parental]\nlock_until = x\n")).parental.lockUntil == 0);
 }
 

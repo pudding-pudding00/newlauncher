@@ -46,6 +46,20 @@ void drawGearIcon(gfx::DrawList& dl, const gfx::AtlasShapes& s, float cx, float 
     gfx::circle(dl, s, cx, cy, 9, c);
     gfx::circle(dl, s, cx, cy, 4, hole);
 }
+
+void drawWifiIcon(gfx::DrawList& dl, const gfx::AtlasShapes& s, float x, float bottomY, WifiStatus status,
+                  const Theme& t) {
+    constexpr float kBarW = 4.0f, kGap = 2.0f;
+    constexpr float kHeights[4] = {5.0f, 9.0f, 13.0f, 17.0f};
+    for (int b = 0; b < 4; ++b) {
+        Color c = t.barBorder;
+        if (status == WifiStatus::Connected) c = t.accent;
+        else if (status == WifiStatus::Connecting && b < 2) c = t.text2;
+        gfx::fillRect(dl, s,
+                      Rect{x + static_cast<float>(b) * (kBarW + kGap), bottomY - kHeights[b], kBarW, kHeights[b]}, c);
+    }
+    if (status == WifiStatus::Disconnected) gfx::circle(dl, s, x + 3.0f, bottomY - 14.0f, 3.0f, t.danger);
+}
 }  // namespace
 
 MainScene::MainScene(const Library& lib) : lib_(lib), scratch_(lib.games.size()) {
@@ -309,6 +323,16 @@ Rect MainScene::homeRect(const UiContext& ctx) const {
 
 Rect MainScene::gearRect(const UiContext& ctx) const {
     return Rect{ctx.width - kBarPadX - 2 * kButtonR, ctx.height - 36 - kButtonR, 2 * kButtonR, 2 * kButtonR};
+}
+
+Rect MainScene::wifiRect(const UiContext& ctx) const {
+    const float top = ctx.height - 72.0f;
+    const Rect gear = gearRect(ctx);
+    const gfx::FontFace& clock = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
+    const float clockW = gfx::measureText(clock, clockBuf_[0] != '\0' ? clockBuf_ : "00:00");
+    const float clockX = gear.x - 12.0f - clockW;
+    constexpr float kWifiW = 42.0f, kWifiH = 44.0f;
+    return Rect{clockX - 12.0f - kWifiW, top + (72.0f - kWifiH) / 2.0f, kWifiW, kWifiH};
 }
 
 Rect MainScene::barRect(int index) const {
@@ -594,8 +618,18 @@ void MainScene::drawInfoBar(const UiContext& ctx, gfx::DrawList& dl) const {
     const float clockX = gear.x - 12.0f - clockW;
     gfx::drawText(dl, clock, clockX, top + 36 + (clock.ascent - clock.descent) / 2, clockBuf_, t.text2);
 
+    const Rect wifi = wifiRect(ctx);
+    drawWifiIcon(dl, s, wifi.x + (wifi.w - 22.0f) / 2.0f, wifi.y + 22.0f, ctx.wifi, t);
+    const gfx::FontFace& wifiFont = ctx.fonts->face(FontSize::Small, FontWeight::Medium);
+    const char* wifiLabel = tr(Str::Wifi);
+    const float wifiW = gfx::measureText(wifiFont, wifiLabel);
+    const Color wifiColor = ctx.wifi == WifiStatus::Connected  ? t.accent
+                          : ctx.wifi == WifiStatus::Connecting ? t.text2
+                                                               : t.textMuted;
+    gfx::drawText(dl, wifiFont, wifi.x + (wifi.w - wifiW) / 2.0f, wifi.y + 39.0f, wifiLabel, wifiColor);
+
     const float textX = home.x + home.w + 16.0f;
-    const float maxW = clockX - 16.0f - textX;
+    const float maxW = wifi.x - 16.0f - textX;
     const gfx::FontFace& title = ctx.fonts->face(FontSize::Title, FontWeight::Medium);
     const gfx::FontFace& body = ctx.fonts->face(FontSize::Body, FontWeight::Regular);
     const char* line = infoLineText();

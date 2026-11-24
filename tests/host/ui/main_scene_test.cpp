@@ -3,6 +3,7 @@
 #include "core/parental.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/main_scene.hpp"
+#include "ui/strings.hpp"
 #include "ui/test_library.hpp"
 #include "support/fake_covers.hpp"
 #include "support/fake_font.hpp"
@@ -707,4 +708,50 @@ TEST_CASE_FIXTURE(Fixture, "MainScene: gesperrte Spiele tragen ein Schloss (M17)
     CHECK(dl.quadCount() > unlockedQuads);
     m.setParental(nullptr, nullptr);
     CHECK_FALSE(m.isGameLocked(fl.games[1]));
+}
+
+TEST_CASE_FIXTURE(Fixture, "Infoleiste zeigt WLAN-Anzeige links neben der Uhr ohne Überschneidung") {
+    const Library lib = testLibrary();
+    for (float width : {640.0f, 854.0f}) {
+        ctx.width = width;
+        MainScene s(lib);
+        step(s, InputFrame{});
+        const gfx::Rect w = s.wifiRect(ctx);
+        const gfx::Rect h = s.homeRect(ctx);
+        const gfx::Rect g = s.gearRect(ctx);
+        CHECK(w.y >= ctx.height - 72.0f);
+        CHECK(w.y + w.h <= ctx.height);
+        CHECK(w.x > h.x + h.w);
+        CHECK(w.x + w.w < g.x);
+    }
+}
+
+TEST_CASE_FIXTURE(Fixture, "WLAN-Zustände (Disconnected, Connecting, Connected) zeichnen ohne Fehler in DE und EN") {
+    const Library lib = testLibrary();
+    MainScene s(lib);
+    step(s, InputFrame{});
+    const Lang savedLang = language();
+
+    setLanguage(Lang::De);
+    CHECK(std::string(tr(Str::Wifi)) == "WLAN");
+    setLanguage(Lang::En);
+    CHECK(std::string(tr(Str::Wifi)) == "Wi-Fi");
+
+    u32 connectedQuads = 0;
+    u32 disconnectedQuads = 0;
+    for (Lang lang : {Lang::De, Lang::En}) {
+        setLanguage(lang);
+        for (WifiStatus st : {WifiStatus::Disconnected, WifiStatus::Connecting, WifiStatus::Connected}) {
+            ctx.wifi = st;
+            dl.clear();
+            s.draw(ctx, dl);
+            CHECK(dl.droppedQuads() == 0);
+            if (lang == Lang::De) {
+                if (st == WifiStatus::Connected) connectedQuads = dl.quadCount();
+                if (st == WifiStatus::Disconnected) disconnectedQuads = dl.quadCount();
+            }
+        }
+    }
+    CHECK(disconnectedQuads > connectedQuads);  // roter Punkt bei Disconnected erzeugt zusätzliche Quads
+    setLanguage(savedLang);
 }

@@ -265,6 +265,7 @@
     X(EmuErrCancelled, "Abgebrochen", "Cancelled") \
     X(EmuHelp, "A Installieren/Aktualisieren · B Zurück", "A Install/Update · B Back") \
     X(EmuBusyHelp, "B Abbrechen", "B Cancel") \
+    X(Wifi, "WLAN", "Wi-Fi") \
     X(About, "Über", "About") \
     X(AboutHttps, "HTTPS: %s", "HTTPS: %s") \
     X(AboutGpl, "Freie Software unter der GNU GPL v3 oder später, ohne jede Gewährleistung.", \

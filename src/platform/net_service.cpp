@@ -42,15 +42,16 @@ NetService::~NetService() {
     LWP_MutexDestroy(mutex_);
 }
 
+bool NetService::ensureThreadLocked() {
+    if (thread_ != LWP_THREAD_NULL) return true;
+    if (LWP_CreateThread(&thread_, &NetService::entry, this, nullptr, kStackBytes, kPriority) == 0) return true;
+    thread_ = LWP_THREAD_NULL;
+    return false;
+}
+
 u32 NetService::submit(NetJobFn job) {
     LWP_MutexLock(mutex_);
-    if (stopped_) {
-        LWP_MutexUnlock(mutex_);
-        return 0;
-    }
-    if (thread_ == LWP_THREAD_NULL &&
-        LWP_CreateThread(&thread_, &NetService::entry, this, nullptr, kStackBytes, kPriority) != 0) {
-        thread_ = LWP_THREAD_NULL;
+    if (stopped_ || !ensureThreadLocked()) {
         LWP_MutexUnlock(mutex_);
         return 0;
     }
@@ -58,6 +59,17 @@ u32 NetService::submit(NetJobFn job) {
     LWP_CondBroadcast(cond_);
     LWP_MutexUnlock(mutex_);
     return id;
+}
+
+void NetService::startWifiProbe() {
+    LWP_MutexLock(mutex_);
+    if (stopped_ || !ensureThreadLocked()) {
+        LWP_MutexUnlock(mutex_);
+        return;
+    }
+    probeRequested_ = true;
+    LWP_CondBroadcast(cond_);
+    LWP_MutexUnlock(mutex_);
 }
 
 void NetService::cancel(u32 id) {
@@ -81,6 +93,7 @@ void NetService::shutdown() {
     }
     stopped_ = true;
     stop_ = true;
+    probeRequested_ = false;
     queue_.cancelAll();
     LWP_CondBroadcast(cond_);
     const lwp_t t = thread_;
@@ -108,16 +121,39 @@ void* NetService::entry(void* self) {
     return nullptr;
 }
 
-void NetService::prepare() {
+void NetService::probeWifi() {
     if (!netUp_) {
+        wifi_ = static_cast<u8>(WifiStatus::Connecting);
+        const int attempts = initialProbeDone_ ? 1 : 2;
+        initialProbeDone_ = true;
         s32 r = -1;
-        for (int i = 0; i < 3 && r < 0; ++i) {
+        for (int i = 0; i < attempts && r < 0 && !stop_; ++i) {
             r = net_init();
-            if (r < 0) usleep(500 * 1000);
+            if (r < 0 && i + 1 < attempts && !stop_) usleep(500 * 1000);
         }
         netCode_ = r;
-        netUp_ = r >= 0;
+        netUp_ = (r >= 0 && net_gethostip() != 0);
+        wifi_ = static_cast<u8>(netUp_ ? WifiStatus::Connected : WifiStatus::Disconnected);
+        return;
     }
+    const bool alive = (net_gethostip() != 0);
+    if (!alive) netUp_ = false;
+    wifi_ = static_cast<u8>(alive ? WifiStatus::Connected : WifiStatus::Disconnected);
+}
+
+void NetService::prepare() {
+    if (netUp_ && net_gethostip() == 0) netUp_ = false;
+    if (!netUp_) {
+        wifi_ = static_cast<u8>(WifiStatus::Connecting);
+        s32 r = -1;
+        for (int i = 0; i < 3 && r < 0 && !stop_; ++i) {
+            r = net_init();
+            if (r < 0 && i + 1 < 3 && !stop_) usleep(500 * 1000);
+        }
+        netCode_ = r;
+        netUp_ = (r >= 0 && net_gethostip() != 0);
+    }
+    wifi_ = static_cast<u8>(netUp_ ? WifiStatus::Connected : WifiStatus::Disconnected);
 #if defined(NL_TLS) && NL_TLS
     if (netUp_ && !tlsTried_) {
         tlsTried_ = true;
@@ -129,19 +165,25 @@ void NetService::prepare() {
 void NetService::loop() {
     for (;;) {
         LWP_MutexLock(mutex_);
-        while (!stop_ && queue_.pending() == 0) LWP_CondWait(cond_, mutex_);
+        while (!stop_ && queue_.pending() == 0 && !probeRequested_) LWP_CondWait(cond_, mutex_);
         if (stop_) {
             LWP_MutexUnlock(mutex_);
             break;
         }
-        std::optional<NetJob> job = queue_.take();
-        LWP_MutexUnlock(mutex_);
-        prepare();
-        job->run(queue_.cancelFlag());
-        LWP_MutexLock(mutex_);
-        queue_.finish();
-        LWP_CondBroadcast(cond_);
-        LWP_MutexUnlock(mutex_);
+        if (queue_.pending() > 0) {
+            std::optional<NetJob> job = queue_.take();
+            LWP_MutexUnlock(mutex_);
+            prepare();
+            job->run(queue_.cancelFlag());
+            LWP_MutexLock(mutex_);
+            queue_.finish();
+            LWP_CondBroadcast(cond_);
+            LWP_MutexUnlock(mutex_);
+        } else if (probeRequested_) {
+            probeRequested_ = false;
+            LWP_MutexUnlock(mutex_);
+            probeWifi();
+        }
     }
 #if defined(NL_TLS) && NL_TLS
     if (tlsUp_) wtls_shutdown();

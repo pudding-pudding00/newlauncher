@@ -1584,6 +1584,10 @@ int main(int argc, char** argv) {
     nl::FrameStats stats;
     bool readyReported = false;
     bool coversReported = false;
+#ifndef NL_SELFTEST
+    bool wifiProbeStarted = false;
+    u64 nextWifiProbeMs = 0;
+#endif
     bool running = true;
     u64 prevFrameStart = 0;
     for (int frameNo = 0; running; ++frameNo) {
@@ -1616,6 +1620,7 @@ int main(int argc, char** argv) {
             }
         }
         ctx.battery = input.battery();
+        ctx.wifi = netService.wifiStatus();
         // Ergebnis des Hintergrund-Scans übernehmen (Spec 6.1 Schritt 6)
         if (auto result = worker.take()) {
             if (result->isOk()) {
@@ -2063,6 +2068,16 @@ int main(int argc, char** argv) {
             if (perf) perf->pause();
             coversReported = true;
         }
+#ifndef NL_SELFTEST
+        if (readyReported && !netService.busy()) {
+            const u64 nowMs = msSince(bootTicks);
+            if (!wifiProbeStarted || nowMs >= nextWifiProbeMs) {
+                wifiProbeStarted = true;
+                netService.startWifiProbe();
+                nextWifiProbeMs = nowMs + (ctx.wifi == nl::WifiStatus::Connected ? 5000u : 15000u);
+            }
+        }
+#endif
 #ifdef NL_SELFTEST
         nl::app::selftestAfterFrame(frameNo, view);
 #endif

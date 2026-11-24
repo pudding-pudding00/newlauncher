@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "core/disc_id.hpp"
 #include "core/emulators.hpp"
 #include "core/partition_table.hpp"
 #include "core/extent_units.hpp"
@@ -33,6 +34,8 @@ enum class LaunchFailure : u8 {
     CheatsTooLarge,     // M15: GCT passt nicht in die Codeliste; Kontext Größe in Bytes
     FileNotContiguousReadable,  // M16: NTFS-Datei komprimiert, sparse oder resident; Kontext Pfad
     NintendontNeedsFat,         // M16: GC-Spiel nicht auf FAT; Kontext Gerätename („USB 2“)
+    DiscChanged,                // M19: eingelegte Disc weicht vor dem Start ab; Kontext neue ID6
+    DiscUnreadable,             // M19: eingelegte Disc beim Start leer oder unlesbar
 };
 const char* launchFailureName(LaunchFailure f);  // Log-Marker NL_PREFLIGHT_FAIL
 
@@ -80,13 +83,16 @@ LaunchError fromExtentError(ExtentError e, std::string context);  // M16: Extent
 // 0x80003000 (Beginn der OS-Globals, wie upstream WiiFlow). Der Wii-Build prüft beide Grenzen gegen den Handler.
 inline constexpr u32 kWiiCodelistBytes = 0x80003000u - 0x80002338u;
 
+enum class WiiBootSource : u8 { Usb, Disc, Channel };
+
 // Alles, was der Game-Booter braucht; the_CFG entsteht daraus erst auf der Plattform (Task 6).
 struct WiiBootPlan {
+    WiiBootSource source = WiiBootSource::Usb;
     std::string id6;
     bool usb = false;
     CiosStatus cios;
     u8 iosSlot = kDefaultCiosSlot;  // M13: IOS_ReloadIOS und the_CFG.IOS.Version (= cios.slot)
-    std::vector<u8> fragBytes;  // serializeFragList, genau kFragListBytes
+    std::vector<u8> fragBytes;  // serializeFragList, genau kFragListBytes (nur Usb)
     WiiOptions options;         // M14: the_CFG-Felder, ios und Rückkehr
     std::vector<u8> gct;        // M15: gewählte Codes als GCT; leer = ohne Cheats
     u8 hookType = 0;            // M15: the_CFG.hooktype, 0 ohne Codes
@@ -101,6 +107,12 @@ Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view li
                                               const Result<FragList, LaunchError>& frags, bool dryRun,
                                               const WiiOptions& options = {}, std::span<const u8> gct = {},
                                               std::span<const WipEntry> wip = {});
+
+// M19: Wii-Disc vor dem Start gegen das tatsächlich eingelegte Medium prüfen (TYPE_WII_DISC, ohne Fragmente).
+Result<WiiBootPlan, LaunchError> preflightWiiDisc(const Game& g, std::optional<OpticalDisc> currentDisc,
+                                                  const CiosStatus& cios, bool dryRun,
+                                                  const WiiOptions& options = {}, std::span<const u8> gct = {},
+                                                  std::span<const WipEntry> wip = {});
 
 // Ziel eines Starts: ein DOL über den Chainloader, ein Kanal im NAND (VC-Inject) oder ein Wii-Spiel.
 struct LaunchTarget {

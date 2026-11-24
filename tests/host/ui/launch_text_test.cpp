@@ -170,3 +170,14 @@ TEST_CASE("M16: NintendontNeedsFat und Hinweis EmulatorFs mit Emulatorname (DE/E
     CHECK(std::string(text).find("Snes9x GX may not read this file system.") == 0);
     setLanguage(saved);
 }
+
+TEST_CASE("M19: DiscChanged und DiscUnreadable in DE und EN") {
+    const Lang saved = language();
+    setLanguage(Lang::De);
+    CHECK(std::string(render(LaunchFailure::DiscChanged, "RSBP01").text).find("RSBP01") != std::string::npos);
+    CHECK(std::string(render(LaunchFailure::DiscUnreadable, "RMCP01").text).find("nicht lesbar") != std::string::npos);
+    setLanguage(Lang::En);
+    CHECK(std::string(render(LaunchFailure::DiscChanged, "RSBP01").text).find("RSBP01") != std::string::npos);
+    CHECK(std::string(render(LaunchFailure::DiscUnreadable, "RMCP01").text).find("not readable") != std::string::npos);
+    setLanguage(saved);
+}

@@ -38,17 +38,25 @@ Result<void> loadDolBytesToBuffer(std::span<const u8> dol) {
 }
 
 Result<LaunchPlan> prepareWiiBoot(const WiiBootPlan& plan, std::string_view title) {
-    if (plan.id6.size() != 6 || plan.fragBytes.size() != sizeof(::FragList)) {
+    const bool isUsb = plan.source == WiiBootSource::Usb;
+    if (plan.id6.size() != 6 || (isUsb && plan.fragBytes.size() != sizeof(::FragList))) {
         return Result<LaunchPlan>::err({ErrorCode::InvalidData, "WiiBootPlan"});
     }
 
     the_CFG cfg;
     std::memset(&cfg, 0, sizeof cfg);
     std::memcpy(cfg.gameID, plan.id6.data(), 6);
-    cfg.fragments = reinterpret_cast<::FragList*>(NL_FRAG_LIST_ADDR);
-    cfg.wbfsDevice = plan.usb ? WBFS_DEVICE_USB : WBFS_DEVICE_SDHC;
-    cfg.wbfsPart = 0;
-    cfg.GameBootType = TYPE_WII_WBFS_EXT;
+    if (isUsb) {
+        cfg.fragments = reinterpret_cast<::FragList*>(NL_FRAG_LIST_ADDR);
+        cfg.wbfsDevice = plan.usb ? WBFS_DEVICE_USB : WBFS_DEVICE_SDHC;
+        cfg.wbfsPart = 0;
+        cfg.GameBootType = TYPE_WII_WBFS_EXT;
+    } else {
+        cfg.fragments = nullptr;
+        cfg.wbfsDevice = 0;
+        cfg.wbfsPart = 0;
+        cfg.GameBootType = TYPE_WII_DISC;
+    }
     cfg.JustDanceGame = title.find("Just Dance") != std::string_view::npos;
     cfg.IOS.Version = plan.iosSlot;
     cfg.IOS.Type = IOS_TYPE_D2X;  // auch bei Unverified: der Booter versucht nur BlockIOSReload
@@ -96,9 +104,11 @@ Result<LaunchPlan> prepareWiiBoot(const WiiBootPlan& plan, std::string_view titl
     cfg.debugger = 0;
 
     std::memcpy(at(NL_WII_CFG_ADDR), &cfg, sizeof cfg);
-    std::memcpy(at(NL_FRAG_LIST_ADDR), plan.fragBytes.data(), plan.fragBytes.size());
     DCFlushRange(at(NL_WII_CFG_ADDR), sizeof cfg);
-    DCFlushRange(at(NL_FRAG_LIST_ADDR), sizeof(::FragList));
+    if (isUsb) {
+        std::memcpy(at(NL_FRAG_LIST_ADDR), plan.fragBytes.data(), plan.fragBytes.size());
+        DCFlushRange(at(NL_FRAG_LIST_ADDR), sizeof(::FragList));
+    }
 
     if (auto loaded = loadDolBytesToBuffer({game_booter_dol, game_booter_dol_size}); !loaded.isOk()) {
         return Result<LaunchPlan>::err(loaded.error());

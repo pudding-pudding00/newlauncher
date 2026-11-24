@@ -213,6 +213,8 @@ const char* launchFailureName(LaunchFailure f) {
         case LaunchFailure::CheatsTooLarge: return "CheatsTooLarge";
         case LaunchFailure::FileNotContiguousReadable: return "FileNotContiguousReadable";
         case LaunchFailure::NintendontNeedsFat: return "NintendontNeedsFat";
+        case LaunchFailure::DiscChanged: return "DiscChanged";
+        case LaunchFailure::DiscUnreadable: return "DiscUnreadable";
     }
     return "?";
 }
@@ -240,6 +242,33 @@ LaunchError fromExtentError(ExtentError e, std::string context) {
     return {LaunchFailure::WiiFileBroken, std::move(context)};
 }
 
+namespace {
+
+Result<WiiBootPlan, LaunchError> buildWiiBootPlan(WiiBootSource source, std::string id6, bool usb, const CiosStatus& cios,
+                                                  bool dryRun, const WiiOptions& options, std::span<const u8> gct,
+                                                  std::span<const WipEntry> wip) {
+    using R = Result<WiiBootPlan, LaunchError>;
+    if (!dryRun && cios.state == CiosState::Missing) {
+        return R::err({LaunchFailure::CiosMissing, std::to_string(static_cast<unsigned>(cios.slot))});
+    }
+    if (gct.size() > kWiiCodelistBytes) return R::err({LaunchFailure::CheatsTooLarge, std::to_string(gct.size())});
+
+    WiiBootPlan p;
+    p.source = source;
+    p.id6 = std::move(id6);
+    p.usb = usb;
+    p.cios = cios;
+    p.iosSlot = cios.slot;
+    p.options = options;
+    p.gct.assign(gct.begin(), gct.end());
+    p.hookType = gct.empty() ? 0 : options.hookType;  // Spec v2 8: ohne Codes kein Hook
+    p.wip.assign(wip.begin(), wip.begin() + static_cast<std::ptrdiff_t>(std::min(wip.size(), kWipMaxEntries)));
+    if (cios.state != CiosState::D2x) p.options.cfg.returnTo = 0;  // Spec 7.2: Rückkehr nur mit d2x
+    return R::ok(std::move(p));
+}
+
+}  // namespace
+
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
                                               const Result<FragList, LaunchError>& frags, bool dryRun,
                                               const WiiOptions& options, std::span<const u8> gct,
@@ -251,20 +280,26 @@ Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view li
     if (!frags.isOk()) return R::err(frags.error());
     const std::string_view key = g.key != nullptr ? g.key : "";
     if (key.size() < 6) return R::err({LaunchFailure::Unsupported, consoleInfo(g.console).name});  // Scanner liefert immer ID6
-    if (gct.size() > kWiiCodelistBytes) return R::err({LaunchFailure::CheatsTooLarge, std::to_string(gct.size())});
+    auto plan = buildWiiBootPlan(WiiBootSource::Usb, std::string(key.substr(0, 6)), onUsb(libRoot), cios, dryRun, options,
+                                 gct, wip);
+    if (plan.isOk()) plan.value().fragBytes = serializeFragList(frags.value());
+    return plan;
+}
 
-    WiiBootPlan p;
-    p.id6 = std::string(key.substr(0, 6));
-    p.usb = onUsb(libRoot);
-    p.cios = cios;
-    p.iosSlot = cios.slot;
-    p.fragBytes = serializeFragList(frags.value());
-    p.options = options;
-    p.gct.assign(gct.begin(), gct.end());
-    p.hookType = gct.empty() ? 0 : options.hookType;  // Spec v2 8: ohne Codes kein Hook
-    p.wip.assign(wip.begin(), wip.begin() + static_cast<std::ptrdiff_t>(std::min(wip.size(), kWipMaxEntries)));
-    if (cios.state != CiosState::D2x) p.options.cfg.returnTo = 0;  // Spec 7.2: Rückkehr nur mit d2x
-    return R::ok(std::move(p));
+Result<WiiBootPlan, LaunchError> preflightWiiDisc(const Game& g, std::optional<OpticalDisc> currentDisc,
+                                                  const CiosStatus& cios, bool dryRun, const WiiOptions& options,
+                                                  std::span<const u8> gct, std::span<const WipEntry> wip) {
+    using R = Result<WiiBootPlan, LaunchError>;
+    const std::string_view key = g.key != nullptr ? g.key : "";
+    if (key.size() < 6) return R::err({LaunchFailure::Unsupported, consoleInfo(g.console).name});
+    const std::string id6(key.substr(0, 6));
+    if (!currentDisc || currentDisc->kind == DiscKind::None || currentDisc->kind == DiscKind::Unknown) {
+        return R::err({LaunchFailure::DiscUnreadable, id6});
+    }
+    if (currentDisc->kind != DiscKind::Wii || currentDisc->id6 != id6) {
+        return R::err({LaunchFailure::DiscChanged, currentDisc->id6});
+    }
+    return buildWiiBootPlan(WiiBootSource::Disc, id6, false, cios, dryRun, options, gct, wip);
 }
 
 Result<LaunchPlan, LaunchError> preflightEmulator(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus) {

@@ -2,6 +2,7 @@
 #include "core/launch_layout.hpp"
 #include "core/launch_plan.hpp"
 #include "core/cios_scan.hpp"
+#include "core/index_file.hpp"
 #include "support/dol_images.hpp"
 #include "support/mem_fs.hpp"
 #include <doctest/doctest.h>
@@ -712,4 +713,74 @@ TEST_CASE("preflightGame: Wii auf ext oder NTFS → kein Fehler, kein Hinweis") 
         CHECK(r.value().kind == LaunchTarget::Kind::Wii);
         CHECK(r.value().warnings.empty());
     }
+}
+
+TEST_CASE("preflightWiiDisc: gültige Wii-Disc erzeugt Plan ohne Fragmente mit Optionen") {
+    Game g = wiiGame();
+    g.path = "disc:";
+    g.device = kNoDevice;
+    g.flags = kFlagDisc;
+    const OpticalDisc disc{DiscKind::Wii, "RMCP01", "Mario Kart Wii"};
+    WiiOptions opts;
+    opts.cfg.aspectRatio = 1;
+    opts.cheats = true;
+    opts.hookType = 2;
+    const std::vector<u8> gct(16, 0x11);
+    auto r = preflightWiiDisc(g, disc, kD2x, false, opts, gct);
+    REQUIRE(r.isOk());
+    CHECK(r.value().source == WiiBootSource::Disc);
+    CHECK(r.value().id6 == "RMCP01");
+    CHECK_FALSE(r.value().usb);
+    CHECK(r.value().fragBytes.empty());
+    CHECK(r.value().iosSlot == kD2x.slot);
+    CHECK(r.value().options.cfg.aspectRatio == 1);
+    CHECK(r.value().gct == gct);
+    CHECK(r.value().hookType == 2);
+}
+
+TEST_CASE("preflightWiiDisc: andere Disc oder GC-Disc → DiscChanged, leer/unlesbar → DiscUnreadable") {
+    Game g = wiiGame();
+    g.path = "disc:";
+    g.device = kNoDevice;
+    g.flags = kFlagDisc;
+
+    auto swapped = preflightWiiDisc(g, OpticalDisc{DiscKind::Wii, "RSBP01", "Brawl"}, kD2x, true);
+    REQUIRE_FALSE(swapped.isOk());
+    CHECK(swapped.error().kind == LaunchFailure::DiscChanged);
+    CHECK(swapped.error().context == "RSBP01");
+    CHECK(std::string(launchFailureName(LaunchFailure::DiscChanged)) == "DiscChanged");
+
+    auto gc = preflightWiiDisc(g, OpticalDisc{DiscKind::Gc, "GM8P01", "Prime"}, kD2x, true);
+    REQUIRE_FALSE(gc.isOk());
+    CHECK(gc.error().kind == LaunchFailure::DiscChanged);
+    CHECK(gc.error().context == "GM8P01");
+
+    auto empty = preflightWiiDisc(g, std::nullopt, kD2x, true);
+    REQUIRE_FALSE(empty.isOk());
+    CHECK(empty.error().kind == LaunchFailure::DiscUnreadable);
+    CHECK(std::string(launchFailureName(LaunchFailure::DiscUnreadable)) == "DiscUnreadable");
+
+    auto unknown = preflightWiiDisc(g, OpticalDisc{DiscKind::Unknown, "", ""}, kD2x, true);
+    REQUIRE_FALSE(unknown.isOk());
+    CHECK(unknown.error().kind == LaunchFailure::DiscUnreadable);
+}
+
+TEST_CASE("preflightWiiDisc: fehlendes cIOS sperrt außer im Dry-Run, übergroße GCT → CheatsTooLarge") {
+    Game g = wiiGame();
+    g.flags = kFlagDisc;
+    const OpticalDisc disc{DiscKind::Wii, "RMCP01", "Mario Kart Wii"};
+    const CiosStatus missing{CiosState::Missing, 0, "", 249};
+    auto fail = preflightWiiDisc(g, disc, missing, false);
+    REQUIRE_FALSE(fail.isOk());
+    CHECK(fail.error().kind == LaunchFailure::CiosMissing);
+    CHECK(fail.error().context == "249");
+
+    auto dry = preflightWiiDisc(g, disc, missing, true);
+    REQUIRE(dry.isOk());
+    CHECK(dry.value().source == WiiBootSource::Disc);
+
+    const std::vector<u8> big(kWiiCodelistBytes + 8, 0);
+    auto cheats = preflightWiiDisc(g, disc, kD2x, true, {}, big);
+    REQUIRE_FALSE(cheats.isOk());
+    CHECK(cheats.error().kind == LaunchFailure::CheatsTooLarge);
 }

@@ -628,6 +628,7 @@ int main(int argc, char** argv) {
     settings.setActiveSources(libFellBack ? nl::SourceSpec{false, {"sd"}} : sources);
     // Wurzel des Geräts, auf dem ein Spiel liegt ("usb2:"); Game::device zählt in store.devices().
     auto rootOf = [&](const nl::Game& game) {
+        if (game.device == nl::kNoDevice) return std::string();
         return game.device < store.devices().size() ? store.devices()[game.device] + ":" : std::string("sd:");
     };
     homeMenu.setSettings(&settings);
@@ -920,23 +921,26 @@ int main(int argc, char** argv) {
             case nl::CiosState::Unverified: nl::log::line("NL_CIOS unverified"); break;
             case nl::CiosState::Missing: nl::log::line("NL_CIOS missing"); break;
         }
+        const bool isDisc = (game.flags & nl::kFlagDisc) != 0;
         u32 partLba = 0;
         const std::string libRoot = rootOf(game);
-        const nl::platform::Device* device = nl::platform::deviceTable().byName(libRoot);
-        auto frags = device != nullptr
-                         ? nl::platform::computeWiiFrags(fs, game, *device, &partLba)
-                         : nl::Result<nl::FragList, nl::LaunchError>::err({nl::LaunchFailure::RomMissing, libRoot});
-        if (frags.isOk()) {
-            const nl::FragList& f = frags.value();
-            const auto bytes = nl::serializeFragList(f);
-            char first[48] = "-";
-            if (!f.entries.empty()) {
-                std::snprintf(first, sizeof first, "%u:%u:%u", static_cast<unsigned>(f.entries[0].offset),
-                              static_cast<unsigned>(f.entries[0].sector), static_cast<unsigned>(f.entries[0].count));
+        nl::Result<nl::FragList, nl::LaunchError> frags =
+            nl::Result<nl::FragList, nl::LaunchError>::err({nl::LaunchFailure::RomMissing, libRoot});
+        if (!isDisc) {
+            const nl::platform::Device* device = nl::platform::deviceTable().byName(libRoot);
+            if (device != nullptr) frags = nl::platform::computeWiiFrags(fs, game, *device, &partLba);
+            if (frags.isOk()) {
+                const nl::FragList& f = frags.value();
+                const auto bytes = nl::serializeFragList(f);
+                char first[48] = "-";
+                if (!f.entries.empty()) {
+                    std::snprintf(first, sizeof first, "%u:%u:%u", static_cast<unsigned>(f.entries[0].offset),
+                                  static_cast<unsigned>(f.entries[0].sector), static_cast<unsigned>(f.entries[0].count));
+                }
+                nl::log::line("NL_FRAG dev=%s part_lba=%u n=%u size=%u crc=%08x first=%s", device->slot.name.c_str(),
+                              static_cast<unsigned>(partLba), static_cast<unsigned>(f.entries.size()),
+                              static_cast<unsigned>(f.size), static_cast<unsigned>(nl::fragListCrc(bytes)), first);
             }
-            nl::log::line("NL_FRAG dev=%s part_lba=%u n=%u size=%u crc=%08x first=%s", device->slot.name.c_str(),
-                          static_cast<unsigned>(partLba), static_cast<unsigned>(f.entries.size()), static_cast<unsigned>(f.size),
-                          static_cast<unsigned>(nl::fragListCrc(bytes)), first);
         }
         // M15: Cheats nur mit Codehandler im Build und Option „Cheats“ (Spec v2 8); sonst leere GCT, hooktype 0.
         std::vector<u8> gct;
@@ -955,7 +959,24 @@ int main(int argc, char** argv) {
                               static_cast<unsigned>(wip.skipped));
             }
         }
-        auto plan = nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options, gct, wip.entries);
+        auto plan = [&]() -> nl::Result<nl::WiiBootPlan, nl::LaunchError> {
+            if (!isDisc) {
+                return nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options, gct, wip.entries);
+            }
+            const nl::platform::DiscReadResult cur = discDrive.readSync();
+            std::optional<nl::OpticalDisc> curDisc;
+            if (cur.status == nl::platform::DiscReadStatus::Ok) curDisc = cur.disc;
+            auto p = nl::preflightWiiDisc(game, curDisc, cios, config.debugWiiDryRun, options, gct, wip.entries);
+            if (!p.isOk() && (p.error().kind == nl::LaunchFailure::DiscChanged ||
+                              p.error().kind == nl::LaunchFailure::DiscUnreadable)) {
+                applyDiscResult(cur, false);
+            }
+            return p;
+        }();
+        if (plan.isOk() && isDisc) {
+            nl::log::line("NL_WII_DISC id=%s ios=%u", plan.value().id6.c_str(),
+                          static_cast<unsigned>(plan.value().iosSlot));
+        }
         if (plan.isOk() && !plan.value().gct.empty()) {
             nl::log::line("NL_WII_CHEATS bytes=%u hook=%u", static_cast<unsigned>(plan.value().gct.size()),
                           static_cast<unsigned>(plan.value().hookType));

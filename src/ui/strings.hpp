@@ -318,7 +318,11 @@
     X(ReadDisc, "Disc lesen", "Read disc") \
     X(ReadingDisc, "Disc wird gelesen …", "Reading disc …") \
     X(DiscUnreadable, "Disc nicht lesbar", "Disc not readable") \
-    X(NoDisc, "Keine Disc eingelegt", "No disc inserted")
+    X(NoDisc, "Keine Disc eingelegt", "No disc inserted") \
+    X(DiscChanged, "Andere Disc eingelegt.\nIm Laufwerk liegt eine andere Disc (%s). Die Liste wurde aktualisiert.", \
+      "Different disc inserted.\nA different disc (%s) is in the drive. The list has been updated.") \
+    X(DiscUnreadableErr, "Disc nicht lesbar.\nBitte prüfen, ob die Disc eingelegt und sauber ist.", \
+      "Disc not readable.\nPlease check that the disc is inserted and clean.")
 // clang-format on
 
 namespace nl::ui {

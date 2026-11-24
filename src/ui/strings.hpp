@@ -243,6 +243,7 @@
     X(ValLangEn, "Englisch", "English") \
     X(ValLangDe, "Deutsch", "German") \
     X(EmuCheckUpdates, "Nach Updates suchen", "Check for updates") \
+    X(EmuInstallAll, "Alle installieren", "Install all") \
     X(EmuUpdateAll, "Alle aktualisieren", "Update all") \
     X(EmuNotInstalled, "nicht installiert", "not installed") \
     X(EmuCurrent, "aktuell", "up to date") \

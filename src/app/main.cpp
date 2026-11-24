@@ -1430,6 +1430,9 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_EMU_DEBUG_INSTALL n=%u", static_cast<unsigned>(targets.size()));
                 startEmuInstall(std::move(targets));
                 if (emuJob != EmuJob::Install) onDebugInstallDone();
+            } else if (std::vector<nl::OscApp> pending = emuScene.takePendingTargets(); !pending.empty()) {
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::EmuInstallAll));
+                startEmuInstall(std::move(pending));
             }
         } else {
             emuScene.setBusy(std::nullopt);

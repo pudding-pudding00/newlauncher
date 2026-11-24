@@ -60,15 +60,18 @@ struct Fixture {
 };
 }  // namespace
 
-TEST_CASE_FIXTURE(Fixture, "6 Emulatorzeilen und 2 Aktionen, Overlay") {
+TEST_CASE_FIXTURE(Fixture, "6 Emulatorzeilen und 3 Aktionen, Overlay") {
     CHECK(s.isOverlay());
-    CHECK(EmulatorsScene::kRowCount == 8);
+    CHECK(EmulatorsScene::kRowCount == 9);
+    CHECK(EmulatorsScene::kRowCheckUpdates == 6);
+    CHECK(EmulatorsScene::kRowInstallAll == 7);
+    CHECK(EmulatorsScene::kRowUpdateAll == 8);
     REQUIRE(s.selectedRow() != nullptr);
     CHECK(s.selectedRow()->info->oscName == "fceugx");
-    focusRow(7);
+    focusRow(8);
     CHECK(s.selectedRow() == nullptr);
     press(Action::Down);
-    CHECK(s.focus() == 7);
+    CHECK(s.focus() == 8);
     s.draw(ctx, dl);
     CHECK(std::string(appCommandName(AppCommand::OpenEmulators)) == "open_emulators");
     CHECK(std::string(appCommandName(AppCommand::EmuInstallAll)) == "emu_install_all");
@@ -98,18 +101,71 @@ TEST_CASE_FIXTURE(Fixture, "A auf Emulator, der nicht im Repo ist → nichts") {
 }
 
 TEST_CASE_FIXTURE(Fixture, "Nach Updates suchen → EmuFetchList") {
-    focusRow(6);
+    focusRow(EmulatorsScene::kRowCheckUpdates);
     const SceneRequests r = press(Action::Confirm);
     CHECK(r.command == AppCommand::EmuFetchList);
     CHECK_FALSE(r.pop);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Alle aktualisieren nimmt Updates und unbekannte Versionen, keine neuen") {
+TEST_CASE_FIXTURE(Fixture, "Alle installieren nimmt nur nicht installierte Apps im Repo") {
     s.setListState(EmulatorsScene::ListState::Loaded);
-    focusRow(7);
+    focusRow(EmulatorsScene::kRowInstallAll);
     const SceneRequests r = press(Action::Confirm);
     CHECK(r.command == AppCommand::EmuInstallAll);
     const auto t = s.takeTargets();
+    REQUIRE(t.size() == 1);
+    CHECK(t[0].name == "vbagx");
+
+    auto rows = sampleRows();
+    rows[2].state = EmuState::Current;
+    s.setRows(std::move(rows));
+    CHECK(press(Action::Confirm).command == AppCommand::None);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Alle aktualisieren nimmt Updates und unbekannte Versionen, keine neuen") {
+    s.setListState(EmulatorsScene::ListState::Loaded);
+    focusRow(EmulatorsScene::kRowUpdateAll);
+    const SceneRequests r = press(Action::Confirm);
+    CHECK(r.command == AppCommand::EmuInstallAll);
+    const auto t = s.takeTargets();
+    REQUIRE(t.size() == 2);
+    CHECK(t[0].name == "fceugx");
+    CHECK(t[1].name == "snes9xgx");
+}
+
+TEST_CASE_FIXTURE(Fixture, "Alle installieren ohne geladene Liste lädt zuerst die Liste und liefert danach die fehlenden Ziele") {
+    focusRow(EmulatorsScene::kRowInstallAll);
+    const SceneRequests r = press(Action::Confirm);
+    CHECK(r.command == AppCommand::EmuFetchList);
+    CHECK(s.takePendingTargets().empty());
+
+    s.setListState(EmulatorsScene::ListState::Loaded);
+    const auto t = s.takePendingTargets();
+    REQUIRE(t.size() == 1);
+    CHECK(t[0].name == "vbagx");
+    CHECK(s.takePendingTargets().empty());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Abbrechen oder Fehlschlag beim Laden löscht vorgemerktes Alle installieren") {
+    focusRow(EmulatorsScene::kRowInstallAll);
+    CHECK(press(Action::Confirm).command == AppCommand::EmuFetchList);
+    s.setListState(EmulatorsScene::ListState::Loading);
+    CHECK(press(Action::Back).command == AppCommand::EmuCancel);
+    s.setListState(EmulatorsScene::ListState::Loaded);
+    CHECK(s.takePendingTargets().empty());
+
+    s.setListState(EmulatorsScene::ListState::NotLoaded);
+    CHECK(press(Action::Confirm).command == AppCommand::EmuFetchList);
+    s.setListState(EmulatorsScene::ListState::Failed);
+    s.setListState(EmulatorsScene::ListState::Loaded);
+    CHECK(s.takePendingTargets().empty());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Alle aktualisieren ohne geladene Liste lädt Liste und liefert danach Update-Ziele") {
+    focusRow(EmulatorsScene::kRowUpdateAll);
+    CHECK(press(Action::Confirm).command == AppCommand::EmuFetchList);
+    s.setListState(EmulatorsScene::ListState::Loaded);
+    const auto t = s.takePendingTargets();
     REQUIRE(t.size() == 2);
     CHECK(t[0].name == "fceugx");
     CHECK(t[1].name == "snes9xgx");

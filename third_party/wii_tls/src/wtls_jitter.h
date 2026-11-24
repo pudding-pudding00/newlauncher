@@ -12,8 +12,10 @@ typedef uint32_t (*wtls_sample_fn)(void *ctx);
 #define WTLS_RCT_CUTOFF   21   /* SP 800-90B 4.4.1, H=1, alpha=2^-20 */
 #define WTLS_APT_WINDOW  512
 #define WTLS_APT_CUTOFF  410   /* SP 800-90B table 2, H=1, W=512 */
-/* Provisional until the Task 2 spike ran on hardware (docs/ios-socket-behaviour.md):
- * conservative floor(H/2), minimum 1. */
+/* Credited min-entropy per raw sample. The Wii sampler (one IOS IPC round
+ * trip) measured >= 4.6 bits/sample under the worst SP 800-90B-style
+ * estimator (docs/ios-socket-behaviour.md): 1 keeps a > 4x margin, and the
+ * RCT/APT cutoffs above are sized for it. */
 #define WTLS_JITTER_BITS_PER_SAMPLE 1
 #define WTLS_JITTER_WARMUP 1024
 

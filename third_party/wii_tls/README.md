@@ -16,15 +16,24 @@ TF-PSA-Crypto) and libogc.
 - TLS 1.3 session tickets (8-entry cache) and a 16-entry DNS cache: a second
   connection to the same host skips DNS and the certificate-chain work.
 - Blocking API with timeouts, plus a non-blocking mode for your own poll loop.
-- Entropy from a CPU-timing jitter collector (health-tested, SHA-256
-  conditioned; fails closed if the tests fail); SNTP clock sync for the
-  often-wrong Wii RTC.
+- Entropy from the timing jitter of IOS IPC round trips, measured on a Wii
+  ([docs/ios-socket-behaviour.md](docs/ios-socket-behaviour.md); health-tested,
+  SHA-256 conditioned, fails closed if the tests fail; `wtls_init` spends
+  about 400 ms seeding); SNTP clock sync for the often-wrong Wii RTC.
 
-> **Hardware validation pending.** Everything above is built for the Wii and
-> tested on the host (PC) against a local test server. The hardware suites
-> (`tools/hwtest.py`), the real-world suite and the benchmarks have not yet run
-> on a Wii, so the jitter entropy estimate, IOS socket behaviour and all
-> performance numbers are unconfirmed on real hardware.
+> **Validated on a Wii.** The hardware suites pass on a real Wii over Wi-Fi:
+> `plat`, `crypto`, `time`, `tls` and `realworld`, the last against public HTTPS
+> servers. With the default build, a full TLS 1.3 handshake costs about 66 ms of
+> CPU (81 ms wall) and a resumed one about 14 ms. ChaCha20-Poly1305 runs at
+> 24 MB/s, and an X25519 key exchange (keygen, export, agreement) takes 4.6 ms.
+> The full matrix and the targets that are still missed are in
+> [docs/benchmarks.md](docs/benchmarks.md).
+
+**Documentation:** [usage guide](docs/usage.md) (setup, threading, error
+handling, resumption, non-blocking I/O, limits) ·
+[performance](docs/performance.md) · API reference in
+[include/wiitls/wiitls.h](include/wiitls/wiitls.h). Prebuilt packages for
+devkitPPC are on the GitHub releases page.
 
 ## Quick example
 
@@ -100,6 +109,10 @@ Suites: `selftest`, `spike`, `entropy`, `plat`, `time`, `tls` (against the PC
 test server), `realworld` (example.com, google.com, cloudflare.com, badssl.com).
 
 ## Using it in your project
+
+**Prebuilt release package:** see [docs/usage.md](docs/usage.md#1-add-it-to-your-project).
+`tools/make_release.sh` (in a devkitPro shell) builds the package into
+`dist/` and checks that the example links against it.
 
 **As a subdirectory** (recommended: Mbed TLS and the include path come along):
 

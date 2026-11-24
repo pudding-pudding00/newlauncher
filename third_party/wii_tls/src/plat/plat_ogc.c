@@ -1,13 +1,13 @@
 /* Wii platform layer: libogc net_* (IOS /dev/net/ip/top) and the timebase. */
 #include "plat.h"
 
-#include <malloc.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include <gccore.h>
 #include <network.h>
+#include <ogc/ipc.h>
 #include <ogc/lwp_watchdog.h>
 #include <ogc/mutex.h>
 
@@ -19,6 +19,8 @@
  * See docs/ios-socket-behaviour.md: confirmed by the Task 2 spike once run. */
 /* IOS errno values and IPC_ENOMEM handling: plat.h (wtls_plat_ios_*). */
 #define IPC_RETRY_US 2000
+/* Poll slice while a non-blocking connect runs (two IPCs of ~135 us each). */
+#define CONNECT_SLICE_MS 5u
 
 /* IOS poll bits and fcntl flag. */
 #define IOS_POLLIN  0x0003
@@ -96,15 +98,36 @@ int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int 
     bool nb = set_nonblocking(fd) == 0;
     s32 r = net_connect(fd, (struct sockaddr *)&sa, sizeof sa);
     if (wtls_plat_ios_connect_pending(nb, r)) {
-        int pr = poll_one(fd, IOS_POLLOUT, timeout_ms);
-        if (pr == 0) {
-            net_close(fd);
-            return WTLS_ERR_TIMEOUT;
+        /* IOS' net_poll wakes for a refused connect (RST) but not for a
+         * completed one: POLLOUT shows up only at the poll timeout (measured).
+         * So poll in short slices and ask a second connect each time:
+         * 0/EISCONN = connected, EALREADY/EINPROGRESS = still running. */
+        uint64_t deadline = wtls_plat_now_ms() + timeout_ms;
+        for (;;) {
+            uint64_t now = wtls_plat_now_ms();
+            if (now >= deadline) {
+                net_close(fd);
+                return WTLS_ERR_TIMEOUT;
+            }
+            uint64_t left = deadline - now;
+            /* Counted as poll wait: the CPU sleeps while IOS waits. */
+            uint64_t p0 = wtls_plat_now_us();
+            int pr = poll_one(fd, IOS_POLLOUT, left < CONNECT_SLICE_MS ? (uint32_t)left : CONNECT_SLICE_MS);
+            wtls_plat_poll_wait_us += wtls_plat_now_us() - p0;
+            if (pr < 0) {
+                r = -1;
+                break;
+            }
+            r = net_connect(fd, (struct sockaddr *)&sa, sizeof sa);
+            if (wtls_plat_ios_connected(r)) {
+                r = 0;
+                break;
+            }
+            if (!wtls_plat_ios_connect_in_progress(r)) {
+                SYS_Report("wtls: connect failed, IOS code %d\n", (int)r);
+                break;
+            }
         }
-        /* A second connect reports the outcome: 0 or EISCONN means connected. */
-        r = pr < 0 ? -1 : net_connect(fd, (struct sockaddr *)&sa, sizeof sa);
-        if (wtls_plat_ios_connected(r)) r = 0;
-        else if (r < 0) SYS_Report("wtls: connect failed, IOS code %d\n", (int)r); /* spike aid */
     }
     if (r < 0) {
         net_close(fd);
@@ -114,8 +137,8 @@ int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int 
         net_close(fd);
         return WTLS_ERR_CONNECT;
     }
-    int one = 1;
-    (void)net_setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one); /* best effort */
+    /* No TCP_NODELAY: IOS rejects it with ENOPROTOOPT (-109, measured), so the
+     * call would only cost an IPC round trip. */
     *fd_out = (int)fd;
     return WTLS_OK;
 }
@@ -163,7 +186,9 @@ int wtls_plat_udp_exchange(uint32_t ipv4_be, uint16_t port, const uint8_t *req, 
     sa.sin_port = htons(port);
     memcpy(&sa.sin_addr, &ipv4_be, 4);
     int ret = WTLS_ERR_IO;
-    if (net_sendto(fd, req, (s32)req_len, 0, (struct sockaddr *)&sa, sizeof sa) == (s32)req_len) {
+    /* IOS takes only its own 8-byte IPv4 sockaddr length: sizeof sa (16) fails
+     * with -EINVAL (measured on a Wii). */
+    if (net_sendto(fd, req, (s32)req_len, 0, (struct sockaddr *)&sa, 8) == (s32)req_len) {
         int pr = poll_one(fd, IOS_POLLIN, timeout_ms);
         if (pr == 0) {
             ret = WTLS_ERR_TIMEOUT;
@@ -176,14 +201,13 @@ int wtls_plat_udp_exchange(uint32_t ipv4_be, uint16_t port, const uint8_t *req, 
     return ret;
 }
 
-/* ---- timebase jitter (variant b of the Task 2 spike) ---- */
-#define JIT_WALK_BYTES (256 * 1024)
-#define JIT_STRIDE (4096 + 32)
-
-static volatile uint8_t *g_walk;
-static size_t g_walk_pos;
-static uint32_t g_prev_tb;
-
+/* ---- timebase jitter: one IOS IPC round trip per sample ---- */
+/* The PPC timebase measured across a round trip into IOS on the Starlet,
+ * whose timing depends on asynchronous events (Wi-Fi and timer interrupts,
+ * the IOS scheduler). Measured on a Wii (tools/jitter_assess.py, worst
+ * estimator): >= 4.6 bits of min-entropy per sample, versus 0.22 for
+ * CPU-only cache-walk timing (docs/ios-socket-behaviour.md). IOS_Open of a
+ * path that does not exist has no side effects and needs no network. */
 static inline uint32_t tb_read(void) {
     uint32_t t;
     __asm__ volatile("mftb %0" : "=r"(t));
@@ -191,21 +215,11 @@ static inline uint32_t tb_read(void) {
 }
 
 uint32_t wtls_plat_jitter_sample(void) {
-    if (!g_walk) {
-        g_walk = memalign(32, JIT_WALK_BYTES);
-        if (!g_walk) return 0;
-        g_walk_pos = 0;
-        g_prev_tb = tb_read();
-    }
-    g_walk[g_walk_pos] ^= (uint8_t)g_prev_tb;
-    g_walk_pos = (g_walk_pos + JIT_STRIDE) % JIT_WALK_BYTES;
+    static uint32_t prev;
+    s32 fd = IOS_Open("/dev/wtls/none", 0);
+    if (fd >= 0) IOS_Close(fd);
     uint32_t now = tb_read();
-    uint32_t d = now - g_prev_tb;
-    g_prev_tb = now;
+    uint32_t d = now - prev;
+    prev = now;
     return d;
-}
-
-void wtls_plat_jitter_release(void) {
-    free((void *)g_walk);
-    g_walk = NULL;
 }

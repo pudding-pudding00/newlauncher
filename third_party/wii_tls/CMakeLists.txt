@@ -29,8 +29,9 @@ option(WTLS_BUILD_TESTS "Build libwiitls tests" ${WTLS_BUILD_TESTS_DEFAULT})
 # below, including the fetched Mbed TLS.
 option(WTLS_BN_ASM "PPC32 bignum assembly (MBEDTLS_HAVE_ASM)" ON)
 option(WTLS_P256M "p256-m driver for P-256 (fails to build with 4.1.1 + PK)" OFF)
-option(WTLS_EVEREST "X25519 via Everest/HACL* (MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED)" OFF)
-set(WTLS_OPT O2 CACHE STRING "Optimisation level for library and Mbed TLS: O2 or O3")
+option(WTLS_EVEREST "X25519 via Everest/HACL* (MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED)" ON)
+option(WTLS_ACCEL "X25519 with 32-bit limbs (src/accel), hooked into Everest" ON)
+set(WTLS_OPT O3 CACHE STRING "Optimisation level for library and Mbed TLS: O2 or O3")
 set_property(CACHE WTLS_OPT PROPERTY STRINGS O2 O3)
 if(NOT WTLS_OPT MATCHES "^O[23]$")
     message(FATAL_ERROR "WTLS_OPT must be O2 or O3, got '${WTLS_OPT}'")
@@ -48,7 +49,13 @@ endif()
 if(WTLS_EVEREST)
     add_compile_definitions(WTLS_CFG_EVEREST)
 endif()
-add_compile_options(-${WTLS_OPT}) # after CMAKE_C_FLAGS_<CONFIG>: the last -O wins
+if(WTLS_ACCEL)
+    if(NOT WTLS_EVEREST)
+        message(FATAL_ERROR "WTLS_ACCEL=ON needs WTLS_EVEREST=ON: it replaces Everest's X25519")
+    endif()
+    add_compile_definitions(WTLS_ACCEL_X25519)
+endif()
+add_compile_options(-${WTLS_OPT}) # after CMAKE_C_FLAGS_<CONFIG>: the last -O wins (Mbed TLS: below)
 
 include(FetchContent)
 set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
@@ -65,6 +72,110 @@ FetchContent_Declare(mbedtls
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(mbedtls)
+# Mbed TLS adds its own $<$<CONFIG:Release>:-O2> per target, after the global
+# options: repeat WTLS_OPT on each target so it comes last and wins.
+foreach(t mbedtls mbedx509 tfpsacrypto builtin everest p256-m platform utilities extras pqcp)
+    if(TARGET ${t})
+        target_compile_options(${t} PRIVATE "SHELL:-${WTLS_OPT}") # SHELL: escapes de-duplication against the global -O
+    endif()
+endforeach()
+if(WTLS_EVEREST)
+    # Everest's generic big-endian htole64 swaps only the two 32-bit halves: it
+    # calls htobe32 (a no-op on big-endian) where it needs htole32, so X25519
+    # returns wrong shared secrets on the Wii (tests/common/crypto_tests.c).
+    # Fixed in the fetched source at configure time; idempotent.
+    set(_wtls_endian
+        ${mbedtls_SOURCE_DIR}/tf-psa-crypto/drivers/everest/include/tf-psa-crypto/private/everest/kremlin/c_endianness.h)
+    file(READ ${_wtls_endian} _wtls_src)
+    string(FIND "${_wtls_src}" "__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__" _wtls_be)
+    string(FIND "${_wtls_src}" "__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__" _wtls_le)
+    if(_wtls_be LESS 0 OR _wtls_le LESS _wtls_be)
+        message(FATAL_ERROR "WTLS_EVEREST: unexpected layout of ${_wtls_endian}")
+    endif()
+    string(SUBSTRING "${_wtls_src}" 0 ${_wtls_be} _wtls_head)
+    math(EXPR _wtls_len "${_wtls_le} - ${_wtls_be}")
+    string(SUBSTRING "${_wtls_src}" ${_wtls_be} ${_wtls_len} _wtls_branch)
+    string(SUBSTRING "${_wtls_src}" ${_wtls_le} -1 _wtls_tail)
+    string(REPLACE "__low = htobe32(" "__low = htole32(" _wtls_branch "${_wtls_branch}")
+    string(REPLACE "__high = htobe32(" "__high = htole32(" _wtls_branch "${_wtls_branch}")
+    set(_wtls_fixed "${_wtls_head}${_wtls_branch}${_wtls_tail}")
+    if(NOT _wtls_fixed STREQUAL _wtls_src)
+        file(WRITE ${_wtls_endian} "${_wtls_fixed}")
+    endif()
+
+    # PSA uses Everest only for the X25519 agreement. The public key for the
+    # TLS 1.3 key share (psa_export_public_key of the fresh key pair) is
+    # computed by the generic ECP code instead: on the Wii that costs more
+    # than keygen and agreement together (docs/benchmarks.md). Route it
+    # through Everest as well. Pinned by the RFC 7748 vectors in
+    # tests/common/crypto_tests.c (host and Wii). Idempotent.
+    set(_wtls_ecp ${mbedtls_SOURCE_DIR}/tf-psa-crypto/drivers/builtin/src/psa_crypto_ecp.c)
+    file(READ ${_wtls_ecp} _wtls_src)
+    set(_wtls_anchor "psa_status_t mbedtls_psa_ecp_export_public_key(
+    const psa_key_attributes_t *attributes,
+    const uint8_t *key_buffer, size_t key_buffer_size,
+    uint8_t *data, size_t data_size, size_t *data_length)
+{
+    psa_status_t status = PSA_ERROR_CORRUPTION_DETECTED;
+    mbedtls_ecp_keypair *ecp = NULL;
+")
+    set(_wtls_marker "/* libwiitls: X25519 public key via Everest */")
+    string(FIND "${_wtls_src}" "${_wtls_marker}" _wtls_done)
+    if(_wtls_done LESS 0)
+        string(FIND "${_wtls_src}" "${_wtls_anchor}" _wtls_at)
+        if(_wtls_at LESS 0)
+            message(FATAL_ERROR "WTLS_EVEREST: unexpected layout of ${_wtls_ecp}")
+        endif()
+        string(REPLACE "${_wtls_anchor}" "${_wtls_anchor}
+    ${_wtls_marker}
+#if defined(MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED)
+    if (attributes->type == PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_MONTGOMERY) &&
+        attributes->bits == 255) {
+        static const uint8_t base[MBEDTLS_X25519_KEY_SIZE_BYTES] = { 9 };
+        if (key_buffer_size != MBEDTLS_X25519_KEY_SIZE_BYTES) {
+            return PSA_ERROR_INVALID_ARGUMENT;
+        }
+        if (data_size < MBEDTLS_X25519_KEY_SIZE_BYTES) {
+            return PSA_ERROR_BUFFER_TOO_SMALL;
+        }
+        mbedtls_x25519_scalarmult(data, key_buffer, base); /* clamps the scalar */
+        *data_length = MBEDTLS_X25519_KEY_SIZE_BYTES;
+        return PSA_SUCCESS;
+    }
+#endif
+" _wtls_src "${_wtls_src}")
+        file(WRITE ${_wtls_ecp} "${_wtls_src}")
+    endif()
+
+    # With WTLS_ACCEL, Everest's one X25519 entry point (used by the agreement
+    # and, via the patch above, by the public key export) calls the 32-bit-limb
+    # implementation in src/accel instead of HACL*'s 51-bit limbs, which need
+    # emulated 128-bit products on PPC32. Selected by the WTLS_ACCEL_X25519
+    # define, so builds with and without it can share the fetched source.
+    # Pinned by tests/common/crypto_tests.c. Idempotent.
+    set(_wtls_x25519 ${mbedtls_SOURCE_DIR}/tf-psa-crypto/drivers/everest/library/x25519.c)
+    file(READ ${_wtls_x25519} _wtls_src)
+    set(_wtls_marker "/* libwiitls: X25519 via src/accel */")
+    string(FIND "${_wtls_src}" "${_wtls_marker}" _wtls_done)
+    if(_wtls_done LESS 0)
+        set(_wtls_fn "void mbedtls_x25519_scalarmult(")
+        string(FIND "${_wtls_src}" "${_wtls_fn}" _wtls_at_fn)
+        string(FIND "${_wtls_src}" "    Hacl_Curve25519_crypto_scalarmult(out, cp_scalar, cp_point);" _wtls_at_call)
+        if(_wtls_at_fn LESS 0 OR _wtls_at_call LESS 0)
+            message(FATAL_ERROR "WTLS_ACCEL: unexpected layout of ${_wtls_x25519}")
+        endif()
+        string(REPLACE "${_wtls_fn}" "${_wtls_marker}
+void wtls_x25519(uint8_t *out, const uint8_t *scalar, const uint8_t *point);
+
+${_wtls_fn}" _wtls_src "${_wtls_src}")
+        string(REPLACE "    Hacl_Curve25519_crypto_scalarmult(out, cp_scalar, cp_point);" "#if defined(WTLS_ACCEL_X25519)
+    wtls_x25519(out, cp_scalar, cp_point);
+#else
+    Hacl_Curve25519_crypto_scalarmult(out, cp_scalar, cp_point);
+#endif" _wtls_src "${_wtls_src}")
+        file(WRITE ${_wtls_x25519} "${_wtls_src}")
+    endif()
+endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     foreach(t mbedtls mbedx509 tfpsacrypto)
         target_compile_definitions(${t} PUBLIC WTLS_DEBUG)
@@ -106,6 +217,20 @@ add_library(wiitls STATIC
     src/plat/plat_common.c
     src/plat/plat_${WTLS_PLATFORM}.c
 )
+if(WTLS_ACCEL)
+    # Called from Everest's mbedtls_x25519_scalarmult (patched above); the
+    # tfpsacrypto -> wiitls link edge below resolves it.
+    target_sources(wiitls PRIVATE src/accel/x25519_fe32.c)
+    if(WTLS_PLATFORM STREQUAL "ogc")
+        # The compiler may turn the masked swaps back into branches on the key
+        # bits: fail the build if the PPC code of the ladder/select branches.
+        add_custom_command(TARGET wiitls POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -DOBJDUMP=${CMAKE_OBJDUMP}
+                    "-DOBJECTS=$<FILTER:$<TARGET_OBJECTS:wiitls>,INCLUDE,x25519_fe32>"
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_ct.cmake
+            VERBATIM)
+    endif()
+endif()
 set_target_properties(wiitls PROPERTIES OUTPUT_NAME wiitls PREFIX lib)
 target_include_directories(wiitls
     PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -126,6 +251,28 @@ if(WTLS_PLATFORM STREQUAL "host")
 else()
     target_compile_definitions(wiitls PRIVATE WTLS_PLATFORM_OGC)
 endif()
+
+# ---------------------------------------------------------------------------
+# Benchmark crypto call profile (bench/psa_prof.c): one --wrap per function in
+# WTLS_PP_LIST (bench/psa_prof.h). Used by test_bench and wtls_bench.
+set(WTLS_BENCH_WRAP
+    psa_generate_key psa_export_public_key psa_raw_key_agreement psa_generate_random
+    psa_import_key psa_destroy_key psa_verify_hash psa_hash_compute psa_hash_setup
+    psa_hash_update psa_hash_finish psa_hash_clone psa_key_derivation_setup
+    psa_key_derivation_input_bytes psa_key_derivation_input_key
+    psa_key_derivation_output_bytes psa_key_derivation_abort psa_mac_compute
+    psa_mac_sign_setup psa_mac_update psa_mac_sign_finish psa_aead_encrypt psa_aead_decrypt
+    mbedtls_x509_crt_parse_der mbedtls_x509_crt_verify_with_ca_cb mbedtls_pk_verify_ext
+    mbedtls_pk_parse_subpubkey)
+function(wtls_bench_wrap target)
+    foreach(fn ${WTLS_BENCH_WRAP})
+        target_link_options(${target} PRIVATE "LINKER:--wrap=${fn}")
+    endforeach()
+    # bench/p256m_probe.c compiles p256-m itself, for a speed comparison.
+    target_sources(${target} PRIVATE ${PROJECT_SOURCE_DIR}/bench/p256m_probe.c)
+    target_include_directories(${target} PRIVATE
+        ${mbedtls_SOURCE_DIR}/tf-psa-crypto/drivers/p256-m/p256-m)
+endfunction()
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -176,6 +323,7 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     wtls_host_test(test_castore)
     wtls_host_test(test_scache)
     wtls_host_test(test_dns)
+    wtls_host_test(test_crypto tests/common/crypto_tests.c)
     add_dependencies(test_castore wtls_test_certs)
     target_compile_definitions(test_castore PRIVATE
         WTLS_TEST_CERT_DIR="${WTLS_TEST_CERT_DIR}"
@@ -185,9 +333,10 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     set_tests_properties(test_tls PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
 
     # Benchmarks on the host: proves every benchmark runs; the numbers are the PC's.
-    add_executable(test_bench bench/host_main.c bench/bench_core.c)
+    add_executable(test_bench bench/host_main.c bench/bench_core.c bench/psa_prof.c)
     target_include_directories(test_bench PRIVATE bench tests/common src)
     target_link_libraries(test_bench PRIVATE wiitls)
+    wtls_bench_wrap(test_bench)
     add_dependencies(test_bench wtls_test_certs)
     add_test(NAME test_bench
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/host/run_with_server.py

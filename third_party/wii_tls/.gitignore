@@ -3,3 +3,4 @@
 *.dol
 *.elf
 __pycache__/
+/dist/

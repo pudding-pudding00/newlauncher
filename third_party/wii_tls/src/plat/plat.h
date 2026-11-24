@@ -27,7 +27,8 @@ int      wtls_plat_udp_exchange(uint32_t ipv4_be, uint16_t port, const uint8_t *
                                 uint32_t timeout_ms);                  /* bytes | ERR_TIMEOUT | ERR_IO */
 uint64_t wtls_plat_now_ms(void);                                       /* monotonic */
 uint64_t wtls_plat_now_us(void);                                       /* monotonic, microseconds */
-/* Total microseconds spent blocked inside wtls_plat_poll since start-up. The
+/* Total microseconds spent blocked inside wtls_plat_poll, and in the polls of a
+ * pending wtls_plat_connect, since start-up. The
  * benchmark derives CPU time as wall time minus this wait time. */
 extern uint64_t wtls_plat_poll_wait_us;
 int64_t  wtls_plat_unix_time(void);                 /* time(NULL) + offset */
@@ -38,15 +39,14 @@ void     wtls_plat_set_unix_time_offset(int64_t delta_s);
 bool wtls_plat_parse_ipv4(const char *s, uint32_t *ipv4_be);
 
 /* IOS socket result classification. Used by plat_ogc.c; lives in
- * plat_common.c so the host tests cover it. libogc's net_* functions pass the
- * IOS result through _net_convert_error, so callers see negated newlib errno
- * values, not raw IOS numbers (newlauncher M11: Dolphin reported -127 =
- * -EISCONN for the second connect). Literal values so host builds, whose
- * errno.h differs, classify the same way. */
-#define WTLS_IOS_EAGAIN       11  /* newlib EAGAIN */
-#define WTLS_IOS_EALREADY    120  /* newlib EALREADY */
-#define WTLS_IOS_EINPROGRESS 119  /* newlib EINPROGRESS */
-#define WTLS_IOS_EISCONN     127  /* newlib EISCONN */
+ * plat_common.c so the host tests cover it. libogc translates IOS results
+ * into negated newlib errno values: EINPROGRESS (-119) and EISCONN (-127)
+ * were measured on a Wii (docs/ios-socket-behaviour.md); EAGAIN and EALREADY
+ * follow the same newlib numbering. */
+#define WTLS_IOS_EAGAIN       11
+#define WTLS_IOS_EALREADY    120
+#define WTLS_IOS_EINPROGRESS 119
+#define WTLS_IOS_EISCONN     127
 #define WTLS_IPC_ENOMEM    (-22) /* libogc IPC heap exhausted: transient */
 #define WTLS_IPC_RETRIES      5  /* short in-call retries before handing back WANT_* */
 #define WTLS_PLAT_RETRY   (-1000) /* internal: pause briefly and repeat the call */
@@ -60,15 +60,13 @@ int  wtls_plat_ios_io_result(int32_t r, bool is_send, int attempt);
 bool wtls_plat_ios_connect_pending(bool nonblocking, int32_t r);
 /* true: the second connect's result means the socket is connected. */
 bool wtls_plat_ios_connected(int32_t r);
+/* true: the second connect's result means the TCP handshake is still running. */
+bool wtls_plat_ios_connect_in_progress(int32_t r);
 
 #if defined(WTLS_PLATFORM_OGC)
-/* One timebase-jitter sample: delta of mftb across the disturbance chosen in
- * Task 2 (variant b: cache-hostile stride walk over a 256 KiB buffer). The
- * buffer is allocated on first use; wtls_plat_jitter_release() frees it.
- * Returns 0 forever if the buffer cannot be allocated (the health tests then
- * fail closed). */
+/* One jitter sample: the timebase delta since the previous call, measured
+ * across one IOS IPC round trip (see plat_ogc.c for the entropy estimate). */
 uint32_t wtls_plat_jitter_sample(void);
-void     wtls_plat_jitter_release(void);
 #endif
 
 #endif

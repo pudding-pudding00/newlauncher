@@ -31,6 +31,7 @@ struct DeviceSlot {
     bool mount;
     SkipReason skip = SkipReason::None;
     bool readOnly = false;  // NTFS/ext: nur lesend eingehängt
+    s8 mbrIndex = -1;       // 0 für SD, 0..3 für primäre MBR-Partition, -1 für GPT/logisch (M19 EmuNAND)
 };
 
 // SD (falls vorhanden) → "sd"; USB: zuerst die FAT-Partitionen in Tabellenreihenfolge ("usb" ist die erste FAT-Partition,

@@ -26,7 +26,7 @@ TEST_CASE("Testbibliothek hat die geplanten Mengen") {
     const Library lib = testLibrary();
     int counts[kConsoleCount] = {};
     for (const Game& g : lib.games) ++counts[static_cast<int>(g.console)];
-    const int expected[kConsoleCount] = {8, 10, 6, 20, 0, 9, 7, 14};
+    const int expected[kConsoleCount] = {8, 10, 6, 20, 0, 9, 7, 14, 0};
     for (int i = 0; i < kConsoleCount; ++i) CHECK(counts[i] == expected[i]);
     CHECK(lib.favorites.size() == 3);
     CHECK(lib.recent.empty());

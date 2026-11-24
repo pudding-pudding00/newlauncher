@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "core/vc_map.hpp"
+
 namespace nl {
 
 namespace {
@@ -103,9 +105,18 @@ void LibraryStore::setDisc(std::optional<OpticalDisc> d, const MetaDb* meta) {
     rebuildView();
 }
 
+void LibraryStore::setChannels(std::vector<EmuTitle> channels) {
+    channels_.clear();
+    channels_.reserve(channels.size());
+    for (EmuTitle& t : channels) {
+        channels_.push_back(StoredChannel{formatTitleId(t.titleId), std::move(t.name), std::move(t.content0Path)});
+    }
+    rebuildView();
+}
+
 void LibraryStore::rebuildView() {
     games_.clear();
-    games_.reserve(fileGames_.size() + (disc_ ? 1u : 0u));
+    games_.reserve(fileGames_.size() + channels_.size() + (disc_ ? 1u : 0u));
     bool discInserted = false;
     Game discGame{};
     if (disc_) {
@@ -131,6 +142,10 @@ void LibraryStore::rebuildView() {
         games_.push_back(fg);
     }
     if (disc_ && !discInserted) games_.push_back(discGame);
+    for (const StoredChannel& ch : channels_) {
+        games_.push_back(Game{Console::Channel, ch.key.c_str(), ch.title.c_str(), 0, 0, nullptr, ch.path.c_str(), 0, 0,
+                              kNoDevice});
+    }
 
     byKey_.clear();
     for (std::size_t i = 0; i < games_.size(); ++i) {

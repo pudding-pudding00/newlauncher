@@ -25,6 +25,7 @@ from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_pat
                      sd_sync_dir, wait_for_markers, write_dev_config)
 from pngfile import solid_png
 from test_ca import make as make_test_ca
+from wii_title import TEST_CHANNEL_ID, TEST_CHANNEL_NAMES, install_channel
 
 DEFAULT_MARKERS = ["NL_READY"]
 
@@ -237,6 +238,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--theme-pack", metavar="NAME",
                         help="Fixture-Theme newlauncher/themes/NAME mit einem kaputten Token anlegen und in config.ini "
                              "wählen; verlangt genau eine NL_THEME_BAD-Zeile (M17). Ohne die Option wird themes/ entfernt")
+    parser.add_argument("--emunand", action="store_true",
+                        help="Fixture-EmuNAND sd:/emunand mit Testkanal 000100014E4C5443 anlegen (M19)")
     args = parser.parse_args(argv)
     tls = args.tls or args.tls_wrong_ca
     if tls and not (args.cover_server or args.emu_server or args.cheat_server):
@@ -471,6 +474,14 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
         if args.config_append and not args.fresh_data:
             with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
                 f.write(_cli_text(args.config_append))
+        if getattr(args, "emunand", False):
+            if not ARGV_ECHO_DOL.is_file():
+                print(f"SMOKE FEHLER: argv_echo.dol nicht gebaut: {ARGV_ECHO_DOL}")
+                return 2
+            install_channel(sd / "emunand", TEST_CHANNEL_ID, TEST_CHANNEL_NAMES, ARGV_ECHO_DOL.read_bytes())
+            if not args.fresh_data:
+                with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
+                    f.write("[emunand]\npath = sd:/emunand\n")
         if getattr(args, "sd_disk_layout", None) and not args.fresh_data:
             # Fixture-config.ini sagt library = sd; mit „auto“ fragt der Launcher die Platte (die SD) ab.
             with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
@@ -499,6 +510,7 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
     finally:
         (sd_sync_dir(user_dir) / SD_TEST_CA).unlink(missing_ok=True)  # Test-CA nicht auf der SD lassen
         shutil.rmtree(sd_sync_dir(user_dir) / MULTI_DIR, ignore_errors=True)  # --sd-layout multi
+        shutil.rmtree(sd_sync_dir(user_dir) / "emunand", ignore_errors=True)  # --emunand
 
 
 def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -> int:

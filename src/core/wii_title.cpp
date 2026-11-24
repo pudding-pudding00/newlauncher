@@ -14,10 +14,11 @@ constexpr std::size_t kTmdContents = 0x1E4;
 constexpr std::size_t kTmdContentSize = 36;
 
 constexpr std::size_t kImetMagic = 0x40;
-constexpr std::size_t kImetNames = 0x5C;
+constexpr std::size_t kImetMagicAlt = 0x80;
+constexpr std::size_t kImetNameOffset = 0x1C;  // Namen stehen direkt hinter 28-Byte-IMET-Header (0x40->0x5C, 0x80->0x9C)
 constexpr std::size_t kImetNameUnits = 42;
 constexpr std::size_t kImetLangCount = 10;
-constexpr std::size_t kImetEnd = kImetNames + kImetLangCount * kImetNameUnits * 2;
+constexpr std::size_t kImetTableBytes = kImetNameOffset + kImetLangCount * kImetNameUnits * 2;
 
 u16 be16(std::span<const u8> d, std::size_t at) { return static_cast<u16>((d[at] << 8) | d[at + 1]); }
 u32 be32(std::span<const u8> d, std::size_t at) { return (static_cast<u32>(be16(d, at)) << 16) | be16(d, at + 2); }
@@ -25,8 +26,13 @@ u64 be64(std::span<const u8> d, std::size_t at) { return (static_cast<u64>(be32(
 
 Result<TmdInfo> invalid(std::string context) { return Result<TmdInfo>::err({ErrorCode::InvalidData, std::move(context)}); }
 
-std::string decodeName(std::span<const u8> d, std::size_t lang) {
-    const std::size_t base = kImetNames + lang * kImetNameUnits * 2;
+bool hasImetAt(std::span<const u8> d, std::size_t off) {
+    return d.size() >= off + kImetTableBytes && d[off] == 'I' && d[off + 1] == 'M' && d[off + 2] == 'E' &&
+           d[off + 3] == 'T';
+}
+
+std::string decodeName(std::span<const u8> d, std::size_t namesBase, std::size_t lang) {
+    const std::size_t base = namesBase + lang * kImetNameUnits * 2;
     std::string out;
     for (std::size_t i = 0; i < kImetNameUnits; ++i) {
         const u16 u = be16(d, base + i * 2);
@@ -71,12 +77,15 @@ std::optional<u32> contentIdForIndex(const TmdInfo& tmd, u16 index) {
 }
 
 std::string imetChannelName(std::span<const u8> d, BannerLang lang) {
-    if (d.size() < kImetEnd) return {};
-    if (d[kImetMagic] != 'I' || d[kImetMagic + 1] != 'M' || d[kImetMagic + 2] != 'E' || d[kImetMagic + 3] != 'T') return {};
-    if (std::string s = decodeName(d, static_cast<std::size_t>(lang)); !s.empty()) return s;
-    if (std::string s = decodeName(d, static_cast<std::size_t>(BannerLang::English)); !s.empty()) return s;
+    const std::size_t magic = hasImetAt(d, kImetMagic) ? kImetMagic
+                            : hasImetAt(d, kImetMagicAlt) ? kImetMagicAlt
+                                                          : 0;
+    if (magic == 0) return {};
+    const std::size_t namesBase = magic + kImetNameOffset;
+    if (std::string s = decodeName(d, namesBase, static_cast<std::size_t>(lang)); !s.empty()) return s;
+    if (std::string s = decodeName(d, namesBase, static_cast<std::size_t>(BannerLang::English)); !s.empty()) return s;
     for (std::size_t l = 0; l < kImetLangCount; ++l)
-        if (std::string s = decodeName(d, l); !s.empty()) return s;
+        if (std::string s = decodeName(d, namesBase, l); !s.empty()) return s;
     return {};
 }
 

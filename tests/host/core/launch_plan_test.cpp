@@ -818,3 +818,57 @@ TEST_CASE("preflightGame: GC-Disc auf vWii oder ohne GC-Ports → GcDiscUnsuppor
     REQUIRE_FALSE(miniRes.isOk());
     CHECK(miniRes.error().kind == LaunchFailure::GcDiscUnsupported);
 }
+
+TEST_CASE("preflightWii & preflightWiiDisc: save = emu prüft EmuNAND, FAT und d2x") {
+    WiiOptions emuOpt;
+    emuOpt.saveEmu = true;
+    const EmuNandInfo none{};
+    const EmuNandInfo ntfs{EmuNandStatus::NotFat, {"usb2", "/emunand"}, true, 1, "USB 2"};
+    const EmuNandInfo okNand{EmuNandStatus::Ok, {"usb", "/emunand"}, true, 0, "USB 1"};
+
+    auto rNo = preflightWii(wiiGame(), "usb:", kD2x, goodFrags(), false, emuOpt, {}, {}, &none);
+    REQUIRE_FALSE(rNo.isOk());
+    CHECK(rNo.error().kind == LaunchFailure::NoEmuNand);
+
+    auto rFat = preflightWii(wiiGame(), "usb:", kD2x, goodFrags(), false, emuOpt, {}, {}, &ntfs);
+    REQUIRE_FALSE(rFat.isOk());
+    CHECK(rFat.error().kind == LaunchFailure::EmuNandNeedsFat);
+
+    auto rD2x = preflightWii(wiiGame(), "usb:", CiosStatus{CiosState::Unverified, 56, "", 222}, goodFrags(), false,
+                             emuOpt, {}, {}, &okNand);
+    REQUIRE_FALSE(rD2x.isOk());
+    CHECK(rD2x.error().kind == LaunchFailure::EmuNandNeedsD2x);
+
+    auto rOk = preflightWii(wiiGame(), "usb:", kD2x, goodFrags(), false, emuOpt, {}, {}, &okNand);
+    REQUIRE(rOk.isOk());
+    REQUIRE(rOk.value().emuNand.has_value());
+    CHECK_FALSE(rOk.value().emuNandFull);
+
+    Game discG = wiiGame();
+    discG.flags = kFlagDisc;
+    auto dOk = preflightWiiDisc(discG, OpticalDisc{DiscKind::Wii, "RMCP01", "MKW"}, kD2x, false, emuOpt, {}, {}, &okNand);
+    REQUIRE(dOk.isOk());
+    REQUIRE(dOk.value().emuNand.has_value());
+    CHECK_FALSE(dOk.value().emuNandFull);
+}
+
+TEST_CASE("preflightEmuChannel und preflightGame für Console::Channel") {
+    test::MemFileSystem fs;
+    const Game ch{Console::Channel, "000100014E4C5443", "Testkanal", 0, 0, nullptr,
+                  "sd:/emunand/title/00010001/4e4c5443/content/00000000.app", kNoDevice, 0};
+    auto tgt = preflightGame(fs, ch, "", emus(), nullptr, false);
+    REQUIRE(tgt.isOk());
+    CHECK(tgt.value().kind == LaunchTarget::Kind::EmuChannel);
+
+    const EmuNandInfo okNand{EmuNandStatus::Ok, {"sd", "/emunand"}, false, 0, "SD"};
+    auto plan = preflightEmuChannel(ch, kD2x, okNand, false);
+    REQUIRE(plan.isOk());
+    CHECK(plan.value().source == WiiBootSource::Channel);
+    CHECK(plan.value().channelTitleId == 0x000100014E4C5443ull);
+    REQUIRE(plan.value().emuNand.has_value());
+    CHECK(plan.value().emuNandFull);
+    CHECK(plan.value().fragBytes.empty());
+
+    auto dryBadCios = preflightEmuChannel(ch, CiosStatus{CiosState::Unverified, 56, "", 222}, okNand, true);
+    CHECK(dryBadCios.isOk());
+}

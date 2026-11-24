@@ -577,6 +577,26 @@ int main(int argc, char** argv) {
         store.setGames(nl::mergeIndexes(deviceIndexes), metaPtr);
         logGames();
     };
+    nl::EmuNandInfo emuNandInfo;
+    u32 emuNandCount = 0;
+    auto scanEmuNandChannels = [&]() {
+        std::vector<nl::DeviceSlot> mountedSlots;
+        for (const nl::platform::Device& d : devTable.devices())
+            if (d.mounted) mountedSlots.push_back(d.slot);
+        emuNandInfo = nl::checkEmuNand(fs, config.emuNandPath, mountedSlots);
+        if (emuNandInfo.status == nl::EmuNandStatus::Ok) {
+            u32 skipped = 0;
+            auto titles = nl::scanEmuNand(fs, emuNandInfo.path, nl::platform::bannerLangFor(nl::ui::language()), &skipped);
+            emuNandCount = static_cast<u32>(titles.size());
+            nl::log::line("NL_EMUNAND titles=%u skipped=%u", static_cast<unsigned>(emuNandCount),
+                          static_cast<unsigned>(skipped));
+            if (skipped > 0) nl::log::line("NL_EMUNAND_SKIP %u", static_cast<unsigned>(skipped));
+            store.setChannels(std::move(titles));
+        } else {
+            emuNandCount = 0;
+            store.setChannels({});
+        }
+    };
 
     nl::platform::ScanWorker worker;
     nl::ScanRules scanRules = nl::defaultScanRules();
@@ -613,6 +633,7 @@ int main(int argc, char** argv) {
         }
         nl::log::line("NL_LIBRARY games=%u source=scan", static_cast<unsigned>(store.games().size()));
     }
+    scanEmuNandChannels();
     auto libraryView = [&]() { return nl::ui::Library{store.games(), store.favorites(), store.recent()}; };
 
     // 5. Hauptbildschirm
@@ -787,6 +808,8 @@ int main(int argc, char** argv) {
         s.netUp = netService.networkUp();  // Stand nach dem letzten Netzaufbau (volatile, nur gelesen)
         s.timeSynced = nl::platform::clockSynced();
         s.tls = kHasTls && netService.tlsUp();
+        s.emuNandDe = nl::emuNandStatusText(emuNandInfo, emuNandCount, true);
+        s.emuNandEn = nl::emuNandStatusText(emuNandInfo, emuNandCount, false);
         return s;
     };
     auto openSysInfo = [&]() {
@@ -871,6 +894,8 @@ int main(int argc, char** argv) {
             nl::ui::setLanguage(lang);
             banners.setGerman(lang == nl::ui::Lang::De);  // GC-Banner: Titel beim nächsten Laden in der neuen Sprache
             channelsLoaded = false;
+            scanEmuNandChannels();
+            mainScene.setLibrary(libraryView(), mainScene.focusedKey());
             nl::log::line("NL_LANG %s", nl::ui::langKey(lang));
         }
         mainScene.showToast(nl::ui::tr(ok ? nl::ui::Str::SetupSaved : nl::ui::Str::SetupSaveFailed));
@@ -961,12 +986,14 @@ int main(int argc, char** argv) {
         }
         auto plan = [&]() -> nl::Result<nl::WiiBootPlan, nl::LaunchError> {
             if (!isDisc) {
-                return nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options, gct, wip.entries);
+                return nl::preflightWii(game, libRoot, cios, frags, config.debugWiiDryRun, options, gct, wip.entries,
+                                        &emuNandInfo);
             }
             const nl::platform::DiscReadResult cur = discDrive.readSync();
             std::optional<nl::OpticalDisc> curDisc;
             if (cur.status == nl::platform::DiscReadStatus::Ok) curDisc = cur.disc;
-            auto p = nl::preflightWiiDisc(game, curDisc, cios, config.debugWiiDryRun, options, gct, wip.entries);
+            auto p = nl::preflightWiiDisc(game, curDisc, cios, config.debugWiiDryRun, options, gct, wip.entries,
+                                          &emuNandInfo);
             if (!p.isOk() && (p.error().kind == nl::LaunchFailure::DiscChanged ||
                               p.error().kind == nl::LaunchFailure::DiscUnreadable)) {
                 applyDiscResult(cur, false);
@@ -1061,6 +1088,24 @@ int main(int argc, char** argv) {
         const nl::platform::Device* gameDev = nl::platform::deviceTable().byName(rootOf(game));
         const nl::FsKind gameFs = gameDev != nullptr ? gameDev->slot.kind : nl::FsKind::Fat;
         auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, hwAccess, &optionInputs, gameFs);
+        if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::EmuChannel) {
+            const std::vector<nl::CiosEntry> found = nl::platform::scanCios();
+            const nl::WiiOptions options = nl::resolveWiiOptions(configDoc, gamesDoc, "");
+            const nl::CiosChoice choice = nl::chooseCios(found, options.ios, config.wiiIos);
+            const nl::CiosStatus cios = nl::ciosStatusFor(found, choice);
+            if (auto plan = nl::preflightEmuChannel(game, cios, emuNandInfo, config.debugWiiDryRun, options); plan.isOk()) {
+                nl::log::line("NL_CHANNEL %s emu=1", key.c_str());
+                if (config.debugWiiDryRun) {
+                    recordStats(key);
+                    nl::log::line("NL_WII_DRYRUN %s", key.c_str());
+                    return;
+                }
+                target.value().kind = nl::LaunchTarget::Kind::Wii;
+                target.value().wii = std::move(plan.value());
+            } else {
+                target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(plan.error());
+            }
+        }
         if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
             if (auto plan = prepareWii(game, configDoc, gamesDoc); plan.isOk()) {
                 if (config.debugWiiDryRun) {
@@ -1167,7 +1212,7 @@ int main(int argc, char** argv) {
             input.shutdown();
             nl::platform::unmountAll();
             nl::platform::shutdownVideo();
-            nl::launch::bootWiiGame(booter.value(), target.value().wii->iosSlot);
+            nl::launch::bootWiiGame(booter.value(), *target.value().wii);
         }
 
         const nl::LaunchPlan& plan = target.value().dol;
@@ -1702,6 +1747,8 @@ int main(int argc, char** argv) {
                     nl::ui::setLanguage(lang);
                     banners.setGerman(lang == nl::ui::Lang::De);  // Detailansicht lädt ihr Banner danach neu
                     channelsLoaded = false;  // Kanalnamen beim nächsten Öffnen in der neuen Sprache laden
+                    scanEmuNandChannels();
+                    mainScene.setLibrary(libraryView(), mainScene.focusedKey());
                     nl::log::line("NL_LANG %s", nl::ui::langKey(lang));
                 }
                 ctx.themeMode = config.themeMode;
@@ -1754,6 +1801,8 @@ int main(int argc, char** argv) {
                 break;
             case nl::ui::AppCommand::Rescan:
                 discDrive.requestRead(false);
+                scanEmuNandChannels();
+                mainScene.setLibrary(libraryView(), mainScene.focusedKey());
                 if (worker.running()) break;  // läuft schon, das Ergebnis kommt über den Scan-Pfad unten
                 if (!worker.start(fs, libDevices, scanRules, {}, metaPtr)) {
                     nl::log::line("NL_WARN Neu-Scan nicht gestartet");

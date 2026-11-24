@@ -27,11 +27,11 @@ std::vector<DeviceSlot> assignDevices(bool sdPresent, FsKind sdKind, std::span<c
     std::vector<DeviceSlot> out;
     if (sdPresent) {
         const bool fat = sdKind == FsKind::Fat;
-        out.push_back(DeviceSlot{"sd", false, 0, sdKind, fat, fat ? SkipReason::None : unsupported(sdKind), false});
+        out.push_back(DeviceSlot{"sd", false, 0, sdKind, fat, fat ? SkipReason::None : unsupported(sdKind), false, 0});
     }
     const std::size_t first = out.size();
     for (const PartitionInfo& p : usbParts) {
-        DeviceSlot s{"", true, p.lba, p.kind, false, SkipReason::None, false};
+        DeviceSlot s{"", true, p.lba, p.kind, false, SkipReason::None, false, p.mbrIndex};
         if (p.beyondLimit) s.skip = SkipReason::BeyondLimit;  // libfat und BlockDevice adressieren mit u32
         else if (!mountable(p.kind, support)) s.skip = unsupported(p.kind);
         out.push_back(std::move(s));

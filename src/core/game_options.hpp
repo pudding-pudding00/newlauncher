@@ -45,6 +45,7 @@ struct WiiOptions {
     bool returnToHbc = false;      // return_to = hbc: die Plattform darf auf JODI ausweichen
     bool cheats = false;           // M15: ausgewählte Gecko-Codes anwenden
     u8 hookType = 1;               // vbi/kpad/joypad/gxdraw/gxflush/ossleep/axframe → 1–7 (0 = ohne Cheats)
+    bool saveEmu = false;          // M19: save = emu → Spielstände auf EmuNAND umleiten
     std::vector<std::string> bad;  // Schlüssel mit unbekanntem Wert
 };
 

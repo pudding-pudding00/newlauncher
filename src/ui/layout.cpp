@@ -140,7 +140,7 @@ int GridModel::hitTest(float x, float y, float scroll) const {
 }
 
 int infoLine(const Game& g, char* out, std::size_t cap) {
-    const char* label = consoleInfo(g.console).label;
+    const char* label = consoleLabel(g.console);
     if (g.year != 0 && g.players != 0)
         return writef(out, cap, "%s \xC2\xB7 %u \xC2\xB7 %u %s", label, g.year, g.players, tr(Str::Player));
     if (g.year != 0) return writef(out, cap, "%s \xC2\xB7 %u", label, g.year);

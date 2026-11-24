@@ -235,6 +235,9 @@ const char* launchFailureName(LaunchFailure f) {
         case LaunchFailure::DiscChanged: return "DiscChanged";
         case LaunchFailure::DiscUnreadable: return "DiscUnreadable";
         case LaunchFailure::GcDiscUnsupported: return "GcDiscUnsupported";
+        case LaunchFailure::NoEmuNand: return "NoEmuNand";
+        case LaunchFailure::EmuNandNeedsD2x: return "EmuNandNeedsD2x";
+        case LaunchFailure::EmuNandNeedsFat: return "EmuNandNeedsFat";
     }
     return "?";
 }
@@ -264,12 +267,33 @@ LaunchError fromExtentError(ExtentError e, std::string context) {
 
 namespace {
 
+std::optional<LaunchError> checkEmuNandReady(const EmuNandInfo* emuNand, const CiosStatus& cios, bool dryRun) {
+    if (emuNand == nullptr) return LaunchError{LaunchFailure::NoEmuNand, ""};
+    switch (emuNand->status) {
+        case EmuNandStatus::Ok: break;
+        case EmuNandStatus::NotFat:
+        case EmuNandStatus::NotPrimaryMbr: return LaunchError{LaunchFailure::EmuNandNeedsFat, emuNand->detail};
+        case EmuNandStatus::NotConfigured:
+        case EmuNandStatus::InvalidPath:
+        case EmuNandStatus::DeviceMissing:
+        case EmuNandStatus::MissingTitleDir: return LaunchError{LaunchFailure::NoEmuNand, emuNand->detail};
+    }
+    if (!dryRun && cios.state != CiosState::D2x) {
+        return LaunchError{LaunchFailure::EmuNandNeedsD2x, std::to_string(static_cast<unsigned>(cios.slot))};
+    }
+    return std::nullopt;
+}
+
 Result<WiiBootPlan, LaunchError> buildWiiBootPlan(WiiBootSource source, std::string id6, bool usb, const CiosStatus& cios,
                                                   bool dryRun, const WiiOptions& options, std::span<const u8> gct,
-                                                  std::span<const WipEntry> wip) {
+                                                  std::span<const WipEntry> wip, const EmuNandInfo* emuNand,
+                                                  bool fullEmuNand) {
     using R = Result<WiiBootPlan, LaunchError>;
     if (!dryRun && cios.state == CiosState::Missing) {
         return R::err({LaunchFailure::CiosMissing, std::to_string(static_cast<unsigned>(cios.slot))});
+    }
+    if (fullEmuNand || options.saveEmu) {
+        if (auto err = checkEmuNandReady(emuNand, cios, dryRun)) return R::err(std::move(*err));
     }
     if (gct.size() > kWiiCodelistBytes) return R::err({LaunchFailure::CheatsTooLarge, std::to_string(gct.size())});
 
@@ -284,6 +308,10 @@ Result<WiiBootPlan, LaunchError> buildWiiBootPlan(WiiBootSource source, std::str
     p.hookType = gct.empty() ? 0 : options.hookType;  // Spec v2 8: ohne Codes kein Hook
     p.wip.assign(wip.begin(), wip.begin() + static_cast<std::ptrdiff_t>(std::min(wip.size(), kWipMaxEntries)));
     if (cios.state != CiosState::D2x) p.options.cfg.returnTo = 0;  // Spec 7.2: Rückkehr nur mit d2x
+    if (fullEmuNand || options.saveEmu) {
+        p.emuNand = *emuNand;
+        p.emuNandFull = fullEmuNand;
+    }
     return R::ok(std::move(p));
 }
 
@@ -292,7 +320,7 @@ Result<WiiBootPlan, LaunchError> buildWiiBootPlan(WiiBootSource source, std::str
 Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view libRoot, const CiosStatus& cios,
                                               const Result<FragList, LaunchError>& frags, bool dryRun,
                                               const WiiOptions& options, std::span<const u8> gct,
-                                              std::span<const WipEntry> wip) {
+                                              std::span<const WipEntry> wip, const EmuNandInfo* emuNand) {
     using R = Result<WiiBootPlan, LaunchError>;
     if (!dryRun && cios.state == CiosState::Missing) {
         return R::err({LaunchFailure::CiosMissing, std::to_string(static_cast<unsigned>(cios.slot))});
@@ -301,14 +329,15 @@ Result<WiiBootPlan, LaunchError> preflightWii(const Game& g, std::string_view li
     const std::string_view key = g.key != nullptr ? g.key : "";
     if (key.size() < 6) return R::err({LaunchFailure::Unsupported, consoleInfo(g.console).name});  // Scanner liefert immer ID6
     auto plan = buildWiiBootPlan(WiiBootSource::Usb, std::string(key.substr(0, 6)), onUsb(libRoot), cios, dryRun, options,
-                                 gct, wip);
+                                 gct, wip, emuNand, false);
     if (plan.isOk()) plan.value().fragBytes = serializeFragList(frags.value());
     return plan;
 }
 
 Result<WiiBootPlan, LaunchError> preflightWiiDisc(const Game& g, std::optional<OpticalDisc> currentDisc,
                                                   const CiosStatus& cios, bool dryRun, const WiiOptions& options,
-                                                  std::span<const u8> gct, std::span<const WipEntry> wip) {
+                                                  std::span<const u8> gct, std::span<const WipEntry> wip,
+                                                  const EmuNandInfo* emuNand) {
     using R = Result<WiiBootPlan, LaunchError>;
     const std::string_view key = g.key != nullptr ? g.key : "";
     if (key.size() < 6) return R::err({LaunchFailure::Unsupported, consoleInfo(g.console).name});
@@ -319,7 +348,19 @@ Result<WiiBootPlan, LaunchError> preflightWiiDisc(const Game& g, std::optional<O
     if (currentDisc->kind != DiscKind::Wii || currentDisc->id6 != id6) {
         return R::err({LaunchFailure::DiscChanged, currentDisc->id6});
     }
-    return buildWiiBootPlan(WiiBootSource::Disc, id6, false, cios, dryRun, options, gct, wip);
+    return buildWiiBootPlan(WiiBootSource::Disc, id6, false, cios, dryRun, options, gct, wip, emuNand, false);
+}
+
+Result<WiiBootPlan, LaunchError> preflightEmuChannel(const Game& g, const CiosStatus& cios, const EmuNandInfo& emuNand,
+                                                     bool dryRun, const WiiOptions& options) {
+    using R = Result<WiiBootPlan, LaunchError>;
+    const std::string_view key = g.key != nullptr ? g.key : "";
+    const auto tid = parseTitleIdHex(key);
+    if (!tid) return R::err({LaunchFailure::Unsupported, consoleInfo(g.console).name});
+    auto plan = buildWiiBootPlan(WiiBootSource::Channel, std::string(key.substr(8, 6)), emuNand.usb, cios, dryRun,
+                                 options, {}, {}, &emuNand, true);
+    if (plan.isOk()) plan.value().channelTitleId = *tid;
+    return plan;
 }
 
 Result<LaunchPlan, LaunchError> preflightEmulator(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus) {
@@ -342,6 +383,11 @@ Result<LaunchTarget, LaunchError> preflightGame(FileSystem& fs, const Game& g, s
     if (g.console == Console::Wii) {
         LaunchTarget t;
         t.kind = LaunchTarget::Kind::Wii;
+        return TargetResult::ok(std::move(t));
+    }
+    if (g.console == Console::Channel) {
+        LaunchTarget t;
+        t.kind = LaunchTarget::Kind::EmuChannel;
         return TargetResult::ok(std::move(t));
     }
     if (g.console != Console::N64) {

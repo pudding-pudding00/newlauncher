@@ -23,6 +23,7 @@ constexpr std::string_view kWiiOnline[] = {"off", "nossl", "wiimmfi"};
 constexpr std::string_view kWiiIos[] = {"auto"};             // dazu 200–255
 constexpr std::string_view kWiiReturnTo[] = {"none", "hbc"};  // dazu 16 Hexziffern
 constexpr std::string_view kWiiHook[] = {"vbi", "kpad", "joypad", "gxdraw", "gxflush", "ossleep", "axframe"};
+constexpr std::string_view kWiiSave[] = {"real", "emu"};
 
 constexpr std::string_view kGcVideo[] = {"auto", "pal50", "pal60", "ntsc", "mpal", "none"};
 constexpr std::string_view kGcMemcard[] = {"emu", "multi", "real"};
@@ -39,7 +40,7 @@ struct Def {
     Special special = Special::None;
 };
 
-constexpr std::array<Def, 15> kWiiDefs{{
+constexpr std::array<Def, 16> kWiiDefs{{
     {"video", kWiiVideo, 1},
     {"video_patch", kWiiVideoPatch, 0},
     {"vipatch", kSwitch, 0},
@@ -55,6 +56,7 @@ constexpr std::array<Def, 15> kWiiDefs{{
     {"hook", kWiiHook, 0},
     {"ios", kWiiIos, 0, Special::Ios},
     {"return_to", kWiiReturnTo, 0, Special::ReturnTo},
+    {"save", kWiiSave, 0},
 }};
 
 constexpr std::array<Def, 11> kGcDefs{{
@@ -190,6 +192,7 @@ WiiOptions resolveWiiOptions(const IniDoc& config, const IniDoc& games, std::str
         else if (d.key == "cheats") o.cheats = i == 1;
         else if (d.key == "hook") o.hookType = static_cast<u8>(i + 1);
         else if (d.key == "ios") o.ios = parseIosValue(r.value);
+        else if (d.key == "save") o.saveEmu = i == 1;
         else if (d.key == "return_to") {
             if (r.value == "hbc") {
                 c.returnTo = kReturnToHbc;

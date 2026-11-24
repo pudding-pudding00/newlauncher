@@ -30,7 +30,7 @@ Rect grow(Rect r, float d) { return Rect{r.x - d, r.y - d, r.w + 2 * d, r.h + 2 
 const char* barLabel(const BarEntry& e) {
     if (e.kind == BarKind::Favorites) return tr(Str::Favorites);
     if (e.kind == BarKind::Recent) return tr(Str::Recent);
-    return consoleInfo(e.console).label;
+    return consoleLabel(e.console);
 }
 
 void drawHomeIcon(gfx::DrawList& dl, const gfx::AtlasShapes& s, float cx, float cy, Color c) {
@@ -460,6 +460,10 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
                 char devLine[64];
                 std::snprintf(devLine, sizeof devLine, tr(Str::DeviceLine), tr(Str::Disc));
                 details_->setDeviceLine(devLine);
+            } else if (g->console == Console::Channel) {
+                char devLine[64];
+                std::snprintf(devLine, sizeof devLine, tr(Str::DeviceLine), "EmuNAND");
+                details_->setDeviceLine(devLine);
             } else if (detailsStore_ != nullptr) {
                 details_->setDeviceLine(detailsDeviceLine(detailsStore_->devices(), g->device, detailsStore_->alsoOn(*g)));
             }
@@ -534,7 +538,7 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
     }
 
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Small, FontWeight::Medium);
-    const char* tag = (g.flags & kFlagDisc) != 0 ? tr(Str::Disc) : consoleInfo(g.console).label;
+    const char* tag = (g.flags & kFlagDisc) != 0 ? tr(Str::Disc) : consoleLabel(g.console);
     const float tagW = gfx::measureText(label, tag) + 12.0f;
     gfx::roundRect(dl, s, Rect{r.x + 8, r.y + 8, tagW, 18}, 9, t.accentSoft);
     if (store_ != nullptr && store_->isFavorite(g.key)) gfx::circle(dl, s, r.x + r.w - 14, r.y + 17, 4, t.accent);

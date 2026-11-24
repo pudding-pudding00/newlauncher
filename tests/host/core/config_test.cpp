@@ -349,6 +349,18 @@ TEST_CASE("Config: [parental] lesen und schreiben, [debug] pin_input (M17)") {
     CHECK(configFromIni(IniDoc::parse("[debug]\npin_input = 0000\n")).debugPinInput == "0000");
 }
 
+TEST_CASE("Config: [emunand] path lesen, schreiben und leer weglassen (M19)") {
+    CHECK(configFromIni(IniDoc::parse("")).emuNandPath.empty());
+    const Config loaded = configFromIni(IniDoc::parse("[emunand]\npath = usb:/nands/emu1\n"));
+    CHECK(loaded.emuNandPath == "usb:/nands/emu1");
+    const std::string written = configToIniText(loaded, "");
+    CHECK(written.find("[emunand]\npath = usb:/nands/emu1\n") != std::string::npos);
+    CHECK(configFromIni(IniDoc::parse(written)).emuNandPath == "usb:/nands/emu1");
+
+    const std::string cleared = configToIniText(Config{}, "[emunand]\npath = usb:/nands/emu1\n");
+    CHECK(configFromIni(IniDoc::parse(cleared)).emuNandPath.empty());
+}
+
 TEST_CASE("Config: [debug] pin_input wird beim Schreiben entfernt, andere debug-Zeilen bleiben") {
     const Config c = configFromIni(IniDoc::parse("[debug]\npin_input = 1234\nperf = 1\n"));
     const std::string text = configToIniText(c, "[debug]\npin_input = 1234\nperf = 1\n");

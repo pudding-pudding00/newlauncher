@@ -4,9 +4,9 @@
 using namespace nl;
 
 TEST_CASE("Konsolentabelle laut Spec 5.3") {
-    const char* keys[] = {"nes", "snes", "gb", "n64", "gbc", "gc", "gba", "wii"};
-    const int gens[] = {3, 4, 4, 5, 5, 6, 6, 7};
-    const bool handheld[] = {false, false, true, false, true, false, true, false};
+    const char* keys[] = {"nes", "snes", "gb", "n64", "gbc", "gc", "gba", "wii", "channel"};
+    const int gens[] = {3, 4, 4, 5, 5, 6, 6, 7, 8};
+    const bool handheld[] = {false, false, true, false, true, false, true, false, false};
     for (int i = 0; i < kConsoleCount; ++i) {
         const ConsoleInfo& c = consoleInfo(static_cast<Console>(i));
         CHECK(c.id == static_cast<Console>(i));

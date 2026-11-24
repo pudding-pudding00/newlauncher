@@ -79,7 +79,7 @@ int detailsInfoLine(const Game& g, u32 lastPlayedUnix, char* out, std::size_t ca
     out[0] = '\0';
     int len = 0;
     const ConsoleInfo& c = consoleInfo(g.console);
-    appendf(out, cap, len, "%s \xC2\xB7 Gen %u", c.label, c.generation);
+    appendf(out, cap, len, "%s \xC2\xB7 Gen %u", consoleLabel(g.console), c.generation);
     if (g.year != 0) appendf(out, cap, len, "%s%u", " \xC2\xB7 ", g.year);
     if (g.players != 0) {
         appendf(out, cap, len, "%s%u", " \xC2\xB7 ", g.players);
@@ -335,7 +335,7 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const Rect cover{kMargin, kTop, kCoverW, kCoverH};
     gfx::roundRect(dl, s, cover, 14, t.tile);
     const gfx::FontFace& big = ctx.fonts->face(FontSize::Title, FontWeight::Medium);
-    const char* label = consoleInfo(game_.console).label;
+    const char* label = consoleLabel(game_.console);
     const float lw = gfx::measureText(big, label);
     gfx::drawText(dl, big, cover.x + (cover.w - lw) / 2, cover.y + cover.h / 2, label, t.accentSoftText);
     const BannerView bv = banners_ != nullptr ? banners_->view(game_) : BannerView{};

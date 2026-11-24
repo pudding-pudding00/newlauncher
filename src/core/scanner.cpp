@@ -75,6 +75,7 @@ public:
     }
 
     void console(Console c) {
+        if (c == Console::Channel) return;  // Kanäle kommen aus scanEmuNand, nicht aus dem Datei-Scanner
         for (const std::string& folder : rules_.paths[static_cast<std::size_t>(c)].folders) {
             if (cancelled_) return;
             walk(c, folder, topMtime(folder), 1, "");

@@ -50,7 +50,7 @@ public:
     }
 
     // Prüft Lage und Länge, bestimmt die Art und hängt die Partition an; false, wenn die Liste voll ist.
-    bool add(std::vector<PartitionInfo>& out, u64 lba, u64 sectors, u8 type, bool logical) {
+    bool add(std::vector<PartitionInfo>& out, u64 lba, u64 sectors, u8 type, bool logical, s8 mbrIndex = -1) {
         if (out.size() >= kMaxPartitions) return false;
         if (sectors == 0 || lba == 0) return true;
         if (deviceSectors_ != 0 && lba + sectors > deviceSectors_) return true;
@@ -59,7 +59,7 @@ public:
         FsKind kind = FsKind::Unknown;
         // Ein unlesbarer Partitionsanfang macht nur diese Partition unbekannt, nicht die ganze Tabelle.
         if (read(lba, count, probe_)) kind = detectFs(probe_);
-        out.push_back(PartitionInfo{lba, sectors, type, kind, logical, beyond});
+        out.push_back(PartitionInfo{lba, sectors, type, kind, logical, beyond, mbrIndex});
         return true;
     }
 
@@ -147,7 +147,7 @@ Result<std::vector<PartitionInfo>> readPartitions(BlockDevice& dev, u64 deviceSe
     // Superfloppy: Dateisystem ohne Tabelle. ext zählt hier nicht, sein Magic läge nicht in Sektor 0.
     const FsKind whole = detectFs(std::span<const u8>(s0.data(), 512));
     if (whole != FsKind::Unknown && whole != FsKind::Ext) {
-        std::vector<PartitionInfo> out{PartitionInfo{0, deviceSectors, 0, whole, false, false}};
+        std::vector<PartitionInfo> out{PartitionInfo{0, deviceSectors, 0, whole, false, false, 0}};
         return R::ok(std::move(out));
     }
     if (!hasSignature(s0)) return invalid("keine Partitionstabelle");
@@ -165,7 +165,7 @@ Result<std::vector<PartitionInfo>> readPartitions(BlockDevice& dev, u64 deviceSe
             extended.push_back(Ext{le32(e + 8), le32(e + 12)});
             continue;
         }
-        if (!rd.add(out, le32(e + 8), le32(e + 12), e[4], false)) return R::ok(std::move(out));
+        if (!rd.add(out, le32(e + 8), le32(e + 12), e[4], false, static_cast<s8>(i))) return R::ok(std::move(out));
     }
     for (const Ext& x : extended) readEbrChain(rd, out, x.lba, x.sectors);
     return R::ok(std::move(out));

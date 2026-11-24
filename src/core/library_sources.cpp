@@ -122,6 +122,7 @@ LibraryRules libraryRulesFromIni(const IniDoc& ini) {
     r.sources = readSources(ini, r.bad);
     for (int i = 0; i < kConsoleCount; ++i) {
         const auto c = static_cast<Console>(i);
+        if (c == Console::Channel) continue;
         const char* key = consoleInfo(c).key;
         ConsolePaths& p = r.paths[static_cast<std::size_t>(i)];
         p = defaultConsolePaths(c);

@@ -14,7 +14,7 @@ using gfx::FontSize;
 using gfx::FontWeight;
 using gfx::Rect;
 
-constexpr float kCardMaxW = 520.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 24.0f, kHelpH = 24.0f;  // 14 Zeilen in 480
+constexpr float kCardMaxW = 520.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 22.0f, kHelpH = 24.0f;  // 17 Zeilen in 480
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
 
@@ -35,7 +35,8 @@ constexpr KeyLabel kLabels[] = {
     {"aspect", Str::OptAspect},         {"deflicker", Str::OptDeflicker},
     {"width", Str::OptWidth},           {"fix480p", Str::OptFix480p},
     {"online", Str::OptOnline},         {"ios", Str::OptIos},
-    {"return_to", Str::OptReturnTo},    {"progressive", Str::OptProgressive},
+    {"return_to", Str::OptReturnTo},    {"save", Str::OptSave},
+    {"progressive", Str::OptProgressive},
     {"force_wide", Str::OptForceWide},  {"wiiu_wide", Str::OptWiiuWide},
     {"memcard", Str::OptMemcard},       {"memcard_blocks", Str::OptMemcardBlocks},
     {"native_si", Str::OptNativeSi},    {"max_pads", Str::OptMaxPads},

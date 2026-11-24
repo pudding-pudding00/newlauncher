@@ -124,6 +124,8 @@ std::vector<std::string> sysInfoLines(const SystemInfo& s, bool de) {
                   (s.netUp ? (de ? "verbunden" : "connected") : (de ? "nicht verbunden" : "not connected")));
     out.push_back(std::string(de ? "Uhrzeit per SNTP gestellt: " : "Clock set via SNTP: ") + yesNo(s.timeSynced, de));
     out.push_back(std::string("HTTPS: ") + yesNo(s.tls, de));
+    const std::string& nand = de ? s.emuNandDe : s.emuNandEn;
+    if (!nand.empty()) out.push_back("EmuNAND: " + nand);
     return out;
 }
 

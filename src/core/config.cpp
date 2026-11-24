@@ -117,6 +117,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     const bool cheatSourceOk = cheatSource.starts_with("https://") || cheatSource.starts_with("http://");
     c.cheatSource = std::string(cheatSourceOk ? cheatSource : defaultCheatSource(tls));
     c.parental = parentalFromIni(ini);
+    c.emuNandPath = std::string(trim(ini.get("emunand", "path")));
     const std::string_view ios = ini.get("wii", "ios");
     c.wiiIos = parseIosValue(ios);
     if (isBadIosValue(ios)) c.badKeys.emplace_back("wii.ios");
@@ -165,6 +166,7 @@ std::vector<IniValue> configValues(const Config& c) {
         {"wii", "ios", c.wiiIos ? std::to_string(static_cast<unsigned>(*c.wiiIos)) : std::string("auto")},
     };
     for (auto& [key, value] : parentalIniValues(c.parental)) v.push_back({"parental", std::move(key), std::move(value)});
+    if (!c.emuNandPath.empty()) v.push_back({"emunand", "path", c.emuNandPath});
     return v;
 }
 
@@ -196,7 +198,9 @@ std::string configToIniText(const Config& c, std::string_view previousText) {
         if (eq != std::string_view::npos && line.front() != ';' && line.front() != '#') {
             const std::string_view key = trim(line.substr(0, eq));
             // Die Test-PIN steht im Klartext da und wird nie zurückgeschrieben; [theme] pack heißt jetzt name.
-            if ((section == "debug" && key == "pin_input") || (section == "theme" && key == "pack")) continue;
+            if ((section == "debug" && key == "pin_input") || (section == "theme" && key == "pack") ||
+                (section == "emunand" && key == "path" && c.emuNandPath.empty()))
+                continue;
             auto it = std::find_if(values.begin(), values.end(),
                                    [&](const IniValue& v) { return section == v.section && key == v.key; });
             if (it != values.end()) {

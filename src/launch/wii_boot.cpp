@@ -2,6 +2,7 @@
 
 #include <gccore.h>
 
+#include <algorithm>
 #include <cstring>
 
 #include "booter_cfg.h"
@@ -12,6 +13,7 @@
 #include "game_booter_dol.h"
 #include "launch/chainloader.hpp"
 #include "platform/log.hpp"
+#include "platform/nand_emu.hpp"
 
 namespace nl::launch {
 
@@ -39,29 +41,39 @@ Result<void> loadDolBytesToBuffer(std::span<const u8> dol) {
 
 Result<LaunchPlan> prepareWiiBoot(const WiiBootPlan& plan, std::string_view title) {
     const bool isUsb = plan.source == WiiBootSource::Usb;
-    if (plan.id6.size() != 6 || (isUsb && plan.fragBytes.size() != sizeof(::FragList))) {
+    const bool isChannel = plan.source == WiiBootSource::Channel;
+    if ((!isChannel && plan.id6.size() != 6) || (isUsb && plan.fragBytes.size() != sizeof(::FragList))) {
         return Result<LaunchPlan>::err({ErrorCode::InvalidData, "WiiBootPlan"});
     }
 
     the_CFG cfg;
     std::memset(&cfg, 0, sizeof cfg);
-    std::memcpy(cfg.gameID, plan.id6.data(), 6);
+    if (!plan.id6.empty()) std::memcpy(cfg.gameID, plan.id6.data(), std::min<std::size_t>(plan.id6.size(), 6));
     if (isUsb) {
         cfg.fragments = reinterpret_cast<::FragList*>(NL_FRAG_LIST_ADDR);
         cfg.wbfsDevice = plan.usb ? WBFS_DEVICE_USB : WBFS_DEVICE_SDHC;
         cfg.wbfsPart = 0;
         cfg.GameBootType = TYPE_WII_WBFS_EXT;
+        cfg.BootType = TYPE_WII_GAME;
+    } else if (isChannel) {
+        cfg.fragments = nullptr;
+        cfg.wbfsDevice = 0;
+        cfg.wbfsPart = 0;
+        cfg.GameBootType = TYPE_WII_DISC;
+        cfg.BootType = TYPE_CHANNEL;
+        cfg.title = plan.channelTitleId;
+        cfg.use_dol = 0;
     } else {
         cfg.fragments = nullptr;
         cfg.wbfsDevice = 0;
         cfg.wbfsPart = 0;
         cfg.GameBootType = TYPE_WII_DISC;
+        cfg.BootType = TYPE_WII_GAME;
     }
-    cfg.JustDanceGame = title.find("Just Dance") != std::string_view::npos;
+    cfg.JustDanceGame = !isChannel && title.find("Just Dance") != std::string_view::npos;
     cfg.IOS.Version = plan.iosSlot;
     cfg.IOS.Type = IOS_TYPE_D2X;  // auch bei Unverified: der Booter versucht nur BlockIOSReload
     cfg.IOS.Base = static_cast<u8>(plan.cios.base);
-    cfg.BootType = TYPE_WII_GAME;
     // M14: Spieloptionen; ohne Optionen sind das die kNl*-Standards aus booter_cfg.h (Test game_options).
     const WiiCfgFields& o = plan.options.cfg;
     cfg.configbytes[0] = o.language;
@@ -123,12 +135,25 @@ Result<LaunchPlan> prepareWiiBoot(const WiiBootPlan& plan, std::string_view titl
     return Result<LaunchPlan>::ok(std::move(booter));
 }
 
-void bootWiiGame(const LaunchPlan& booter, u8 iosSlot) {
+void bootWiiGame(const LaunchPlan& booter, const WiiBootPlan& plan) {
+    std::vector<u8> fallbackCerts;
+    if (plan.emuNand && plan.emuNandFull) fallbackCerts = platform::readRealNandCerts();
     ISFS_Deinitialize();  // nand_titles hält ISFS offen; vor dem IOS-Wechsel schließen
-    log::line("NL_IOS_RELOAD %u", static_cast<unsigned>(iosSlot));
-    IOS_ReloadIOS(iosSlot);
-    if (IOS_GetVersion() != static_cast<s32>(iosSlot)) SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
-    chainload(booter);  // SYS_SHUTDOWN darin lädt kein IOS nach: das cIOS bleibt aktiv
+    log::line("NL_IOS_RELOAD %u", static_cast<unsigned>(plan.iosSlot));
+    IOS_ReloadIOS(plan.iosSlot);
+    if (IOS_GetVersion() != static_cast<s32>(plan.iosSlot)) SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
+    if (plan.emuNand) {
+        const EmuNandInfo& e = *plan.emuNand;
+        if (!platform::enableNandEmu(e.path, e.usb, e.mbrIndex, plan.emuNandFull)) {
+            platform::disableNandEmu();
+            SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
+        }
+        if (plan.source == WiiBootSource::Channel && !platform::identifyEmuChannel(plan.channelTitleId, fallbackCerts)) {
+            platform::disableNandEmu();
+            SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
+        }
+    }
+    chainload(booter);  // SYS_SHUTDOWN darin lädt kein IOS nach: das cIOS + EmuNAND bleiben aktiv
 }
 
 }  // namespace nl::launch

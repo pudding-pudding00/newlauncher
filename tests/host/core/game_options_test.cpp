@@ -252,7 +252,7 @@ TEST_CASE("game_options: listOptions markiert geerbte Werte") {
     const IniDoc cfg = IniDoc::parse("[wii]\nvideo = pal50\n");
     const IniDoc games = IniDoc::parse("[game RMGP01]\nlanguage = DE\nvideo = default\n");
     const auto rows = listOptions(Console::Wii, cfg, games, kId);
-    REQUIRE(rows.size() == 15);
+    REQUIRE(rows.size() == 16);
     CHECK(rows[0].key == "video");
     CHECK(rows[0].inherited);
     CHECK(rows[0].value == "pal50");
@@ -262,12 +262,12 @@ TEST_CASE("game_options: listOptions markiert geerbte Werte") {
     CHECK_FALSE(lang->inherited);
     CHECK(lang->value == "de");
     CHECK(lang->inheritedValue == "game");
-    CHECK(rows.back().key == "return_to");
+    CHECK(rows.back().key == "save");
 }
 
 TEST_CASE("game_options: listOptions global und GC") {
     const auto global = listOptions(Console::Wii, IniDoc::parse("[wii]\naspect = 16:9\n"), IniDoc{}, "");
-    REQUIRE(global.size() == 15);
+    REQUIRE(global.size() == 16);
     for (const OptionValue& r : global) CHECK_FALSE(r.inherited);
     const auto gc = listOptions(Console::Gc, IniDoc{}, IniDoc{}, "GM8P01");
     REQUIRE(gc.size() == 11);
@@ -312,4 +312,14 @@ TEST_CASE("game_options: gleichnamige Abschnitte in anderer Schreibweise – der
     const IniDoc games = IniDoc::parse("[game RMGP01]\nvideo = pal50\n[game rmgp01]\nvideo = ntsc\n"
                                        "[game RMGP01]\nvideo = pal60\n");
     CHECK(resolveWiiOptions(IniDoc{}, games, kId).cfg.vidMode == 3);  // pal60
+}
+
+TEST_CASE("game_options: Wii save = real|emu (M19)") {
+    CHECK_FALSE(resolveWiiOptions(IniDoc{}, IniDoc{}, kId).saveEmu);
+    const WiiOptions emu = resolveWiiOptions(IniDoc::parse("[wii]\nsave = emu\n"), IniDoc{}, kId);
+    CHECK(emu.saveEmu);
+    CHECK(emu.bad.empty());
+    const WiiOptions bad = resolveWiiOptions(IniDoc{}, IniDoc::parse("[game RMGP01]\nsave = usb\n"), kId);
+    CHECK_FALSE(bad.saveEmu);
+    CHECK(bad.bad == std::vector<std::string>{"save"});
 }

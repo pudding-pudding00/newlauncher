@@ -325,7 +325,17 @@
       "Disc not readable.\nPlease check that the disc is inserted and clean.") \
     X(GcDiscUnsupported, \
       "GameCube-Disc nicht unterstützt.\nDieses Laufwerk (vWii / ohne GameCube-Anschlüsse) kann keine GameCube-Discs lesen.", \
-      "GameCube disc not supported.\nThis drive (vWii / without GameCube ports) cannot read GameCube discs.")
+      "GameCube disc not supported.\nThis drive (vWii / without GameCube ports) cannot read GameCube discs.") \
+    X(Channels, "Kanäle", "Channels") \
+    X(OptSave, "Spielstände", "Save data") \
+    X(NoEmuNand, \
+      "Kein EmuNAND eingerichtet.\nBitte [emunand] path in config.ini angeben und prüfen, ob der Ordner existiert.", \
+      "No EmuNAND configured.\nSet [emunand] path in config.ini and check that the folder exists.") \
+    X(EmuNandNeedsD2x, "d2x-cIOS benötigt.\nEmuNAND erfordert ein d2x-cIOS (z. B. in Slot 249).", \
+      "d2x cIOS required.\nEmuNAND requires a d2x cIOS (e.g. in slot 249).") \
+    X(EmuNandNeedsFat, \
+      "EmuNAND braucht FAT32.\nDas EmuNAND muss auf der SD-Karte oder einer primären FAT32-Partition liegen (%s).", \
+      "EmuNAND needs FAT32.\nThe EmuNAND must be on the SD card or a primary FAT32 partition (%s).")
 // clang-format on
 
 namespace nl::ui {
@@ -348,6 +358,7 @@ const char* weekdayName(int weekday0Mon);  // 0 = Montag
 const char* monthName(int month1);         // 1 = Januar
 Str netErrorText(NetError e);              // Klartext je Netzfehler (M11)
 const char* genreLabel(u8 genre);          // Index in kGenres (M17); unbekannt → "Sonstiges"
+const char* consoleLabel(Console c);       // lokalisierte Konsolenbezeichnung (Kanäle DE/EN)
 // Text des Cover-Dialogs; bei failed > 0 und bekannter Ursache folgt der Klartext dazu in einer zweiten Zeile.
 std::string coversSummaryText(u32 ok, u32 missing, u32 failed, NetError lastError);
 

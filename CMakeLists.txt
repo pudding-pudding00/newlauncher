@@ -64,6 +64,7 @@ add_library(nl_core STATIC
     src/core/n64_choice.cpp
     src/core/vc_map.cpp
     src/core/wii_title.cpp
+    src/core/emunand.cpp
     src/core/cmpr.cpp
     src/core/tex_file.cpp
     src/core/cover_image.cpp
@@ -305,6 +306,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/wii_disc.cpp
         src/platform/disc_drive.cpp
         src/platform/fs_extents.cpp
+        src/platform/nand_emu.cpp
         src/app/cover_service.cpp
         src/app/banner_service.cpp
         src/gfx/renderer.cpp

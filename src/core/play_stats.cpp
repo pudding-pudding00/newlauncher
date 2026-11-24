@@ -4,6 +4,7 @@
 #include <charconv>
 #include <limits>
 
+#include "core/index_file.hpp"
 #include "core/ini.hpp"
 #include "core/text_fold.hpp"
 
@@ -100,18 +101,25 @@ void PlayStats::record(std::string_view key, u32 now) {
 
 void sortGames(std::span<const Game*> v, SortOrder o, const PlayStats& s) {
     const auto byTitle = [](const Game* a, const Game* b) { return compareTitles(a->title, b->title) < 0; };
+    const auto isDisc = [](const Game* g) { return (g->flags & kFlagDisc) != 0; };
+    const auto byOrder = [&](auto&& cmp) {
+        std::stable_sort(v.begin(), v.end(), [&](const Game* a, const Game* b) {
+            if (isDisc(a) != isDisc(b)) return isDisc(a);
+            return cmp(a, b);
+        });
+    };
     switch (o) {
         case SortOrder::Title:
-            std::stable_sort(v.begin(), v.end(), byTitle);
+            byOrder(byTitle);
             return;
         case SortOrder::Year:
-            std::stable_sort(v.begin(), v.end(), [&](const Game* a, const Game* b) {
+            byOrder([&](const Game* a, const Game* b) {
                 const u32 ya = a->year != 0 ? a->year : 0x10000u, yb = b->year != 0 ? b->year : 0x10000u;
                 return ya != yb ? ya < yb : byTitle(a, b);
             });
             return;
         case SortOrder::Recent:
-            std::stable_sort(v.begin(), v.end(), [&](const Game* a, const Game* b) {
+            byOrder([&](const Game* a, const Game* b) {
                 const PlayStat sa = s.get(a->key), sb = s.get(b->key);
                 // nie gestartet (starts == 0) ans Ende, auch wenn last gesetzt wäre
                 const u64 la = sa.starts != 0 ? u64{sa.last} + 1 : 0, lb = sb.starts != 0 ? u64{sb.last} + 1 : 0;
@@ -119,7 +127,7 @@ void sortGames(std::span<const Game*> v, SortOrder o, const PlayStats& s) {
             });
             return;
         case SortOrder::Most:
-            std::stable_sort(v.begin(), v.end(), [&](const Game* a, const Game* b) {
+            byOrder([&](const Game* a, const Game* b) {
                 const u32 na = s.get(a->key).starts, nb = s.get(b->key).starts;
                 return na != nb ? na > nb : byTitle(a, b);
             });

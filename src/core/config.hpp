@@ -62,6 +62,7 @@ struct Config {
     std::string debugFilter;        // [debug] filter = <spec>: Filter der Startleiste setzen, NL_FILTER loggen (Smoke, M17)
     std::string debugPinInput;      // [debug] pin_input = <4 Ziffern>: PIN-Abfrage ohne Szene beantworten (Smoke, M17)
     std::string debugWizard;        // [debug] wizard = accept: Einrichtungs-Assistent nimmt jeden Vorschlag an (Smoke, M13)
+    std::string debugFakeDisc;      // [debug] fake_disc = <ID6>|gc:<ID6>: eingelegte Disc vortäuschen (Smoke, M19)
 };
 
 // tls: Build mit HTTPS (NL_TLS). Bestimmt die Standardquellen; die offiziellen Quellen in http- oder https-Form

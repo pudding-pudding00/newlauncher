@@ -8,7 +8,7 @@ namespace nl::ui {
 
 class HomeMenu final : public Scene {
 public:
-    static constexpr int kTileCount = 4;  // 0 HBC, 1 Wii-Menü, 2 Einstellungen, 3 Ausschalten
+    static constexpr int kTileCount = 5;  // 0 HBC, 1 Wii-Menü, 2 Einstellungen, 3 Ausschalten, 4 Disc lesen
 
     void update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) override;
     void draw(const UiContext& ctx, gfx::DrawList& dl) override;

@@ -56,23 +56,24 @@ TEST_CASE_FIXTURE(Fixture, "Right bis zum Ende, Left bis zum Anfang, kein Umlauf
     HomeMenu m;
     m.onEnter();
     for (int i = 0; i < 6; ++i) step(m, action(Action::Right));
-    CHECK(m.focus() == 3);
+    CHECK(m.focus() == HomeMenu::kTileCount - 1);
     for (int i = 0; i < 6; ++i) step(m, action(Action::Left));
     CHECK(m.focus() == 0);
 }
 
 TEST_CASE_FIXTURE(Fixture, "Confirm auf den Kacheln") {
-    const AppCommand expected[4] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::None,
-                                    AppCommand::PowerOff};
+    CHECK(HomeMenu::kTileCount == 5);
+    const AppCommand expected[5] = {AppCommand::ExitToHbc, AppCommand::WiiMenu, AppCommand::None,
+                                    AppCommand::PowerOff, AppCommand::ReadDisc};
     SettingsScene settings;
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < HomeMenu::kTileCount; ++i) {
         HomeMenu m;
         m.setSettings(&settings);
         m.onEnter();
         for (int k = 0; k < i; ++k) step(m, action(Action::Right));
         const SceneRequests r = step(m, action(Action::Confirm));
         CHECK(r.command == expected[i]);
-        CHECK(r.pop == (i == 2));
+        CHECK(r.pop == (i == 2 || i == 4));
     }
 }
 

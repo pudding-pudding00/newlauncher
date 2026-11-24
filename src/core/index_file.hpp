@@ -17,7 +17,13 @@ struct IndexFolder {
     u32 mtime;
 };
 
-enum IndexFlags : u8 { kFlagTitleFromHeader = 1, kFlagSecondDisc = 2, kFlagSplitFile = 4, kFlagTitleFromMeta = 8 };
+enum IndexFlags : u8 {
+    kFlagTitleFromHeader = 1,
+    kFlagSecondDisc = 2,
+    kFlagSplitFile = 4,
+    kFlagTitleFromMeta = 8,
+    kFlagDisc = 16,
+};
 
 struct IndexGame {
     Console console;

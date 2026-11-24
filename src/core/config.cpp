@@ -76,6 +76,7 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     c.debugWizard = std::string(trim(ini.get("debug", "wizard")));
     c.debugFilter = std::string(trim(ini.get("debug", "filter")));
     c.debugPinInput = std::string(trim(ini.get("debug", "pin_input")));
+    c.debugFakeDisc = std::string(trim(ini.get("debug", "fake_disc")));
 }
 
 Config configFromIni(const IniDoc& ini, bool tls) {

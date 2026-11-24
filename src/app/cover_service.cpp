@@ -31,6 +31,7 @@ const std::string& CoverService::stemOf(const Game& game) const {
 }
 
 void CoverService::want(const Game& game, CoverPriority priority) {
+    if (game.device >= roots_.size()) return;
     const std::string& stem = stemOf(game);
     if (cache_.slotOf(stem)) return;  // fertig: kein Map-Zugriff je Frame
     deviceOfStem_.insert_or_assign(stem, game.device);

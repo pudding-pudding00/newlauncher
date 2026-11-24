@@ -313,7 +313,12 @@
     X(NetErrNoMem, "Zu wenig Speicher für die Verbindung", "Not enough memory for the connection") \
     X(NetErrTlsMissing, "HTTPS ist in diesem Build nicht enthalten", "HTTPS is not included in this build") \
     X(NetErrHttp, "Server meldet einen Fehler", "Server returned an error") \
-    X(NetErrOther, "Netzwerkfehler", "Network error")
+    X(NetErrOther, "Netzwerkfehler", "Network error") \
+    X(Disc, "Disc", "Disc") \
+    X(ReadDisc, "Disc lesen", "Read disc") \
+    X(ReadingDisc, "Disc wird gelesen …", "Reading disc …") \
+    X(DiscUnreadable, "Disc nicht lesbar", "Disc not readable") \
+    X(NoDisc, "Keine Disc eingelegt", "No disc inserted")
 // clang-format on
 
 namespace nl::ui {

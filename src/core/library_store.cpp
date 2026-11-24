@@ -27,18 +27,20 @@ void LibraryStore::setGames(IndexData index, const MetaDb* meta) {
 }
 
 std::span<const u8> LibraryStore::alsoOn(const Game& g) const {
-    auto it = byKey_.find(g.key != nullptr ? std::string_view(g.key) : std::string_view());
-    if (it == byKey_.end()) return {};
+    if ((g.flags & kFlagDisc) != 0 || g.device == kNoDevice) return {};
+    auto it = fileIndexByKey_.find(g.key != nullptr ? std::string_view(g.key) : std::string_view());
+    if (it == fileIndexByKey_.end()) return {};
     return lib_.games[it->second].alsoOn;
 }
 
 void LibraryStore::setGames(MergedLibrary library, const MetaDb* meta) {
     lib_ = std::move(library);
     descriptions_.clear();
-    games_.clear();
-    games_.reserve(lib_.games.size());
-    byKey_.clear();
-    for (const MergedGame& m : lib_.games) {
+    fileGames_.clear();
+    fileGames_.reserve(lib_.games.size());
+    fileIndexByKey_.clear();
+    for (std::size_t i = 0; i < lib_.games.size(); ++i) {
+        const MergedGame& m = lib_.games[i];
         const IndexGame& g = m.game;
         Game game{g.console, g.key.c_str(), g.title.c_str(), 0, 0};
         game.path = g.path.c_str();
@@ -57,9 +59,83 @@ void LibraryStore::setGames(MergedLibrary library, const MetaDb* meta) {
                 }
             }
         }
-        games_.push_back(game);
+        fileGames_.push_back(game);
+        fileIndexByKey_.emplace(lib_.games[i].game.key, i);
     }
-    for (std::size_t i = 0; i < lib_.games.size(); ++i) byKey_.emplace(lib_.games[i].game.key, i);
+    if (disc_) applyDiscMeta(meta);
+    rebuildView();
+}
+
+void LibraryStore::applyDiscMeta(const MetaDb* meta) {
+    if (!disc_) return;
+    discKey_ = disc_->id6;
+    discTitle_ = disc_->title.empty() ? disc_->id6 : disc_->title;
+    discPath_ = "disc:";
+    discDesc_.clear();
+    discYear_ = 0;
+    discPlayers_ = 0;
+    discGenres_ = 0;
+    discRating_ = {};
+    if (meta != nullptr) {
+        if (auto e = meta->find(discKey_)) {
+            if (!e->title.empty()) discTitle_ = std::string(e->title);
+            discYear_ = e->year;
+            discPlayers_ = e->players;
+            discGenres_ = e->genres;
+            discRating_ = e->rating;
+            if (!e->description.empty()) discDesc_ = std::string(e->description);
+        }
+    }
+}
+
+void LibraryStore::setDisc(std::optional<OpticalDisc> d, const MetaDb* meta) {
+    if (!d || (d->kind != DiscKind::Wii && d->kind != DiscKind::Gc) || d->id6.size() != 6) {
+        disc_.reset();
+        discKey_.clear();
+        discTitle_.clear();
+        discPath_.clear();
+        discDesc_.clear();
+        rebuildView();
+        return;
+    }
+    disc_ = std::move(d);
+    applyDiscMeta(meta);
+    rebuildView();
+}
+
+void LibraryStore::rebuildView() {
+    games_.clear();
+    games_.reserve(fileGames_.size() + (disc_ ? 1u : 0u));
+    bool discInserted = false;
+    Game discGame{};
+    if (disc_) {
+        const Console c = disc_->kind == DiscKind::Gc ? Console::Gc : Console::Wii;
+        discGame = Game{c,
+                        discKey_.c_str(),
+                        discTitle_.c_str(),
+                        discYear_,
+                        discPlayers_,
+                        discDesc_.empty() ? nullptr : discDesc_.c_str(),
+                        discPath_.c_str(),
+                        0,
+                        kFlagDisc,
+                        kNoDevice,
+                        discGenres_,
+                        discRating_};
+    }
+    for (const Game& fg : fileGames_) {
+        if (disc_ && !discInserted && fg.console == discGame.console) {
+            games_.push_back(discGame);
+            discInserted = true;
+        }
+        games_.push_back(fg);
+    }
+    if (disc_ && !discInserted) games_.push_back(discGame);
+
+    byKey_.clear();
+    for (std::size_t i = 0; i < games_.size(); ++i) {
+        if (games_[i].key != nullptr) byKey_.emplace(games_[i].key, i);
+    }
     rebuildLists();
 }
 

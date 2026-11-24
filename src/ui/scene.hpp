@@ -58,6 +58,7 @@ enum class AppCommand : u8 {
     ChangePin,        // Kindersicherung: neue PIN zweimal abfragen (PinScene im Modus Set)
     RemovePin,        // Kindersicherung: PIN löschen, Kindersicherung aus
     PinEntered,       // PinScene: vier Ziffern bestätigt, PinScene::pinText()
+    ReadDisc,         // HOME-Menü (M19): Laufwerk im Hintergrund lesen
 };
 const char* appCommandName(AppCommand c);
 

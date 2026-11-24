@@ -196,3 +196,43 @@ TEST_CASE("setGames übernimmt Genres und Bewertung aus meta.bin v2 (M17)") {
     CHECK(b->genres == 0);
     CHECK(b->rating.system == RatingSystem::None);
 }
+
+#include "core/disc_id.hpp"
+
+TEST_CASE("LibraryStore::setDisc: Disc am Anfang der Konsole, auch bei gleicher ID6 als Datei") {
+    IndexData d;
+    d.games.push_back(IndexGame{Console::Nes, 0, "nes/a.nes", "Alpha NES", "roms/nes/a.nes", 1});
+    d.games.push_back(IndexGame{Console::Wii, 0, "RMAP01", "Alpha Wii", "wbfs/RMAP01.wbfs", 10});
+    d.games.push_back(IndexGame{Console::Wii, 0, "RMCP01", "Mario Kart Datei", "wbfs/RMCP01.wbfs", 20});
+
+    LibraryStore store;
+    store.setGames(d, nullptr);
+    store.setDisc(OpticalDisc{DiscKind::Wii, "RMCP01", "Mario Kart Disc"});
+
+    REQUIRE(store.games().size() == 4);
+    CHECK(store.games()[0].console == Console::Nes);
+    // Disc steht vor RMAP01 (also am Anfang der Wii-Konsole)
+    CHECK(store.games()[1].console == Console::Wii);
+    CHECK((store.games()[1].flags & kFlagDisc) != 0);
+    CHECK(std::string(store.games()[1].key) == "RMCP01");
+    CHECK(std::string(store.games()[1].path) == "disc:");
+    CHECK(store.games()[1].device == kNoDevice);
+    CHECK(store.alsoOn(store.games()[1]).empty());
+    // Datei mit derselben ID6 bleibt dahinter erhalten
+    CHECK(std::string(store.games()[3].key) == "RMCP01");
+    CHECK((store.games()[3].flags & kFlagDisc) == 0);
+    // findByKey liefert die Disc
+    const Game* found = store.findByKey("RMCP01");
+    REQUIRE(found != nullptr);
+    CHECK((found->flags & kFlagDisc) != 0);
+    // Favoriten und Verlauf funktionieren über den Schlüssel
+    store.toggleFavorite("RMCP01");
+    CHECK(store.favorites().size() == 1);
+    CHECK((store.favorites()[0]->flags & kFlagDisc) != 0);
+
+    // Entfernen stellt den ursprünglichen Index wieder her
+    store.setDisc(std::nullopt);
+    REQUIRE(store.games().size() == 3);
+    CHECK(std::string(store.games()[1].key) == "RMAP01");
+    CHECK(std::string(store.games()[2].key) == "RMCP01");
+}

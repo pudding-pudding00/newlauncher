@@ -45,6 +45,7 @@ add_library(nl_core STATIC
     src/core/index_file.cpp
     src/core/meta_db.cpp
     src/core/disc_header.cpp
+    src/core/disc_id.cpp
     src/core/scanner.cpp
     src/core/library_store.cpp
     src/core/dol.cpp
@@ -302,6 +303,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/audio.cpp
         src/platform/music.cpp
         src/platform/wii_disc.cpp
+        src/platform/disc_drive.cpp
         src/platform/fs_extents.cpp
         src/app/cover_service.cpp
         src/app/banner_service.cpp

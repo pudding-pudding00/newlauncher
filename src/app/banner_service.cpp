@@ -7,6 +7,7 @@
 #include <ogc/cache.h>
 #include <ogc/lwp_watchdog.h>
 
+#include "core/index_file.hpp"
 #include "platform/log.hpp"
 
 namespace nl::app {
@@ -163,6 +164,10 @@ void BannerService::want(const Game& game) {
     path_.clear();
     gc_ = game.console == Console::Gc;
     wii_ = game.console == Console::Wii;
+    if ((game.flags & kFlagDisc) != 0) {
+        requested_ = true;
+        return;
+    }
     titleId_ = gc_ || wii_ || vcMap_ == nullptr ? std::nullopt : vcMap_->titleFor(key);
     // Konsolen ohne Banner (und Emulator-Spiele ohne VC-Zuordnung) leise aufs Cover: kein Auftrag, kein Log.
     if (!gc_ && !wii_ && !titleId_ && debugFile_.empty()) requested_ = true;

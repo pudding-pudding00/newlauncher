@@ -50,6 +50,7 @@
 #include "launch/wii_boot.hpp"
 #include "platform/crash.hpp"
 #include "platform/cheat_worker.hpp"
+#include "platform/disc_drive.hpp"
 #include "platform/emu_worker.hpp"
 #include "platform/audio.hpp"
 #include "platform/log.hpp"
@@ -559,8 +560,12 @@ int main(int argc, char** argv) {
     };
     auto logGames = [&]() {
         if (!config.debugListGames) return;
-        for (const nl::Game& g : store.games())
-            nl::log::line("NL_GAME %s %s path=%s", g.key, store.devices()[g.device].c_str(), g.path != nullptr ? g.path : "");
+        for (const nl::Game& g : store.games()) {
+            const char* dev = (g.flags & nl::kFlagDisc) != 0 ? "disc"
+                            : g.device < store.devices().size() ? store.devices()[g.device].c_str()
+                                                                : "-";
+            nl::log::line("NL_GAME %s %s path=%s", g.key, dev, g.path != nullptr ? g.path : "");
+        }
     };
     // Review Focus 3: kaputte WBFS-Slots fallen still aus der Bibliothek, das Log nennt sie (Haupt-Thread, log ist
     // nicht threadfest).
@@ -655,6 +660,35 @@ int main(int argc, char** argv) {
     banners.setLogSounds(config.debugLogSounds);
     banners.setEnabled(config.banners);
     details.setBanners(&banners);
+    nl::platform::DiscDrive discDrive;
+    if (!config.debugFakeDisc.empty()) {
+        if (auto fake = nl::parseFakeDisc(config.debugFakeDisc)) discDrive.setFakeDisc(*fake);
+        else nl::log::line("NL_CFG_BAD debug.fake_disc");
+    }
+    bool hasDiscInStore = false;
+    auto applyDiscResult = [&](const nl::platform::DiscReadResult& r, bool userInitiated) {
+        if (r.status == nl::platform::DiscReadStatus::Ok) {
+            const std::string focusKey = mainScene.focusedKey();
+            store.setDisc(r.disc, metaPtr);
+            hasDiscInStore = true;
+            mainScene.setLibrary(libraryView(), focusKey);
+            nl::log::line("NL_DISC %s %s", r.disc.kind == nl::DiscKind::Gc ? "gc" : "wii", r.disc.id6.c_str());
+            logGames();
+        } else {
+            if (hasDiscInStore) {
+                const std::string focusKey = mainScene.focusedKey();
+                store.setDisc(std::nullopt);
+                hasDiscInStore = false;
+                mainScene.setLibrary(libraryView(), focusKey);
+            }
+            if (r.status == nl::platform::DiscReadStatus::Unreadable) {
+                nl::log::line("NL_DISC unreadable");
+                if (userInitiated) mainScene.showToast(nl::ui::tr(nl::ui::Str::DiscUnreadable));
+            } else if (userInitiated) {
+                mainScene.showToast(nl::ui::tr(nl::ui::Str::NoDisc));
+            }
+        }
+    };
     nl::ui::DialogScene dialog;
     // Kindersicherung (M17, Spec v2 10.5): wirksam ist config.parental oder, mit use_wii, der Wii-Jugendschutz.
     // Die PIN steht nie im Log; SYSCONF wird nur gelesen.
@@ -1061,6 +1095,7 @@ int main(int argc, char** argv) {
         else nl::log::line("NL_WARN history.ini nicht gespeichert");
         nl::log::line("NL_LAUNCH %s", key.c_str());
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
+        discDrive.shutdown();
         net.join();
         emu.join();
         cheatWorker.join();
@@ -1446,7 +1481,10 @@ int main(int argc, char** argv) {
         const std::string& key = config.debugAutostart;
         const nl::Game* found = nullptr;
         for (const nl::Game& g : store.games()) {
-            if (key == g.key) found = &g;
+            if (key == g.key) {
+                found = &g;
+                break;
+            }
         }
         if (found != nullptr) {
             nl::log::line("NL_AUTOSTART %s", key.c_str());
@@ -1511,6 +1549,8 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_WARN Scan fehlgeschlagen: %s", result->error().context.c_str());
             }
         }
+        bool discManual = false;
+        if (auto discRes = discDrive.poll(&discManual)) applyDiscResult(*discRes, discManual);
 
         if (setupScene.netStatus() == nl::ui::SetupScene::NetTest::Running && setupNet != 0) {
             const int r = setupNet;
@@ -1677,6 +1717,7 @@ int main(int argc, char** argv) {
                 }
                 break;
             case nl::ui::AppCommand::Rescan:
+                discDrive.requestRead(false);
                 if (worker.running()) break;  // läuft schon, das Ergebnis kommt über den Scan-Pfad unten
                 if (!worker.start(fs, libDevices, scanRules, {}, metaPtr)) {
                     nl::log::line("NL_WARN Neu-Scan nicht gestartet");
@@ -1684,6 +1725,10 @@ int main(int argc, char** argv) {
                 }
                 mainScene.showToast(nl::ui::tr(nl::ui::Str::Rescanning));
                 nl::log::line("NL_RESCAN start");
+                break;
+            case nl::ui::AppCommand::ReadDisc:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (discDrive.requestRead(true)) mainScene.showToast(nl::ui::tr(nl::ui::Str::ReadingDisc));
                 break;
             case nl::ui::AppCommand::ExitToHbc:  // Spec 6.8: aufräumen, exit(0)
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
@@ -1693,6 +1738,7 @@ int main(int argc, char** argv) {
             case nl::ui::AppCommand::PowerOff:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
+                discDrive.shutdown();
                 net.join();
                 emu.join();
                 cheatWorker.join();
@@ -1830,6 +1876,8 @@ int main(int argc, char** argv) {
             if (data.writable) nl::log::flushLogFile(fs, logPath);
             if (perf) perf->pause();  // Flush und Musikstart liegen im nächsten Abstand
             readyReported = true;
+            if (!config.debugFakeDisc.empty()) applyDiscResult(discDrive.readSync(), false);
+            else discDrive.requestRead(false);
             if (config.music) startMusic();
             autostartPending = !config.debugAutostart.empty();
             if (!emuDebugPending.empty()) startEmuList();  // nur für Tests; Autostart wartet auf die Installation
@@ -1855,7 +1903,10 @@ int main(int argc, char** argv) {
                 const std::string id = config.debugOpenScene.substr(8);
                 const nl::Game* found = nullptr;
                 for (const nl::Game& g : store.games())
-                    if (id == g.key) found = &g;
+                    if (id == g.key) {
+                        found = &g;
+                        break;
+                    }
                 if (found != nullptr) {
                     details.open(*found, store.isFavorite(found->key), 0);
                     scenes.push(&details);
@@ -1871,7 +1922,10 @@ int main(int argc, char** argv) {
                 const std::string id = config.debugOpenScene.substr(7);
                 const nl::Game* found = nullptr;
                 for (const nl::Game& g : store.games())
-                    if (id == g.key) found = &g;
+                    if (id == g.key) {
+                        found = &g;
+                        break;
+                    }
                 if (found != nullptr) {
                     cheatsConsole = found->console;
                     openCheats(*found);
@@ -1883,7 +1937,10 @@ int main(int argc, char** argv) {
                 const std::string id = config.debugOpenScene.substr(8);
                 const nl::Game* found = nullptr;
                 for (const nl::Game& g : store.games())
-                    if (id == g.key) found = &g;
+                    if (id == g.key) {
+                        found = &g;
+                        break;
+                    }
                 if (found != nullptr) openOptions(found->console, found);
                 else if (id == "wii" || id == "gc") openOptions(id == "gc" ? nl::Console::Gc : nl::Console::Wii, nullptr);
                 else nl::log::line("NL_WARN options %s fehlt", id.c_str());
@@ -1921,6 +1978,7 @@ int main(int argc, char** argv) {
 #endif
     }
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
+    discDrive.shutdown();
     net.join();
     emu.join();
     cheatWorker.join();

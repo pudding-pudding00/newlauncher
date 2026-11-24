@@ -102,7 +102,7 @@ def main(argv=None) -> int:
     dest = args.dest or REPO_ROOT / "third_party" / args.name
     repo = args.repo.resolve()
     try:
-        sha = _git(repo, "rev-parse", f"{comp.rev}^{{commit}}")
+        sha = _git(repo, "rev-parse", "--verify", f"{comp.rev}^0")
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         print(f"VENDOR FEHLER: Commit {comp.rev} nicht in {repo} ({e})")
         return 1

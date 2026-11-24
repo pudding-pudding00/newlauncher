@@ -166,15 +166,16 @@ ParentalConfig parentalFromIni(const IniDoc& ini) {
 }
 
 std::vector<std::pair<std::string, std::string>> parentalIniValues(const ParentalConfig& c) {
-    return {
+    std::vector<std::pair<std::string, std::string>> out = {
         {"pin_hash", c.enabled ? bytesToHex(c.pinHash) : std::string()},
         {"salt", c.enabled ? bytesToHex(c.salt) : std::string()},
         {"system", ratingSystemName(c.system)},
         {"max_age", std::to_string(std::min<unsigned>(c.maxAge, 18))},
         {"lock_unrated", c.lockUnrated ? "1" : "0"},
         {"use_wii", c.useWii ? "1" : "0"},
-        {"lock_until", c.lockUntil != 0 ? std::to_string(c.lockUntil) : std::string()},
     };
+    if (c.lockUntil != 0) out.push_back({"lock_until", std::to_string(c.lockUntil)});
+    return out;
 }
 
 std::optional<std::span<const u8>> sysconfItem(std::span<const u8> file, std::string_view name) {

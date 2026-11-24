@@ -199,7 +199,8 @@ std::string configToIniText(const Config& c, std::string_view previousText) {
             const std::string_view key = trim(line.substr(0, eq));
             // Die Test-PIN steht im Klartext da und wird nie zurückgeschrieben; [theme] pack heißt jetzt name.
             if ((section == "debug" && key == "pin_input") || (section == "theme" && key == "pack") ||
-                (section == "emunand" && key == "path" && c.emuNandPath.empty()))
+                (section == "emunand" && key == "path" && c.emuNandPath.empty()) ||
+                (section == "parental" && key == "lock_until" && c.parental.lockUntil == 0))
                 continue;
             auto it = std::find_if(values.begin(), values.end(),
                                    [&](const IniValue& v) { return section == v.section && key == v.key; });

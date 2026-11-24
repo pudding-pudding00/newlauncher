@@ -1,6 +1,6 @@
 # Projektstand (Übergabe)
 
-Stand: 2026-11-24, M19 auf `feat/m19-startwege`. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
+Stand: 2026-11-24, `main` nach PR #28 (M19) und Review-Bereinigung. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
 
 ## Erledigt
 
@@ -12,13 +12,13 @@ Stand: 2026-11-24, M19 auf `feat/m19-startwege`. Regeln für Agenten stehen in [
 | M18 | Banner: GC statisch, Kanal-Banner mit Animation und Ton | #24, Kleinigkeiten #25 |
 | – | wii_tls auf Release **v0.1.0** (`9b1689b`); errno-Fix ist upstream | #26 |
 | – | Übergabe-Dokumentation (`AGENTS.md`, `STATUS.md`, `CLAUDE.md`) | #27 |
-| M19 | Weitere Startwege: optische Discs (Wii & GC über Nintendont), EmuNAND & Kanäle, vWii-Feinschliff | in `feat/m19-startwege` |
+| M19 | Weitere Startwege: optische Discs (Wii & GC über Nintendont), EmuNAND & Kanäle, vWii-Feinschliff | #28 |
 
 Die CI (`.github/workflows/build.yml`) baut Wii mit und ohne TLS und führt die Host-Tests aus.
 
 ## Offen
 
-Alle Code-Meilensteine (M0–M19) der v2-Spec sind umgesetzt; offen sind die Hardware-Abnahme auf echter Hardware und zurückgestellte Review-Kleinigkeiten.
+Alle Code-Meilensteine (M0–M19) der v2-Spec sowie die offenen Review-Kleinigkeiten sind umgesetzt; offen ist die Hardware-Abnahme auf echter Hardware.
 
 ### 1. Hardware-Abnahme auf der echten Wii
 
@@ -45,33 +45,12 @@ Bisher ist **kein** Punkt abgehakt, die Spalte „Ergebnis“ ist überall leer 
   - Für die echte Abnahme braucht der Nutzer am Controller eine vorbereitete SD-Karte. Wie das geht, steht unter „Vorbereitung“ in `acceptance/m11-wii.md`; vor jedem Schreiben auf die Karte fragen.
   - Die Hardware-Suiten von wii_tls sind laut Release v0.1.0 schon auf einer Wii gelaufen. Wiederholen auf dieser Wii: siehe `acceptance/m11-wii.md`.
 
-### 3. Zurückgestellte Kleinigkeiten (aus den Reviews)
+### 2. Bewusste Eigenheiten / verbleibende Hinweise (M17)
 
-**M7 (Werkzeuge):**
-- `set_ini_value` und `set_perf` in `wii_deploy.py` lesen INI-Dateien anders als der Launcher-Parser: BOM, Groß-/Kleinschreibung, doppelte Abschnitte, CR-only, leere `config.ini` bei `--perf off`.
-- `--perf` und Laufwerk werden zusammen mit `--wiiload` still ignoriert.
-- `check_perf` mit fehlender Datei: Traceback und Exit 1 statt 2.
-- Die Fensternummern bei Blockierungen zählen ab Log-Anfang statt ab Sitzungsbeginn.
-- Tippfehler „Daten … bleibt“ in `hardware-acceptance.md`, Vorbereitung 2.
+- **Kindersicherung (`[debug] pin_input`):** Hält die Test-PIN für automatisierte Dolphin-Smoke-Tests in `config.ini` (für den normalen Nutzerbetrieb auf der Wii nicht relevant).
+- **Benchmark:** Der 5000er-Benchmark läuft bewusst nur im Release-Build.
 
-**M17 (Komfort):**
-- **Kindersicherung (PIN):**
-  - `[debug] pin_input` hält die Test-PIN im Klartext in `config.ini`, auch im Release.
-  - Die PinGate-Sperre überlebt keinen Neustart.
-  - HOME in der PIN-Szene schließt nur die Abfrage.
-  - Nach dem Preflight-Hinweis wird die PIN doppelt abgefragt.
-  - `randomBytes` nutzt nur Timer-Jitter.
-  - Die Spike-Doku nennt ein Salz aus `config.ini`, der Code nutzt ein Zufallssalz pro Start.
-  - `parentalIniValues` schreibt bei `lockUntil == 0` eine leere Zeile `lock_until =`. Harmlos, wird als 0 gelesen.
-- **Statistik:** Eine kaputte `stats.ini`-Zeile verwirft den ganzen Eintrag.
-- **Themes:**
-  - Spec §16 nennt `[theme] name`, der Code nutzt `[theme] pack`.
-  - Unbekannte `theme.ini`-Tokens erzeugen kein `NL_THEME_BAD`.
-- **Suche:** Im Such-Overlay fehlt die Filterzeile (Spec 10.3).
-- **Benchmark:** Der 5000er-Benchmark läuft nur im Release-Build.
-- **System:** `ISFS_Initialize` ohne `Deinitialize` in `readWiiParental`.
-
-### 4. Bekannte Grenzen der Banner (M18), mögliche spätere Ausbaustufen
+### 3. Bekannte Grenzen der Banner (M18), mögliche spätere Ausbaustufen
 
 - Text- und Fensterflächen (`txt1`/`wnd1`) werden nicht gezeichnet.
 - Texturen werden immer mit `GX_CLAMP` gezeichnet.

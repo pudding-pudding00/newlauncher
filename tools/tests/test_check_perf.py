@@ -188,6 +188,28 @@ class CheckPerfTest(unittest.TestCase):
     def test_tls_missing_is_na(self):
         self.assertEqual(by_name(evaluate(parse_log(summary())))["TLS"].status, "N/A")
 
+    def test_missing_file_exit_2(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = io.StringIO()
+            with redirect_stdout(out):
+                code = main([str(Path(d) / "fehlt.txt")])
+            self.assertEqual(code, 2)
+            self.assertIn("nicht lesbar", out.getvalue())
+
+    def test_blocking_window_counts_from_session_start(self):
+        text = "\n".join([
+            "NL_PERF frames n=300 slow=0 max_ms=17.0 busy=1",
+            "NL_PERF frames n=300 slow=0 max_ms=17.0 busy=1",
+            summary(slow=0, busy_slow=0),
+            "NL_PERF boot first_frame_ms=150 ready_ms=1200 usb_wait_ms=0 hz=60",
+            "NL_PERF frames n=300 slow=0 max_ms=17.0 busy=1",
+            "NL_PERF frames n=300 slow=1 max_ms=35.0 busy=1",
+            summary(slow=1, busy_slow=1),
+        ])
+        chk = by_name(evaluate(parse_log(text)))["Blockierung"]
+        self.assertEqual(chk.status, "FAIL")
+        self.assertIn("Fenster 2 ", chk.value)
+
 
 if __name__ == "__main__":
     unittest.main()

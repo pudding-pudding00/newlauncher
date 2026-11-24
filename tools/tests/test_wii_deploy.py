@@ -37,6 +37,22 @@ class SetIniValueTest(unittest.TestCase):
         self.assertEqual(set_ini_value(text, "debug", "perf", None), "[debug]\nautostart = x\n[ui]\nperf = 7\n")
         self.assertEqual(set_ini_value("[ui]\n", "debug", "perf", None), "[ui]\n")
 
+    def test_set_ini_value_bom_case_duplicates_and_cr_only(self):
+        # UTF-8-BOM wird erkannt und bewahrt; Groß-/Kleinschreibung entspricht IniDoc::parse (case-sensitiv).
+        bom_in = "\ufeff[debug]\nautostart = x\n"
+        self.assertEqual(set_ini_value(bom_in, "debug", "perf", "1"), "\ufeff[debug]\nautostart = x\nperf = 1\n")
+
+        mixed = "[Debug]\nPerf = 1\n"
+        self.assertEqual(set_ini_value(mixed, "debug", "perf", "1"), "[Debug]\nPerf = 1\n\n[debug]\nperf = 1\n")
+
+        dup = "[debug]\na = 1\n[ui]\nx = 1\n[debug]\nperf = 1\n"
+        self.assertEqual(set_ini_value(dup, "debug", "perf", None), "[debug]\na = 1\n[ui]\nx = 1\n[debug]\n")
+        self.assertEqual(set_ini_value("[debug]\nperf = 0\n[debug]\nperf = 2\n", "debug", "perf", "1"),
+                         "[debug]\nperf = 1\n[debug]\n")
+
+        cr_only = "[debug]\rautostart = x\r"
+        self.assertEqual(set_ini_value(cr_only, "debug", "perf", "1"), "[debug]\rautostart = x\rperf = 1\r")
+
 
 class DeployTest(unittest.TestCase):
     def setUp(self):
@@ -106,6 +122,8 @@ class DeployTest(unittest.TestCase):
         self.assertEqual(cfg.read_bytes(), b"; Nutzer\r\n[ui]\r\nmusic = 0\r\n\r\n[debug]\r\n")
 
     def test_set_perf_creates_config(self):
+        set_perf(self.sd, False)
+        self.assertFalse((self.sd / "newlauncher/config.ini").exists())
         set_perf(self.sd, True)
         self.assertEqual((self.sd / "newlauncher/config.ini").read_text(encoding="utf-8"), "[debug]\nperf = 1\n")
 
@@ -172,6 +190,9 @@ class DeployTest(unittest.TestCase):
         with mock.patch("wii_deploy.subprocess.run") as run, mock.patch("wii_deploy.SELFTEST_DOL", selftest_dol):
             self.assertEqual(main(["--wiiload", "1.2.3.4", "--selftest"]), 2)
             self.assertEqual(main(["--wiiload", "1.2.3.4", "--dol", str(selftest_dol)]), 2)
+            self.assertEqual(main([str(self.sd), "--wiiload", "1.2.3.4", "--dol", str(self.dol)]), 2)
+            self.assertEqual(main(["--wiiload", "1.2.3.4", "--perf", "on", "--dol", str(self.dol)]), 2)
+            self.assertEqual(main(["--wiiload", "1.2.3.4", "--init", "--dol", str(self.dol)]), 2)
         run.assert_not_called()
 
     def test_cli_error_exit_2(self):

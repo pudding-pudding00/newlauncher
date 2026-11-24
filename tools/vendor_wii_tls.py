@@ -52,7 +52,7 @@ def main(argv=None) -> int:
     repo = args.repo.resolve()
     try:
         dirty = _git(repo, "status", "--porcelain")
-        sha = _git(repo, "rev-parse", f"{args.rev}^{{commit}}")
+        sha = _git(repo, "rev-parse", "--verify", f"{args.rev}^0")
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         print(f"VENDOR FEHLER: {repo} ist kein lesbares Git-Repo ({e})")
         return 1

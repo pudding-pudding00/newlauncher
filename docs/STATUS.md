@@ -1,6 +1,6 @@
 # Projektstand (Übergabe)
 
-Stand: 2026-11-25, M21 (Rückkehr aus Wii-Spielen in newlauncher, Cover automatisch) umgesetzt, Hardware-Abnahme offen. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
+Stand: 2026-11-25, M22 (Retro-Cover aus dem Netz) umgesetzt, Hardware-Abnahme von M21 und M22 offen. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
 
 ## Erledigt
 
@@ -15,7 +15,8 @@ Stand: 2026-11-25, M21 (Rückkehr aus Wii-Spielen in newlauncher, Cover automati
 | M19 | Weitere Startwege: optische Discs (Wii & GC über Nintendont), EmuNAND & Kanäle, vWii-Feinschliff | #28 |
 | – | Emulator-Verwaltung „Alle installieren“, WLAN-Zustand in der Infoleiste | #30, #31 |
 | M20 | Direktstart von ROMs, Rückkehr-Stub, Fernsteuerung (TCP 4300), Selbst-Update, wii_tls **v0.2.0** mit HTTP/1.1-Client | #33 |
-| M21 | „Wii-Menü“ im Wii-Spiel führt über den Rückkehr-Stub zurück in newlauncher; Cover werden nach dem Start automatisch geladen (`[covers] auto`) | Branch `feat/m21-rueckkehr-cover` |
+| M21 | „Wii-Menü“ im Wii-Spiel führt über den Rückkehr-Stub zurück in newlauncher; Cover werden nach dem Start automatisch geladen (`[covers] auto`) | #34 |
+| M22 | Retro-Cover (NES bis GBA) lädt der Launcher selbst von libretro-thumbnails (GitHub, nur HTTPS) und merkt sich Fehltreffer in `cache/covers/missing.txt` | Branch `feat/m22-retro-cover` |
 
 Die CI (`.github/workflows/build.yml`) baut Wii mit und ohne TLS und führt die Host-Tests aus.
 
@@ -47,6 +48,12 @@ Spec `docs/superpowers/specs/2026-11-25-m20-direktstart-design.md`, Abnahme
   (`[covers] auto = 1`). Abnahme: [acceptance/m21-wii.md](acceptance/m21-wii.md), alles **ungeprüft**. Offene
   Prüfpunkte: d2x-Entsperrung (Modus 0), AHBPROT nach dem Reload (GC-Start, G5), ob Spiele `0x80001800–0x80003000`
   unberührt lassen. Grenzen: nicht mit Cheats, nicht für NAND-Kanäle (Start ohne Booter).
+- **M22 (2026-11-25):** „Fehlende Cover laden“ (manuell und automatisch) holt auch Retro-Boxarts von
+  `raw.githubusercontent.com/libretro-thumbnails/<System>/master/Named_Boxarts/<Name>.png` (der ROM-Dateiname
+  muss dem No-Intro-Namen entsprechen). Nicht gefundene Stämme landen in `<wurzel>/newlauncher/cache/covers/missing.txt`;
+  der automatische Lauf überspringt sie, der manuelle versucht alle erneut. Ohne TLS-Build keine Retro-Cover.
+  `[covers] retro_base` ersetzt die Quelle, `[debug] cover_url` ersetzt im Smoke beide. Abnahme:
+  [acceptance/m22-wii.md](acceptance/m22-wii.md), **ungeprüft**.
 
 **Hinweise für die Arbeit:**
 

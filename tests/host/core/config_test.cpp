@@ -425,3 +425,15 @@ TEST_CASE("configFromIni: [debug] details_back_ms (M18-Smoke)") {
     CHECK(configFromIni(IniDoc::parse("[debug]\ndetails_back_ms = 4000\n")).debugDetailsBackMs == 4000);
     CHECK(configFromIni(IniDoc::parse("[debug]\ndetails_back_ms = 999999\n")).debugDetailsBackMs == 0);
 }
+
+TEST_CASE("configFromIni: [covers] retro_base, nur HTTPS-Standard mit TLS (M22)") {
+    CHECK(configFromIni(IniDoc::parse(""), true).retroCoverBase ==
+          "https://raw.githubusercontent.com/libretro-thumbnails");
+    CHECK(configFromIni(IniDoc::parse(""), false).retroCoverBase.empty());  // kein Rückfall auf HTTP
+    CHECK(configFromIni(IniDoc::parse("[covers]\nretro_base = https://mirror.example/thumbs\n"), false)
+              .retroCoverBase == "https://mirror.example/thumbs");
+    CHECK(configFromIni(IniDoc::parse("[covers]\nretro_base = quatsch\n"), true).retroCoverBase ==
+          "https://raw.githubusercontent.com/libretro-thumbnails");
+    // Wird nicht in die config.ini geschrieben, wie [covers] base
+    CHECK(configToIniText(configFromIni(IniDoc::parse("")), "").find("retro_base") == std::string::npos);
+}

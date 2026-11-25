@@ -4,6 +4,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <vector>
 using namespace nl;
 
@@ -188,4 +189,92 @@ TEST_CASE("shouldAutoFetchCovers (M21)") {
     CHECK_FALSE(shouldAutoFetchCovers({true, true, true, false, false}));    // Scan läuft
     CHECK_FALSE(shouldAutoFetchCovers({true, true, false, true, false}));    // anderer Netz-Auftrag
     CHECK_FALSE(shouldAutoFetchCovers({true, true, false, false, true}));    // schon gelaufen
+}
+
+// ---- M22: Retro-Cover (libretro-thumbnails) und Fehlliste ----
+
+TEST_CASE("libretroCoverUrl (M22)") {
+    const std::string_view base = "https://raw.githubusercontent.com/libretro-thumbnails";
+    CHECK(libretroCoverUrl(base, Console::N64, "Glover (USA)") ==
+          "https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_Nintendo_64/master/Named_Boxarts/"
+          "Glover%20%28USA%29.png");
+    CHECK(libretroCoverUrl(base, Console::Gba, "Spider-Man - Mysterio's Menace (USA, Europe)") ==
+          "https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_Game_Boy_Advance/master/Named_Boxarts/"
+          "Spider-Man%20-%20Mysterio%27s%20Menace%20%28USA%2C%20Europe%29.png");
+    // libretro ersetzt &*/:`<>?\|" durch _; Umlaute als UTF-8-Bytes kodiert
+    CHECK(libretroCoverUrl(std::string(base) + "/", Console::Snes, "Tom & Jerry: Ä") ==
+          "https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_Super_Nintendo_Entertainment_System/"
+          "master/Named_Boxarts/Tom%20_%20Jerry_%20%C3%84.png");
+    CHECK(libretroCoverUrl(base, Console::Nes, "A").find("/Nintendo_-_Nintendo_Entertainment_System/") !=
+          std::string::npos);
+    CHECK(libretroCoverUrl(base, Console::Gb, "A").find("/Nintendo_-_Game_Boy/") != std::string::npos);
+    CHECK(libretroCoverUrl(base, Console::Gbc, "A").find("/Nintendo_-_Game_Boy_Color/") != std::string::npos);
+    CHECK(libretroCoverUrl(base, Console::Wii, "RMCP01").empty());
+    CHECK(libretroCoverUrl(base, Console::Channel, "X").empty());
+    CHECK(libretroCoverUrl("", Console::Nes, "A").empty());
+}
+
+TEST_CASE("coverDownloadJobs: Retro nur mit Basis, Fehlliste wird übersprungen (M22)") {
+    const Game games[] = {
+        {Console::Nes, "nes/Crystalis (USA).nes", "Crystalis", 0, 0},
+        {Console::N64, "n64/Glover (USA).z64", "Glover", 0, 0},
+        {Console::Gba, "gba/Da (USA).gba", "Da", 0, 0},
+        {Console::Wii, "RMGP01", "SMG", 0, 0},
+        {Console::Channel, "HAAA", "Fotokanal", 0, 0},
+    };
+    const Game* ptrs[] = {&games[0], &games[1], &games[2], &games[3], &games[4]};
+    const auto none = [](const std::string&) { return false; };
+    CHECK(coverDownloadJobs(ptrs, none, "sd:").size() == 1);  // ohne Retro-Basis wie bisher
+    const std::set<std::string> present = {"usb:/newlauncher/cache/covers/gba/Da (USA).tex"};
+    const std::unordered_set<std::string> skip = {"wii/RMGP01", "n64/Glover (USA)"};
+    const auto jobs = coverDownloadJobs(ptrs, [&](const std::string& p) { return present.count(p) > 0; }, "usb:",
+                                        "https://r/t", &skip);
+    REQUIRE(jobs.size() == 1);
+    CHECK(jobs[0].stem == "nes/Crystalis (USA)");
+    CHECK(jobs[0].id6 == "nes/Crystalis (USA)");
+    CHECK(jobs[0].root == "usb:");
+    CHECK(jobs[0].url == "https://r/t/Nintendo_-_Nintendo_Entertainment_System/master/Named_Boxarts/"
+                         "Crystalis%20%28USA%29.png");
+}
+
+TEST_CASE("existingCoverFiles mit Retro listet alle Konsolenordner (M22)") {
+    CountingFs fs;
+    fs.inner.addFile("sd:/newlauncher/covers_src/nes/A.png", {1});
+    fs.inner.addFile("sd:/newlauncher/cache/covers/gba/B.tex", {1});
+    const auto files = existingCoverFiles(fs, "sd:", true);
+    CHECK(fs.lists == 16);  // 8 Konsolen (ohne Kanäle) × 2 Ordner
+    CHECK(files.count("sd:/newlauncher/covers_src/nes/A.png") == 1);
+    CHECK(files.count("sd:/newlauncher/cache/covers/gba/B.tex") == 1);
+}
+
+TEST_CASE("runCoverDownloads: Job mit URL fragt genau diese an, missed meldet Fehlschläge (M22)") {
+    FakeNet net;
+    std::vector<std::string> missed;
+    net.outcomes["http://r/t/x/A.png"] = HttpOutcome::Ok;
+    CoverDownloadIo io = net.io();
+    io.missed = [&](const std::string& stem) { missed.push_back(stem); };
+    const CoverJob jobs[] = {{"nes/A", "nes/A", "sd:", "https://r/t/x/A.png"},
+                             {"nes/B", "nes/B", "sd:", "https://r/t/x/B.png"},
+                             {"RMGP01", "wii/RMGP01"}};
+    const DownloadSummary s = runCoverDownloads(jobs, kRegions, "http://h/c", io);
+    CHECK(s.ok == 1);
+    CHECK(s.missing == 2);
+    CHECK(net.calls == std::vector<std::string>{"http://r/t/x/A.png", "http://r/t/x/B.png", "http://h/c/EN/RMGP01.png",
+                                                "http://h/c/US/RMGP01.png"});
+    CHECK(net.saved == std::vector<std::string>{"nes/A"});
+    CHECK(missed == std::vector<std::string>{"nes/B", "wii/RMGP01"});
+    CHECK(net.log[0] == "NL_COVER_DL nes/A libretro ok");
+}
+
+TEST_CASE("Fehlliste: lesen, fortführen, schreiben (M22)") {
+    CHECK(parseMissingList("nes/A\r\n\nwii/RMGP01\n  \nnes/A\n") == std::vector<std::string>{"nes/A", "wii/RMGP01"});
+    CHECK(parseMissingList("").empty());
+    // Lauf von Hand: alle Stämme waren Jobs → nur die neuen Fehlschläge bleiben
+    CHECK(updateMissingList({"nes/A", "nes/B"}, {"nes/A", "nes/B", "nes/C"}, {"nes/C"}) ==
+          std::vector<std::string>{"nes/C"});
+    // Automatischer Lauf: übersprungene (keine Jobs) bleiben, neue kommen dazu, sortiert ohne Doppelte
+    CHECK(updateMissingList({"wii/X", "nes/B"}, {"nes/C", "nes/D"}, {"nes/D", "nes/D"}) ==
+          std::vector<std::string>{"nes/B", "nes/D", "wii/X"});
+    CHECK(missingListText({"nes/B", "wii/X"}) == "nes/B\nwii/X\n");
+    CHECK(missingListText({}).empty());
 }

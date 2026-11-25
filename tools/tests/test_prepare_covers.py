@@ -41,7 +41,7 @@ class PrepareCoversTest(unittest.TestCase):
     def test_thumbnail_url_quotes(self):
         self.assertEqual(
             pc.thumbnail_url("n64", "Super Mario 64 (Europe) (En,Fr,De)"),
-            "https://thumbnails.libretro.com/Nintendo%20-%20Nintendo%2064/Named_Boxarts/"
+            "https://raw.githubusercontent.com/libretro-thumbnails/Nintendo_-_Nintendo_64/master/Named_Boxarts/"
             "Super%20Mario%2064%20%28Europe%29%20%28En%2CFr%2CDe%29.png")
 
     def test_main_downloads_skips_and_counts(self):

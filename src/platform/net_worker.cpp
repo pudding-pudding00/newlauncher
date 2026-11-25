@@ -1,5 +1,6 @@
 #include "platform/net_worker.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <span>
 
@@ -132,11 +133,47 @@ DownloadSummary NetWorker::run(const volatile bool& cancel) {
     };
     io.cancelled = [&cancel] { return cancel; };
     io.log = [this](std::string line) { log(std::move(line)); };
-    io.finished = [this](const std::string& stem) { finished(stem); };
+    std::vector<std::string> tried, missed;  // M22: für die Fehlliste (nur Aufträge mit Antwort zählen als versucht)
+    io.finished = [this, &tried](const std::string& stem) {
+        tried.push_back(stem);
+        finished(stem);
+    };
+    io.missed = [&tried, &missed](const std::string& stem) {
+        tried.push_back(stem);
+        missed.push_back(stem);
+    };
     io.jobDone = [this] { done_ = done_ + 1; };
     sum = runCoverDownloads(jobs_, regions_, base_, io);
     if (sum.failed > 0) sum.lastError = lastError;
+    updateMissingLists(tried, missed);
     return sum;
+}
+
+void NetWorker::updateMissingLists(const std::vector<std::string>& tried, const std::vector<std::string>& missed) {
+    constexpr std::size_t kMaxMissingListBytes = 256u * 1024;
+    std::vector<std::string> roots;
+    for (const CoverJob& j : jobs_)
+        if (std::find(roots.begin(), roots.end(), j.root) == roots.end()) roots.push_back(j.root);
+    for (const std::string& root : roots) {
+        std::vector<std::string> triedHere, missedHere;
+        for (const CoverJob& j : jobs_) {
+            if (j.root != root) continue;
+            if (std::find(tried.begin(), tried.end(), j.stem) != tried.end()) triedHere.push_back(j.stem);
+            if (std::find(missed.begin(), missed.end(), j.stem) != missed.end()) missedHere.push_back(j.stem);
+        }
+        const std::string path = missingListPath(root);
+        std::string oldText;
+        if (auto data = fs_->readAll(path, kMaxMissingListBytes); data.isOk())
+            oldText.assign(reinterpret_cast<const char*>(data.value().data()), data.value().size());
+        const std::string text = missingListText(updateMissingList(parseMissingList(oldText), triedHere, missedHere));
+        if (text == oldText) continue;
+        static_cast<void>(fs_->makeDirs(parentDir(path)));
+        const auto bytes = std::span<const u8>(reinterpret_cast<const u8*>(text.data()), text.size());
+        const bool ok = fs_->writeAtomic(path, bytes).isOk();
+        char count[16];
+        std::snprintf(count, sizeof count, "%u", static_cast<unsigned>(parseMissingList(text).size()));
+        log(format("NL_COVER_MISSING_LIST %s entries=%s%s", root.c_str(), count, ok ? "" : " write_failed"));
+    }
 }
 
 }  // namespace nl::platform

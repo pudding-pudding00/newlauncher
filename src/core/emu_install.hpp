@@ -43,6 +43,10 @@ std::string_view emuInstallErrorName(EmuInstallError e);
 EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_view repo, const OscApp& app,
                                  std::string_view root = "sd:");
 
+// Wie installEmulator, aber mit fester ZIP-URL und ohne Eintrag in emulators_installed.ini (Selbst-Update).
+EmuInstallResult installZipApp(FileSystem& fs, EmuInstallIo& io, const std::string& zipUrl, const OscApp& app,
+                               std::string_view root = "sd:");
+
 // Löscht alle Dateien unter kEmuTmpDir (rekursiv); leere Ordner bleiben stehen.
 void clearEmuTmp(FileSystem& fs, std::string_view root = "sd:");
 

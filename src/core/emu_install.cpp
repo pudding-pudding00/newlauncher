@@ -134,9 +134,14 @@ void recoverEmuInstall(FileSystem& fs, std::string_view root) {
     }
 }
 
-EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_view repo, const OscApp& app,
-                                 std::string_view root) {
-    Session s{fs, io, app, root};
+namespace {
+
+// Schritte 1–5; bei Erfolg liegt alles an seinem Platz, tmp ist noch nicht geleert.
+EmuInstallResult installFiles(Session& s, const std::string& zipUrl, std::size_t& fileCount) {
+    FileSystem& fs = s.fs;
+    EmuInstallIo& io = s.io;
+    const OscApp& app = s.app;
+    const std::string_view root = s.root;
     clearEmuTmp(fs, root);
 
     // 1. Platz
@@ -149,9 +154,9 @@ EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_v
     if (!fs.makeDirs(tmp).isOk()) return s.fail(EmuInstallError::Write, tmp);
     const std::string zip = tmp + "/" + app.name + ".zip";
     s.progress(EmuStep::Download, 0, app.zipSize);
-    const bool downloaded = io.download && io.download(oscZipUrl(repo, app.name), zip, app.zipSize) == HttpOutcome::Ok;
+    const bool downloaded = io.download && io.download(zipUrl, zip, app.zipSize) == HttpOutcome::Ok;
     if (s.cancelled()) return s.fail(EmuInstallError::Cancelled, "download");  // vor Download: B zeigt „Abgebrochen“
-    if (!downloaded) return s.fail(EmuInstallError::Download, oscZipUrl(repo, app.name));
+    if (!downloaded) return s.fail(EmuInstallError::Download, zipUrl);
 
     // 3. Prüfen
     s.progress(EmuStep::Verify, 0, 1);
@@ -210,6 +215,28 @@ EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_v
         }
     }
 
+    fileCount = files.size();
+    return EmuInstallResult{};
+}
+
+}  // namespace
+
+EmuInstallResult installZipApp(FileSystem& fs, EmuInstallIo& io, const std::string& zipUrl, const OscApp& app,
+                               std::string_view root) {
+    Session s{fs, io, app, root};
+    std::size_t files = 0;
+    if (auto r = installFiles(s, zipUrl, files); r.error != EmuInstallError::None) return r;
+    clearEmuTmp(fs, root);
+    if (io.log) io.log("NL_EMU_INSTALL " + app.name + " ok files=" + std::to_string(files));
+    return EmuInstallResult{};
+}
+
+EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_view repo, const OscApp& app,
+                                 std::string_view root) {
+    Session s{fs, io, app, root};
+    std::size_t files = 0;
+    if (auto r = installFiles(s, oscZipUrl(repo, app.name), files); r.error != EmuInstallError::None) return r;
+
     // 6. Stand eintragen
     std::map<std::string, InstalledEmu> installed;
     const std::string installedPath = installedEmusPath(root);
@@ -223,7 +250,7 @@ EmuInstallResult installEmulator(FileSystem& fs, EmuInstallIo& io, std::string_v
         return s.fail(EmuInstallError::Write, installedPath);
 
     clearEmuTmp(fs, root);
-    if (io.log) io.log("NL_EMU_INSTALL " + app.name + " ok files=" + std::to_string(files.size()));
+    if (io.log) io.log("NL_EMU_INSTALL " + app.name + " ok files=" + std::to_string(files));
     return EmuInstallResult{};
 }
 

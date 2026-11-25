@@ -37,6 +37,26 @@ class MakeReleaseTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         return out
 
+    def test_update_ini_describes_zip(self):
+        (self.root / "CMakeLists.txt").write_text("project(newlauncher VERSION 1.2.3 LANGUAGES C CXX)\n",
+                                                  encoding="utf-8")
+        out = self.build()
+        ini = (out.parent / "update.ini").read_text(encoding="utf-8")
+        with zipfile.ZipFile(out) as z:
+            unzipped = sum(i.file_size for i in z.infolist())
+        self.assertIn("[update]\n", ini)
+        self.assertIn("version = 1.2.3\n", ini)
+        self.assertIn("zip = newlauncher-1.0.zip\n", ini)
+        self.assertIn(f"zip_size = {out.stat().st_size}\n", ini)
+        self.assertIn(f"unzipped_size = {unzipped}\n", ini)
+
+    def test_version_option_overrides_cmake(self):
+        out = self.root / "out/nl.zip"
+        rc = make_release.main(["--out", str(out), "--dol", str(self.dol), "--root", str(self.root),
+                                "--version", "9.8.7"])
+        self.assertEqual(rc, 0)
+        self.assertIn("version = 9.8.7\n", (out.parent / "update.ini").read_text(encoding="utf-8"))
+
     def test_zip_has_exactly_the_five_files(self):
         with zipfile.ZipFile(self.build()) as z:
             self.assertEqual(sorted(z.namelist()), sorted(

@@ -51,8 +51,9 @@ Stub ab, der newlauncher von der SD neu lädt.
 | 0x08 | DOL-Größe in Byte |
 | 0x0C | Anzahl Extents |
 | 0x10 | Länge des argv-Blocks (0 = keiner) |
-| 0x14 | Prüfsumme: Summe aller 32-Bit-Wörter ab 0x18 bis Blockende |
+| 0x14 | Prüfsumme: Summe der 32-Bit-Wörter von argv (aufgefüllt) und Extents, ohne den Freiraum |
 | 0x18 | argv-Block (für 0x80002818 gepackt, auf 4 Byte aufgefüllt, ≤ 256 Byte) |
+| danach | Freiraum `NLRS_ARGV_SLACK` (0x40 Byte): libogc `build_argv` legt hier beim Start der geladenen DOL `argv[]` ab (bei `(commandLine + Länge + 4) & ~3`); höchstens 14 Argumente |
 | danach | Extents: je {lba, Sektoren}, lückenlos in Dateireihenfolge |
 
 Ein Block, der nicht in 0x800 Byte passt oder dessen Extents nicht genau ceil(Größe/512) Sektoren abdecken,
@@ -82,7 +83,15 @@ wird nicht geschrieben (kein Stub, HBC-Rückkehr).
 
 - Host: Parameterblock (Layout, Grenzen, Prüfsumme), Prüf-Logik des Stubs (gemeinsame C-Header-Funktionen
   für Prüfsumme und DOL-Kopf).
-- Dolphin: emuliert `/dev/sdio`; Smoke startet `argv_echo.dol` als Emulator, dessen `exit()` den Stub
-  auslöst; Erfolg, wenn newlauncher danach erneut `NL_READY` meldet.
+- Dolphin: emuliert `/dev/sdio`; Smoke (`dolphin_smoke.py --return-stub`) startet `argv_echo.dol` mit
+  `--exit` als Emulator, dessen `exit()` den Stub auslöst; Erfolg, wenn newlauncher danach
+  `NL_RETURN_STUB present stage=0` und `NL_AUTOSTART skip return_stub` meldet.
+- Dolphin-Eigenheiten (nur Emulator, nicht auf der Wii):
+  - Die HLE „HBReload“ ersetzt den Sprung nach 0x80001800. Sie entfällt nur mit
+    `Dolphin.Core.EnableCheats=True`, deshalb schaltet der Smoke Cheats ein.
+  - An 0x800018A8 (Gecko-Einsprung) hängt immer eine HLE, die das Wort bei 0x80001800 hochzählt, sobald
+    dort Code läuft. `crt0.S` lässt den Bereich bis Offset 0xB0 deshalb als nie ausgeführte Lücke frei.
+  - Pfade für IOS_Open kommen aus `.rodata` in MEM1; byteweise nach ungecachtem MEM2 kopierte Pfade kamen
+    leer an.
 - Hardware: Emulator starten, im Emulator „Exit“, newlauncher erscheint; HOME → Homebrew Channel führt
   weiterhin in den HBC.

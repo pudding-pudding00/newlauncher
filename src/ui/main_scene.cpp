@@ -697,12 +697,6 @@ void MainScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         if (r.y + r.h < viewTop || r.y > viewBottom) continue;
         drawTile(ctx, dl, i, r, false);
     }
-    if (focus >= 0) {
-        const Rect r = grid_.tileRect(focus, scroll);
-        const float k = kFocusScale * focusAnim_.value();
-        const Rect scaled{r.x - r.w * k / 2, r.y - r.h * k / 2, r.w * (1 + k), r.h * (1 + k)};
-        drawTile(ctx, dl, focus, scaled, true);
-    }
     if (grid_.count() == 0) {
         const gfx::FontFace& f = ctx.fonts->face(FontSize::Title, FontWeight::Regular);
         const char* empty = searchActive_ && bar_[barIndex_].kind == BarKind::Search ? tr(Str::NoResults) : tr(Str::NoGames);
@@ -712,6 +706,18 @@ void MainScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
 
     drawTopBar(ctx, dl);
     drawInfoBar(ctx, dl);
+    // Die vergrößerte Fokus-Kachel ragt im kompakten Raster in die Leisten: zuletzt zeichnen, damit sie über
+    // Leisten und Nachbar-Kacheln liegt statt darunter. Der Clip lässt nur den Vergrößerungsrand (samt Fokusring)
+    // über die Leisten ragen: eine weggescrollte Fokus-Kachel (Rand-Scrollen mit dem Zeiger) bleibt verdeckt.
+    if (focus >= 0) {
+        const Rect r = grid_.tileRect(focus, scroll);
+        const float k = kFocusScale * focusAnim_.value();
+        const Rect scaled{r.x - r.w * k / 2, r.y - r.h * k / 2, r.w * (1 + k), r.h * (1 + k)};
+        const float pop = r.h * k / 2 + 3.0f;
+        dl.setClip(Rect{0, viewTop - pop, ctx.width, viewBottom - viewTop + 2 * pop});
+        drawTile(ctx, dl, focus, scaled, true);
+        dl.clearClip();
+    }
 }
 
 }  // namespace nl::ui

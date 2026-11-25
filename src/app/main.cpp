@@ -1201,6 +1201,7 @@ int main(int argc, char** argv) {
         net.join();
         emu.join();
         cheatWorker.join();
+        const bool keepRemote = remote.running();
         remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
         for (const std::string& line : remote.takeLogLines()) nl::log::line("%s", line.c_str());
         netService.shutdown();  // wtls_shutdown im Netz-Thread, dann Thread beendet
@@ -1245,7 +1246,7 @@ int main(int argc, char** argv) {
             return;
         }
         std::vector<std::string> stubArgs;
-        if (remote.running()) stubArgs.push_back("--remote");
+        if (keepRemote) stubArgs.push_back("--remote");
         nl::launch::installReturnStub(selfDol, stubArgs);  // M20: exit() der DOL führt zurück zu newlauncher
         stopAudio();
         logPerfSummary();

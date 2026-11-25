@@ -188,7 +188,7 @@ std::unordered_set<std::string> existingCoverFiles(FileSystem& fs, std::string_v
     return out;
 }
 
-CoverClearResult clearCoverCache(FileSystem& fs, std::string_view libRoot) {
+CoverClearResult clearCoverCache(FileSystem& fs, std::string_view libRoot, const std::function<void()>& onRemoved) {
     CoverClearResult r;
     std::vector<std::string> files;
     for (const std::string& f : existingCoverFiles(fs, libRoot, true)) files.push_back(f);
@@ -201,6 +201,7 @@ CoverClearResult clearCoverCache(FileSystem& fs, std::string_view libRoot) {
     for (const std::string& f : files) {
         if (fs.removeFile(f).isOk()) {
             ++r.removed;
+            if (onRemoved) onRemoved();
         } else {
             ++r.failed;
         }

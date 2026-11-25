@@ -149,6 +149,8 @@
     X(FetchCovers, "Fehlende Cover laden", "Download missing covers") \
     X(ClearCovers, "Cover-Cache löschen", "Clear cover cache") \
     X(ClearCoversHold, "A halten zum Löschen …", "Hold A to delete …") \
+    X(ClearingCovers, "Cover werden gelöscht … %u", "Deleting covers … %u") \
+    X(CoversCleared, "Cover-Cache gelöscht (%u Dateien)", "Cover cache cleared (%u files)") \
     X(CoverProgress, "Cover: %u/%u", "Covers: %u/%u") \
     X(NoMissingCovers, "Keine fehlenden Cover", "No missing covers") \
     X(NoMissingCoversText, "Alle Wii- und GameCube-Spiele haben schon ein Cover.", "All Wii and GameCube games already have a cover.") \

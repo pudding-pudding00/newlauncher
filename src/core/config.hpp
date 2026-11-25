@@ -52,6 +52,7 @@ struct Config {
     std::string debugCheatUrl;   // [debug] cheat_url: ersetzt [cheats] source (Smoke, M15)
     std::string debugCheatFetch; // [debug] cheat_fetch = <ID6>: Codes nach NL_READY laden (Smoke, M15)
     bool debugFetchCovers = false;  // [debug] fetch_covers = 1: „Fehlende Cover laden“ nach NL_READY
+    int debugClearCovers = 0;  // [debug] clear_covers (M24): 1 = nach NL_COVER_DL_DONE, 2 = gleich nach dem Download-Start
     bool debugSysinfoSave = false;  // [debug] sysinfo_save = 1: <data>/sysinfo.txt nach NL_READY schreiben (Smoke, M13)
     bool debugPerf = false;         // [debug] perf = 1: NL_PERF-Zeilen für die Hardware-Messung (M7)
     bool debugRemote = false;       // [debug] remote = 1: Fernsteuerung auf TCP 4300 (M20), sonst nur mit argv --remote

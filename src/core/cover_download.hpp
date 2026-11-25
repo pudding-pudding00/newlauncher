@@ -76,7 +76,8 @@ std::string missingListText(const std::vector<std::string>& stems);
 struct CoverClearResult {
     u32 removed = 0, failed = 0;
 };
-CoverClearResult clearCoverCache(FileSystem& fs, std::string_view libRoot);
+// M24: onRemoved nach jeder gelöschten Datei (Fortschritt; läuft im Lösch-Thread).
+CoverClearResult clearCoverCache(FileSystem& fs, std::string_view libRoot, const std::function<void()>& onRemoved = {});
 
 bool isPng(std::span<const u8> data);
 

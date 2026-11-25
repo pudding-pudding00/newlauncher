@@ -307,6 +307,17 @@ TEST_CASE("clearCoverCache auf leerer Wurzel ist kein Fehler (M23)") {
     CHECK(r.failed == 0);
 }
 
+TEST_CASE("clearCoverCache meldet jede gelöschte Datei an onRemoved (M24)") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/newlauncher/covers_src/nes/A.png", {1});
+    fs.addFile("sd:/newlauncher/cache/covers/gba/B.tex", {1});
+    fs.addFile("sd:/newlauncher/cache/covers/missing.txt", {'x'});
+    int calls = 0;
+    const CoverClearResult r = clearCoverCache(fs, "sd:", [&] { ++calls; });
+    CHECK(r.removed == 3);
+    CHECK(calls == 3);
+}
+
 TEST_CASE("orderCoverJobs: Generation absteigend, innerhalb einer Konsole stabil (M24)") {
     std::vector<CoverJob> jobs;
     auto add = [&](Console c, const char* stem) {

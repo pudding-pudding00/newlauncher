@@ -35,6 +35,11 @@ void emit(const HttpLog& log, std::string line) {
 
 bool isCancelled(const volatile bool* cancel) { return cancel != nullptr && *cancel; }
 
+#ifdef NL_TLS
+// M24: wii_tls fragt das während Verbindungsaufbau, Handshake und E/A ab; ein Abbruch wirkt so ohne Zeitlimit.
+bool tlsAbort(void* ctx) { return isCancelled(static_cast<const volatile bool*>(ctx)); }
+#endif
+
 struct FileSink {
     static constexpr std::size_t kBuf = 64 * 1024;
     std::FILE* f = nullptr;
@@ -112,6 +117,10 @@ HttpResult wtlsRequest(const Url& url, u32 maxBody, const volatile bool* cancel,
     tlsOpt.connect_timeout_ms = kTlsConnectMs;
     tlsOpt.handshake_timeout_ms = kTlsHandshakeMs;
     tlsOpt.io_timeout_ms = kTlsIoMs;
+    if (cancel != nullptr) {
+        tlsOpt.abort_cb = tlsAbort;
+        tlsOpt.abort_ctx = const_cast<bool*>(cancel);  // nur gelesen (tlsAbort)
+    }
 
     wtls_http_request req{};
     req.url = urlStr.c_str();

@@ -87,6 +87,13 @@ TEST_CASE("configFromIni: [debug] cover_url und fetch_covers") {
     CHECK(c.debugFetchCovers);
 }
 
+TEST_CASE("configFromIni: [debug] clear_covers = 0|1|2, sonst 0 (M24)") {
+    CHECK(nl::configFromIni(nl::IniDoc::parse("")).debugClearCovers == 0);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nclear_covers = 1\n")).debugClearCovers == 1);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nclear_covers = 2\n")).debugClearCovers == 2);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nclear_covers = 7\n")).debugClearCovers == 0);
+}
+
 TEST_CASE("configFromIni: [debug] sd_as_disk (M16)") {
     CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugSdAsDisk);
     CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nsd_as_disk = 1\n")).debugSdAsDisk);

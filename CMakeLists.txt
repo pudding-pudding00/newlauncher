@@ -274,8 +274,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     set(NL_BOOTER_NL_SOURCES boot/nl/exception_close.cpp boot/nl/lz77_bridge.cpp boot/nl/progress.c
         src/core/lz77.cpp src/core/assert.cpp)
     add_executable(nl_game_booter ${NL_GAME_BOOTER_SOURCES} ${NL_BOOTER_NL_SOURCES})
-    set_source_files_properties(boot/nl/lz77_bridge.cpp src/core/lz77.cpp src/core/assert.cpp
-        TARGET_DIRECTORY nl_game_booter PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-fno-rtti")
     set_target_properties(nl_game_booter PROPERTIES OUTPUT_NAME game_booter)
     target_include_directories(nl_game_booter PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/boot/source ${CMAKE_CURRENT_SOURCE_DIR}/boot/include
@@ -283,9 +281,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     add_dependencies(nl_game_booter nl_codehandler)
     # NL_BOOTER_CHEATS=1 (M15): Codehandler aus Quelltext statt des Ocarina-Blobs (M11, Spec v2 3.2).
     target_compile_definitions(nl_game_booter PRIVATE HAVE_CONFIG_H NL_VERSION="${PROJECT_VERSION}" NL_BOOTER_CHEATS=1)
-    target_compile_options(nl_game_booter PRIVATE $<$<COMPILE_LANGUAGE:C>:-std=gnu17> -O1 -Wall -Wextra -Wno-shift-negative-value
+    target_compile_options(nl_game_booter PRIVATE
+        $<$<COMPILE_LANGUAGE:C>:-std=gnu17>
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions;-fno-rtti>
+        -ffunction-sections -fdata-sections
+        -O1 -Wall -Wextra -Wno-shift-negative-value
         -Wno-array-bounds -Wno-stringop-overflow -Wno-stringop-overread)
-    target_link_options(nl_game_booter PRIVATE -Wl,--section-start,.init=0x80A80000)
+    target_link_options(nl_game_booter PRIVATE -Wl,--section-start,.init=0x80A80000 -Wl,--gc-sections)
     # Die Plattform setzt -mregnames für alle ASM-Dateien; patchhook.S definiert r0…r31 selbst per .set.
     set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/boot/source/patchhook.S PROPERTIES
         COMPILE_OPTIONS -Wa,-mno-regnames)

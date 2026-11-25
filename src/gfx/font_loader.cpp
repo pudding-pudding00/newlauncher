@@ -28,12 +28,6 @@ UvRect uvOf(u16 x, u16 y, u16 w, u16 h) {
                   static_cast<float>(x + w) / kAtlasWidth, static_cast<float>(y + h) / kAtlasHeight};
 }
 
-u32 codepointOf(int index) {
-    if (index < 95) return 0x20 + static_cast<u32>(index);
-    if (index < 191) return 0xA0 + static_cast<u32>(index - 95);
-    return 0x2026;
-}
-
 Error ftError(const char* what, FT_Error e) {
     char buf[64];
     std::snprintf(buf, sizeof buf, "%s (FreeType %d)", what, static_cast<int>(e));
@@ -55,7 +49,7 @@ Result<void> renderFace(FT_Face face, int px, float sx, ShelfPacker& packer, u8*
     for (int i = 0; i < kGlyphCount; ++i) {
         Glyph& g = out.glyphs[i];
         g = Glyph{};
-        if (FT_Error e = FT_Load_Char(face, codepointOf(i), FT_LOAD_RENDER)) {
+        if (FT_Error e = FT_Load_Char(face, glyphCodepoint(i), FT_LOAD_RENDER)) {
             return Result<void>::err(ftError("Glyph", e));
         }
         const FT_GlyphSlot slot = face->glyph;

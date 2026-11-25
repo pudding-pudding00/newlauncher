@@ -314,8 +314,8 @@
     X(SetupDoneText, "A speichert config.ini. Eine vorhandene Datei bleibt als .bak erhalten.", \
       "A saves config.ini. An existing file is kept as .bak.") \
     X(SetupSuggested, "Vorschlag", "Suggested") \
-    X(SetupHelp, "▲▼ Wählen · A Übernehmen · B Überspringen · − Zurück · Home Abbrechen", \
-      "▲▼ Choose · A Accept · B Skip · − Back · Home Cancel") \
+    X(SetupHelp, "▲▼ Wählen · A Übernehmen · B Überspringen · - Zurück · Home Abbrechen", \
+      "▲▼ Choose · A Accept · B Skip · - Back · Home Cancel") \
     X(SetupSaved, "Einrichtung gespeichert", "Setup saved") \
     X(SetupSaveFailed, "Einrichtung nicht gespeichert", "Setup not saved") \
     X(NetErrNone, "Kein Fehler", "No error") \

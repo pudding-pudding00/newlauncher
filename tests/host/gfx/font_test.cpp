@@ -16,6 +16,24 @@ TEST_CASE("glyphIndex") {
     CHECK(glyphIndex(0x1F600) == glyphIndex('?'));
 }
 
+TEST_CASE("glyphIndex: Zusatzzeichen – — → ▲ ▶ ▼ ◀ (M20)") {
+    CHECK(glyphIndex(0x2013) == 192);
+    CHECK(glyphIndex(0x2014) == 193);
+    CHECK(glyphIndex(0x2192) == 194);
+    CHECK(glyphIndex(0x25B2) == 195);
+    CHECK(glyphIndex(0x25B6) == 196);
+    CHECK(glyphIndex(0x25BC) == 197);
+    CHECK(glyphIndex(0x25C0) == 198);
+    CHECK(kGlyphCount == 199);
+}
+
+TEST_CASE("glyphCodepoint ist die Umkehrung von glyphIndex") {
+    for (int i = 0; i < kGlyphCount; ++i) {
+        CAPTURE(i);
+        CHECK(glyphIndex(glyphCodepoint(i)) == i);
+    }
+}
+
 TEST_CASE("decodeUtf8: ASCII, ä, …") {
     std::string_view s = "A\xC3\xA4\xE2\x80\xA6";
     std::size_t pos = 0;

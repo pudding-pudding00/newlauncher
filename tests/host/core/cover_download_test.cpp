@@ -233,8 +233,9 @@ TEST_CASE("coverDownloadJobs: Retro nur mit Basis, Fehlliste wird übersprungen 
     CHECK(jobs[0].stem == "nes/Crystalis (USA)");
     CHECK(jobs[0].id6 == "nes/Crystalis (USA)");
     CHECK(jobs[0].root == "usb:");
-    CHECK(jobs[0].url == "https://r/t/Nintendo_-_Nintendo_Entertainment_System/master/Named_Boxarts/"
-                         "Crystalis%20%28USA%29.png");
+    REQUIRE_FALSE(jobs[0].urls.empty());
+    CHECK(jobs[0].urls[0] == "https://r/t/Nintendo_-_Nintendo_Entertainment_System/master/Named_Boxarts/"
+                             "Crystalis%20%28USA%29.png");
 }
 
 TEST_CASE("existingCoverFiles mit Retro listet alle Konsolenordner (M22)") {
@@ -253,8 +254,8 @@ TEST_CASE("runCoverDownloads: Job mit URL fragt genau diese an, missed meldet Fe
     net.outcomes["http://r/t/x/A.png"] = HttpOutcome::Ok;
     CoverDownloadIo io = net.io();
     io.missed = [&](const std::string& stem) { missed.push_back(stem); };
-    const CoverJob jobs[] = {{"nes/A", "nes/A", "sd:", "https://r/t/x/A.png"},
-                             {"nes/B", "nes/B", "sd:", "https://r/t/x/B.png"},
+    const CoverJob jobs[] = {{"nes/A", "nes/A", "sd:", {"https://r/t/x/A.png"}},
+                             {"nes/B", "nes/B", "sd:", {"https://r/t/x/B.png"}},
                              {"RMGP01", "wii/RMGP01"}};
     const DownloadSummary s = runCoverDownloads(jobs, kRegions, "http://h/c", io);
     CHECK(s.ok == 1);
@@ -267,15 +268,20 @@ TEST_CASE("runCoverDownloads: Job mit URL fragt genau diese an, missed meldet Fe
 }
 
 TEST_CASE("Fehlliste: lesen, fortführen, schreiben (M22)") {
-    CHECK(parseMissingList("nes/A\r\n\nwii/RMGP01\n  \nnes/A\n") == std::vector<std::string>{"nes/A", "wii/RMGP01"});
+    CHECK(parseMissingList("#nl-missing 2\r\nnes/A\r\n\nwii/RMGP01\n  \nnes/A\n") ==
+          std::vector<std::string>{"nes/A", "wii/RMGP01"});
     CHECK(parseMissingList("").empty());
+    // M24: Listen ohne aktuelle Kopfzeile stammen vom alten Sucher und werden verworfen
+    CHECK(parseMissingList("nes/A\nwii/RMGP01\n").empty());
+    CHECK(parseMissingList("#nl-missing 1\nnes/A\n").empty());
     // Lauf von Hand: alle Stämme waren Jobs → nur die neuen Fehlschläge bleiben
     CHECK(updateMissingList({"nes/A", "nes/B"}, {"nes/A", "nes/B", "nes/C"}, {"nes/C"}) ==
           std::vector<std::string>{"nes/C"});
     // Automatischer Lauf: übersprungene (keine Jobs) bleiben, neue kommen dazu, sortiert ohne Doppelte
     CHECK(updateMissingList({"wii/X", "nes/B"}, {"nes/C", "nes/D"}, {"nes/D", "nes/D"}) ==
           std::vector<std::string>{"nes/B", "nes/D", "wii/X"});
-    CHECK(missingListText({"nes/B", "wii/X"}) == "nes/B\nwii/X\n");
+    CHECK(missingListText({"nes/B", "wii/X"}) == "#nl-missing 2\nnes/B\nwii/X\n");
+    CHECK(parseMissingList(missingListText({"nes/B", "wii/X"})) == std::vector<std::string>{"nes/B", "wii/X"});
     CHECK(missingListText({}).empty());
 }
 
@@ -352,4 +358,114 @@ TEST_CASE("coverDownloadJobs setzt die Konsole des Auftrags (M24)") {
     const auto jobs = coverDownloadJobs(gs, [](const std::string&) { return false; }, "usb:", "https://x");
     REQUIRE(jobs.size() == 1);
     CHECK(jobs[0].console == Console::Snes);
+}
+
+namespace {
+bool hasCandidate(std::string_view stem, std::string_view want) {
+    const auto c = libretroNameCandidates(stem);
+    return std::find(c.begin(), c.end(), want) != c.end();
+}
+}  // namespace
+
+TEST_CASE("libretroNameCandidates: exakter Name zuerst, Varianten für abweichende libretro-Namen (M24)") {
+    const auto c = libretroNameCandidates("Banjo-Kazooie (USA) (Rev 1)");
+    REQUIRE_FALSE(c.empty());
+    CHECK(c[0] == "Banjo-Kazooie (USA) (Rev 1)");
+    CHECK(hasCandidate("Banjo-Kazooie (USA) (Rev 1)", "Banjo-Kazooie (USA)"));
+    CHECK(hasCandidate("Donkey Kong (Japan, USA) (SGB Enhanced)", "Donkey Kong (Japan, USA) (En) (SGB Enhanced)"));
+    CHECK(hasCandidate("Gyromite ~ Gyro (World)", "Gyromite (World)"));
+    CHECK(hasCandidate("Dr. Mario (Japan, USA) (Rev 1)", "Dr. Mario (Japan, USA) (En) (Rev 1)"));
+    CHECK(hasCandidate("Mike Tyson's Punch-Out!! (Japan, USA) (Rev 1)",
+                       "Mike Tyson's Punch-Out!! (Japan, USA) (En) (Rev 1)"));
+    CHECK(hasCandidate("Super Mario Bros. Deluxe (USA, Europe) (Rev 2)", "Super Mario Bros. Deluxe (USA, Europe)"));
+    CHECK(hasCandidate("Shadowgate Classic (USA, Europe) (En,Fr,De,Es,Sv) (Rev 1) (GB Compatible)",
+                       "Shadowgate Classic (USA, Europe) (En,Fr,De,Es,Sv) (GB Compatible)"));
+    // Mehrfachregion → Einzelregion, Weltausgabe → USA
+    CHECK(hasCandidate("Tetris (Japan, USA)", "Tetris (USA)"));
+    CHECK(hasCandidate("Galaga (World)", "Galaga (USA)"));
+}
+
+TEST_CASE("libretroNameCandidates: begrenzt, ohne Doppelte, kein Japan-Cover für Westausgaben (M24)") {
+    const auto c = libretroNameCandidates("A ~ B (USA, Europe) (En,Fr,De) (Rev 1) (SGB Enhanced) (GB Compatible)");
+    CHECK(c.size() <= kMaxLibretroCandidates);
+    std::set<std::string> uniq(c.begin(), c.end());
+    CHECK(uniq.size() == c.size());
+    CHECK_FALSE(hasCandidate("Galaga (World)", "Galaga (Japan)"));
+    CHECK_FALSE(hasCandidate("Zelda (USA) (Rev 1)", "Zelda (Japan)"));
+    CHECK(hasCandidate("Mario Golf 64 (Japan) (Rev 1)", "Mario Golf 64 (Japan)"));
+    const auto plain = libretroNameCandidates("Glover");  // ohne Tags
+    REQUIRE_FALSE(plain.empty());
+    CHECK(plain[0] == "Glover");
+    CHECK(hasCandidate("Glover", "Glover (USA)"));
+}
+
+TEST_CASE("coverDownloadJobs: Retro-Job trägt alle Kandidaten-URLs (M24)") {
+    const Game games[] = {{Console::N64, "n64/Banjo-Kazooie (USA) (Rev 1).z64", "Banjo", 0, 0}};
+    const Game* ptrs[] = {&games[0]};
+    const auto jobs = coverDownloadJobs(ptrs, [](const std::string&) { return false; }, "sd:", "https://r/t");
+    REQUIRE(jobs.size() == 1);
+    REQUIRE(jobs[0].urls.size() >= 2);
+    CHECK(jobs[0].urls[0] == libretroCoverUrl("https://r/t", Console::N64, "Banjo-Kazooie (USA) (Rev 1)"));
+    CHECK(std::find(jobs[0].urls.begin(), jobs[0].urls.end(),
+                    libretroCoverUrl("https://r/t", Console::N64, "Banjo-Kazooie (USA)")) != jobs[0].urls.end());
+}
+
+TEST_CASE("libretroSymlinkTarget erkennt Git-Symlink-Texte (M24)") {
+    const auto bytes = [](std::string_view s) { return std::vector<u8>(s.begin(), s.end()); };
+    CHECK(libretroSymlinkTarget(bytes("Banjo-Kazooie (USA).png")) == "Banjo-Kazooie (USA).png");
+    CHECK(libretroSymlinkTarget(bytes("Banjo-Kazooie (USA).png\n")) == "Banjo-Kazooie (USA).png");
+    CHECK(libretroSymlinkTarget(bytes("404: Not Found")).empty());
+    CHECK(libretroSymlinkTarget(bytes("../Named_Snaps/A.png")).empty());  // nur derselbe Ordner
+    CHECK(libretroSymlinkTarget(bytes("A.png\nB.png")).empty());
+    CHECK(libretroSymlinkTarget(bytes(std::string(600, 'a') + ".png")).empty());
+    CHECK(libretroSymlinkTarget(std::vector<u8>{0x89, 'P', 'N', 'G'}).empty());
+    CHECK(libretroSymlinkTarget({}).empty());
+}
+
+TEST_CASE("libretroLinkUrl ersetzt den Dateinamen der URL (M24)") {
+    CHECK(libretroLinkUrl("https://r/t/S/master/Named_Boxarts/A%20%28USA%29%20%28Rev%201%29.png", "A (USA).png") ==
+          "https://r/t/S/master/Named_Boxarts/A%20%28USA%29.png");
+}
+
+namespace {
+// Liefert für bestimmte URLs Text statt PNG (Symlink).
+struct LinkNet : FakeNet {
+    std::map<std::string, std::string> texts;
+    CoverDownloadIo linkIo() {
+        CoverDownloadIo io = this->io();
+        auto inner = io.get;
+        io.get = [this, inner](const Url& url, std::vector<u8>& body) {
+            const std::string u = "http://" + url.host + url.path;
+            auto it = texts.find(u);
+            if (it == texts.end()) return inner(url, body);
+            calls.push_back(u);
+            body.assign(it->second.begin(), it->second.end());
+            return HttpOutcome::Ok;
+        };
+        return io;
+    }
+};
+}  // namespace
+
+TEST_CASE("runCoverDownloads: folgt Symlinks und probiert weitere Kandidaten (M24)") {
+    LinkNet net;
+    net.texts["http://r/S/A1.png"] = "A.png";
+    net.outcomes["http://r/S/A.png"] = HttpOutcome::Ok;
+    net.outcomes["http://r/S/B2.png"] = HttpOutcome::Ok;
+    net.texts["http://r/S/C1.png"] = "C1.png";  // Schleife
+    std::vector<std::string> missed;
+    CoverDownloadIo io = net.linkIo();
+    io.missed = [&](const std::string& s) { missed.push_back(s); };
+    const CoverJob jobs[] = {{"n64/A", "n64/A", "sd:", {"https://r/S/A1.png", "https://r/S/A0.png"}},
+                             {"n64/B", "n64/B", "sd:", {"https://r/S/B1.png", "https://r/S/B2.png"}},
+                             {"n64/C", "n64/C", "sd:", {"https://r/S/C1.png"}}};
+    const DownloadSummary s = runCoverDownloads(jobs, kRegions, "http://h/c", io);
+    CHECK(s.ok == 2);
+    CHECK(s.missing == 1);
+    CHECK(s.failed == 0);
+    CHECK(net.saved == std::vector<std::string>{"n64/A", "n64/B"});
+    CHECK(missed == std::vector<std::string>{"n64/C"});
+    CHECK(net.calls == std::vector<std::string>{"http://r/S/A1.png", "http://r/S/A.png", "http://r/S/B1.png",
+                                                "http://r/S/B2.png", "http://r/S/C1.png", "http://r/S/C1.png",
+                                                "http://r/S/C1.png"});
 }

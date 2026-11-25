@@ -24,6 +24,7 @@ void Video::init() {
 
 void Video::present(int index) {
     VIDEO_SetNextFramebuffer(xfb_[index]);
+    shown_ = index;
     VIDEO_Flush();
     VIDEO_WaitVSync();
 }

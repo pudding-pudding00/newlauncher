@@ -15,6 +15,7 @@ import shutil
 import threading
 import time
 import zipfile
+import zlib
 from pathlib import Path
 
 from deploy_dolphin import ARGV_ECHO_DOL, DEFAULT_DOL, DIST_DIR, FIXTURES_DIR, deploy
@@ -23,8 +24,9 @@ from make_disk_image import make_image
 from make_fixtures import disc_header
 from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_path, reset_log,
                      sd_sync_dir, wait_for_markers, write_dev_config)
-from pngfile import solid_png
+from pngfile import solid_png, write_png
 from test_ca import make as make_test_ca
+from wii_remote import REMOTE_PORT, RemoteClient, RemoteError, yuyv_to_rgba
 from wii_title import TEST_CHANNEL_ID, TEST_CHANNEL_NAMES, install_channel
 
 DEFAULT_MARKERS = ["NL_READY"]
@@ -238,6 +240,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--theme-pack", metavar="NAME",
                         help="Fixture-Theme newlauncher/themes/NAME mit einem kaputten Token anlegen und in config.ini "
                              "wählen; verlangt genau eine NL_THEME_BAD-Zeile (M17). Ohne die Option wird themes/ entfernt")
+    parser.add_argument("--remote-check", action="store_true",
+                        help="Fernsteuerung an, dann über 127.0.0.1:4300 HELLO/GAMES/KEY/STATE/SHOT/PUT/LOG prüfen (M20)")
     parser.add_argument("--emunand", action="store_true",
                         help="Fixture-EmuNAND sd:/emunand mit Testkanal 000100014E4C5443 anlegen (M19)")
     args = parser.parse_args(argv)
@@ -245,6 +249,9 @@ def main(argv: list[str] | None = None) -> int:
     if tls and not (args.cover_server or args.emu_server or args.cheat_server):
         parser.error("--tls/--tls-wrong-ca braucht --cover-server, --emu-server oder --cheat-server")
     markers = args.markers or DEFAULT_MARKERS
+    if args.remote_check:
+        args.debug.append("remote=1")
+        markers = markers + ["NL_REMOTE listen"]
     args.sd_disk_layout = None
     if args.sd_disk:
         layout = [k.strip() for k in args.sd_disk.split(",")]
@@ -523,6 +530,8 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
     try:
         missing = wait_for_markers(log_path(user_dir), markers, args.timeout,
                                    is_alive=lambda: proc.poll() is None)
+        if not missing and getattr(args, "remote_check", False):
+            missing = _remote_session(user_dir)
         if not missing and getattr(args, "cheat_server", None):
             # Dolphin puffert SD-Schreibzugriffe; ein sofortiges Beenden verliert die gerade geschriebene Datei.
             time.sleep(SD_SETTLE_SECONDS)
@@ -553,6 +562,51 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
         return 0
     print(f"SMOKE FEHLGESCHLAGEN: fehlende Marker nach {args.timeout:g} s: {', '.join(missing)}")
     return 1
+
+
+def _remote_session(user_dir: Path) -> list[str]:
+    """M20: eine Sitzung gegen den Fernsteuerungs-Server; Dolphin reicht Wii-Sockets an den PC durch."""
+    try:
+        with RemoteClient("127.0.0.1", REMOTE_PORT, timeout=20) as c:
+            if not c.call("HELLO")[0].startswith("newlauncher "):
+                return ["REMOTE HELLO"]
+            games = [ln for ln in c.call("GAMES")[1].decode().splitlines() if ln]
+            if not games or any(ln.count("\t") != 2 for ln in games):
+                return ["REMOTE GAMES"]
+            state = dict(ln.split("\t", 1) for ln in c.call("STATE")[1].decode().splitlines() if "\t" in ln)
+            c.call("KEY right")
+            moved = dict(ln.split("\t", 1) for ln in c.call("STATE")[1].decode().splitlines() if "\t" in ln)
+            if state.get("focus") == moved.get("focus"):
+                return [f"REMOTE KEY (Fokus blieb {state.get('focus')})"]
+            info, shot = c.call("SHOT")
+            w, h, fmt = info.split(" ")
+            # Nur Format und Größe: Dolphin hält den XFB nicht im emulierten RAM (Inhalt: Hardware-Abnahme).
+            if fmt != "yuyv" or len(shot) != int(w) * int(h) * 2:
+                return [f"REMOTE SHOT {info} {len(shot)}"]
+            write_png(user_dir / "remote_shot.png", int(w), int(h), yuyv_to_rgba(shot, int(w), int(h)))
+            target = state["data"] + "/remote_put.txt"
+            c.put(b"remote\n", target)
+            one = b"\x01"
+            if (c.request(f"PUT 1 {zlib.crc32(one):08x} sd:/wbfs/x", one)[0]
+                    or c.request(f"PUT 1 {zlib.crc32(b'x'):08x} {target}", one)[0]):
+                return ["REMOTE PUT (verbotener Pfad oder falsche CRC angenommen)"]
+            if f"NL_REMOTE put {target} bytes=7 ok" not in c.call("LOG")[1].decode("utf-8", "replace"):
+                return ["REMOTE LOG"]
+            restarted = c.call("RESTART")[0]
+        # Die neue Instanz startet mit --remote und lauscht wieder: zweite listen-Zeile, dann HELLO.
+        log = log_path(user_dir)
+        deadline = time.monotonic() + 45
+        while log.read_text(encoding="utf-8", errors="replace").count("NL_REMOTE listen") < 2:
+            if time.monotonic() > deadline:
+                return [f"REMOTE RESTART ({restarted}) lauscht nicht wieder"]
+            time.sleep(0.5)
+        with RemoteClient("127.0.0.1", REMOTE_PORT, timeout=20) as c:
+            if not c.call("HELLO")[0].startswith("newlauncher "):
+                return ["REMOTE HELLO nach RESTART"]
+    except (RemoteError, OSError, KeyError, ValueError) as e:
+        return [f"REMOTE {e}"]
+    print(f"REMOTE OK: {len(games)} Spiele, Fokus {state.get('focus')} -> {moved.get('focus')}, Bild {w}x{h}")
+    return []
 
 
 def _check_frag(user_dir: Path, rel_path: str) -> list[str]:

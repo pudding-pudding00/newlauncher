@@ -17,11 +17,14 @@ public:
         return (m == VI_TVMODE_PAL_INT || m == VI_TVMODE_PAL_DS) ? 50 : 60;
     }
     void present(int index);
+    // Zuletzt angezeigter Puffer (ungecacht), z. B. für den Screenshot der Fernsteuerung (M20).
+    const void* shownFramebuffer() const { return xfb_[shown_]; }
 
 private:
     GXRModeObj* mode_ = nullptr;
     void* xfb_[2] = {nullptr, nullptr};
     bool widescreen_ = false;
+    int shown_ = 0;
 };
 
 // Vor dem Chainload: Bild schwarz schalten und zwei Bilder abwarten, damit kein Restbild flackert.

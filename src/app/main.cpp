@@ -1658,7 +1658,7 @@ int main(int argc, char** argv) {
                 break;
             case nl::RemoteCmd::Shot: {  // XFB ist ungecacht (video.cpp): direkt lesbar
                 const GXRModeObj* m = video.mode();
-                const u8* fb = static_cast<const u8*>(VIDEO_GetCurrentFramebuffer());
+                const u8* fb = static_cast<const u8*>(video.shownFramebuffer());
                 if (m == nullptr || fb == nullptr) {
                     remote.reply(false, "kein Framebuffer");
                     break;

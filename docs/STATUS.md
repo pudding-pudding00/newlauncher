@@ -20,7 +20,7 @@ Stand: 2026-11-25, M24 (größeres Raster, Sortierung, Cover-Speicher auf der SD
 | M23 | Einstellung „Cover-Cache löschen“, Raster scrollt mit dem Zeiger an den Rändern, Kachelhöhe nach Cover-Format der Konsole, Download-Messung (`[debug] perf`) | #37 |
 | – | wii_tls auf Release **v0.3.0** (`b648ac2`): P-256-Signaturprüfung beschleunigt (Handshake laut Upstream 66 → 28 ms auf der Wii), Sende-Fix für IOS, mTLS und Streaming-Uploads (ungenutzt) | #38 |
 | – | wii_tls auf Release **v1.0.0** (`77229ff`, erste stabile Version): Schreib-Obergrenze gegen hängende Gegenstellen, DNS-Fallback über bis zu 4 Adressen, Netz-Reset bei IP-Wechsel, Sicherheits-Fixes | #39 |
-| M24 | Cover-Downloads nach Konsolengeneration (neu → alt), Sortierung Titel/Jahr über − in der A–Z-Leiste, größeres Raster mit gemischten Kachelformaten in Zuletzt/Favoriten/Suche, Plakette nur ohne Cover, „Cover-Cache löschen“ durch Halten von A und im Hintergrund (wii_tls-Abbruch-Callback), Cover-Speicher SD-Karte/Spielgerät | Branch `feat/m24-raster-cover-speicher` |
+| M24 | Cover-Downloads nach Konsolengeneration (neu → alt), Sortierung Titel/Jahr über − in der A–Z-Leiste, größeres Raster mit gemischten Kachelformaten in Zuletzt/Favoriten/Suche, Plakette nur ohne Cover, „Cover-Cache löschen“ durch Halten von A und im Hintergrund (wii_tls-Abbruch-Callback), Cover-Speicher SD-Karte/Spielgerät, Retro-Cover-Sucher (libretro-Symlinks, Namensvarianten) | Branch `feat/m24-raster-cover-speicher` |
 
 Die CI (`.github/workflows/build.yml`) baut Wii mit und ohne TLS und führt die Host-Tests aus.
 
@@ -68,6 +68,9 @@ Spec `docs/superpowers/specs/2026-11-25-m20-direktstart-design.md`, Abnahme
   hoch wie die höchste Kachel. Sortierung Standard Titel, − in der A–Z-Leiste schaltet Titel ↔ Jahr. Cover liegen
   standardmäßig auf der SD (`[covers] storage = sd|device`); vorhandene Cover werden beim Umstellen nicht verschoben.
   Löschen: A 1 s halten; ein eigener Thread löscht, der Download bricht über `abort_cb` sofort ab.
+  Retro-Cover-Sucher: libretro-thumbnails nutzt Git-Symlinks (raw.githubusercontent liefert nur den Zielnamen als
+  Text) und weicht oft im Namen ab; der Launcher folgt Symlinks (2 Sprünge) und probiert bis zu 16 Namensvarianten
+  (`libretroNameCandidates`). Die Fehlliste hat eine Versionszeile, ältere Listen werden verworfen.
   Abnahme: [acceptance/m24-wii.md](acceptance/m24-wii.md), **ungeprüft**.
 - **Smoke `--remote-check` wackelt (2026-11-25):** 2 von 11 Läufen meldeten „REMOTE KEY (Fokus blieb …)“,
   unabhängig von wii_tls (die Fernsteuerung nutzt es nicht). Vermutlich setzt ein Zeigerereignis in Dolphin den

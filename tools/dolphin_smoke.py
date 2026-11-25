@@ -534,11 +534,14 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             if not args.fresh_data:
                 with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
                     f.write(f"[theme]\nname = {args.theme_pack}\n")
-        if getattr(args, "cover_auto", False) and not args.fresh_data:
-            # Fixture-config.ini hat [covers] auto = 0 (M21), damit Smokes nicht von selbst laden.
+        if not args.fresh_data and (sd / CONFIG_REL).is_file():
+            # Fixture-config.ini hat [covers] auto = 0 (M21), damit Smokes nicht von selbst laden. Auch mit
+            # --no-fixtures zurücksetzen: ein früherer --cover-auto-Lauf hinterlässt sonst auto = 1.
             cfg = sd / CONFIG_REL
+            on = getattr(args, "cover_auto", False)
+            old, new = ("\nauto = 0\n", "\nauto = 1\n") if on else ("\nauto = 1\n", "\nauto = 0\n")
             text = cfg.read_text(encoding="utf-8")
-            cfg.write_text(text.replace("\nauto = 0\n", "\nauto = 1\n", 1), encoding="utf-8", newline="\n")
+            cfg.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
         if args.config_append and not args.fresh_data:
             with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
                 f.write(_cli_text(args.config_append))

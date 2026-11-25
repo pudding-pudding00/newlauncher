@@ -112,7 +112,8 @@ int main()
 	CurrentIOS = normalCFG.IOS;
 	// newlauncher (M21): Liegt ein gültiger Parameterblock des Rückkehr-Stubs vor und läuft kein Codehandler
 	// (der belegt denselben Speicher), führt „Wii-Menü“ im Spiel zurück in newlauncher.
-	returnToStub = hooktype == 0 && nlrs_params_ok((const unsigned char*)NLRS_PARAMS_ADDR);
+	returnToStub = hooktype == 0 && nlrs_stub_ok((const unsigned char*)NLRS_STUB_ADDR) &&
+		nlrs_params_ok((const unsigned char*)NLRS_PARAMS_ADDR);
 	gprintf("Return stub: %s\n", returnToStub ? "yes" : "no");
 	set_wip_list(normalCFG.wip_list, normalCFG.wip_count);
 	app_gameconfig_set(normalCFG.gameconf, normalCFG.gameconfsize);

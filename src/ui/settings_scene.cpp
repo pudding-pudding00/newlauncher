@@ -29,7 +29,7 @@ bool sameSettings(const Config& a, const Config& b) {
            a.themeMode == b.themeMode && a.themePack == b.themePack && a.darkFromMin == b.darkFromMin && a.darkToMin == b.darkToMin &&
            a.music == b.music && a.musicVolume == b.musicVolume && a.sounds == b.sounds &&
            a.banners == b.banners &&
-           a.coverRegion == b.coverRegion && a.sortOrder == b.sortOrder;
+           a.coverRegion == b.coverRegion && a.coverAuto == b.coverAuto && a.sortOrder == b.sortOrder;
 }
 
 AppCommand actionCommand(SettingRow r) {

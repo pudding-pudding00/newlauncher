@@ -105,6 +105,12 @@ u32 takeReturnStubStage() {
     return v;
 }
 
+void clearReturnStubParams() {
+    std::memset(at(NLRS_PARAMS_ADDR), 0, NLRS_HEAD_BYTES);  // Magic weg → nlrs_params_ok() == 0
+    DCFlushRange(at(NLRS_PARAMS_ADDR), 32);
+    log::line("NL_RETURN_STUB cleared");
+}
+
 void recoverIosAfterGame() {
     constexpr s32 kLauncherIos = 58;
     const s32 before = IOS_GetVersion();

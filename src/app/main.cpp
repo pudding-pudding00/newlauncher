@@ -1239,15 +1239,18 @@ int main(int argc, char** argv) {
             }
             // M21: „Wii-Menü“ im Spiel springt in den Stub, der newlauncher mit --from-game neu lädt.
             // Mit Cheats nicht: der Codehandler belegt denselben Speicher (0x80001800).
+            bool gameStub = false;
             if (nl::gameReturnStubWanted(returnStubDol, target.value().wii->gct.size())) {
                 std::vector<std::string> gameArgs{std::string(nl::kFromGameFlag)};
                 if (keepRemote) gameArgs.push_back("--remote");
-                nl::launch::installReturnStub(returnStubDol, gameArgs);
+                gameStub = nl::launch::installReturnStub(returnStubDol, gameArgs);
             } else if (!target.value().wii->gct.empty()) {
                 nl::log::line("NL_RETURN_STUB skip cheats");
             } else {
                 nl::log::line("NL_RETURN_STUB skip self=%s", returnStubDol.c_str());
             }
+            // Ohne frischen Stub darf ein alter Block (z. B. vom letzten Emulator) den Booter nicht umlenken.
+            if (!gameStub) nl::launch::clearReturnStubParams();
             stopAudio();
             logPerfSummary();
             if (data.writable) nl::log::flushLogFile(fs, logPath);
@@ -1279,6 +1282,7 @@ int main(int argc, char** argv) {
     char coverToast[48] = "";
     u32 coverToastDone = ~0u;
     int coverToastFrames = 0;
+    bool coverRunSilent = false;  // M21: laufender Auftrag ist der automatische, ohne Zusammenfassungs-Dialog
     // silent (M21, [covers] auto): automatischer Lauf nach dem Start, ohne Dialog „Keine fehlenden Cover“.
     auto fetchCovers = [&](bool silent) {
         if (!silent) nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
@@ -1313,6 +1317,7 @@ int main(int argc, char** argv) {
             nl::log::line("NL_WARN Netz-Thread startet nicht");
             return;
         }
+        coverRunSilent = silent;
         coverToastDone = ~0u;
     };
     // Gecko-Codes eines Spiels laden (M15): nur auf Knopfdruck, Ziel <data>/codes/<ID6>.txt.
@@ -1396,10 +1401,15 @@ int main(int argc, char** argv) {
         if (auto sum = scenes.contains(&dialog) ? std::nullopt : net.take()) {
             for (const std::string& line : net.takeLogLines()) nl::log::line("%s", line.c_str());
             for (const std::string& stem : net.takeFinishedStems()) covers.invalidate(stem);
-            nl::log::line("NL_COVER_DL_DONE ok=%u missing=%u failed=%u", static_cast<unsigned>(sum->ok),
-                          static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
+            nl::log::line("NL_COVER_DL_DONE ok=%u missing=%u failed=%u dialog=%d", static_cast<unsigned>(sum->ok),
+                          static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed),
+                          coverRunSilent ? 0 : 1);
             if (data.writable) nl::log::flushLogFile(fs, logPath);
             if (perf) perf->pause();  // der Flush gehört zur Messung, nicht zum Launcher
+            if (coverRunSilent) {  // M21: still im Hintergrund; neue Cover erscheinen von selbst
+                coverRunSilent = false;
+                return;
+            }
             const std::string text = nl::ui::coversSummaryText(sum->ok, sum->missing, sum->failed, sum->lastError);
             dialog.open(nl::ui::tr(nl::ui::Str::CoversLoaded), text.c_str());
             scenes.push(&dialog);

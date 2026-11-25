@@ -219,6 +219,17 @@ class DolphinToolsTest(unittest.TestCase):
         self.assertIn("[covers]\nregion = auto\nauto = 1\n", text)
         self.assertTrue(text.endswith("[debug]\ncover_url = http://127.0.0.1:12345\n"))
 
+    def test_smoke_without_cover_auto_resets_leftover_auto_1(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        with mock.patch("dolphin_smoke.start_cover_server", return_value=(mock.Mock(), 12345)):
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--timeout", "2", "--cover-server", "--cover-auto"])
+        smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                    "--timeout", "2", "--no-fixtures"])
+        text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertIn("\nauto = 0\n", text)  # M21-Review: kein Autostart aus einem früheren Lauf
+        self.assertNotIn("\nauto = 1\n", text)
+
     def test_smoke_cover_auto_needs_cover_server(self):
         with self.assertRaises(SystemExit):
             smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),

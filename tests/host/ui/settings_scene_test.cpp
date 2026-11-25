@@ -280,6 +280,19 @@ TEST_CASE_FIXTURE(Fixture, "A auf Kindersicherung meldet OpenParental (M17)") {
     CHECK(std::string(appCommandName(AppCommand::OpenParental)) == "open_parental");
 }
 
+TEST_CASE_FIXTURE(Fixture, "Zeile Cover automatisch: Ein/Aus, Änderung macht dirty (M21)") {
+    focusRow(SettingRow::CoverAuto);
+    const SceneRequests r = press(Action::Confirm);
+    CHECK_FALSE(cfg.coverAuto);
+    CHECK(r.command == AppCommand::SettingsChanged);
+    CHECK(press(Action::Back).command == AppCommand::SaveSettings);  // geändert → speichern
+    for (Lang lang : {Lang::De, Lang::En}) {
+        setLanguage(lang);
+        CHECK(std::string(tr(Str::CoverAuto)) ==
+              (lang == Lang::De ? "Cover automatisch laden" : "Download covers automatically"));
+    }
+}
+
 TEST_CASE_FIXTURE(Fixture, "Zeile Banner: Ein/Aus, Änderung macht dirty (M18)") {
     focusRow(SettingRow::Banners);
     const SceneRequests r = press(Action::Confirm);

@@ -14,8 +14,8 @@ Status: **teilweise geprüft** (erfordert eine echte Wii mit HBC, newlauncher au
 | Punkt | Prüfung | Erwartetes Ergebnis | Ergebnis |
 |---|---|---|---|
 | R1 | ROM-Eintrag (N64, GBC …) in newlauncher starten | Emulator startet direkt mit der ROM, ohne eigenes Menü | 2026-11-25 bestanden (`0e9c9b4`): GBC „Azure Dreams“ (USB) per VBA GX direkt ins Spiel gestartet |
-| R2 | Im Emulator „Exit“ bzw. „Zurück zum Loader“ wählen | newlauncher erscheint wieder (nicht der HBC); Log enthält `NL_RETURN_STUB present stage=0` | 2026-11-25 bestanden (`0e9c9b4`): Rückkehr aus VBA GX in newlauncher, USB weiterhin da (`NL_RETURN_STUB present stage=0`-Log nach `--remote`-Fix nachprüfen) |
-| R3 | R1/R2 dreimal hintereinander | Jede Rückkehr klappt; kein Absturz, kein Systemmenü-Neustart | ungeprüft |
+| R2 | Im Emulator „Exit“ bzw. „Zurück zum Loader“ wählen | newlauncher erscheint wieder (nicht der HBC); Log enthält `NL_RETURN_STUB present stage=0` | 2026-11-25 bestanden (`6e46362`): Rückkehr aus VBA GX in newlauncher mit `NL_RETURN_STUB present stage=0`, `--remote` und funktionierendem USB (`games 808`) |
+| R3 | R1/R2 dreimal hintereinander | Jede Rückkehr klappt; kein Absturz, kein Systemmenü-Neustart | 2026-11-25 bestanden (`6e46362`): 3× hintereinander GBC „Azure Dreams“ gestartet und beendet; jede Rückkehr sauber mit `NL_RETURN_STUB present stage=0`, `--remote` und USB (`games 808`), kein Absturz |
 | R4 | Nach R2: HOME → Homebrew Channel | HBC startet (als Titel); newlauncher lädt sich nicht erneut | 2026-11-25 bestanden (`0e9c9b4`): HOME → Homebrew Channel startet HBC sauber als Titel ohne Neustart von newlauncher |
 | R5 | newlauncher per wiiload (RAM, nicht SD) starten, dann einen Emulator starten und beenden | Kein Stub (`NL_RETURN_STUB skip self=…`); Rückkehr in den HBC wie bisher | 2026-11-25 bestanden (`6e46362`): per wiiload aus RAM gestartet, VBA GX („Azure Dreams“) gestartet und beendet → Rückkehr sauber in den HBC (kein Stub installiert) |
 | R6 | Wii-Spiel oder Kanal starten | Kein Stub; Spiel/Codehandler laufen unverändert | ungeprüft |

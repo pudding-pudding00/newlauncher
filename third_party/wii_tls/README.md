@@ -27,14 +27,15 @@ TF-PSA-Crypto) and libogc.
   SHA-256 conditioned, fails closed if the tests fail; `wtls_init` spends
   about 400 ms seeding); SNTP clock sync for the often-wrong Wii RTC.
 
-> **Validated on a Wii.** The hardware suites pass on a real Wii over Wi-Fi:
-> `plat`, `crypto`, `time`, `tls`, `http` and `realworld`, the last against
-> public HTTPS servers. With the default build (`WTLS_ACCEL_P256=ON`), a full
-> TLS 1.3 handshake costs about 28 ms of CPU (37 ms wall — meeting the ≤ 30 ms
-> CPU target), a resumed one about 16 ms (24 ms wall), and a further HTTP
-> request over a kept-alive connection about 3.0 ms CPU (5.9 ms wall).
+> **Validated on a Wii.** All hardware suites pass on a real Wii over Wi-Fi
+> (`suite=all`: `time` 1/1, `plat` 13/13, `crypto` 14/14, `tls` 40/40, `http` 86/86,
+> `soak` 128 iterations with 0 heap growth, and `realworld` 15/15 across public
+> HTTPS/CDN servers — **170/170 pass**; `wtls_bench.dol` **10/10 pass**). With the default build (`WTLS_ACCEL_P256=ON`), a full
+> TLS 1.3 handshake costs about 27 ms of CPU (37 ms wall — meeting the ≤ 30 ms
+> CPU target), a resumed one about 16 ms (25 ms wall), and a further HTTP
+> request over a kept-alive connection about 3.0 ms CPU (6.6 ms wall).
 > ChaCha20-Poly1305 runs at 24 MB/s, an X25519 key exchange takes 4.6 ms, and
-> a P-256 ECDSA verify takes 5.3 ms. The full matrix and the resumed-handshake
+> a P-256 ECDSA verify takes 5.3–5.4 ms. The full matrix and the resumed-handshake
 > target are in [docs/benchmarks.md](docs/benchmarks.md).
 
 **Documentation:** [usage guide](docs/usage.md) (setup, threading, error
@@ -98,10 +99,13 @@ if (r == WTLS_OK) {
 
 A complete Wii program (spinner on the UI thread, all networking on an LWP
 thread, second request showing `reused=yes`) is in
-[examples/https_get](examples/https_get/main.c):
+[examples/https_get](examples/https_get/main.c), and a streaming upload +
+mTLS/SPKI + Wiimote cancel (`abort_cb`) example is in
+[examples/upload_mtls_abort](examples/upload_mtls_abort/main.c):
 
 ```bash
 wiiload build-wii/examples/https_get/https_get.dol url=https://example.com/
+wiiload build-wii/examples/upload_mtls_abort/upload_mtls_abort.dol url=https://httpbin.org/post
 ```
 
 ## Building
@@ -116,9 +120,16 @@ cmake -S . -B build-wii -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Wii.cmake
 cmake --build build-wii -j
 ```
 
-Produces `build-wii/libwiitls.a`, the hardware test runner
-`build-wii/tests/hw/wtls_hwtest.dol` and the example
-`build-wii/examples/https_get/https_get.dol`. Options: `-DWTLS_BUILD_HWTEST=OFF`,
+**Wii natively on Windows** (devkitPro + Ninja, without MSYS2 shell):
+
+```powershell
+cmake -S . -B build-wii-win -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/wii-win-toolchain.cmake
+cmake --build build-wii-win
+```
+
+Produces `libwiitls.a`, the hardware test runner
+`tests/hw/wtls_hwtest.dol`, `bench/wtls_bench.dol`, and the examples in
+`examples/`. Options: `-DWTLS_BUILD_HWTEST=OFF`, `-DWTLS_BUILD_BENCH=OFF`,
 `-DWTLS_BUILD_EXAMPLES=OFF`.
 
 **Host** (Linux/macOS/Windows with gcc or clang; for development and tests;
@@ -136,21 +147,26 @@ ctest --test-dir build-host --output-on-failure
 python tools/hwtest.py --wii 192.168.1.50 --dol build-wii/tests/hw/wtls_hwtest.dol --suite tls
 ```
 
-Suites: `selftest`, `spike`, `entropy`, `plat`, `crypto`, `time`, `tls`, `http`
-(against the PC test server), `realworld` (example.com, google.com,
-cloudflare.com, badssl.com).
+Suites: `selftest`, `spike`, `entropy`, `plat`, `crypto`, `time`, `tls`, `http`,
+`soak` (against the PC test server; pass `--extra iters=1000` for endurance runs),
+`realworld` (example.com, google.com, cloudflare.com, badssl.com, Fastly,
+Let's Encrypt, nginx, Caddy, GitHub CDN Range).
 
 ## Using it in your project
 
 **Prebuilt release package:** see [docs/usage.md](docs/usage.md#1-add-it-to-your-project).
 `tools/make_release.sh` (in a devkitPro shell) builds the package into
-`dist/` and checks that the example links against it.
+`dist/` and checks both Makefile and `find_package(wiitls)` consumer builds.
 
-**As a subdirectory** (recommended: Mbed TLS and the include path come along):
+**As a subdirectory or installed package** (recommended: Mbed TLS and the include path come along):
 
 ```cmake
 add_subdirectory(third_party/libwiitls)
-target_link_libraries(my_app PRIVATE wiitls)
+target_link_libraries(my_app PRIVATE wiitls::wiitls)
+
+# Or after `cmake --install <build> --prefix <prefix>`:
+find_package(wiitls 1.0 REQUIRED)
+target_link_libraries(my_app PRIVATE wiitls::wiitls)
 ```
 
 **Prebuilt archives:** add `include/` to the include path and link, in this
@@ -185,6 +201,7 @@ buffered while the socket is not readable.
 | `WTLS_ERR_ARG` | -10 | invalid argument |
 | `WTLS_ERR_STATE` | -11 | `wtls_init` not called |
 | `WTLS_ERR_NOMEM` | -12 | out of memory |
+| `WTLS_ERR_CANCELLED` | -13 | cancelled via `abort_cb` |
 | `WTLS_ERR_ENTROPY` | -20 | random generator could not be seeded |
 | `WTLS_ERR_CLOCK` | -21 | clock implausible: call `wtls_time_sync_sntp` and retry |
 | `WTLS_ERR_NET` | -30 | network not initialised (`net_init`) |

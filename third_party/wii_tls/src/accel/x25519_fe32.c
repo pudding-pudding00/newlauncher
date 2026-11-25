@@ -381,6 +381,13 @@ static void x25519_base(uint8_t out[32], const uint8_t k[32]) {
     for (size_t i = 0; i < sizeof t; i++) vt[i] = 0;
     volatile uint8_t *vr = (volatile uint8_t *)&r;
     for (size_t i = 0; i < sizeof r; i++) vr[i] = 0;
+    volatile uint8_t *vs = (volatile uint8_t *)&s;
+    for (size_t i = 0; i < sizeof s; i++) vs[i] = 0;
+    volatile int32_t *vnum = num, *vden = den;
+    for (int i = 0; i < 10; i++) {
+        vnum[i] = 0;
+        vden[i] = 0;
+    }
 }
 
 /* ---- Variable base: Montgomery ladder (key agreement) ------------------ */

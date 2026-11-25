@@ -10,14 +10,40 @@
 
 /* Largest single net_send/net_recv handed to IOS (shared 64 KiB IPC heap). */
 #define WTLS_PLAT_MAX_CHUNK 16384
+/* Poll slice when cooperative abort_cb is active so cancellation takes <= 100 ms. */
+#define WTLS_POLL_SLICE_MS 100u
+/* Maximum IPv4 addresses tried per DNS lookup during connect fallback. */
+#define WTLS_DNS_MAX_ADDRS 4
+
+/* Debug single-thread affinity guard (enabled automatically when !NDEBUG or
+ * -DWTLS_THREAD_CHECK=ON). Zero cost in Release builds. */
+#ifndef WTLS_THREAD_CHECK
+#  if !defined(NDEBUG)
+#    define WTLS_THREAD_CHECK 1
+#  else
+#    define WTLS_THREAD_CHECK 0
+#  endif
+#endif
+
+typedef bool (*wtls_plat_abort_fn)(void *ctx);
 
 /* Fills out with OS entropy. Host: BCryptGenRandom/getrandom. Wii: WTLS_ERR_ENTROPY. */
 int wtls_plat_os_entropy(uint8_t *out, size_t len);
 
 int      wtls_plat_init(void);                                         /* OK | ERR_NET */
 int      wtls_plat_resolve(const char *host, uint32_t *ipv4_be);       /* OK | ERR_DNS */
+int      wtls_plat_resolve_all(const char *host, uint32_t *addrs,
+                               size_t cap, size_t *count);             /* OK | ERR_DNS */
+bool     wtls_plat_net_changed(void);
+void     wtls_plat_thread_bind(void);
+void     wtls_plat_thread_unbind(void);
+bool     wtls_plat_thread_ok(void);
+void     wtls_plat_report_thread_violation(const char *api);
 int      wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms,
                            int *fd_out);                               /* OK | ERR_CONNECT | ERR_TIMEOUT */
+int      wtls_plat_connect_abortable(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms,
+                                     wtls_plat_abort_fn abort_cb, void *abort_ctx,
+                                     int *fd_out);                     /* OK | ERR_CONNECT | ERR_TIMEOUT | ERR_CANCELLED */
 int      wtls_plat_send(int fd, const uint8_t *buf, size_t len);       /* >0 | WANT_WRITE | ERR_IO */
 int      wtls_plat_recv(int fd, uint8_t *buf, size_t len);             /* >0 | 0 (EOF) | WANT_READ | ERR_IO */
 int      wtls_plat_poll(int fd, bool rd, bool wr, uint32_t timeout_ms);/* 1 ready | 0 timeout | ERR_IO */

@@ -1,5 +1,86 @@
 # Changelog
 
+## 1.0.0 (2026-11-25)
+
+First stable SemVer release of `libwiitls` for Wii homebrew (devkitPPC / libogc),
+built on Mbed TLS 4.1.1 LTS (TF-PSA-Crypto) and zlib 1.3.1.
+
+Verified across host Release (`30/30`), host Debug (`WTLS_THREAD_CHECK=1`),
+ASan/UBSan/LSan, Clang libFuzzer (6 harnesses), Windows UCRT64 + Ninja, Wii
+CMake install/consumer checks, and real Wii hardware over Wi-Fi (`time` 1/1,
+`plat` 13/13, `crypto` 14/14, `tls` 40/40, `http` 86/86, `soak` 128 iterations
+with 0 heap growth, `realworld` 15/15, `wtls_bench.dol` 10/10 with
+`handshake_full_cpu = 27.3 ms`). Note: Wii IOS jitter entropy has been verified
+on one retail Wii over Wi-Fi; additional console revisions / USB-Ethernet
+`jitterdump` reports are tracked as 1.0.x follow-up.
+
+### Added
+
+- Cooperative cancellation (`wtls_abort_cb`, `abort_ctx` in `wtls_options`,
+  `WTLS_ERR_CANCELLED = -13`): checked before connect, across handshake steps,
+  at <= 100 ms `net_poll`/`poll` slices (`WTLS_POLL_SLICE_MS`), in HTTP
+  `plain_read`/`plain_write`, between HTTP body callbacks/reads, and on
+  `wtls_http_open` / `wtls_http_fetch` / `wtls_http_read`. Aborted TLS skips
+  `close_notify`; aborted HTTP connections are never returned to the pool.
+- HTTP download progress callback (`wtls_http_progress_cb`, `progress_cb` /
+  `progress_ctx` in `wtls_http_request`) for `wtls_http_fetch`.
+- Stalled-peer write cap (`OGC_SEND_MAX = 2048` B on Wii in `src/plat/plat_ogc.c`
+  after hardware probing showed `FIONSPACE`/`FIONWRITE = -22`, `-EAGAIN` corruption
+  under `IOS_O_NONBLOCK` down to `1024 B`, and clean `WANT_WRITE` at `73728 B`
+  with `2048 B` alignment) plus `test_stalled_peer_nonblocking` and
+  `[12] spike_stalled_peer_send`.
+- Multi-IPv4 resolution and TCP connect fallback (up to 4 A-records in
+  `src/wtls_dns.c`; only the confirmed working address is cached).
+- Public `wtls_net_reset()` and automatic host-IP-change detection
+  (`net_gethostip()` delta on Wii) to flush pooled connections and DNS entries
+  after Wi-Fi/interface transitions without forcing HTTP linkage on TLS-only apps.
+- Single-thread enforcement guard (`WTLS_THREAD_CHECK`, always ON in `Debug`
+  builds, `LWP_GetSelf()` on Wii / OS thread ID on host; `test_thread`).
+- Dynamic Version API (`WTLS_VERSION_MAJOR/MINOR/PATCH` and `wtls_version()`).
+- Optional SHA-256 SPKI public-key pinning (`spki_pins[2][32]`, `n_spki_pins`
+  in `wtls_options`, `WTLS_SPKI_SHA256_LEN`, `WTLS_SPKI_MAX_PINS`) verified
+  against leaf, intermediate, or root SPKI with identity isolation in the
+  session cache and HTTP keep-alive pool.
+- Six Clang libFuzzer harnesses (`tests/fuzz/`, enabled with
+  `-DWTLS_BUILD_FUZZ=ON`) plus deterministic CTest corpus regressions
+  (`test_fuzz_*`) executed on every host build.
+- Security audit (`docs/security-review.md`), vulnerability disclosure policy
+  (`SECURITY.md`), and monthly CA bundle / Mbed TLS LTS check workflow
+  (`.github/workflows/maintenance.yml`).
+- Soak/endurance test suite (`tests/common/soak_tests.c`, `test_soak` on host,
+  `suite=soak [iters=N]` on Wii) and expanded `realworld` server/CDN probes
+  (Fastly, Let's Encrypt, nginx, Caddy, GitHub CDN redirect + `Range: 206`).
+- CMake install package (`cmake --install`, `find_package(wiitls)` exporting
+  `wiitls::wiitls`), official native Windows Wii toolchain
+  (`cmake/wii-win-toolchain.cmake`), and second example
+  `examples/upload_mtls_abort`.
+
+### Changed
+
+- `wtls_http_build_head()` starts at 512 B and doubles on demand up to
+  `WTLS_HTTP_MAX_HEAD` instead of allocating 16 KiB upfront per request hop.
+- Streaming upload buffer (`UPLOAD_BUF_SIZE = 16 KiB` in `send_body_cb()`) is
+  heap-allocated instead of living on Wii LWP network-thread stacks.
+- Interim HTTP `1xx` header loops are capped at 16 responses (`WTLS_ERR_HTTP_LIMIT`).
+- `cmake --install` suppresses Mbed TLS's own header/package install rules so
+  installed prefixes contain only `libwiitls`, its bundled static archives,
+  headers, and `lib/cmake/wiitls/*`.
+
+### Fixed
+
+- Removed duplicate step in `pt_jadd` (`src/accel/p256_verify.c`), zeroized
+  scratch buffers in `x25519_base` (`src/accel/x25519_fe32.c`),
+  `wtls_jitter_collect`, and `wtls_scache` (`mbedtls_platform_zeroize`),
+  guarded empty cert chains (`src/wtls_cred.c`), avoided `NULL + 0` pointer
+  arithmetic and missing NULL guards in `src/http/` (including `headers == NULL`
+  with `n_headers > 0` in `wtls_http_open()` / `wtls_http_headers_have()`),
+  handled 0-byte fixed-length streaming uploads cleanly (`body_cb != NULL`,
+  `body_len == 0`, `!body_chunked`), ensured all HTTP `abort_cb` cancellation
+  paths skip `mbedtls_ssl_close_notify()`, stopped plain `http://` hops from
+  partitioning their keep-alive pool by TLS pins/credentials, guarded `size_t`
+  overflow in `wtls_http_url_encode()`, prevented `uint64_t` overflow in
+  `cl_elem`, and preserved sticky I/O errors in `wtls_write`.
+
 ## 0.3.0 (2026-11-26)
 
 ### Added

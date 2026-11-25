@@ -168,7 +168,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         set(WTLS_BUILD_HWTEST OFF CACHE BOOL "" FORCE)
         set(WTLS_BUILD_BENCH OFF CACHE BOOL "" FORCE)
         set(WTLS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-        # Krypto-Einstellungen wie im getesteten Release 0.3.0 (auf der Wii gemessen); FORCE, damit ein alter
+        # Krypto-Einstellungen wie im getesteten Release 1.0.0 (auf der Wii gemessen); FORCE, damit ein alter
         # Build-Cache mit den Standardwerten älterer Stände (Everest aus, O2) nicht hängen bleibt.
         set(WTLS_EVEREST ON CACHE BOOL "" FORCE)
         set(WTLS_ACCEL ON CACHE BOOL "" FORCE)

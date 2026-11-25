@@ -1,5 +1,6 @@
 /* Keep-alive pool: WTLS_HTTP_POOL_SLOTS entries in put order (oldest first). */
 #include "http/wtls_http_pool.h"
+#include "wtls_internal.h"
 
 #include <string.h>
 
@@ -86,6 +87,7 @@ void *wtls_http_pool_take(bool secure, const char *host, uint16_t port, bool ins
 }
 
 void wtls_http_pool_flush(void) {
+    if (!WTLS_THREAD_GUARD("wtls_http_pool_flush")) return;
     while (s_n) {
         void *c = s_slots[s_n - 1].c;
         s_n--;

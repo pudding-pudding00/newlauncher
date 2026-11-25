@@ -18,7 +18,8 @@ Stand: 2026-11-25, M23 (Cover-Cache löschen, Zeiger-Scrollen, Kacheln im Cover-
 | M21 | „Wii-Menü“ im Wii-Spiel führt über den Rückkehr-Stub zurück in newlauncher; Cover werden nach dem Start automatisch geladen (`[covers] auto`) | #34 |
 | M22 | Retro-Cover (NES bis GBA) lädt der Launcher selbst von libretro-thumbnails (GitHub, nur HTTPS) und merkt sich Fehltreffer in `cache/covers/missing.txt` | #36 |
 | M23 | Einstellung „Cover-Cache löschen“, Raster scrollt mit dem Zeiger an den Rändern, Kachelhöhe nach Cover-Format der Konsole, Download-Messung (`[debug] perf`) | #37 |
-| – | wii_tls auf Release **v0.3.0** (`b648ac2`): P-256-Signaturprüfung beschleunigt (Handshake laut Upstream 66 → 28 ms auf der Wii), Sende-Fix für IOS, mTLS und Streaming-Uploads (ungenutzt) | Branch `chore/wii-tls-0.3.0` |
+| – | wii_tls auf Release **v0.3.0** (`b648ac2`): P-256-Signaturprüfung beschleunigt (Handshake laut Upstream 66 → 28 ms auf der Wii), Sende-Fix für IOS, mTLS und Streaming-Uploads (ungenutzt) | #38 |
+| – | wii_tls auf Release **v1.0.0** (`77229ff`, erste stabile Version): Schreib-Obergrenze gegen hängende Gegenstellen, DNS-Fallback über bis zu 4 Adressen, Netz-Reset bei IP-Wechsel, Sicherheits-Fixes; Abbruch-Callback und Fortschritt noch ungenutzt | Branch `chore/wii-tls-1.0.0` |
 
 Die CI (`.github/workflows/build.yml`) baut Wii mit und ohne TLS und führt die Host-Tests aus.
 

@@ -40,34 +40,19 @@ cmake --build "$BUILD" -j8 >/dev/null # includes tools/check_ct.cmake
 if [ -d build-host/_deps/mbedtls-src ]; then MBED="$ROOT/build-host/_deps/mbedtls-src"; else MBED="$BUILD/_deps/mbedtls-src"; fi
 [ -d "$MBED/include/mbedtls" ] || { echo "Mbed TLS sources not found ($MBED)" >&2; exit 1; }
 
-mkdir -p "$OUT/lib" "$OUT/include" "$OUT/example" "$OUT/docs" "$OUT/licenses"
-
-# Libraries
-cp "$BUILD/libwiitls.a" "$OUT/lib/"
-cp "$BUILD/_deps/mbedtls-build/library/libmbedtls.a" \
-   "$BUILD/_deps/mbedtls-build/library/libmbedx509.a" \
-   "$BUILD/_deps/mbedtls-build/tf-psa-crypto/core/libtfpsacrypto.a" "$OUT/lib/"
-
-# Headers: libwiitls, the public Mbed TLS / TF-PSA-Crypto headers (for the
-# MBEDTLS_X509_BADCERT_* flags) and the configuration they were built with.
-cp -r include/wiitls "$OUT/include/"
+mkdir -p "$OUT/example" "$OUT/docs" "$OUT/licenses"
+cmake --install "$BUILD" --prefix "$ROOT/$OUT" >/dev/null
+rm -f "$OUT/lib/libmbedcrypto.a" # CMake < 3.28 cannot EXCLUDE_FROM_ALL Mbed TLS's legacy alias
 test -f "$OUT/include/wiitls/http.h" || { echo "include/wiitls/http.h missing from the package" >&2; exit 1; }
-for d in "$MBED/include" "$MBED/tf-psa-crypto/include" \
-         "$MBED/tf-psa-crypto/drivers/builtin/include" \
-         "$BUILD/_deps/mbedtls-build/tf-psa-crypto/include"; do
-    [ -d "$d" ] || continue
-    (cd "$d" && find . -name '*.h') | while read -r h; do
-        if [ -e "$OUT/include/$h" ] && ! cmp -s "$d/$h" "$OUT/include/$h"; then
-            echo "header clash: $h" >&2; exit 1
-        fi
-        mkdir -p "$OUT/include/$(dirname "$h")"
-        cp "$d/$h" "$OUT/include/$h"
-    done
-done
-cp config/wtls_mbedtls_config.h config/wtls_crypto_config.h "$OUT/include/"
+test -f "$OUT/lib/cmake/wiitls/wiitlsConfig.cmake" || { echo "wiitlsConfig.cmake missing from the package" >&2; exit 1; }
 
-# Example: source, prebuilt DOL, a plain devkitPro Makefile
+# Examples: source, prebuilt DOLs, a plain devkitPro Makefile
 cp examples/https_get/main.c "$BUILD/examples/https_get/https_get.dol" "$OUT/example/"
+mkdir -p "$OUT/example/upload_mtls_abort"
+cp examples/upload_mtls_abort/main.c examples/upload_mtls_abort/CMakeLists.txt "$OUT/example/upload_mtls_abort/"
+if [ -f "$BUILD/examples/upload_mtls_abort/upload_mtls_abort.dol" ]; then
+    cp "$BUILD/examples/upload_mtls_abort/upload_mtls_abort.dol" "$OUT/example/upload_mtls_abort/"
+fi
 cat > "$OUT/example/Makefile" <<'EOF'
 # Builds https_get.dol against the prebuilt package (devkitPro shell).
 WIITLS  ?= ..
@@ -111,10 +96,28 @@ compiler: $("$DEVKITPPC/bin/powerpc-eabi-gcc" --version | head -1)
 options:  $(grep -E '^WTLS_(EVEREST|ACCEL|OPT|BN_ASM|P256M|GZIP):' "$BUILD/CMakeCache.txt" | sed 's/:[A-Z]*=/=/' | tr '\n' ' ')
 EOF
 
-# Self-check: build the example from the package alone
+# Self-check: build the example via Makefile and via find_package(wiitls)
 make -s -C "$OUT/example" WIITLS="$ROOT/$OUT" https_get.elf
 rm -f "$OUT/example/https_get.elf"
-echo "package self-check: example links against the package"
+CMAKE_CHK="$BUILD/consumer-check"
+rm -rf "$CMAKE_CHK"
+mkdir -p "$CMAKE_CHK"
+cat > "$CMAKE_CHK/CMakeLists.txt" <<EOF
+cmake_minimum_required(VERSION 3.20)
+project(wtls_pkg_check C)
+find_package(wiitls $VERSION REQUIRED)
+add_executable(pkg_check main.c)
+target_link_libraries(pkg_check PRIVATE wiitls::wiitls)
+ogc_create_dol(pkg_check)
+EOF
+cp examples/https_get/main.c "$CMAKE_CHK/main.c"
+cmake -S "$CMAKE_CHK" -B "$CMAKE_CHK/build" -G "Unix Makefiles" \
+    -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/Wii.cmake" \
+    -DCMAKE_PREFIX_PATH="$ROOT/$OUT" >/dev/null
+cmake --build "$CMAKE_CHK/build" -j4 >/dev/null
+test -f "$CMAKE_CHK/build/pkg_check.dol"
+rm -rf "$CMAKE_CHK"
+echo "package self-check: Makefile and find_package(wiitls) link against the package"
 
 (cd dist && rm -f "$NAME.zip" && cmake -E tar cf "$NAME.zip" --format=zip "$NAME")
 echo "dist/$NAME.zip"

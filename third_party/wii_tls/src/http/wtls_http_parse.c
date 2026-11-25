@@ -8,6 +8,7 @@
 #include "http/wtls_http_req.h" /* wtls_http_is_token, wtls_http_ieq */
 
 size_t wtls_http_head_end(const char *buf, size_t len) {
+    if (!buf) return 0;
     for (size_t i = 0; i < len; i++) {
         if (buf[i] != '\n') continue;
         if (i + 1 < len && buf[i + 1] == '\n') return i + 2;
@@ -41,7 +42,9 @@ static bool status_line(const char *s, size_t n, wtls_http_head *out) {
 }
 
 int wtls_http_parse_head(char *buf, size_t head_len, wtls_http_head *out) {
+    if (!out) return WTLS_ERR_ARG;
     memset(out, 0, sizeof *out);
+    if (!buf) return WTLS_ERR_HTTP;
     size_t pos = 0;
     char *last_end = NULL; /* end (NUL position) of the previous field's value, for obs-fold */
     bool first = true;
@@ -138,7 +141,7 @@ static bool cl_elem(const char *s, size_t n, void *ctx) {
     uint64_t v = 0;
     if (n == 0) st->bad = true;
     for (size_t i = 0; i < n && !st->bad; i++) {
-        if (s[i] < '0' || s[i] > '9' || v > (UINT64_MAX - 9) / 10) {
+        if (s[i] < '0' || s[i] > '9' || v > (UINT64_MAX - (uint64_t)(s[i] - '0')) / 10) {
             st->bad = true;
             break;
         }

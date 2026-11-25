@@ -17,6 +17,25 @@ jobs:
           cmake -S . -B build-wii -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Wii.cmake
           cmake --build build-wii -j
           test -f build-wii/libwiitls.a
+          test -f build-wii/tests/hw/wtls_hwtest.dol
+          test -f build-wii/examples/https_get/https_get.dol
+          test -f build-wii/examples/upload_mtls_abort/upload_mtls_abort.dol
+      - name: Verify install package (find_package)
+        run: |
+          VER=$(sed -n 's/^project(libwiitls VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          cmake --install build-wii --prefix dist-wii
+          mkdir -p test-consumer-wii && cat > test-consumer-wii/CMakeLists.txt <<EOF
+          cmake_minimum_required(VERSION 3.20)
+          project(wtls_consumer_wii C)
+          find_package(wiitls ${VER} REQUIRED)
+          add_executable(consumer main.c)
+          target_link_libraries(consumer PRIVATE wiitls::wiitls)
+          ogc_create_dol(consumer)
+          EOF
+          cp examples/https_get/main.c test-consumer-wii/main.c
+          cmake -S test-consumer-wii -B build-consumer-wii -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Wii.cmake -DCMAKE_PREFIX_PATH="$PWD/dist-wii"
+          cmake --build build-consumer-wii -j
+          test -f build-consumer-wii/consumer.dol
 
   host:
     runs-on: ubuntu-latest
@@ -24,11 +43,40 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y ninja-build openssl
-      - name: Build and test
+      - name: Build and test (Release)
         run: |
-          cmake -S . -B build-host -G Ninja -DCMAKE_C_COMPILER=gcc
+          cmake -S . -B build-host -G Ninja -DCMAKE_C_COMPILER=gcc -DCMAKE_BUILD_TYPE=Release
           cmake --build build-host
           ctest --test-dir build-host --output-on-failure
+      - name: Build and test (Debug + Thread Guard)
+        run: |
+          cmake -S . -B build-debug -G Ninja -DCMAKE_C_COMPILER=gcc -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-debug --target test_thread test_smoke test_tls test_http
+          ctest --test-dir build-debug -R "^(test_thread|test_smoke|test_tls|test_http)$" --output-on-failure
+      - name: Verify install package (find_package)
+        run: |
+          VER=$(sed -n 's/^project(libwiitls VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          cmake --install build-host --prefix dist-host
+          mkdir -p test-consumer && cat > test-consumer/CMakeLists.txt <<EOF
+          cmake_minimum_required(VERSION 3.20)
+          project(wtls_consumer C)
+          find_package(wiitls ${VER} REQUIRED)
+          add_executable(consumer main.c)
+          target_link_libraries(consumer PRIVATE wiitls::wiitls)
+          EOF
+          cat > test-consumer/main.c <<'EOF'
+          #include <assert.h>
+          #include <string.h>
+          #include <wiitls/wiitls.h>
+          #include <wiitls/http.h>
+          int main(void) {
+              assert(strcmp(wtls_version(), WTLS_VERSION) == 0);
+              return wtls_init() == WTLS_OK ? (wtls_shutdown(), 0) : 1;
+          }
+          EOF
+          cmake -S test-consumer -B build-consumer -G Ninja -DCMAKE_C_COMPILER=gcc -DCMAKE_PREFIX_PATH="$PWD/dist-host"
+          cmake --build build-consumer
+          ./build-consumer/consumer
 
   host-asan:
     runs-on: ubuntu-latest
@@ -45,3 +93,44 @@ jobs:
                 -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
           cmake --build build-asan
           ctest --test-dir build-asan --output-on-failure
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Clang and tools
+        run: sudo apt-get update && sudo apt-get install -y clang ninja-build openssl
+      - name: Build libFuzzer harnesses and run time-boxed regression
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: |
+          cmake -S . -B build-fuzz -G Ninja -DCMAKE_C_COMPILER=clang -DWTLS_BUILD_FUZZ=ON -DWTLS_BUILD_TESTS=OFF
+          cmake --build build-fuzz
+          ./build-fuzz/fuzz_http_parse    tests/fuzz/corpus/http_parse    -max_total_time=10
+          ./build-fuzz/fuzz_http_chunked  tests/fuzz/corpus/http_chunked  -max_total_time=10
+          ./build-fuzz/fuzz_url           tests/fuzz/corpus/url           -max_total_time=10
+          ./build-fuzz/fuzz_content_range tests/fuzz/corpus/content_range -max_total_time=10
+          ./build-fuzz/fuzz_http_gzip     tests/fuzz/corpus/http_gzip     -max_total_time=10
+          ./build-fuzz/fuzz_client_cred   tests/fuzz/corpus/client_cred   -max_total_time=10
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-openssl
+      - name: Build and test (Windows UCRT64 + Ninja)
+        shell: msys2 {0}
+        run: |
+          cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-win
+          ctest --test-dir build-win --output-on-failure

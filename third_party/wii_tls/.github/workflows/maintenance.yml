@@ -1,0 +1,51 @@
+name: maintenance
+
+on:
+  schedule:
+    # Check monthly on the 1st at 04:00 UTC for Mozilla CA bundle & Mbed TLS 4.1.x LTS updates
+    - cron: '0 4 1 * *'
+  workflow_dispatch:
+
+jobs:
+  ca-bundle-and-mbedtls-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Mozilla CA bundle update
+        id: ca
+        run: |
+          curl -fsSL -o /tmp/cacert.pem https://curl.se/ca/cacert.pem
+          curl -fsSL -o /tmp/cacert.pem.sha256 https://curl.se/ca/cacert.pem.sha256
+          OLD=$(awk '{print $1}' data/cacert.pem.sha256)
+          NEW=$(awk '{print $1}' /tmp/cacert.pem.sha256)
+          echo "current=$OLD upstream=$NEW"
+          if [ "$OLD" != "$NEW" ]; then
+            cp /tmp/cacert.pem data/cacert.pem
+            cp /tmp/cacert.pem.sha256 data/cacert.pem.sha256
+            python3 tools/gen_ca_bundle.py --pem data/cacert.pem \
+              --sha256 data/cacert.pem.sha256 --out src/gen/ca_bundle.c
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check latest Mbed TLS 4.1.x LTS release
+        run: |
+          CURRENT=$(sed -n 's/.*mbedtls-\([0-9.]*\)\.tar\.bz2.*/\1/p' CMakeLists.txt | head -1)
+          LATEST=$(curl -fsSL https://api.github.com/repos/Mbed-TLS/mbedtls/releases \
+            | python3 -c "import json,re,sys; tags=[r['tag_name'] for r in json.load(sys.stdin) if re.match(r'^(v|mbedtls-)?4\.1\.\d+$', r['tag_name'])]; print(tags[0] if tags else '')")
+          echo "Mbed TLS current=$CURRENT latest_4_1=$LATEST"
+          if [ -n "$LATEST" ] && [ "${LATEST#mbedtls-}" != "$CURRENT" ] && [ "${LATEST#v}" != "$CURRENT" ]; then
+            echo "::notice::New Mbed TLS 4.1.x release available: $LATEST (current: $CURRENT)"
+          fi
+
+      - name: Upload regenerated CA bundle artifact if updated
+        if: steps.ca.outputs.updated == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: updated-ca-bundle
+          path: |
+            data/cacert.pem
+            data/cacert.pem.sha256
+            src/gen/ca_bundle.c

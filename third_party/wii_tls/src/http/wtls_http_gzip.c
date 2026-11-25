@@ -24,7 +24,9 @@ wtls_gzip *wtls_gzip_new(void) {
 
 int wtls_gzip_inflate(wtls_gzip *g, const uint8_t *in, size_t in_len, size_t *used, uint8_t *out, size_t out_cap,
                       size_t *produced) {
-    *used = *produced = 0;
+    if (used) *used = 0;
+    if (produced) *produced = 0;
+    if (!g || !used || !produced || (!in && in_len) || (!out && out_cap)) return WTLS_ERR_ARG;
     for (;;) {
         if (g->need_reset) {
             if (*used == in_len) return WTLS_OK;
@@ -35,9 +37,9 @@ int wtls_gzip_inflate(wtls_gzip *g, const uint8_t *in, size_t in_len, size_t *us
         /* uInt is 32 bits: hand zlib at most that much per call. */
         uInt ai = in_left > 0x40000000u ? 0x40000000u : (uInt)in_left;
         uInt ao = out_left > 0x40000000u ? 0x40000000u : (uInt)out_left;
-        g->z.next_in = (Bytef *)(in + *used);
+        g->z.next_in = in ? (Bytef *)(in + *used) : NULL;
         g->z.avail_in = ai;
-        g->z.next_out = out + *produced;
+        g->z.next_out = out ? (out + *produced) : NULL;
         g->z.avail_out = ao;
         int zr = inflate(&g->z, Z_NO_FLUSH);
         size_t u = ai - g->z.avail_in, p = ao - g->z.avail_out;
@@ -63,7 +65,10 @@ int wtls_gzip_inflate(wtls_gzip *g, const uint8_t *in, size_t in_len, size_t *us
     }
 }
 
-int wtls_gzip_finish(const wtls_gzip *g) { return g->in_member ? WTLS_ERR_IO : WTLS_OK; }
+int wtls_gzip_finish(const wtls_gzip *g) {
+    if (!g) return WTLS_ERR_ARG;
+    return g->in_member ? WTLS_ERR_IO : WTLS_OK;
+}
 
 void wtls_gzip_free(wtls_gzip *g) {
     if (!g) return;

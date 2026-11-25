@@ -1,5 +1,7 @@
 #include "ui/layout.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 
@@ -65,9 +67,11 @@ std::span<const Game* const> gamesFor(const Library& lib, const BarEntry& e, std
     return scratch.first(n);
 }
 
-GridMetrics gridMetrics(float logicalWidth) {
-    if (logicalWidth >= 854.0f) return GridMetrics{104, 146, 16, 75, 56, 72, 6};
-    return GridMetrics{88, 123, 12, 26, 56, 72, 6};
+GridMetrics gridMetrics(float logicalWidth, float coverAspect) {
+    GridMetrics m = logicalWidth >= 854.0f ? GridMetrics{104, 146, 16, 75, 56, 72, 6} : GridMetrics{88, 123, 12, 26, 56, 72, 6};
+    // Die 5:7-Höhe ist die Grundform; andere Formate skalieren sie (quer 10:7 → halbe Höhe).
+    if (coverAspect > 0.0f) m.tileH = std::round(m.tileH * (5.0f / 7.0f) / coverAspect);
+    return m;
 }
 
 void GridModel::reset(int itemCount, const GridMetrics& m, float viewHeight) {
@@ -79,14 +83,23 @@ void GridModel::reset(int itemCount, const GridMetrics& m, float viewHeight) {
     scroll_ = 0.0f;
 }
 
-void GridModel::setFocus(int index) {
+void GridModel::setFocus(int index, bool scrollIntoView) {
     if (index < 0 || index >= count_) {
         focus_ = -1;
         return;
     }
     focus_ = last_ = index;
-    updateScroll();
+    if (scrollIntoView) updateScroll();
 }
+
+float GridModel::maxScroll() const {
+    if (count_ == 0 || m_.columns <= 0) return 0.0f;
+    const int rows = (count_ + m_.columns - 1) / m_.columns;
+    const float content = 2 * kGridTopPad + static_cast<float>(rows) * rowPitch() - m_.gap;
+    return content > viewHeight_ ? content - viewHeight_ : 0.0f;
+}
+
+void GridModel::scrollBy(float dy) { scroll_ = std::clamp(scroll_ + dy, 0.0f, maxScroll()); }
 
 void GridModel::move(int dx, int dy) {
     if (count_ == 0) return;

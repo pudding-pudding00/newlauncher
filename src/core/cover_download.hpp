@@ -64,6 +64,13 @@ std::vector<std::string> updateMissingList(const std::vector<std::string>& old, 
                                            const std::vector<std::string>& missed);
 std::string missingListText(const std::vector<std::string>& stems);
 
+// M23 „Cover-Cache löschen“: alle Dateien in covers_src/<konsole> und cache/covers/<konsole> (alle Konsolen außer
+// Kanälen) und die Fehlliste. Andere Dateien bleiben. failed zählt Dateien, die sich nicht löschen ließen.
+struct CoverClearResult {
+    u32 removed = 0, failed = 0;
+};
+CoverClearResult clearCoverCache(FileSystem& fs, std::string_view libRoot);
+
 bool isPng(std::span<const u8> data);
 
 struct DownloadSummary {

@@ -29,6 +29,11 @@ void setTlsCaPath(std::string path);
 // [debug] perf (Spec v2 4.6): je erfolgreichem TLS-Handshake "NL_PERF tls heap=<Bytes> ms=<Dauer>". Wie setTlsCaPath
 // vor dem ersten submit setzen.
 void setNetPerf(bool on);
+bool netPerf();
+// M23 (nur im Netz-Thread): kam die letzte httpGet-Antwort über eine wiederverwendete Keep-Alive-Verbindung, und
+// wie lange dauerte ihr TLS-Handshake (0 bei Wiederverwendung, Klartext oder ohne NL_TLS)?
+bool lastRequestReused();
+u32 lastHandshakeMs();
 // Stand für die Systeminfo (vom Haupt-Thread lesbar): true, sobald in dieser Sitzung die Uhr per SNTP gestellt
 // wurde. Ohne NL_TLS immer false.
 bool clockSynced();

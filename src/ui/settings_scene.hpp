@@ -43,6 +43,7 @@ private:
     AppCommand pendingAction_ = AppCommand::None;  // Aktion nach SaveSettings im nächsten Frame
     Console pendingConsole_ = Console::Wii;        // OpenOptions: Wii- oder GameCube-Spiele
     int focus_ = 0;
+    bool armed_ = false;  // M23: „Cover-Cache löschen“ wartet auf das zweite A
     bool keysSincePointerMove_ = false;
 };
 

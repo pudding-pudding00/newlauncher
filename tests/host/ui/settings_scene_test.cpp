@@ -152,7 +152,7 @@ TEST_CASE_FIXTURE(Fixture, "Karte mit allen Zeilen passt in 480 Zeilen") {
     const gfx::Rect first = s.rowRect(ctx, 0);
     const gfx::Rect last = s.rowRect(ctx, SettingsScene::kCount - 1);
     CHECK(first.y >= 0.0f);
-    CHECK(last.y + last.h + 24.0f + 16.0f <= 480.0f + 0.5f);
+    CHECK(last.y + last.h + 24.0f + 8.0f <= 480.0f + 0.5f);
 }
 
 TEST_CASE_FIXTURE(Fixture, "A auf Fehlende Cover laden") {
@@ -160,6 +160,36 @@ TEST_CASE_FIXTURE(Fixture, "A auf Fehlende Cover laden") {
     const SceneRequests r = press(Action::Confirm);
     CHECK(r.pop);
     CHECK(r.command == AppCommand::FetchCovers);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Cover-Cache löschen braucht zweimal A (M23)") {
+    focusRow(SettingRow::ClearCovers);
+    CHECK(s.valueTextFor(SettingRow::ClearCovers).empty());
+    SceneRequests r = press(Action::Confirm);
+    CHECK_FALSE(r.pop);
+    CHECK(r.command == AppCommand::None);
+    CHECK(s.valueTextFor(SettingRow::ClearCovers) == tr(Str::ClearCoversConfirm));
+    r = press(Action::Confirm);
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::ClearCovers);
+    CHECK(std::string(appCommandName(AppCommand::ClearCovers)) == "clear_covers");
+}
+
+TEST_CASE_FIXTURE(Fixture, "Cover-Cache löschen: Fokuswechsel und B entschärfen (M23)") {
+    focusRow(SettingRow::ClearCovers);
+    press(Action::Confirm);
+    press(Action::Down);
+    CHECK(s.valueTextFor(SettingRow::ClearCovers).empty());
+    press(Action::Up);
+    SceneRequests r = press(Action::Confirm);
+    CHECK(r.command == AppCommand::None);
+    r = press(Action::Back);
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::None);
+    s.onEnter();
+    focusRow(SettingRow::ClearCovers);
+    r = press(Action::Confirm);
+    CHECK(r.command == AppCommand::None);  // nach erneutem Öffnen wieder unscharf
 }
 
 TEST_CASE_FIXTURE(Fixture, "A auf Bibliothek neu scannen nach Änderung") {

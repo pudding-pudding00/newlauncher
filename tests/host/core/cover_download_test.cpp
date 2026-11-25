@@ -278,3 +278,31 @@ TEST_CASE("Fehlliste: lesen, fortführen, schreiben (M22)") {
     CHECK(missingListText({"nes/B", "wii/X"}) == "nes/B\nwii/X\n");
     CHECK(missingListText({}).empty());
 }
+
+TEST_CASE("clearCoverCache löscht PNGs, Texturen und Fehlliste aller Konsolen, sonst nichts (M23)") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/newlauncher/covers_src/nes/A.png", {1});
+    fs.addFile("sd:/newlauncher/covers_src/wii/RMCP01.png", {1});
+    fs.addFile("sd:/newlauncher/cache/covers/gba/B.tex", {1});
+    fs.addFile("sd:/newlauncher/cache/covers/missing.txt", {'x', '\n'});
+    fs.addFile("sd:/newlauncher/cache/index.bin", {1});      // anderer Cache bleibt
+    fs.addFile("sd:/newlauncher/covers_src/readme.txt", {1});  // nicht in einem Konsolenordner
+    fs.addFile("sd:/roms/nes/A.nes", {1});
+    const CoverClearResult r = clearCoverCache(fs, "sd:");
+    CHECK(r.removed == 4);
+    CHECK(r.failed == 0);
+    CHECK_FALSE(fs.readAll("sd:/newlauncher/covers_src/nes/A.png", 16).isOk());
+    CHECK_FALSE(fs.readAll("sd:/newlauncher/covers_src/wii/RMCP01.png", 16).isOk());
+    CHECK_FALSE(fs.readAll("sd:/newlauncher/cache/covers/gba/B.tex", 16).isOk());
+    CHECK_FALSE(fs.readAll(missingListPath("sd:"), 16).isOk());
+    CHECK(fs.readAll("sd:/newlauncher/cache/index.bin", 16).isOk());
+    CHECK(fs.readAll("sd:/newlauncher/covers_src/readme.txt", 16).isOk());
+    CHECK(fs.readAll("sd:/roms/nes/A.nes", 16).isOk());
+}
+
+TEST_CASE("clearCoverCache auf leerer Wurzel ist kein Fehler (M23)") {
+    test::MemFileSystem fs;
+    const CoverClearResult r = clearCoverCache(fs, "usb:");
+    CHECK(r.removed == 0);
+    CHECK(r.failed == 0);
+}

@@ -4,6 +4,7 @@
 #include <malloc.h>
 
 #include "core/cover_paths.hpp"
+#include "core/tex_file.hpp"
 #include "platform/log.hpp"
 
 namespace nl::app {
@@ -42,7 +43,13 @@ ui::CoverView CoverService::view(const Game& game) const {
     const std::string& stem = stemOf(game);
     const auto slot = cache_.slotOf(stem);
     if (!slot) return {};
-    return ui::CoverView{static_cast<gfx::TextureId>(gfx::kCoverTextureBase + *slot), cache_.fadeAlpha(stem)};
+    ui::CoverView v{static_cast<gfx::TextureId>(gfx::kCoverTextureBase + *slot), cache_.fadeAlpha(stem)};
+    if (const auto box = cache_.contentBox(stem); box && box->x1 > box->x0 && box->y1 > box->y0) {
+        v.uv = gfx::UvRect{float(box->x0) / kCoverW, float(box->y0) / kCoverH, float(box->x1) / kCoverW,
+                           float(box->y1) / kCoverH};
+        v.aspect = float(box->x1 - box->x0) / float(box->y1 - box->y0);
+    }
+    return v;
 }
 
 const void* CoverService::texels(gfx::TextureId id) const {
@@ -69,7 +76,9 @@ void CoverService::takeResult() {
             if (perf_ != nullptr && !r->converted) {
                 if (const auto at = cache_.requestedAtMs(r->stem)) perf_->coverLoaded(cache_.nowMs() - *at);
             }
-            cache_.complete(r->stem, r->texels, r->bytes);
+            // M23: Inhalt ohne transparenten Rand (eingepasstes Querformat), auch aus alten .tex-Dateien.
+            const auto box = cmprOpaqueBox(std::span<const u8>(static_cast<const u8*>(r->texels), r->bytes), kCoverW, kCoverH);
+            cache_.complete(r->stem, r->texels, r->bytes, box);
         } else {
             if (!r->error.empty()) log::line("NL_COVER_FAIL %s %s", r->stem.c_str(), r->error.c_str());
             cache_.fail(r->stem);

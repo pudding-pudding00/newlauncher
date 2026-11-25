@@ -36,6 +36,7 @@ enum class AppCommand : u8 {
     OpenVcMap,
     SaveVcMap,
     FetchCovers,
+    ClearCovers,      // M23: alle gecachten Cover löschen
     SettingsChanged,  // Einstellungsszene hat die Live-Config geändert (Sprache/Theme/Audio sofort anwenden)
     SaveSettings,     // config.ini schreiben
     Rescan,           // Bibliothek neu scannen

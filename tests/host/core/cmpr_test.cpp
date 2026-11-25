@@ -75,3 +75,24 @@ TEST_CASE("CMPR: ungültige Größe") {
     CHECK(encodeCmpr(image(12, 8, 0), 12, 8).empty());
     CHECK(encodeCmpr(image(8, 8, 0), 16, 8).empty());  // Puffer zu klein
 }
+
+TEST_CASE("cmprOpaqueBox: Inhalt ohne transparenten Rand, auf 4 px genau (M23)") {
+    // Querformat wie ein SNES-Cover: 200×280, deckend nur in den Zeilen 66..213.
+    std::vector<u8> px = image(200, 280, 0x00000000);
+    for (int y = 66; y < 214; ++y)
+        for (int x = 0; x < 200; ++x) setPx(px, 200, x, y, 0x204060FF);
+    const auto box = cmprOpaqueBox(encodeCmpr(px, 200, 280), 200, 280);
+    REQUIRE(box.has_value());
+    CHECK(box->x0 == 0);
+    CHECK(box->x1 == 200);
+    CHECK(box->y0 == 64);
+    CHECK(box->y1 == 216);
+}
+
+TEST_CASE("cmprOpaqueBox: ganz deckend und ganz transparent (M23)") {
+    const auto full = cmprOpaqueBox(encodeCmpr(image(200, 280, 0x000000FF), 200, 280), 200, 280);  // schwarz, deckend
+    REQUIRE(full.has_value());
+    CHECK((full->x0 == 0 && full->y0 == 0 && full->x1 == 200 && full->y1 == 280));
+    CHECK_FALSE(cmprOpaqueBox(encodeCmpr(image(200, 280, 0x00000000), 200, 280), 200, 280).has_value());
+    CHECK_FALSE(cmprOpaqueBox(std::vector<u8>(10), 200, 280).has_value());  // zu kurz
+}

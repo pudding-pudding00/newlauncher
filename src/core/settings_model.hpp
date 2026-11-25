@@ -25,6 +25,7 @@ enum class SettingRow : u8 {
     CoverAuto,  // [covers] auto (M21)
     Rescan,
     FetchCovers,
+    ClearCovers,  // M23: Cover-Cache löschen (zweimal A)
     VcMap,
     Emulators,
     WiiGames,  // globale Spieloptionen Wii (M14)
@@ -38,7 +39,7 @@ enum class SettingRow : u8 {
     Count
 };
 
-bool isAction(SettingRow r);  // Rescan, FetchCovers, VcMap, Emulators, WiiGames, GcGames, SysInfo, About, SelfUpdate, Restart: lösen etwas aus statt einen Wert zu ändern
+bool isAction(SettingRow r);  // Rescan, FetchCovers, ClearCovers, VcMap, Emulators, WiiGames, GcGames, SysInfo, About, SelfUpdate, Restart: lösen etwas aus statt einen Wert zu ändern
 // dir = ±1. Uhrzeiten ±30 min mit Umlauf, Lautstärke ±10 begrenzt auf 0..100, sonst zyklisch.
 void stepSetting(Config& c, SettingRow r, int dir);
 // DarkFrom/DarkTo nur bei ThemeMode::Auto, Volume nur bei eingeschalteter Musik.

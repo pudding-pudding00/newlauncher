@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "core/cmpr.hpp"
 #include "core/types.hpp"
 
 namespace nl {
@@ -39,7 +40,8 @@ public:
     // Gewünschter Pending-Eintrag mit höchster Priorität (bei Gleichstand der zuletzt gewünschte);
     // er gilt danach als in Arbeit. Verdrängt vorher auf das Budget.
     std::optional<std::string> nextRequest();
-    void complete(std::string_view stem, void* texels, u32 bytes);  // texels aus mem.alloc
+    // texels aus mem.alloc; box: Inhalt ohne transparenten Rand (M23), nullopt = ganze Textur
+    void complete(std::string_view stem, void* texels, u32 bytes, std::optional<PixelBox> box = std::nullopt);
     void fail(std::string_view stem);
     void invalidate(std::string_view stem);  // Missing → Unknown (nach einem Download)
     void clear();
@@ -47,6 +49,7 @@ public:
     CoverState state(std::string_view stem) const;
     const void* texels(std::string_view stem) const;
     float fadeAlpha(std::string_view stem) const;
+    std::optional<PixelBox> contentBox(std::string_view stem) const;  // nur Ready mit Angabe
     std::optional<u16> slotOf(std::string_view stem) const;  // nur Ready
     // Perf (M7): Zeitpunkt des ersten Visible-want in der laufenden Pending-Phase; Prefetch zählt nicht,
     // weil die Latenz messen soll, wie lange ein sichtbarer Platz leer bleibt.
@@ -69,6 +72,7 @@ private:
         void* texels = nullptr;
         u32 bytes = 0;
         float readyAtMs = 0;
+        std::optional<PixelBox> box{};
         float requestedAtMs = -1;  // < 0: keine Visible-Anfrage in dieser Pending-Phase
     };
     struct Hash {

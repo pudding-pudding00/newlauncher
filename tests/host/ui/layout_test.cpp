@@ -1,4 +1,5 @@
 #include "ui/layout.hpp"
+#include "ui/cover_provider.hpp"
 #include "ui/strings.hpp"
 #include "ui/test_library.hpp"
 #include <doctest/doctest.h>
@@ -20,6 +21,27 @@ TEST_CASE("gridMetrics füllt die Breite exakt") {
     CHECK(gridMetrics(640).tileH == 123);
     CHECK(gridMetrics(854).tileW == 104);
     CHECK(gridMetrics(854).tileH == 146);
+}
+
+TEST_CASE("gridMetrics: Kachelhöhe folgt dem Cover-Format, Breite bleibt (M23)") {
+    CHECK(gridMetrics(854, 5.0f / 7.0f).tileH == 146);
+    CHECK(gridMetrics(854, 1.0f).tileH == 104);
+    CHECK(gridMetrics(854, 10.0f / 7.0f).tileH == 73);
+    CHECK(gridMetrics(640, 1.0f).tileH == 88);
+    CHECK(gridMetrics(640, 10.0f / 7.0f).tileH == 62);
+    CHECK(gridMetrics(854, 10.0f / 7.0f).tileW == 104);
+}
+
+TEST_CASE("fitAspectRect: zentriert, ohne Verzerrung (M23)") {
+    const gfx::Rect r{10, 20, 104, 73};
+    const gfx::Rect q = fitAspectRect(r, 4, 10.0f / 7.0f);
+    CHECK(q.w / q.h == doctest::Approx(10.0 / 7.0));
+    CHECK(q.h == doctest::Approx(65.0f));
+    CHECK(q.x + q.w / 2 == doctest::Approx(r.x + r.w / 2));
+    CHECK(q.y + q.h / 2 == doctest::Approx(r.y + r.h / 2));
+    const gfx::Rect p = fitAspectRect(gfx::Rect{0, 0, 104, 146}, 4, 1.0f);  // quadratisch in 5:7: Breite voll
+    CHECK(p.w == doctest::Approx(96.0f));
+    CHECK(p.h == doctest::Approx(96.0f));
 }
 
 TEST_CASE("Testbibliothek hat die geplanten Mengen") {

@@ -58,7 +58,7 @@ std::optional<std::string> CoverCache::nextRequest() {
     return best->stem;
 }
 
-void CoverCache::complete(std::string_view stem, void* texels, u32 bytes) {
+void CoverCache::complete(std::string_view stem, void* texels, u32 bytes, std::optional<PixelBox> box) {
     Entry* e = find(stem);
     if (!e) {
         mem_.free(texels);
@@ -69,6 +69,7 @@ void CoverCache::complete(std::string_view stem, void* texels, u32 bytes) {
     e->state = CoverState::Ready;
     e->texels = texels;
     e->bytes = bytes;
+    e->box = box;
     e->readyAtMs = nowMs_;
     bytesUsed_ += bytes;
     ++readyCount_;
@@ -116,6 +117,11 @@ void CoverCache::clear() {
     entries_.clear();
     index_.clear();
     ++generation_;
+}
+
+std::optional<PixelBox> CoverCache::contentBox(std::string_view stem) const {
+    const Entry* e = find(stem);
+    return e && e->state == CoverState::Ready ? e->box : std::nullopt;
 }
 
 CoverState CoverCache::state(std::string_view stem) const {

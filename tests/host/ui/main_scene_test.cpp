@@ -755,3 +755,101 @@ TEST_CASE_FIXTURE(Fixture, "WLAN-Zustände (Disconnected, Connecting, Connected)
     CHECK(disconnectedQuads > connectedQuads);  // roter Punkt bei Disconnected erzeugt zusätzliche Quads
     setLanguage(savedLang);
 }
+
+namespace {
+struct MixedGames {  // je drei N64-, GB- und NES-Spiele
+    std::vector<std::string> keys;
+    std::vector<Game> games;
+    MixedGames() {
+        const std::pair<Console, const char*> kinds[] = {{Console::Nes, "nes/"}, {Console::Gb, "gb/"}, {Console::N64, "n64/"}};
+        for (const auto& [c, prefix] : kinds)
+            for (int i = 0; i < 3; ++i) keys.push_back(std::string(prefix) + char('a' + i));
+        for (std::size_t i = 0; i < keys.size(); ++i)
+            games.push_back(Game{i < 3 ? Console::Nes : i < 6 ? Console::Gb : Console::N64, keys[i].c_str(), keys[i].c_str(), 0, 0});
+    }
+    Library library() const { return Library{games, {}, {}}; }
+};
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "Kachelhöhe je Konsole nach Cover-Format, gemischte Listen 5:7 (M23)") {
+    ctx.width = 854;
+    const MixedGames mixed;
+    MainScene s(mixed.library());
+    step(s, InputFrame{});
+    int seen = 0;
+    for (int i = 0; i < 5; ++i) {
+        s.selectBarForTest(i);
+        const std::string label = s.barLabelText(i);
+        const float h = s.grid().tileRect(0, 0).h;
+        float want = 146.0f;  // NES, Favoriten, Zuletzt
+        if (label == "N64") want = 73.0f;
+        if (label == "GB") want = 104.0f;
+        if (label == "N64" || label == "GB" || label == "NES") ++seen;
+        CHECK(h == want);
+        CHECK(s.grid().tileRect(0, 0).w == 104.0f);
+    }
+    CHECK(seen == 3);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Cover: Inhaltsbereich als UV, eingepasst ohne Verzerrung (M23)") {
+    ctx.width = 854;
+    const MixedGames mixed;
+    MainScene s(mixed.library());
+    test::FakeCovers covers;
+    CoverView cv{7, 1.0f};
+    cv.uv = gfx::UvRect{0, 64.0f / 280, 1, 216.0f / 280};
+    cv.aspect = 200.0f / 152.0f;
+    covers.views["n64/a"] = cv;
+    s.setCovers(&covers);
+    step(s, InputFrame{});
+    for (int i = 0; i < 5; ++i)
+        if (std::string(s.barLabelText(i)) == "N64") s.selectBarForTest(i);
+    step(s, InputFrame{});
+    dl.clear();
+    s.draw(ctx, dl);
+    const gfx::Batch* cover = nullptr;
+    for (const gfx::Batch& b : dl.batches())
+        if (b.texture == 7) cover = &b;
+    REQUIRE(cover != nullptr);
+    const gfx::Vertex& tl = dl.vertices()[cover->firstVertex];
+    const gfx::Vertex& br = dl.vertices()[cover->firstVertex + 2];
+    CHECK(tl.v == doctest::Approx(64.0f / 280));
+    CHECK(br.v == doctest::Approx(216.0f / 280));
+    CHECK((br.x - tl.x) / (br.y - tl.y) == doctest::Approx(200.0 / 152.0).epsilon(0.01));
+    CHECK(br.y - tl.y < 73.0f);  // passt in die flache N64-Kachel (fokussiert leicht vergrößert)
+}
+
+TEST_CASE_FIXTURE(Fixture, "Zeiger im unteren Randstreifen scrollt, Fokus folgt der Kachel darunter (M23)") {
+    ctx.width = 854;
+    const ManyGames many(60);  // 10 Reihen
+    MainScene s(many.library());
+    step(s, InputFrame{});
+    const float bottom = s.grid().viewTop() + s.grid().viewHeight();
+    const float x = s.grid().tileRect(2, 0).x + 20;
+    step(s, pointer(x, bottom - 4));
+    for (int i = 0; i < 15; ++i) step(s, pointer(x, bottom - 4, false), 16);  // 0,25 s
+    const float after = s.grid().targetScroll();
+    CHECK(after > 0.0f);
+    CHECK(after <= s.grid().rowPitch() + 1.0f);  // höchstens etwa eine Reihe je 0,25 s
+    CHECK(s.focusIndex() == s.grid().hitTest(x, bottom - 4, after));
+    // Mitte: steht
+    step(s, pointer(x, s.grid().viewTop() + s.grid().viewHeight() / 2));
+    const float mid = s.grid().targetScroll();
+    for (int i = 0; i < 30; ++i) step(s, pointer(x, s.grid().viewTop() + s.grid().viewHeight() / 2, false), 16);
+    CHECK(s.grid().targetScroll() == mid);
+    // Oberer Streifen: zurück, nie unter 0
+    for (int i = 0; i < 300; ++i) step(s, pointer(x, s.grid().viewTop() + 2, false), 16);
+    CHECK(s.grid().targetScroll() == 0.0f);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Zeiger-Randscrollen endet an der letzten Reihe (M23)") {
+    ctx.width = 854;
+    const ManyGames many(60);
+    MainScene s(many.library());
+    step(s, InputFrame{});
+    const float bottom = s.grid().viewTop() + s.grid().viewHeight();
+    for (int i = 0; i < 2000; ++i) step(s, pointer(400, bottom - 1, i == 0), 16);
+    const gfx::Rect last = s.grid().tileRect(59, s.grid().targetScroll());
+    CHECK(last.y + last.h <= bottom);
+    CHECK(last.y + last.h >= bottom - 20.0f);  // die letzte Reihe ist ganz zu sehen, nicht weiter
+}

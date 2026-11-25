@@ -2138,6 +2138,20 @@ int main(int argc, char** argv) {
             case nl::ui::AppCommand::FetchCovers:
                 fetchCovers(false);
                 break;
+            case nl::ui::AppCommand::ClearCovers: {
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                net.join();         // laufende Downloads abbrechen (schreiben sonst weiter nach covers_src)
+                covers.clearAll();  // Cover-Thread anhalten, Texturen frei (Vorframe ist per GX_DrawDone fertig)
+                u32 removed = 0, failed = 0;
+                for (const std::string& root : coverRootsOf(store.devices())) {
+                    const nl::CoverClearResult r = nl::clearCoverCache(fs, root);
+                    removed += r.removed;
+                    failed += r.failed;
+                }
+                nl::log::line("NL_COVERS_CLEARED files=%u failed=%u", static_cast<unsigned>(removed),
+                              static_cast<unsigned>(failed));
+                break;
+            }
             case nl::ui::AppCommand::OpenEmulators:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 refreshEmuRows();

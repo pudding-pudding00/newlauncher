@@ -168,3 +168,20 @@ TEST_CASE("requestedAtMs ab dem ersten Visible-want") {
     CHECK_FALSE(c.requestedAtMs("nes/A").has_value());
     CHECK_FALSE(c.requestedAtMs("nes/unbekannt").has_value());
 }
+
+TEST_CASE("complete merkt den Inhaltsbereich, ohne Angabe keiner (M23)") {
+    FakeMemory mem;
+    CoverCache c(3 * kBytes, mem);
+    c.beginFrame(1, 0);
+    c.want("snes/A", CoverPriority::Visible);
+    c.want("nes/B", CoverPriority::Visible);
+    REQUIRE(c.nextRequest().has_value());
+    REQUIRE(c.nextRequest().has_value());
+    c.complete("snes/A", mem.alloc(kBytes), kBytes, PixelBox{0, 64, 200, 216});
+    finish(c, mem, "nes/B");
+    REQUIRE(c.contentBox("snes/A").has_value());
+    CHECK(c.contentBox("snes/A")->y0 == 64);
+    CHECK(c.contentBox("snes/A")->y1 == 216);
+    CHECK_FALSE(c.contentBox("nes/B").has_value());
+    CHECK_FALSE(c.contentBox("nes/X").has_value());
+}

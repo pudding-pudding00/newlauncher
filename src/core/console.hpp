@@ -24,4 +24,17 @@ struct ConsoleInfo {
 
 const ConsoleInfo& consoleInfo(Console c);
 
+// M23: typisches Seitenverhältnis (Breite/Höhe) der Cover einer Konsole, gemessen an libretro-Boxarts
+// (SNES/N64 512×357, GB/GBC/GBA 512×512, NES ~359×512) und GameTDB (Wii/GC 5:7). Bestimmt die Kachelhöhe.
+constexpr float coverAspect(Console c) {
+    switch (c) {
+        case Console::Snes:
+        case Console::N64: return 10.0f / 7.0f;
+        case Console::Gb:
+        case Console::Gbc:
+        case Console::Gba: return 1.0f;
+        default: return 5.0f / 7.0f;
+    }
+}
+
 }  // namespace nl

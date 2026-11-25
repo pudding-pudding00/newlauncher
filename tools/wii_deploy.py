@@ -1,6 +1,6 @@
 """Bringt den Launcher auf eine echte SD-Karte oder per wiiload auf die Wii (M7, Hardware-Abnahme).
 
-    python tools/wii_deploy.py E: [--init] [--perf on|off] [--dol PATH]
+    python tools/wii_deploy.py E: [--init] [--perf on|off] [--remote on|off] [--dol PATH]
     python tools/wii_deploy.py E: --selftest [--dol PATH]
     python tools/wii_deploy.py --wiiload 192.168.0.42 [--dol PATH]
     python tools/wii_deploy.py E: --emulators [NAME ...] [--repo URL] [--yes]
@@ -177,16 +177,21 @@ def deploy_release(sd: Path, dol: Path, init: bool) -> None:
         shutil.copy2(ARGV_ECHO_DOL, sd / "apps/argv_echo/boot.dol")
 
 
-def set_perf(sd: Path, on: bool) -> None:
+def set_debug_flag(sd: Path, key: str, on: bool) -> None:
+    """[debug] <key> = 1 in der config.ini der Karte setzen bzw. entfernen; der Rest der Datei bleibt."""
     cfg = sd / "newlauncher/config.ini"
     if not cfg.is_file() and not on:
         return
     raw = cfg.read_bytes() if cfg.is_file() else b""
     text = raw.decode("utf-8")
-    out = set_ini_value(text, "debug", "perf", "1" if on else None)
+    out = set_ini_value(text, "debug", key, "1" if on else None)
     if out != text or (on and not cfg.is_file()):
         cfg.parent.mkdir(parents=True, exist_ok=True)
         cfg.write_bytes(out.encode("utf-8"))
+
+
+def set_perf(sd: Path, on: bool) -> None:
+    set_debug_flag(sd, "perf", on)
 
 
 def deploy_selftest(sd: Path, dol: Path) -> None:
@@ -225,6 +230,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("drive", nargs="?", help="Laufwerk oder Ordner der SD-Karte, z. B. E:")
     parser.add_argument("--init", action="store_true", help="auch ohne apps/-Ordner einrichten")
     parser.add_argument("--perf", choices=("on", "off"), help="[debug] perf in config.ini setzen bzw. entfernen")
+    parser.add_argument("--remote", choices=("on", "off"),
+                        help="[debug] remote in config.ini: Fernsteuerung auf TCP 4300 bei jedem Start (Fehlersuche)")
     parser.add_argument("--selftest", action="store_true", help="Selbsttest-Karte einrichten (leere Karte)")
     parser.add_argument("--wiiload", metavar="IP", help="DOL per wiiload an die Wii senden statt kopieren")
     parser.add_argument("--dol", type=Path, help="DOL (Standard: Release bzw. Selbsttest aus build/wii)")
@@ -238,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
     dol = args.dol or (SELFTEST_DOL if args.selftest else RELEASE_DOL)
     try:
         if args.emulators is not None:
-            if args.wiiload or args.selftest or args.perf or args.init or args.dol:
+            if args.wiiload or args.selftest or args.perf or args.remote or args.init or args.dol:
                 raise DeployError("--emulators nur allein mit Laufwerk, --repo und --yes")
             if not args.drive:
                 raise DeployError("Laufwerk fehlt (z. B. E:)")
@@ -247,8 +254,8 @@ def main(argv: list[str] | None = None) -> int:
                 raise DeployError(f"{sd} hat keinen apps/-Ordner: ist das die Homebrew-Karte?")
             return deploy_emulators(sd, args.emulators, args.repo, args.yes)
         if args.wiiload:
-            if args.drive or args.perf or args.init:
-                raise DeployError("--wiiload nicht zusammen mit Laufwerk, --perf oder --init verwenden")
+            if args.drive or args.perf or args.remote or args.init:
+                raise DeployError("--wiiload nicht zusammen mit Laufwerk, --perf, --remote oder --init verwenden")
             # Die Selbsttest-DOL schreibt Favoriten, Verlauf und Einstellungen auf die Karte in der Wii; per
             # wiiload lässt sich nicht prüfen, ob das eine leere Karte ist.
             if args.selftest or dol.name == SELFTEST_DOL.name:
@@ -262,15 +269,18 @@ def main(argv: list[str] | None = None) -> int:
             raise DeployError("Laufwerk fehlt (z. B. E:) oder --wiiload IP angeben")
         sd = _drive(args.drive)
         if args.selftest:
-            if args.perf:
-                raise DeployError("--perf gilt nur für die Release-Karte")
+            if args.perf or args.remote:
+                raise DeployError("--perf und --remote gelten nur für die Release-Karte")
             deploy_selftest(sd, dol)
             print(f"Selbsttest-Karte eingerichtet: {sd} (Homebrew Channel → „newlauncher Selbsttest“)")
             return 0
         deploy_release(sd, dol, args.init)
         if args.perf:
             set_perf(sd, args.perf == "on")
-        print(f"newlauncher nach {sd / 'apps/newlauncher'} kopiert" + (f", perf {args.perf}" if args.perf else ""))
+        if args.remote:
+            set_debug_flag(sd, "remote", args.remote == "on")
+        print(f"newlauncher nach {sd / 'apps/newlauncher'} kopiert" + (f", perf {args.perf}" if args.perf else "")
+              + (f", remote {args.remote}" if args.remote else ""))
         return 0
     except (DeployError, EmuInstallError, OSError, UnicodeDecodeError) as e:
         print(f"DEPLOY FEHLER: {e}")

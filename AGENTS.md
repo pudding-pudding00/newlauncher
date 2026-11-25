@@ -62,6 +62,6 @@ python tools/build_wii.py            # Wii-Build mit TLS  → build/wii/newlaunc
 python tools/build_wii.py --no-tls   # Wii-Build ohne TLS → build/wii-notls/
 python tools/check_licenses.py build/wii
 python tools/dolphin_smoke.py --marker NL_… [--debug key=value …]           # Smoke in Dolphin
-python tools/wii_deploy.py E: [--perf on|off]                               # SD-Karte bespielen (vorher fragen!)
+python tools/wii_deploy.py E: [--perf on|off] [--remote on|off]             # SD-Karte bespielen (vorher fragen!)
 python tools/wii_deploy.py --wiiload <IP>                                   # DOL per wiiload in den RAM der Wii
 ```

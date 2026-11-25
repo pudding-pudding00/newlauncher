@@ -11,6 +11,7 @@ Spec: `docs/superpowers/specs/2026-11-25-m24-raster-cover-speicher-design.md`.
 | R2 | Zuletzt und Favoriten mit gemischten Konsolen (Wii, SNES, GBA) | Jede Kachel im Format ihrer Konsole; Reihe so hoch wie die höchste Kachel, kleinere vertikal zentriert; Fokus und Zeiger treffen die richtige Kachel | ungeprüft |
 | R3 | Suche mit Treffern verschiedener Konsolen | wie R2 | ungeprüft |
 | R4 | Konsole mit geladenen Covern | Keine Konsolen-Plakette auf Kacheln mit Cover; Kacheln ohne Cover und Discs zeigen sie weiter | ungeprüft |
+| R5 | Fokus auf eine Kachel der obersten bzw. untersten Reihe | Die vergrößerte Kachel liegt über Konsolen- und Infoleiste und über den Nachbar-Kacheln, nicht darunter; beim Rand-Scrollen mit dem Zeiger schwebt keine weggescrollte Kachel über der Leiste | ungeprüft |
 | S1 | Erster Start nach dem Update ohne `[library] sort` | Spiele alphabetisch nach Titel | ungeprüft |
 | S2 | A–Z-Leiste öffnen (2 auf der Wiimote, X am GC-/Classic-Controller), dann − drücken | Toast „Sortiert nach Jahr“, Liste nach Jahr; nochmal − → „Sortiert nach Titel“; Leiste bleibt offen | ungeprüft |
 | S3 | Nach S2 neu starten | Zuletzt gewählte Sortierung bleibt (`config.ini`) | ungeprüft |

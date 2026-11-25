@@ -886,3 +886,50 @@ TEST_CASE_FIXTURE(Fixture, "sortLabel zeigt die Sortierung der Konsolenlisten (M
     s.setSort(SortOrder::Year, nullptr);
     CHECK(s.sortLabel() == std::string(tr(Str::SortOrder)) + ": " + tr(Str::SortYear));
 }
+
+TEST_CASE_FIXTURE(Fixture, "Fokus-Kachel liegt über Konsolen- und Infoleiste, andere Kacheln darunter") {
+    const ManyGames many(3);
+    MainScene s(many.library());
+    test::FakeCovers covers;
+    covers.views["nes/00"] = CoverView{7, 1.0f};  // fokussiert
+    covers.views["nes/01"] = CoverView{8, 1.0f};
+    s.setCovers(&covers);
+    step(s, InputFrame{});
+    dl.clear();
+    s.draw(ctx, dl);
+    // Letzter Quad über die volle Breite gehört zu einer Leiste (Hintergrund kommt zuerst).
+    u32 lastBar = 0;
+    const auto verts = dl.vertices();
+    for (u32 q = 0; q < dl.quadCount(); ++q)
+        if (verts[q * 4].x == 0.0f && verts[q * 4 + 1].x == doctest::Approx(ctx.width)) lastBar = q * 4;
+    REQUIRE(lastBar > 0);
+    u32 focused = 0, other = 0;
+    for (const gfx::Batch& b : dl.batches()) {
+        if (b.texture == 7) focused = b.firstVertex;
+        if (b.texture == 8) other = b.firstVertex;
+    }
+    REQUIRE(focused > 0);
+    REQUIRE(other > 0);
+    CHECK(focused > lastBar);
+    CHECK(other < lastBar);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Fokus-Kachel ragt höchstens um ihren Vergrößerungsrand über das Raster") {
+    const ManyGames many(3);
+    MainScene s(many.library());
+    test::FakeCovers covers;
+    covers.views["nes/00"] = CoverView{7, 1.0f};
+    s.setCovers(&covers);
+    for (int i = 0; i < 30; ++i) step(s, InputFrame{});  // Fokus-Animation fertig
+    dl.clear();
+    s.draw(ctx, dl);
+    const gfx::Batch* cover = nullptr;
+    for (const gfx::Batch& b : dl.batches())
+        if (b.texture == 7) cover = &b;
+    REQUIRE(cover != nullptr);
+    REQUIRE(cover->clipped);
+    const auto tile = s.grid().tileRect(0, 0.0f);
+    CHECK(cover->clip.y < s.grid().viewTop());                       // darf in die Konsolenleiste ragen …
+    CHECK(cover->clip.y >= s.grid().viewTop() - tile.h * 0.08f);     // … aber nur um den Rand
+    CHECK(cover->clip.y + cover->clip.h <= s.grid().viewTop() + s.grid().viewHeight() + tile.h * 0.08f);
+}

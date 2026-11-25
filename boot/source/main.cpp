@@ -131,7 +131,9 @@ int main()
 		{
 			if(normalCFG.GameBootType == TYPE_WII_DISC)
 			{
-				rUsb = Disc_SetUSB(NULL, false);
+				// USB-Modus abschalten: Fehler ignorieren wie upstream (nicht jeder cIOS kennt das ioctl).
+				s32 rOff = Disc_SetUSB(NULL, false);
+				gprintf("Disc_SetUSB(NULL) = %i\n", rOff);
 				if(CurrentIOS.Type == IOS_TYPE_HERMES)
 					Hermes_Disable_EHC();
 				if(normalCFG.vidMode > 1) //forcing a video mode

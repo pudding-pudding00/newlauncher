@@ -80,6 +80,10 @@ std::optional<u64> fileSize(FileSystem& fs, std::string_view path);
 // DOL-Pfad), RomMissing (Kontext ROM-Pfad), ArgsTooLong.
 Result<LaunchPlan, LaunchError> preflightEmulator(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus);
 
+// M20: beliebige DOL ohne ROM (Neustart des Launchers): argv = {dolPath, extraArgs…}.
+// Fehler: EmuMissing/EmuInvalid (Kontext DOL-Pfad), ArgsTooLong.
+Result<LaunchPlan, LaunchError> preflightDol(FileSystem& fs, std::string_view dolPath, std::span<const std::string> extraArgs);
+
 // M9: Fehler beim Abbilden einer Wii-Spieldatei. SectorSize/NoFatVolume/NotFat32 → WiiFsUnsupported,
 // PartMissing → RomMissing (Kontext: Pfad des fehlenden Teils), alles andere → WiiFileBroken.
 LaunchError fromFatError(FatError e, std::string context);

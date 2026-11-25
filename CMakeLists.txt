@@ -110,6 +110,7 @@ add_library(nl_core STATIC
     src/core/banner_budget.cpp
     src/core/aes128.cpp
     src/core/wii_partition.cpp
+    src/core/remote_proto.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp
@@ -295,6 +296,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/banner_worker.cpp
         src/platform/http_client.cpp
         src/platform/net_service.cpp
+        src/platform/remote_server.cpp
         src/platform/net_worker.cpp
         src/platform/emu_worker.cpp
         src/platform/cheat_worker.cpp

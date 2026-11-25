@@ -58,6 +58,7 @@
 #include "platform/http_client.hpp"
 #include "platform/net_service.hpp"
 #include "platform/net_worker.hpp"
+#include "platform/remote_server.hpp"
 #include "platform/nand_titles.hpp"
 #include "platform/scan_worker.hpp"
 #include "platform/std_fs.hpp"
@@ -314,6 +315,18 @@ int main(int argc, char** argv) {
     // 2. Video, Renderer, Atlas, Theme aus der Konfiguration
     nl::platform::Video video;
     video.init();
+    // M20: Fernsteuerung nur auf ausdrücklichen Wunsch (wiiload … --remote oder [debug] remote = 1).
+    nl::platform::RemoteServer remote;
+    if (nl::hasRemoteFlag(argc, argv) || config.debugRemote) {
+        nl::log::line("NL_REMOTE %s", remote.start() ? "start" : "fail");
+    }
+    // Eigene boot.dol für RESTART: argv[0], wenn es ein Gerätepfad ist (HBC), sonst der Standardort (wiiload).
+    const std::string selfDol = [&]() -> std::string {
+        const std::string_view a0 = argc > 0 && argv != nullptr && argv[0] != nullptr ? argv[0] : "";
+        if (a0.find(":/") != std::string_view::npos && a0.size() > 4 && a0.substr(a0.size() - 4) == ".dol")
+            return std::string(a0);
+        return "sd:/apps/newlauncher/boot.dol";
+    }();
     nl::platform::installCrashHandler();
     nl::gfx::Renderer renderer;
     if (auto r = renderer.init(video); !r.isOk()) {
@@ -1180,6 +1193,7 @@ int main(int argc, char** argv) {
         net.join();
         emu.join();
         cheatWorker.join();
+        remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
         netService.shutdown();  // wtls_shutdown im Netz-Thread, dann Thread beendet
         covers.shutdown();
         banners.shutdown();
@@ -1589,6 +1603,138 @@ int main(int argc, char** argv) {
     u64 nextWifiProbeMs = 0;
 #endif
     bool running = true;
+
+    // M20: Fernsteuerung. Der Socket-Thread liefert höchstens eine Anfrage gleichzeitig; hier wird sie ausgeführt.
+    u64 remoteKeyBits = 0;
+    u32 remoteKeyFrames = 0, remoteKeyRelease = 0;
+    auto replyAndWait = [&](bool ok, std::string info) {  // vor Start/Neustart/Ende: Antwort muss raus sein
+        const u32 before = remote.sentCount();
+        remote.reply(ok, std::move(info));
+        for (int i = 0; i < 200 && remote.sentCount() == before; ++i) usleep(10 * 1000);
+    };
+    auto restartSelf = [&]() {
+        const std::array<std::string, 1> extra{"--remote"};
+        auto plan = nl::preflightDol(fs, selfDol, extra);
+        if (!plan.isOk()) {
+            remote.reply(false, selfDol + ": " + plan.error().context);
+            return;
+        }
+        nl::log::line("NL_REMOTE restart %s", selfDol.c_str());
+        replyAndWait(true, selfDol);
+        worker.cancelAndJoin();
+        discDrive.shutdown();
+        net.join();
+        emu.join();
+        cheatWorker.join();
+        remote.stop();
+        netService.shutdown();
+        covers.shutdown();
+        banners.shutdown();
+        if (auto loaded = nl::launch::loadDolToBuffer(fs, plan.value()); !loaded.isOk()) {
+            nl::log::line("NL_WARN Neustart: %s", loaded.error().context.c_str());
+            running = false;  // Netz ist schon unten: sauber zum HBC zurück
+            return;
+        }
+        stopAudio();
+        logPerfSummary();
+        if (data.writable) nl::log::flushLogFile(fs, logPath);
+        input.shutdown();
+        nl::platform::unmountAll();
+        nl::platform::shutdownVideo();
+        nl::launch::chainload(plan.value());
+    };
+    auto handleRemote = [&]() {
+        if (!remote.running() || remoteKeyFrames > 0 || remoteKeyRelease > 0) return;
+        nl::RemoteRequest rq;
+        std::vector<u8> body;
+        if (!remote.take(rq, body)) return;
+        auto textBytes = [](const std::string& s) { return std::vector<u8>(s.begin(), s.end()); };
+        switch (rq.cmd) {
+            case nl::RemoteCmd::Hello:
+                remote.reply(true, std::string("newlauncher ") + NL_VERSION);
+                break;
+            case nl::RemoteCmd::Log:
+                remote.reply(true, "", nl::log::snapshot());
+                break;
+            case nl::RemoteCmd::Shot: {  // XFB ist ungecacht (video.cpp): direkt lesbar
+                const GXRModeObj* m = video.mode();
+                const u8* fb = static_cast<const u8*>(VIDEO_GetCurrentFramebuffer());
+                if (m == nullptr || fb == nullptr) {
+                    remote.reply(false, "kein Framebuffer");
+                    break;
+                }
+                const std::size_t bytes = static_cast<std::size_t>(m->fbWidth) * m->xfbHeight * 2;
+                remote.reply(true, std::to_string(m->fbWidth) + " " + std::to_string(m->xfbHeight) + " yuyv",
+                             std::vector<u8>(fb, fb + bytes));
+                break;
+            }
+            case nl::RemoteCmd::State: {
+                std::string s = std::string("version\t") + NL_VERSION + "\nfocus\t" + mainScene.focusedKey() +
+                                "\ndepth\t" + std::to_string(scenes.depth()) + "\ngames\t" +
+                                std::to_string(store.games().size()) + "\nwifi\t" +
+                                std::to_string(static_cast<int>(ctx.wifi)) + "\ndata\t" + data.dir + "\nself\t" +
+                                selfDol + "\n";
+                remote.reply(true, "", textBytes(s));
+                break;
+            }
+            case nl::RemoteCmd::Games: {
+                std::string s;
+                for (const nl::Game& g : store.games()) {
+                    s += g.key;
+                    s += '\t';
+                    s += nl::consoleInfo(g.console).key;
+                    s += '\t';
+                    s += g.title != nullptr ? g.title : "";
+                    s += '\n';
+                }
+                remote.reply(true, std::to_string(store.games().size()), textBytes(s));
+                break;
+            }
+            case nl::RemoteCmd::Key:  // Antwort nach dem Loslassen (oben in der Schleife)
+                remoteKeyBits = rq.buttons;
+                remoteKeyFrames = rq.frames;
+                remoteKeyRelease = 2;
+                break;
+            case nl::RemoteCmd::Launch: {
+                const nl::Game* found = nullptr;
+                for (const nl::Game& g : store.games()) {
+                    if (rq.text == g.key) {
+                        found = &g;
+                        break;
+                    }
+                }
+                if (found == nullptr) {
+                    remote.reply(false, "Spiel unbekannt: " + rq.text);
+                    break;
+                }
+                nl::log::line("NL_REMOTE launch %s", rq.text.c_str());
+                replyAndWait(true, rq.text);  // Ergebnis zeigen LOG/STATE; ein Start beendet die Verbindung
+                requestLaunch(*found);
+                break;
+            }
+            case nl::RemoteCmd::Put: {
+                if (!nl::remotePutAllowed(rq.text, data.dir)) {
+                    remote.reply(false, "Pfad nicht erlaubt");
+                    break;
+                }
+                const std::string dir = rq.text.substr(0, rq.text.rfind('/'));
+                const bool ok = fs.makeDirs(dir).isOk() && fs.writeAtomic(rq.text, body).isOk();
+                nl::log::line("NL_REMOTE put %s bytes=%u %s", rq.text.c_str(), static_cast<unsigned>(body.size()),
+                              ok ? "ok" : "fail");
+                remote.reply(ok, ok ? std::to_string(body.size()) : std::string("Schreiben fehlgeschlagen"));
+                break;
+            }
+            case nl::RemoteCmd::Restart:
+                restartSelf();
+                break;
+            case nl::RemoteCmd::Exit:
+                nl::log::line("NL_REMOTE exit");
+                replyAndWait(true, "");
+                running = false;
+                break;
+        }
+    };
+
     u64 prevFrameStart = 0;
     for (int frameNo = 0; running; ++frameNo) {
         static_cast<void>(frameNo);  // nur im Selbsttest gelesen
@@ -1610,8 +1756,16 @@ int main(int argc, char** argv) {
         input.poll();  // Geräte weiter abfragen, Eingaben kommen aber aus dem Skript
         nl::ui::InputFrame in = frame.begin(nl::app::selftestInput(frameNo, view));
 #else
-        nl::ui::InputFrame in = frame.begin(input.poll());
+        nl::ui::RawInput raw = input.poll();
+        if (remoteKeyFrames > 0) {  // M20: KEY hält die Tasten N Bilder lang, dann zwei Bilder loslassen
+            raw.held |= remoteKeyBits;
+            --remoteKeyFrames;
+        } else if (remoteKeyRelease > 0 && --remoteKeyRelease == 0) {
+            remote.reply(true, "");
+        }
+        nl::ui::InputFrame in = frame.begin(raw);
 #endif
+        if (readyReported) handleRemote();
         if (detailsBackAt != 0 && gettime() >= detailsBackAt) {  // nur für Tests (M18): [debug] details_back_ms
             detailsBackAt = 0;
             if (scenes.top() == &details) {
@@ -1837,6 +1991,7 @@ int main(int argc, char** argv) {
                 net.join();
                 emu.join();
                 cheatWorker.join();
+                remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
                 netService.shutdown();
                 covers.shutdown();
                 banners.shutdown();
@@ -2087,6 +2242,7 @@ int main(int argc, char** argv) {
     net.join();
     emu.join();
     cheatWorker.join();
+    remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
     netService.shutdown();
     covers.shutdown();
     banners.shutdown();

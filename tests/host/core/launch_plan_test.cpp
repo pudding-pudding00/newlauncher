@@ -886,3 +886,20 @@ TEST_CASE("preflightGame: vWii ohne GC-Port-Warnungen und mit wiiu_wide-Standard
     CHECK((static_cast<u8>(r.value().dol.args[1][0x00A]) & 0x40) == 0);
     CHECK((static_cast<u8>(r.value().dol.args[1][0x00B]) & 0x08) != 0);
 }
+
+TEST_CASE("preflightDol (M20): eigene DOL mit Zusatzargumenten, z. B. Neustart über die Fernsteuerung") {
+    const auto dol = goodDol();
+    test::MemFileSystem fs;
+    fs.addFile("sd:/apps/newlauncher/boot.dol", dol);
+    const std::vector<std::string> extra{"--remote"};
+    auto r = preflightDol(fs, "sd:/apps/newlauncher/boot.dol", extra);
+    REQUIRE(r.isOk());
+    CHECK(r.value().dolPath == "sd:/apps/newlauncher/boot.dol");
+    CHECK(r.value().dolSize == dol.size());
+    CHECK(r.value().args == std::vector<std::string>{"sd:/apps/newlauncher/boot.dol", "--remote"});
+    CHECK_FALSE(r.value().argvBlock.empty());
+
+    auto missing = preflightDol(fs, "sd:/apps/fehlt/boot.dol", {});
+    REQUIRE_FALSE(missing.isOk());
+    CHECK(missing.error().kind == LaunchFailure::EmuMissing);
+}

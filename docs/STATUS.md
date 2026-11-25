@@ -17,7 +17,8 @@ Stand: 2026-11-25, M23 (Cover-Cache löschen, Zeiger-Scrollen, Kacheln im Cover-
 | M20 | Direktstart von ROMs, Rückkehr-Stub, Fernsteuerung (TCP 4300), Selbst-Update, wii_tls **v0.2.0** mit HTTP/1.1-Client | #33 |
 | M21 | „Wii-Menü“ im Wii-Spiel führt über den Rückkehr-Stub zurück in newlauncher; Cover werden nach dem Start automatisch geladen (`[covers] auto`) | #34 |
 | M22 | Retro-Cover (NES bis GBA) lädt der Launcher selbst von libretro-thumbnails (GitHub, nur HTTPS) und merkt sich Fehltreffer in `cache/covers/missing.txt` | #36 |
-| M23 | Einstellung „Cover-Cache löschen“, Raster scrollt mit dem Zeiger an den Rändern, Kachelhöhe nach Cover-Format der Konsole, Download-Messung (`[debug] perf`) | Branch `feat/m23-cover-speed` |
+| M23 | Einstellung „Cover-Cache löschen“, Raster scrollt mit dem Zeiger an den Rändern, Kachelhöhe nach Cover-Format der Konsole, Download-Messung (`[debug] perf`) | #37 |
+| – | wii_tls auf Release **v0.3.0** (`b648ac2`): P-256-Signaturprüfung beschleunigt (Handshake laut Upstream 66 → 28 ms auf der Wii), Sende-Fix für IOS, mTLS und Streaming-Uploads (ungenutzt) | Branch `chore/wii-tls-0.3.0` |
 
 Die CI (`.github/workflows/build.yml`) baut Wii mit und ohne TLS und führt die Host-Tests aus.
 
@@ -61,6 +62,9 @@ Spec `docs/superpowers/specs/2026-11-25-m20-direktstart-design.md`, Abnahme
   Messung auf der Wii: Keep-Alive greift schon (ein Handshake, 122 ms), die Zeit geht in die Übertragung
   (300–550 KB je libretro-PNG bei ~400 KB/s) und ~170 ms Speichern. Parallele Downloads bräuchten einen
   wii_tls-Umbau, offen. Abnahme: [acceptance/m23-wii.md](acceptance/m23-wii.md), **ungeprüft**.
+- **Smoke `--remote-check` wackelt (2026-11-25):** 2 von 11 Läufen meldeten „REMOTE KEY (Fokus blieb …)“,
+  unabhängig von wii_tls (die Fernsteuerung nutzt es nicht). Vermutlich setzt ein Zeigerereignis in Dolphin den
+  Fokus zurück auf die Kachel unter dem Zeiger. Offen.
 
 **Hinweise für die Arbeit:**
 

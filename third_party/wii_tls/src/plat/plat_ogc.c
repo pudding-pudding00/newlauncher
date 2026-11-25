@@ -146,12 +146,29 @@ int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int 
 int wtls_plat_send(int fd, const uint8_t *buf, size_t len) {
     if (len == 0) return WTLS_ERR_ARG;
     if (len > WTLS_PLAT_MAX_CHUNK) len = WTLS_PLAT_MAX_CHUNK;
+    /* IOS /dev/net/ip/top has a ~4080-byte socket send buffer and a bug when
+     * IOS_O_NONBLOCK is set: if len exceeds the remaining space, net_send still
+     * queues the partial prefix into the TCP stream and returns -EAGAIN (-11),
+     * so retrying duplicates those bytes. Check POLLOUT without blocking and
+     * clear O_NONBLOCK around net_send so IOS never takes that path. */
+    int pr = poll_one(fd, IOS_POLLOUT, 0);
+    if (pr < 0) return WTLS_ERR_IO;
+    if (pr == 0) return WTLS_WANT_WRITE;
+    s32 fl = net_fcntl(fd, IOS_F_GETFL, 0);
+    bool toggled = fl >= 0 && (fl & IOS_O_NONBLOCK) != 0 &&
+                   net_fcntl(fd, IOS_F_SETFL, (u32)(fl & ~IOS_O_NONBLOCK)) == 0;
+    int ret = WTLS_ERR_IO;
     for (int attempt = 0;; attempt++) {
         s32 r = net_send(fd, buf, (s32)len, 0);
         int c = wtls_plat_ios_io_result(r, true, attempt);
-        if (c != WTLS_PLAT_RETRY) return c;
+        if (c != WTLS_PLAT_RETRY) {
+            ret = c;
+            break;
+        }
         usleep(IPC_RETRY_US);
     }
+    if (toggled) net_fcntl(fd, IOS_F_SETFL, (u32)fl);
+    return ret;
 }
 
 int wtls_plat_recv(int fd, uint8_t *buf, size_t len) {

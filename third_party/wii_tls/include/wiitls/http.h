@@ -27,6 +27,17 @@ typedef struct {
     const char *value; /**< no CR, LF or other control characters except HTAB */
 } wtls_http_header;
 
+/**
+ * Request body reader callback for streaming uploads.
+ *
+ * Writes up to @p len bytes into @p buf, reading from your source (SD card,
+ * RAM, generated on the fly) without buffering the whole body in memory.
+ *
+ * @return >0 bytes written, 0 at the end of the body (chunked only, see
+ *         body_chunked), or a negative value to abort the request.
+ */
+typedef int (*wtls_http_body_cb)(void *ctx, void *buf, size_t len);
+
 /** A request. Zero-initialise and set what you need. */
 typedef struct {
     const char *method;              /**< NULL => "GET"; RFC 9110 token, case-sensitive */
@@ -41,6 +52,10 @@ typedef struct {
     bool no_gzip;                    /**< do not offer gzip; bodies are returned as sent */
     const wtls_options *tls;         /**< NULL => defaults; ALPN is always "http/1.1"; for http:// only
                                           connect_timeout_ms and io_timeout_ms are used */
+    wtls_http_body_cb body_cb;        /**< streaming upload; mutually exclusive with body */
+    void *body_ctx;                   /**< opaque pointer passed to body_cb */
+    bool body_chunked;                /**< with body_cb: send Transfer-Encoding: chunked (no Content-Length;
+                                          the callback ends the body by returning 0) */
 } wtls_http_request;
 
 /** Opaque response handle. */
@@ -111,6 +126,40 @@ void wtls_http_result_free(wtls_http_result *res);
 
 /** Closes all idle keep-alive connections (wtls_shutdown() does this too). */
 void wtls_http_pool_flush(void);
+
+/**
+ * Percent-encodes @p in (length @p in_len) per RFC 3986: the unreserved
+ * characters A-Z a-z 0-9 - _ . ~ stay as they are, every other byte becomes
+ * %XX with upper case hex digits. Always NUL-terminates @p out on success.
+ *
+ * If @p out is NULL, writes the required byte count (excluding the NUL) to
+ * *out_len and returns WTLS_OK. Otherwise @p out_size must have room for
+ * that count plus one; *out_len receives the count.
+ *
+ * @return WTLS_OK, WTLS_ERR_ARG (NULL in or out_len), or WTLS_ERR_HTTP_LIMIT
+ *         if @p out_size is too small.
+ */
+wtls_status wtls_http_url_encode(const char *in, size_t in_len,
+                                 char *out, size_t out_size, size_t *out_len);
+
+/** A parsed RFC 9110 Content-Range value ("bytes <start>-<end>/<total|*>"). */
+typedef struct {
+    uint64_t start;  /**< first byte offset (inclusive) */
+    uint64_t end;    /**< last byte offset (inclusive, >= start) */
+    int64_t total;   /**< total representation length (>= end + 1), or -1 if '*' */
+} wtls_http_content_range;
+
+/**
+ * Parses a "bytes <start>-<end>/<total|*>" Content-Range value (as sent with
+ * a 206 Partial Content response, for resumable downloads). Rejects
+ * unsatisfied ranges (a star in place of the range), start > end, end >=
+ * total, numbers that do not fit, a missing space after "bytes" and
+ * trailing garbage; leading and trailing spaces are tolerated.
+ *
+ * @return WTLS_OK, WTLS_ERR_ARG (NULL), or WTLS_ERR_HTTP (malformed or
+ *         unsupported).
+ */
+wtls_status wtls_http_parse_content_range(const char *value, wtls_http_content_range *out);
 
 #ifdef __cplusplus
 }

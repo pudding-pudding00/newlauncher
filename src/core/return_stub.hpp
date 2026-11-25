@@ -16,7 +16,8 @@ inline constexpr u32 kReturnArgvAddr = 0x80002818;
 
 enum class ReturnStubError : u8 { NoExtents, NotContiguous, SectorMismatch, DolSize, ArgvTooLarge, TooManyExtents };
 
-// Extents in Dateireihenfolge, lückenlos; sie müssen genau ceil(dolSize / 512) Sektoren abdecken.
+// Extents in Dateireihenfolge, lückenlos, mindestens ceil(dolSize / 512) Sektoren (z. B. ganze Cluster aus
+// fileExtents); der Block enthält genau so viele.
 Result<std::vector<u8>, ReturnStubError> buildReturnParams(u32 dolSize, std::span<const Extent> extents,
                                                            std::span<const u8> argvBlock);
 

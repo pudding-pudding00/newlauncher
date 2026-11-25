@@ -47,6 +47,7 @@
 #include "gfx/font_loader.hpp"
 #include "gfx/renderer.hpp"
 #include "launch/chainloader.hpp"
+#include "launch/return_stub.hpp"
 #include "launch/channel.hpp"
 #include "launch/wii_boot.hpp"
 #include "platform/crash.hpp"
@@ -328,6 +329,11 @@ int main(int argc, char** argv) {
             return std::string(a0);
         return "sd:/apps/newlauncher/boot.dol";
     }();
+    // M20 (Spec 4.3): Hat uns der Rückkehr-Stub geladen? Fortschrittscode loggen und löschen.
+    const bool stubAtBoot = nl::launch::returnStubInstalled();
+    if (stubAtBoot) {
+        nl::log::line("NL_RETURN_STUB present stage=%u", static_cast<unsigned>(nl::launch::takeReturnStubStage()));
+    }
     nl::platform::installCrashHandler();
     nl::gfx::Renderer renderer;
     if (auto r = renderer.init(video); !r.isOk()) {
@@ -1236,6 +1242,7 @@ int main(int argc, char** argv) {
             showError({nl::LaunchFailure::EmuInvalid, plan.dolPath});
             return;
         }
+        nl::launch::installReturnStub(selfDol);  // M20: exit() der DOL führt zurück zu newlauncher
         stopAudio();
         logPerfSummary();
         if (data.writable) nl::log::flushLogFile(fs, logPath);
@@ -2203,7 +2210,9 @@ int main(int argc, char** argv) {
             if (!config.debugFakeDisc.empty()) applyDiscResult(discDrive.readSync(), false);
             else discDrive.requestRead(false);
             if (config.music) startMusic();
-            autostartPending = !config.debugAutostart.empty();
+            // Nach der Rückkehr über den Stub nicht erneut starten (Smoke --return-stub liefe sonst im Kreis).
+            autostartPending = !config.debugAutostart.empty() && !stubAtBoot;
+            if (stubAtBoot && !config.debugAutostart.empty()) nl::log::line("NL_AUTOSTART skip return_stub");
             if (!emuDebugPending.empty()) startEmuList();  // nur für Tests; Autostart wartet auf die Installation
             if (emuJob == EmuJob::None) {
                 emuDebugPending.clear();  // Thread startet nicht: nichts zu warten
@@ -2326,5 +2335,13 @@ int main(int argc, char** argv) {
     if (data.writable) nl::log::flushLogFile(fs, logPath);
     input.shutdown();
     nl::platform::unmountAll();
+    // M20 (Spec 4.4): Unser Stub würde bei exit() newlauncher neu laden; den HBC dann als Titel starten.
+    if (nl::launch::returnStubInstalled()) {
+        const u32 hbc = nl::hbcReturnTo(installedTitles);
+        nl::log::line("NL_RETURN_STUB exit hbc=%08x", static_cast<unsigned>(hbc));
+        nl::platform::shutdownVideo();
+        if (hbc != 0) static_cast<void>(nl::launch::launchChannel(0x0001000100000000ull | hbc));
+        SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
+    }
     return 0;
 }

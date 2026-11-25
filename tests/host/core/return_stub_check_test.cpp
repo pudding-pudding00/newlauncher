@@ -1,4 +1,4 @@
-// M20: PrÃ¼f-Logik des RÃ¼ckkehr-Stubs (reines C, lÃ¤uft im Stub und hier auf dem Host).
+// M20: Prüf-Logik des Rückkehr-Stubs (reines C, läuft im Stub und hier auf dem Host).
 #include "launch/return_stub/stub_check.h"
 
 #include <doctest/doctest.h>
@@ -17,26 +17,27 @@ void put32(std::vector<unsigned char>& b, std::size_t at, std::uint32_t v) {
     b[at + 3] = static_cast<unsigned char>(v);
 }
 
-// GÃ¼ltiger Block: 1000 Byte DOL (2 Sektoren) in zwei Extents, argv 5 Byte.
+// Layout: Kopf 0x18, argv aufgefüllt auf 8, Freiraum NLRS_ARGV_SLACK, dann die Extents (ab kExt).
+constexpr std::size_t kExt = 0x18 + 8 + NLRS_ARGV_SLACK;
+
+// Gültiger Block: 1000 Byte DOL (2 Sektoren) in zwei Extents, argv 5 Byte.
 std::vector<unsigned char> validBlock() {
-    std::vector<unsigned char> b(0x18 + 8 + 16, 0);
+    std::vector<unsigned char> b(kExt + 16, 0);
     put32(b, 0x00, NLRS_MAGIC);
     put32(b, 0x04, NLRS_VERSION);
     put32(b, 0x08, 1000);
     put32(b, 0x0C, 2);
     put32(b, 0x10, 5);
     std::memcpy(b.data() + 0x18, "abcd", 5);
-    put32(b, 0x20, 100);  // lba
-    put32(b, 0x24, 1);
-    put32(b, 0x28, 300);
-    put32(b, 0x2C, 1);
-    put32(b, 0x14, nlrs_checksum(b.data() + 0x18, static_cast<std::uint32_t>(b.size() - 0x18)));
+    put32(b, kExt + 0, 100);  // lba
+    put32(b, kExt + 4, 1);
+    put32(b, kExt + 8, 300);
+    put32(b, kExt + 12, 1);
+    put32(b, 0x14, nlrs_params_checksum(b.data()));
     return b;
 }
 
-void reseal(std::vector<unsigned char>& b) {
-    put32(b, 0x14, nlrs_checksum(b.data() + 0x18, static_cast<std::uint32_t>(b.size() - 0x18)));
-}
+void reseal(std::vector<unsigned char>& b) { put32(b, 0x14, nlrs_params_checksum(b.data())); }
 
 }  // namespace
 
@@ -45,17 +46,17 @@ TEST_CASE("nlrs_be32 liest big-endian") {
     CHECK(nlrs_be32(p) == 0x12345678u);
 }
 
-TEST_CASE("nlrs_params_size: Kopf + aufgefÃ¼lltes argv + Extents") {
+TEST_CASE("nlrs_params_size: Kopf + aufgefülltes argv + Extents") {
     const auto b = validBlock();
     CHECK(nlrs_params_size(b.data()) == b.size());
 }
 
-TEST_CASE("nlrs_params_ok: gÃ¼ltiger Block") {
+TEST_CASE("nlrs_params_ok: gültiger Block") {
     const auto b = validBlock();
     CHECK(nlrs_params_ok(b.data()) == 1);
 }
 
-TEST_CASE("nlrs_params_ok: Magic, Version, PrÃ¼fsumme") {
+TEST_CASE("nlrs_params_ok: Magic, Version, Prüfsumme") {
     auto b = validBlock();
     b[0] = 'X';
     CHECK(nlrs_params_ok(b.data()) == 0);
@@ -63,17 +64,23 @@ TEST_CASE("nlrs_params_ok: Magic, Version, PrÃ¼fsumme") {
     put32(b, 0x04, 2);
     CHECK(nlrs_params_ok(b.data()) == 0);
     b = validBlock();
-    b[0x21] ^= 1;  // lba geÃ¤ndert, PrÃ¼fsumme nicht
+    b[kExt + 1] ^= 1;  // lba geändert, Prüfsumme nicht
     CHECK(nlrs_params_ok(b.data()) == 0);
+    b = validBlock();
+    b[0x19] ^= 1;  // argv geändert
+    CHECK(nlrs_params_ok(b.data()) == 0);
+    b = validBlock();
+    b[0x18 + 8 + 4] = 0xA5;  // Freiraum: dort schreibt libogc argv[], zählt nicht
+    CHECK(nlrs_params_ok(b.data()) == 1);
 }
 
-TEST_CASE("nlrs_params_ok: Extents mÃ¼ssen genau die DOL-Sektoren abdecken") {
+TEST_CASE("nlrs_params_ok: Extents müssen genau die DOL-Sektoren abdecken") {
     auto b = validBlock();
-    put32(b, 0x08, 1025);  // 3 Sektoren nÃ¶tig, 2 vorhanden
+    put32(b, 0x08, 1025);  // 3 Sektoren nötig, 2 vorhanden
     reseal(b);
     CHECK(nlrs_params_ok(b.data()) == 0);
     b = validBlock();
-    put32(b, 0x2C, 2);  // 3 Sektoren fÃ¼r 2 nÃ¶tige
+    put32(b, kExt + 12, 2);  // 3 Sektoren für 2 nötige
     reseal(b);
     CHECK(nlrs_params_ok(b.data()) == 0);
 }
@@ -93,8 +100,8 @@ TEST_CASE("nlrs_params_ok: Grenzen") {
     put32(b, 0x08, NLRS_MAX_DOL + 1);
     CHECK(nlrs_params_ok(b.data()) == 0);
     b = validBlock();
-    put32(b, 0x24, 0);  // leeres Extent
-    put32(b, 0x2C, 2);
+    put32(b, kExt + 4, 0);  // leeres Extent
+    put32(b, kExt + 12, 2);
     reseal(b);
     CHECK(nlrs_params_ok(b.data()) == 0);
 }
@@ -115,34 +122,34 @@ std::vector<unsigned char> makeDol(std::uint32_t addr = 0x80004000, std::uint32_
 
 }  // namespace
 
-TEST_CASE("nlrs_dol_ok: gÃ¼ltige DOL") {
+TEST_CASE("nlrs_dol_ok: gültige DOL") {
     const auto d = makeDol();
     CHECK(nlrs_dol_ok(d.data(), static_cast<std::uint32_t>(d.size())) == 1);
 }
 
-TEST_CASE("nlrs_dol_ok: Sektion auÃŸerhalb der Datei") {
+TEST_CASE("nlrs_dol_ok: Sektion außerhalb der Datei") {
     auto d = makeDol();
     put32(d, 0x90, 0x101);
     CHECK(nlrs_dol_ok(d.data(), static_cast<std::uint32_t>(d.size())) == 0);
     d = makeDol();
-    put32(d, 0x00, 0xFFFFFFF0u);  // Ãœberlauf offset + size
+    put32(d, 0x00, 0xFFFFFFF0u);  // Überlauf offset + size
     CHECK(nlrs_dol_ok(d.data(), static_cast<std::uint32_t>(d.size())) == 0);
-    CHECK(nlrs_dol_ok(d.data(), 0x40) == 0);  // kÃ¼rzer als der Kopf
+    CHECK(nlrs_dol_ok(d.data(), 0x40) == 0);  // kürzer als der Kopf
 }
 
-TEST_CASE("nlrs_dol_ok: Ziele nie Ã¼ber Stub, Systemvariablen oder Lesepuffer") {
+TEST_CASE("nlrs_dol_ok: Ziele nie über Stub, Systemvariablen oder Lesepuffer") {
     auto d = makeDol(0x80001800);
     CHECK(nlrs_dol_ok(d.data(), static_cast<std::uint32_t>(d.size())) == 0);
     d = makeDol(0x80003000);
     CHECK(nlrs_dol_ok(d.data(), static_cast<std::uint32_t>(d.size())) == 0);
     d = makeDol(NLRS_BUFFER_ADDR - 0x80);  // ragt in den Lesepuffer
     CHECK(nlrs_dol_ok(d.data(), static_cast<std::uint32_t>(d.size())) == 0);
-    d = makeDol(0x817FFF80);  // ragt Ã¼ber das Ende von MEM1
+    d = makeDol(0x817FFF80);  // ragt über das Ende von MEM1
     CHECK(nlrs_dol_ok(d.data(), static_cast<std::uint32_t>(d.size())) == 0);
     d = makeDol(0x90000000);  // MEM2 unterhalb des Puffers ist erlaubt
     CHECK(nlrs_dol_ok(d.data(), static_cast<std::uint32_t>(d.size())) == 1);
     d = makeDol();
-    put32(d, 0xDC, 0x01800000);  // BSS bis Ã¼ber MEM1 hinaus
+    put32(d, 0xDC, 0x01800000);  // BSS bis über MEM1 hinaus
     CHECK(nlrs_dol_ok(d.data(), static_cast<std::uint32_t>(d.size())) == 0);
     d = makeDol(0x80004000, 0x80001800);  // Einsprung im Stub
     CHECK(nlrs_dol_ok(d.data(), static_cast<std::uint32_t>(d.size())) == 0);

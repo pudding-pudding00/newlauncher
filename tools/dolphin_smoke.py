@@ -142,6 +142,13 @@ def write_emu_server_files(root: Path, dol: Path) -> None:
 UPDATE_SERVER_VERSION = "99.0.0"
 
 
+# M20: Rückkehr-Stub. Erster Lauf startet die ROM, argv_echo ruft exit(); der Stub lädt newlauncher von der SD,
+# der zweite Lauf meldet den Stub und überspringt den Autostart.
+RETURN_STUB_ROM = "gb/Tetris (World) (Rev 1).gb"
+RETURN_STUB_MARKERS = ["NL_RETURN_STUB installed", "NL_ARGV 3 --exit", "NL_ARGV exit",
+                       "NL_RETURN_STUB present stage=0", "NL_AUTOSTART skip return_stub"]
+
+
 def write_update_server_files(root: Path, dol: Path) -> None:
     """M20: rel/update.ini und rel/newlauncher-<v>.zip wie aus make_release.py; boot.dol ist argv_echo, damit
     der Neustart nach dem Update sichtbar in der neuen DOL landet."""
@@ -265,6 +272,9 @@ def main(argv: list[str] | None = None) -> int:
                              "neue DOL (argv_echo)")
     parser.add_argument("--remote-check", action="store_true",
                         help="Fernsteuerung an, dann über 127.0.0.1:4300 HELLO/GAMES/KEY/STATE/SHOT/PUT/LOG prüfen (M20)")
+    parser.add_argument("--return-stub", action="store_true",
+                        help="M20: GB-ROM mit argv_echo --exit starten; dessen exit() muss über den Rückkehr-Stub "
+                             "newlauncher neu laden")
     parser.add_argument("--emunand", action="store_true",
                         help="Fixture-EmuNAND sd:/emunand mit Testkanal 000100014E4C5443 anlegen (M19)")
     args = parser.parse_args(argv)
@@ -367,6 +377,9 @@ def main(argv: list[str] | None = None) -> int:
         servers.append(server)
         debug_lines += [f"cheat_url = {scheme_host}:{port}/codes/{{id6}}.txt", f"cheat_fetch = {CHEAT_SERVER_ID6}"]
         markers = markers + ["NL_CHEAT_FETCH " + ("ok" if args.cheat_server == "ok" else "nocodes")]
+    if getattr(args, "return_stub", False):
+        debug_lines.append(f"autostart = {RETURN_STUB_ROM}")
+        markers = markers + RETURN_STUB_MARKERS
     if args.expect_sysinfo:
         debug_lines.append("sysinfo_save = 1")
         markers = markers + ["NL_SYSINFO_SAVED"]
@@ -485,6 +498,8 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             shutil.copyfile(ARGV_ECHO_DOL, sd / f"apps/{EMU_SERVER_APP}/boot.dol")
             (sd / f"apps/{EMU_SERVER_APP}/meta.xml").write_text(
                 "<app><name>FCE Ultra GX</name></app>", encoding="utf-8")
+        if getattr(args, "return_stub", False):
+            set_ini_value(sd / "newlauncher/emulators.ini", "gb", "args", "{dir}|{file}|--exit")
         if getattr(args, "cheat_server", None):
             (sd / CHEAT_TXT_REL).unlink(missing_ok=True)  # sonst endet der Lauf mit „exists“
         if getattr(args, "sd_ca", None) is not None:
@@ -556,7 +571,8 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
 def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -> int:
     try:
         proc = subprocess.Popen(dolphin_command(args.dolphin, user_dir, args.dol.resolve(),
-                                                getattr(args, "sd_image", None)))
+                                                getattr(args, "sd_image", None),
+                                                cheats=getattr(args, "return_stub", False)))
     except OSError as e:
         print(f"SMOKE FEHLER: Dolphin startet nicht: {e}")
         return 2

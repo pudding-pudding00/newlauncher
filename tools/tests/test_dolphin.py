@@ -70,6 +70,12 @@ class DolphinToolsTest(unittest.TestCase):
                                "-C", "Dolphin.General.WiiSDCardPath=x.raw",
                                "-C", "Dolphin.Core.WiiSDCardEnableFolderSync=False", "-e", "a.dol"])
 
+    def test_dolphin_command_with_cheats_disables_hbreload_hook(self):
+        # M20: Ohne Cheats ersetzt Dolphin 0x80001800 durch HLE "HBReload" und hält an; der Rückkehr-Stub liefe nie.
+        cmd = dolphin_command(Path("D.exe"), self.user, Path("a.dol"), cheats=True)
+        self.assertEqual(cmd, ["D.exe", "-u", str(self.user), "-b", "-C", "Dolphin.DSP.Volume=0",
+                               "-C", "Dolphin.Core.EnableCheats=True", "-e", "a.dol"])
+
     def test_reset_log_removes_stale_marker(self):
         log_path(self.user).parent.mkdir(parents=True)
         log_path(self.user).write_text("NL_READY\n")

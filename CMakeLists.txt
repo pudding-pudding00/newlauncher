@@ -217,6 +217,25 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     dkp_set_target_file(nl_app_booter ${NL_BOOTER_BIN})
     dkp_add_embedded_binary_library(nl_booter nl_app_booter)
 
+    # Rückkehr-Stub (M20, Spec 4): frei stehend bei 0x80001800, wie der App-Booter gebaut.
+    set(NL_RSTUB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/launch/return_stub)
+    set(NL_RSTUB_ELF ${CMAKE_CURRENT_BINARY_DIR}/return_stub.elf)
+    set(NL_RSTUB_BIN ${CMAKE_CURRENT_BINARY_DIR}/return_stub.bin)
+    add_custom_command(
+        OUTPUT ${NL_RSTUB_BIN}
+        COMMAND ${CMAKE_C_COMPILER} -mcpu=750 -meabi -mhard-float -mregnames -G0 -Os -std=c11 -ffreestanding
+                -fno-builtin -fno-tree-loop-distribute-patterns -nostdlib -nostartfiles -Wall -Wextra -Werror
+                -Wl,-T,${NL_RSTUB_DIR}/stub.ld -Wl,--gc-sections -Wl,--no-warn-rwx-segments
+                -o ${NL_RSTUB_ELF} ${NL_RSTUB_DIR}/crt0.S ${NL_RSTUB_DIR}/stub.c -lgcc
+        COMMAND ${DKP_OBJCOPY} -O binary ${NL_RSTUB_ELF} ${NL_RSTUB_BIN}
+        DEPENDS ${NL_RSTUB_DIR}/stub.c ${NL_RSTUB_DIR}/stub_check.h ${NL_RSTUB_DIR}/crt0.S ${NL_RSTUB_DIR}/stub.ld
+        COMMENT "Rückkehr-Stub bauen"
+        VERBATIM
+    )
+    add_custom_target(nl_return_stub DEPENDS ${NL_RSTUB_BIN})
+    dkp_set_target_file(nl_return_stub ${NL_RSTUB_BIN})
+    dkp_add_embedded_binary_library(nl_rstub nl_return_stub)
+
     # Gecko-Codehandler (M15, Spec v2 3.3): aus Quelltext (Dolphin docs/codehandler.s, MIT) ab 0x80001800 assembliert.
     # NlCodehandler.cmake erzeugt das Byte-Array für den Booter und die Adressen für Booter und Launcher und bricht ab,
     # wenn die Patch-Stellen des Codelisten-Zeigers (0x104/0x108) nicht passen.
@@ -282,6 +301,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/log.cpp
         src/platform/video.cpp
         src/launch/chainloader.cpp
+        src/launch/return_stub.cpp
         src/launch/channel.cpp
         src/launch/wii_boot.cpp
         src/platform/nand_titles.cpp
@@ -322,7 +342,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS} ${PNG_STATIC_INCLUDE_DIRS} boot/include ${NL_CH_DIR})
         add_dependencies(${name} nl_codehandler)
         target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
-        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} nl_game_booter_blob fat wiiuse bte asnd vorbisidec ogg)
+        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter nl_rstub ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} nl_game_booter_blob fat wiiuse bte asnd vorbisidec ogg)
         # NL_WII_CHEATS=1 (M15): der Booter bringt den Codehandler mit, die Cheat-Szene bietet Wii-Codes an.
         target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}" NL_WII_CHEATS=1)
         if(NL_TLS)

@@ -33,16 +33,27 @@ static inline uint32_t nlrs_checksum(const unsigned char* p, uint32_t n) {
 
 static inline uint32_t nlrs_argv_padded(uint32_t argvSize) { return (argvSize + 3u) & ~3u; }
 
+/* Freiraum hinter argv: libogc build_argv legt dort beim Start der geladenen DOL das Feld argv[] ab
+ * (bei (commandLine + length + 4) & ~3). Er zählt nicht zur Prüfsumme; Platz für NLRS_ARGV_SLACK / 4 - 2
+ * Argumente. */
+#define NLRS_ARGV_SLACK 0x40u
+
 /* Gesamtgröße laut Kopf; 0, wenn die Felder schon für sich unsinnig sind. */
 static inline uint32_t nlrs_params_size(const unsigned char* p) {
     const uint32_t count = nlrs_be32(p + 0x0C);
     const uint32_t argv = nlrs_be32(p + 0x10);
     if (argv > NLRS_ARGV_MAX || count > NLRS_PARAMS_MAX / 8u) return 0;
-    return NLRS_HEAD_BYTES + nlrs_argv_padded(argv) + count * 8u;
+    return NLRS_HEAD_BYTES + nlrs_argv_padded(argv) + NLRS_ARGV_SLACK + count * 8u;
 }
 
 static inline const unsigned char* nlrs_extents(const unsigned char* p) {
-    return p + NLRS_HEAD_BYTES + nlrs_argv_padded(nlrs_be32(p + 0x10));
+    return p + NLRS_HEAD_BYTES + nlrs_argv_padded(nlrs_be32(p + 0x10)) + NLRS_ARGV_SLACK;
+}
+
+/* Prüfsumme über argv (aufgefüllt) und Extents, ohne den Freiraum dazwischen. */
+static inline uint32_t nlrs_params_checksum(const unsigned char* p) {
+    const uint32_t argvPadded = nlrs_argv_padded(nlrs_be32(p + 0x10));
+    return nlrs_checksum(p + NLRS_HEAD_BYTES, argvPadded) + nlrs_checksum(nlrs_extents(p), nlrs_be32(p + 0x0C) * 8u);
 }
 
 /* 1, wenn der Block vollständig und stimmig ist: Magic, Version, Größe, Prüfsumme, Extents decken genau
@@ -54,7 +65,7 @@ static inline int nlrs_params_ok(const unsigned char* p) {
     const uint32_t size = nlrs_params_size(p);
     if (size == 0 || size > NLRS_PARAMS_MAX || count == 0) return 0;
     if (dolSize == 0 || dolSize > NLRS_MAX_DOL) return 0;
-    if (nlrs_checksum(p + NLRS_HEAD_BYTES, size - NLRS_HEAD_BYTES) != nlrs_be32(p + 0x14)) return 0;
+    if (nlrs_params_checksum(p) != nlrs_be32(p + 0x14)) return 0;
     const unsigned char* e = nlrs_extents(p);
     uint32_t sectors = 0;
     for (uint32_t i = 0; i < count; ++i) {

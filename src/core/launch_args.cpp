@@ -55,4 +55,11 @@ Result<std::vector<u8>> packArgvBlock(std::span<const std::string> args, u32 bas
     return Result<std::vector<u8>>::ok(w.bytes());
 }
 
+bool hasArgFlag(int argc, const char* const* argv, std::string_view flag) {
+    if (argv == nullptr) return false;
+    for (int i = 0; i < argc; ++i)
+        if (argv[i] != nullptr && std::string_view(argv[i]) == flag) return true;
+    return false;
+}
+
 }  // namespace nl

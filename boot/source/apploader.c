@@ -220,7 +220,7 @@ void maindolpatches(void *dst, int len, u8 vidMode, GXRModeObj *vmode, bool vipa
 			deflicker_patch(dst, len);
 	}
 	
-	if(returnTo)
+	if(returnTo || returnToStub) // newlauncher (M21)
 		PatchReturnTo(dst, len, returnTo);
 
 	if(aspectRatio != -1)

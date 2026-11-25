@@ -346,6 +346,8 @@ Jeder Schritt zeigt das Erkannte und einen Vorschlag. A übernimmt, B übersprin
 
 `return_to = hbc` nutzt die Title-ID des Homebrew Channels. Ob d2x die Rückkehr unterstützt, zeigt die Systeminfo; ohne d2x wird der Wert ignoriert.
 
+**Seit M21** (`2026-11-25-m21-rueckkehr-cover-design.md`): Läuft newlauncher von `sd:/` und sind keine Cheats aktiv, führt „Wii-Menü“ im Spiel über den Rückkehr-Stub zurück in newlauncher. Das hat Vorrang vor `return_to`; `return_to` gilt nur noch ohne Stub.
+
 ### 7.3 GameCube (→ `NIN_CFG`, Version 10)
 
 | Schlüssel | Werte | Standard |

@@ -23,4 +23,7 @@ std::vector<std::string> expandArgs(std::string_view dolPath, std::string_view s
 // NUL-terminiert). baseAddr ist die Adresse, an der der Block im Speicher liegen wird.
 Result<std::vector<u8>> packArgvBlock(std::span<const std::string> args, u32 baseAddr);
 
+// M21: true, wenn ein Argument genau `flag` ist (auch argv[0]: wiiload schickt keinen Dateinamen mit).
+bool hasArgFlag(int argc, const char* const* argv, std::string_view flag);
+
 }  // namespace nl

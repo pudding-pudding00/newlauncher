@@ -31,6 +31,14 @@ static inline uint32_t nlrs_checksum(const unsigned char* p, uint32_t n) {
     return sum;
 }
 
+/* 1, wenn bei stub + 4 die libogc-Signatur "STUBHAXX" steht (M21: Booter prüft das vor dem Patch). */
+static inline int nlrs_stub_ok(const unsigned char* stub) {
+    static const char kSig[8] = {'S', 'T', 'U', 'B', 'H', 'A', 'X', 'X'};
+    for (int i = 0; i < 8; ++i)
+        if (stub[4 + i] != (unsigned char)kSig[i]) return 0;
+    return 1;
+}
+
 static inline uint32_t nlrs_argv_padded(uint32_t argvSize) { return (argvSize + 3u) & ~3u; }
 
 /* Freiraum hinter argv: libogc build_argv legt dort beim Start der geladenen DOL das Feld argv[] ab

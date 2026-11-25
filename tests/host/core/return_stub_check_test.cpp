@@ -154,3 +154,12 @@ TEST_CASE("nlrs_dol_ok: Ziele nie über Stub, Systemvariablen oder Lesepuffer") 
     d = makeDol(0x80004000, 0x80001800);  // Einsprung im Stub
     CHECK(nlrs_dol_ok(d.data(), static_cast<std::uint32_t>(d.size())) == 0);
 }
+
+TEST_CASE("nlrs_stub_ok: Signatur STUBHAXX bei +4 (M21, Booter)") {
+    unsigned char stub[16] = {0x48, 0x00, 0x00, 0x0C, 'S', 'T', 'U', 'B', 'H', 'A', 'X', 'X', 0, 0, 0, 0};
+    CHECK(nlrs_stub_ok(stub) == 1);
+    stub[11] = 'Y';
+    CHECK(nlrs_stub_ok(stub) == 0);
+    unsigned char zero[16] = {};
+    CHECK(nlrs_stub_ok(zero) == 0);
+}

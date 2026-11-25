@@ -105,4 +105,36 @@ u32 takeReturnStubStage() {
     return v;
 }
 
+void clearReturnStubParams() {
+    std::memset(at(NLRS_PARAMS_ADDR), 0, NLRS_HEAD_BYTES);  // Magic weg → nlrs_params_ok() == 0
+    DCFlushRange(at(NLRS_PARAMS_ADDR), 32);
+    log::line("NL_RETURN_STUB cleared");
+}
+
+void recoverIosAfterGame() {
+    constexpr s32 kLauncherIos = 58;
+    const s32 before = IOS_GetVersion();
+    s32 unblock = -1;
+    const s32 es = IOS_Open("/dev/es", 0);
+    if (es >= 0) {
+        // Gleiche Form wie BlockIOSReload im Booter (patchcode.c), nur Modus 0 = Sperre aufheben.
+        static ioctlv vec[2] ATTRIBUTE_ALIGN(32);
+        static u32 mode ATTRIBUTE_ALIGN(32);
+        static u32 ios ATTRIBUTE_ALIGN(32);
+        mode = 0;
+        ios = static_cast<u32>(before);
+        vec[0].data = &mode;
+        vec[0].len = sizeof(u32);
+        vec[1].data = &ios;
+        vec[1].len = sizeof(u32);
+        unblock = IOS_Ioctlv(es, 0xA0, 2, 0, vec);
+        IOS_Close(es);
+    } else {
+        unblock = es;
+    }
+    if (before != kLauncherIos) IOS_ReloadIOS(kLauncherIos);
+    log::line("NL_FROM_GAME ios=%d->%d unblock=%d", static_cast<int>(before), static_cast<int>(IOS_GetVersion()),
+              static_cast<int>(unblock));
+}
+
 }  // namespace nl::launch

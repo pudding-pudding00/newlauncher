@@ -223,6 +223,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="zusätzliche Zeile im [debug]-Abschnitt, z. B. perf=1 (mehrfach angebbar)")
     parser.add_argument("--cover-server", action="store_true",
                         help="lokalen Cover-Server starten und „Fehlende Cover laden“ nach NL_READY auslösen")
+    parser.add_argument("--cover-auto", action="store_true",
+                        help="M21: mit --cover-server ohne fetch_covers, aber [covers] auto = 1 (Autostart)")
     parser.add_argument("--emu-server", action="store_true",
                         help="lokales OSC-Test-Repository starten und fceugx nach NL_READY installieren")
     parser.add_argument("--expect-frag", metavar="REL_PATH",
@@ -281,6 +283,8 @@ def main(argv: list[str] | None = None) -> int:
     tls = args.tls or args.tls_wrong_ca
     if tls and not (args.cover_server or args.emu_server or args.cheat_server or args.update_server):
         parser.error("--tls/--tls-wrong-ca braucht --cover-server, --emu-server oder --cheat-server")
+    if args.cover_auto and not args.cover_server:
+        parser.error("--cover-auto braucht --cover-server")
     markers = args.markers or DEFAULT_MARKERS
     if args.remote_check:
         args.debug.append("remote=1")
@@ -350,7 +354,9 @@ def main(argv: list[str] | None = None) -> int:
         write_cover_server_files(Path(server_dirs[-1].name))
         server, port = start_cover_server(Path(server_dirs[-1].name), ssl_context)
         servers.append(server)
-        debug_lines += [f"cover_url = {scheme_host}:{port}", "fetch_covers = 1"]
+        debug_lines.append(f"cover_url = {scheme_host}:{port}")
+        if not args.cover_auto:
+            debug_lines.append("fetch_covers = 1")
     if args.emu_server:
         if not ARGV_ECHO_DOL.is_file():
             print(f"SMOKE FEHLER: argv_echo.dol nicht gebaut: {ARGV_ECHO_DOL}")
@@ -385,6 +391,8 @@ def main(argv: list[str] | None = None) -> int:
         markers = markers + ["NL_SYSINFO_SAVED"]
     if args.fresh_data:
         markers = markers + ["NL_WIZARD done"]
+        if not args.cover_server:  # M21: Cover-Autostart nach dem Assistenten nicht ins Internet
+            debug_lines.append("cover_url = http://127.0.0.1:9")
     if args.sd_disk_layout:
         debug_lines.append("sd_as_disk = 1")
     debug_lines += debug_lines_tls
@@ -526,6 +534,14 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             if not args.fresh_data:
                 with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
                     f.write(f"[theme]\nname = {args.theme_pack}\n")
+        if not args.fresh_data and (sd / CONFIG_REL).is_file():
+            # Fixture-config.ini hat [covers] auto = 0 (M21), damit Smokes nicht von selbst laden. Auch mit
+            # --no-fixtures zurücksetzen: ein früherer --cover-auto-Lauf hinterlässt sonst auto = 1.
+            cfg = sd / CONFIG_REL
+            on = getattr(args, "cover_auto", False)
+            old, new = ("\nauto = 0\n", "\nauto = 1\n") if on else ("\nauto = 1\n", "\nauto = 0\n")
+            text = cfg.read_text(encoding="utf-8")
+            cfg.write_text(text.replace(old, new, 1), encoding="utf-8", newline="\n")
         if args.config_append and not args.fresh_data:
             with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
                 f.write(_cli_text(args.config_append))

@@ -61,4 +61,8 @@ Result<std::vector<u8>, ReturnStubError> buildReturnParams(u32 dolSize, std::spa
     return R::ok(std::move(b));
 }
 
+bool gameReturnStubWanted(std::string_view selfDol, std::size_t gctBytes) {
+    return gctBytes == 0 && selfDol.starts_with("sd:/");
+}
+
 }  // namespace nl

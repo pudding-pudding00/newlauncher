@@ -26,7 +26,9 @@
 #include "core/emu_profiles.hpp"
 #include "core/emulators.hpp"
 #include "core/index_file.hpp"
+#include "core/launch_args.hpp"
 #include "core/launch_layout.hpp"
+#include "core/return_stub.hpp"
 #include "core/launch_plan.hpp"
 #include "core/playlist.hpp"
 #include "core/library_store.hpp"
@@ -269,6 +271,8 @@ int main(int argc, char** argv) {
     nl::log::init();
     nl::log::line("newlauncher %s", NL_VERSION);
     nl::platform::logPreviousCrash();
+    // M21: Vom Rückkehr-Stub aus einem Wii-Spiel geladen: zuerst zurück auf IOS 58 (vor USB, Netz, Video).
+    if (nl::hasArgFlag(argc, argv, nl::kFromGameFlag)) nl::launch::recoverIosAfterGame();
     if (!launchAllowed) nl::log::line("NL_WARN Arena2 schon belegt");
 
     // 1. SD und Konfiguration (Spec 6.1 Schritt 2)
@@ -1233,6 +1237,20 @@ int main(int argc, char** argv) {
                 showError({nl::LaunchFailure::EmuInvalid, "game_booter"});
                 return;
             }
+            // M21: „Wii-Menü“ im Spiel springt in den Stub, der newlauncher mit --from-game neu lädt.
+            // Mit Cheats nicht: der Codehandler belegt denselben Speicher (0x80001800).
+            bool gameStub = false;
+            if (nl::gameReturnStubWanted(returnStubDol, target.value().wii->gct.size())) {
+                std::vector<std::string> gameArgs{std::string(nl::kFromGameFlag)};
+                if (keepRemote) gameArgs.push_back("--remote");
+                gameStub = nl::launch::installReturnStub(returnStubDol, gameArgs);
+            } else if (!target.value().wii->gct.empty()) {
+                nl::log::line("NL_RETURN_STUB skip cheats");
+            } else {
+                nl::log::line("NL_RETURN_STUB skip self=%s", returnStubDol.c_str());
+            }
+            // Ohne frischen Stub darf ein alter Block (z. B. vom letzten Emulator) den Booter nicht umlenken.
+            if (!gameStub) nl::launch::clearReturnStubParams();
             stopAudio();
             logPerfSummary();
             if (data.writable) nl::log::flushLogFile(fs, logPath);
@@ -1264,8 +1282,10 @@ int main(int argc, char** argv) {
     char coverToast[48] = "";
     u32 coverToastDone = ~0u;
     int coverToastFrames = 0;
-    auto fetchCovers = [&]() {
-        nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
+    bool coverRunSilent = false;  // M21: laufender Auftrag ist der automatische, ohne Zusammenfassungs-Dialog
+    // silent (M21, [covers] auto): automatischer Lauf nach dem Start, ohne Dialog „Keine fehlenden Cover“.
+    auto fetchCovers = [&](bool silent) {
+        if (!silent) nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
         if (net.running()) return;  // Emulator-Aufträge warten in derselben Warteschlange (NetService)
         // Je Gerät: Cover landen dort, wo das Spiel liegt (oder in dessen Cache unter <data>).
         const std::vector<std::string> roots = coverRootsOf(store.devices());
@@ -1280,7 +1300,9 @@ int main(int argc, char** argv) {
                                               roots[d]);
             for (nl::CoverJob& j : part) jobs.push_back(std::move(j));
         }
+        if (silent) nl::log::line("NL_COVER_AUTO jobs=%u", static_cast<unsigned>(jobs.size()));
         nl::log::line("NL_COVER_DL_START jobs=%u", static_cast<unsigned>(jobs.size()));
+        if (jobs.empty() && silent) return;
         if (jobs.empty()) {
             dialog.open(nl::ui::tr(nl::ui::Str::NoMissingCovers), nl::ui::tr(nl::ui::Str::NoMissingCoversText));
             scenes.push(&dialog);
@@ -1295,6 +1317,7 @@ int main(int argc, char** argv) {
             nl::log::line("NL_WARN Netz-Thread startet nicht");
             return;
         }
+        coverRunSilent = silent;
         coverToastDone = ~0u;
     };
     // Gecko-Codes eines Spiels laden (M15): nur auf Knopfdruck, Ziel <data>/codes/<ID6>.txt.
@@ -1378,10 +1401,15 @@ int main(int argc, char** argv) {
         if (auto sum = scenes.contains(&dialog) ? std::nullopt : net.take()) {
             for (const std::string& line : net.takeLogLines()) nl::log::line("%s", line.c_str());
             for (const std::string& stem : net.takeFinishedStems()) covers.invalidate(stem);
-            nl::log::line("NL_COVER_DL_DONE ok=%u missing=%u failed=%u", static_cast<unsigned>(sum->ok),
-                          static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed));
+            nl::log::line("NL_COVER_DL_DONE ok=%u missing=%u failed=%u dialog=%d", static_cast<unsigned>(sum->ok),
+                          static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed),
+                          coverRunSilent ? 0 : 1);
             if (data.writable) nl::log::flushLogFile(fs, logPath);
             if (perf) perf->pause();  // der Flush gehört zur Messung, nicht zum Launcher
+            if (coverRunSilent) {  // M21: still im Hintergrund; neue Cover erscheinen von selbst
+                coverRunSilent = false;
+                return;
+            }
             const std::string text = nl::ui::coversSummaryText(sum->ok, sum->missing, sum->failed, sum->lastError);
             dialog.open(nl::ui::tr(nl::ui::Str::CoversLoaded), text.c_str());
             scenes.push(&dialog);
@@ -1666,6 +1694,7 @@ int main(int argc, char** argv) {
     bool readyReported = false;
     bool coversReported = false;
 #ifndef NL_SELFTEST
+    bool coverAutoRan = false;  // M21: automatischer Cover-Lauf in dieser Sitzung gestartet
     bool wifiProbeStarted = false;
     u64 nextWifiProbeMs = 0;
 #endif
@@ -2093,7 +2122,7 @@ int main(int argc, char** argv) {
                 if (req.game != nullptr) requestLaunch(*req.game);
                 break;
             case nl::ui::AppCommand::FetchCovers:
-                fetchCovers();
+                fetchCovers(false);
                 break;
             case nl::ui::AppCommand::OpenEmulators:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
@@ -2232,7 +2261,7 @@ int main(int argc, char** argv) {
                 emuDebugPending.clear();  // Thread startet nicht: nichts zu warten
                 runPendingAutostart();
             }
-            if (config.debugFetchCovers) fetchCovers();  // nur für Tests
+            if (config.debugFetchCovers) fetchCovers(false);  // nur für Tests
             if (config.debugSelfUpdate && emuJob == EmuJob::None) startSelfUpdate();  // nur für Tests (M20)
             if (!config.debugCheatFetch.empty() && !startCheatFetch(config.debugCheatFetch, false))  // nur für Tests (M15)
                 nl::log::line("NL_CHEAT_FETCH nosource");
@@ -2329,6 +2358,13 @@ int main(int argc, char** argv) {
                 netService.startWifiProbe();
                 nextWifiProbeMs = nowMs + (ctx.wifi == nl::WifiStatus::Connected ? 5000u : 15000u);
             }
+        }
+        // M21: fehlende Cover einmal pro Sitzung still laden, sobald Scan fertig und WLAN verbunden ist.
+        // Läuft gerade ein Netz-Auftrag, versucht es der nächste Frame erneut.
+        if (nl::shouldAutoFetchCovers({config.coverAuto, readyReported && ctx.wifi == nl::WifiStatus::Connected,
+                                       worker.running(), net.running() || emu.running(), coverAutoRan})) {
+            coverAutoRan = true;
+            fetchCovers(true);
         }
 #endif
 #ifdef NL_SELFTEST

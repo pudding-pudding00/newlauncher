@@ -128,4 +128,8 @@ bool isPng(std::span<const u8> data) {
     return data.size() >= 8 && std::equal(kSig, kSig + 8, data.begin());
 }
 
+bool shouldAutoFetchCovers(const CoverAutoInputs& in) {
+    return in.enabled && in.ready && !in.scanRunning && !in.netBusy && !in.alreadyRan;
+}
+
 }  // namespace nl

@@ -407,6 +407,19 @@ TEST_CASE("configFromIni: [ui] banners (M18), Standard 1, Round-Trip") {
     CHECK_FALSE(configFromIni(IniDoc::parse(text)).banners);
 }
 
+TEST_CASE("configFromIni: [covers] auto (M21), Standard 1, Round-Trip") {
+    CHECK(configFromIni(IniDoc::parse("")).coverAuto);
+    CHECK(configFromIni(IniDoc::parse(defaultConfigText())).coverAuto);
+    CHECK_FALSE(configFromIni(IniDoc::parse("[covers]\nauto = 0\n")).coverAuto);
+    CHECK(configFromIni(IniDoc::parse("[covers]\nauto = 7\n")).coverAuto);  // ungültig → Standard
+    CHECK(defaultConfigText().find("[covers]\nregion = auto\nauto = 1\n") != std::string::npos);
+    Config c;
+    c.coverAuto = false;
+    const std::string text = configToIniText(c, defaultConfigText());
+    CHECK_FALSE(configFromIni(IniDoc::parse(text)).coverAuto);
+    CHECK_FALSE(configFromIni(IniDoc::parse(configToIniText(c, ""))).coverAuto);
+}
+
 TEST_CASE("configFromIni: [debug] details_back_ms (M18-Smoke)") {
     CHECK(configFromIni(IniDoc::parse("")).debugDetailsBackMs == 0);
     CHECK(configFromIni(IniDoc::parse("[debug]\ndetails_back_ms = 4000\n")).debugDetailsBackMs == 4000);

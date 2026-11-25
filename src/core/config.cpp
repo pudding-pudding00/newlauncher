@@ -112,6 +112,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     for (std::string_view allowed : {"auto", "EN", "DE", "FR", "US", "JA"}) {
         if (region == allowed) c.coverRegion = std::string(region);
     }
+    c.coverAuto = parseIntIn(ini.get("covers", "auto"), 0, 1, 1) == 1;
     const std::string_view repo = trim(ini.get("emulators", "repo"));
     c.emulatorRepo = sourceForBuild(repo, kDefaultEmuRepoHttp, kDefaultEmuRepoHttps, defaultEmuRepo(tls));
     const std::string_view coverBase = trim(ini.get("covers", "base"));
@@ -165,6 +166,7 @@ std::vector<IniValue> configValues(const Config& c) {
         {"audio", "sounds", c.sounds ? "1" : "0"},
         {"ui", "banners", c.banners ? "1" : "0"},
         {"covers", "region", c.coverRegion},
+        {"covers", "auto", c.coverAuto ? "1" : "0"},
         {"emulators", "repo", c.emulatorRepo},
         {"wii", "ios", c.wiiIos ? std::to_string(static_cast<unsigned>(*c.wiiIos)) : std::string("auto")},
     };
@@ -274,6 +276,7 @@ std::string defaultConfigText(bool tls) {
            "banners = 1\n"
            "[covers]\n"
            "region = auto\n"
+           "auto = 1\n"
            "[emulators]\n"
            "repo = " +
            std::string(defaultEmuRepo(tls)) + "\n" +

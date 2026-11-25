@@ -174,3 +174,14 @@ TEST_CASE("Zeile Banner folgt auf Klänge und schaltet [ui] banners (M18)") {
     stepSetting(c, SettingRow::Banners, -1);
     CHECK(c.banners);
 }
+
+TEST_CASE("Zeile Cover automatisch folgt auf Cover-Region und schaltet [covers] auto (M21)") {
+    CHECK(static_cast<int>(SettingRow::CoverRegion) + 1 == static_cast<int>(SettingRow::CoverAuto));
+    CHECK_FALSE(isAction(SettingRow::CoverAuto));
+    Config c;
+    CHECK(settingEnabled(c, SettingRow::CoverAuto));
+    stepSetting(c, SettingRow::CoverAuto, 1);
+    CHECK_FALSE(c.coverAuto);
+    stepSetting(c, SettingRow::CoverAuto, -1);
+    CHECK(c.coverAuto);
+}

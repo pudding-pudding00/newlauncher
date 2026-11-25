@@ -324,12 +324,15 @@ int main(int argc, char** argv) {
         nl::log::line("NL_REMOTE %s", remote.start() ? "start" : "fail");
     }
     // Eigene boot.dol für RESTART: argv[0], wenn es ein Gerätepfad ist (HBC), sonst der Standardort (wiiload).
+    const std::string_view argv0 = argc > 0 && argv != nullptr && argv[0] != nullptr ? argv[0] : "";
     const std::string selfDol = [&]() -> std::string {
-        const std::string_view a0 = argc > 0 && argv != nullptr && argv[0] != nullptr ? argv[0] : "";
-        if (a0.find(":/") != std::string_view::npos && a0.size() > 4 && a0.substr(a0.size() - 4) == ".dol")
-            return std::string(a0);
+        if (argv0.find(":/") != std::string_view::npos && argv0.size() > 4 && argv0.substr(argv0.size() - 4) == ".dol")
+            return std::string(argv0);
         return "sd:/apps/newlauncher/boot.dol";
     }();
+    // Rückkehr-Stub (Spec 4.1 / R5): nur bei echtem Start von SD (nicht per wiiload aus dem RAM).
+    // Ohne argv[0] (Dolphin / Forwarder) gilt weiterhin der Standardort auf SD.
+    const std::string returnStubDol = argv0.empty() ? selfDol : std::string(argv0);
     // M20 (Spec 4.3): Hat uns der Rückkehr-Stub geladen? Fortschrittscode loggen und löschen.
     const bool stubAtBoot = nl::launch::returnStubInstalled();
     if (stubAtBoot) {
@@ -1247,7 +1250,7 @@ int main(int argc, char** argv) {
         }
         std::vector<std::string> stubArgs;
         if (keepRemote) stubArgs.push_back("--remote");
-        nl::launch::installReturnStub(selfDol, stubArgs);  // M20: exit() der DOL führt zurück zu newlauncher
+        nl::launch::installReturnStub(returnStubDol, stubArgs);  // M20: exit() der DOL führt zurück zu newlauncher
         stopAudio();
         logPerfSummary();
         if (data.writable) nl::log::flushLogFile(fs, logPath);

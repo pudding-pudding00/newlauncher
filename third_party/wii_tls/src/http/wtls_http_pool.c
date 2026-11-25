@@ -7,6 +7,8 @@ typedef struct {
     void *c;
     bool secure;
     bool insecure;
+    bool has_cred;
+    uint8_t cred_fp[WTLS_HTTP_POOL_FP_LEN]; /* valid when has_cred */
     uint16_t port;
     uint64_t put_ms;
     char host[256];
@@ -28,10 +30,19 @@ static void remove_at(size_t i) {
     s_n--;
 }
 
-void wtls_http_pool_put(void *c, bool secure, const char *host, uint16_t port, bool insecure, uint64_t now_ms) {
+static bool same_key(const slot *s, bool secure, const char *host, uint16_t port, bool insecure,
+                     bool has_cred, const uint8_t *cred_fp) {
+    if (s->secure != secure || s->insecure != insecure || s->has_cred != has_cred ||
+        s->port != port || strcmp(s->host, host) != 0)
+        return false;
+    return !has_cred || memcmp(s->cred_fp, cred_fp, WTLS_HTTP_POOL_FP_LEN) == 0;
+}
+
+void wtls_http_pool_put(void *c, bool secure, const char *host, uint16_t port, bool insecure,
+                        bool has_cred, const uint8_t *cred_fp, uint64_t now_ms) {
     if (!c || !host) return;
     size_t hl = strlen(host);
-    if (hl >= sizeof s_slots[0].host) {
+    if (hl >= sizeof s_slots[0].host || (has_cred && !cred_fp)) {
         close_entry(c);
         return;
     }
@@ -44,12 +55,15 @@ void wtls_http_pool_put(void *c, bool secure, const char *host, uint16_t port, b
     s->c = c;
     s->secure = secure;
     s->insecure = insecure;
+    s->has_cred = has_cred;
+    if (has_cred) memcpy(s->cred_fp, cred_fp, WTLS_HTTP_POOL_FP_LEN);
     s->port = port;
     s->put_ms = now_ms;
     memcpy(s->host, host, hl + 1);
 }
 
-void *wtls_http_pool_take(bool secure, const char *host, uint16_t port, bool insecure, uint64_t now_ms) {
+void *wtls_http_pool_take(bool secure, const char *host, uint16_t port, bool insecure,
+                          bool has_cred, const uint8_t *cred_fp, uint64_t now_ms) {
     for (size_t i = 0; i < s_n;) {
         if (now_ms - s_slots[i].put_ms > WTLS_HTTP_POOL_IDLE_MS) {
             void *c = s_slots[i].c;
@@ -59,10 +73,10 @@ void *wtls_http_pool_take(bool secure, const char *host, uint16_t port, bool ins
             i++;
         }
     }
-    if (!host) return NULL;
+    if (!host || (has_cred && !cred_fp)) return NULL;
     for (size_t i = s_n; i-- > 0;) {
         slot *s = &s_slots[i];
-        if (s->secure == secure && s->insecure == insecure && s->port == port && strcmp(s->host, host) == 0) {
+        if (same_key(s, secure, host, port, insecure, has_cred, cred_fp)) {
             void *c = s->c;
             remove_at(i);
             return c;

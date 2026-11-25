@@ -7,6 +7,7 @@
  * place, so field names and values point into it) followed by the body bytes
  * that arrived together with the head; wtls_http_read() serves those first. */
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,6 +22,7 @@
 #include "http/wtls_http_req.h"
 #include "http/wtls_url.h"
 #include "plat/plat.h"
+#include "wtls_cred.h"
 #include "wtls_dns.h"
 #include "wtls_internal.h"
 
@@ -54,6 +56,8 @@ struct wtls_http_response {
     bool reused;
     bool secure;
     bool insecure;       /* insecure_skip_verify: part of the pool key */
+    bool has_cred;       /* client certificate identity: part of the pool key */
+    uint8_t cred_fp[WTLS_HTTP_POOL_FP_LEN];
     uint16_t port;
     char host[256];
     wtls_conn_info info;
@@ -215,6 +219,10 @@ typedef struct {
     const char *method;
     const void *body; /* NULL: no body */
     size_t body_len;
+    wtls_http_body_cb body_cb; /* NULL: no streaming body; mutual with body */
+    void *body_ctx;
+    bool body_chunked;
+    bool cb_started;   /* body_cb produced at least one byte on this hop */
     const wtls_http_header *headers;
     size_t n_headers;
     bool want_gzip; /* offer gzip and decode it */
@@ -223,7 +231,41 @@ typedef struct {
     wtls_options opt;
 } request_ctx;
 
-static int send_request(http_tr *c, const request_ctx *x) {
+/* Streams the request body from the callback after the head: exactly
+ * body_len bytes with Content-Length, or <hex>\r\n<data>\r\n chunks ended by
+ * the callback returning 0 (which sends 0\r\n\r\n). A callback that stops
+ * early, writes more than asked or returns <0 aborts the request with
+ * WTLS_ERR_IO; the caller then closes the connection (never pools it). */
+static int send_body_cb(http_tr *c, request_ctx *x) {
+    uint8_t buf[16384]; /* one TLS record's worth: fewest IOS round trips */
+    size_t left = x->body_len;
+    for (;;) {
+        size_t want = sizeof buf;
+        if (!x->body_chunked && want > left) want = left;
+        x->cb_started = true;
+        int k = x->body_cb(x->body_ctx, buf, want);
+        if (k < 0 || (size_t)k > want) return WTLS_ERR_IO;
+        if (!x->body_chunked) {
+            if (k == 0) return WTLS_ERR_IO; /* short of body_len: no rewind */
+            int st = tr_write_all(c, buf, (size_t)k);
+            if (st != WTLS_OK) return st;
+            left -= (size_t)k;
+            if (!left) return WTLS_OK;
+            continue;
+        }
+        if (k == 0) return tr_write_all(c, "0\r\n\r\n", 5);
+        char hex[10];
+        int n = snprintf(hex, sizeof hex, "%x\r\n", (unsigned)k);
+        int st = tr_write_all(c, hex, (size_t)n);
+        if (st != WTLS_OK) return st;
+        st = tr_write_all(c, buf, (size_t)k);
+        if (st != WTLS_OK) return st;
+        st = tr_write_all(c, "\r\n", 2);
+        if (st != WTLS_OK) return st;
+    }
+}
+
+static int send_request(http_tr *c, request_ctx *x) {
     size_t body_len = x->body ? x->body_len : 0;
     if (body_len && x->head_len + body_len <= SINGLE_WRITE_MAX) {
         char *all = malloc(x->head_len + body_len);
@@ -235,7 +277,9 @@ static int send_request(http_tr *c, const request_ctx *x) {
         return st;
     }
     int st = tr_write_all(c, x->head, x->head_len);
-    if (st == WTLS_OK && body_len) st = tr_write_all(c, x->body, body_len);
+    if (st != WTLS_OK) return st;
+    if (x->body_cb) return send_body_cb(c, x);
+    if (body_len) st = tr_write_all(c, x->body, body_len);
     return st;
 }
 
@@ -295,7 +339,8 @@ static int connect_fresh(wtls_http_response *r, request_ctx *x) {
 /* A live pooled connection for the key, else a new one. */
 static int acquire(wtls_http_response *r, request_ctx *x) {
     void *c;
-    while ((c = wtls_http_pool_take(r->secure, r->host, r->port, r->insecure, wtls_plat_now_ms()))) {
+    while ((c = wtls_http_pool_take(r->secure, r->host, r->port, r->insecure, r->has_cred,
+                                    r->has_cred ? r->cred_fp : NULL, wtls_plat_now_ms()))) {
         if (tr_alive(c)) {
             r->conn = c;
             r->reused = true;
@@ -309,9 +354,11 @@ static int acquire(wtls_http_response *r, request_ctx *x) {
 }
 
 /* Request out, final response head in. The connection's own I/O timeout is
- * restored afterwards (the head phase runs on the header deadline). */
-static int exchange(wtls_http_response *r, const request_ctx *x, bool *got) {
+ * restored afterwards (the head phase runs on the header deadline, which
+ * starts only after the whole request body has been streamed out). */
+static int exchange(wtls_http_response *r, request_ctx *x, bool *got) {
     *got = false;
+    x->cb_started = false;
     if (r->conn->tls) wtls_get_info(r->conn->tls, &r->info);
     else memset(&r->info, 0, sizeof r->info);
     int st = send_request(r->conn, x);
@@ -329,7 +376,8 @@ static void release_conn(wtls_http_response *r) {
     if (!r->conn) return;
     if (r->eof && !r->err && r->fr.reusable && r->extra_off == r->extra_end) {
         wtls_shutdown_hook = wtls_http_pool_flush;
-        wtls_http_pool_put(r->conn, r->secure, r->host, r->port, r->insecure, wtls_plat_now_ms());
+        wtls_http_pool_put(r->conn, r->secure, r->host, r->port, r->insecure, r->has_cred,
+                           r->has_cred ? r->cred_fp : NULL, wtls_plat_now_ms());
     } else {
         wtls_http_tr_close(r->conn);
     }
@@ -355,13 +403,17 @@ static void drain_body(wtls_http_response *r) {
  * (pooled or new), final head read and framed. */
 static int hop(wtls_http_response *r, request_ctx *x, const wtls_url *u) {
     char *head = NULL;
-    int st = wtls_http_build_head(x->method, u, x->headers, x->n_headers, x->body != NULL, x->body_len,
-                                  x->req->no_keepalive, x->want_gzip, &head, &x->head_len);
+    int st = wtls_http_build_head(x->method, u, x->headers, x->n_headers, x->body != NULL || x->body_cb != NULL,
+                                  x->body_len, x->body_chunked, x->req->no_keepalive, x->want_gzip, &head,
+                                  &x->head_len);
     if (st != WTLS_OK) return st;
     x->head = head;
     r->secure = u->secure;
     r->port = u->port;
     memcpy(r->host, u->host, sizeof r->host);
+    /* this hop's client identity: part of the pool key (see acquire) */
+    r->has_cred = x->opt.client_cred != NULL;
+    if (r->has_cred) memcpy(r->cred_fp, x->opt.client_cred->fp, sizeof r->cred_fp);
     r->head_request = strcmp(x->method, "HEAD") == 0;
     r->err = 0;
     r->eof = false;
@@ -371,8 +423,12 @@ static int hop(wtls_http_response *r, request_ctx *x, const wtls_url *u) {
     st = acquire(r, x);
     if (st == WTLS_OK) st = exchange(r, x, &got);
     /* The server closed a reused connection as the request went out: one
-     * second attempt on a new connection, for idempotent methods only. */
-    if (st == WTLS_ERR_IO && r->reused && !got && wtls_http_method_idempotent(x->method)) {
+     * second attempt on a new connection, for idempotent methods only, and
+     * with a streaming body only if the callback was never called (the
+     * abort happened while the head was still being written - a callback
+     * that has produced bytes cannot be rewound). */
+    if (st == WTLS_ERR_IO && r->reused && !got && !x->cb_started &&
+        wtls_http_method_idempotent(x->method)) {
         wtls_http_tr_close(r->conn);
         r->conn = NULL;
         st = connect_fresh(r, x);
@@ -380,7 +436,8 @@ static int hop(wtls_http_response *r, request_ctx *x, const wtls_url *u) {
     }
     free(head);
     x->head = NULL;
-    if (st == WTLS_OK) st = wtls_http_frame(&r->head, r->head_request, !x->req->no_keepalive, &r->fr);
+    if (st != WTLS_OK) return st;
+    st = wtls_http_frame(&r->head, r->head_request, !x->req->no_keepalive, &r->fr);
     if (st != WTLS_OK) return st;
     r->remaining = r->fr.length;
     r->eof = r->fr.kind == WTLS_BODY_NONE || (r->fr.kind == WTLS_BODY_LENGTH && r->fr.length == 0);
@@ -414,24 +471,47 @@ static int follow(wtls_http_response *r, request_ctx *x, wtls_url *u, const char
         return WTLS_ERR_HTTP_REDIRECT; /* bad Location, or https -> http */
     }
 
-    if (!*filtered && x->n_headers && !wtls_url_same_origin(u, &nu)) {
-        wtls_http_header *h = malloc(x->n_headers * sizeof *h);
-        if (!h) {
-            free(next);
-            return WTLS_ERR_NOMEM;
+    if (!*filtered && !wtls_url_same_origin(u, &nu)) {
+        /* The next hop leaves the origin: strip credentials, both the
+         * header credentials and the client certificate, which must never
+         * be presented to a different origin. */
+        x->opt.client_cred = NULL;
+        if (x->n_headers) {
+            wtls_http_header *h = malloc(x->n_headers * sizeof *h);
+            if (!h) {
+                free(next);
+                return WTLS_ERR_NOMEM;
+            }
+            size_t n = 0;
+            for (size_t i = 0; i < x->n_headers; i++)
+                if (!is_credential(x->headers[i].name)) h[n++] = x->headers[i];
+            *filtered = h;
+            x->headers = h;
+            x->n_headers = n;
         }
-        size_t n = 0;
-        for (size_t i = 0; i < x->n_headers; i++)
-            if (!is_credential(x->headers[i].name)) h[n++] = x->headers[i];
-        *filtered = h;
-        x->headers = h;
-        x->n_headers = n;
     }
 
     int s = r->head.status;
+    bool dropped = false;
     if ((s == 303 && !r->head_request) || ((s == 301 || s == 302) && strcmp(x->method, "POST") == 0)) {
         x->method = "GET";
         x->body = NULL;
+        x->body_len = 0;
+        dropped = true;
+    }
+    /* A streaming body cannot be rewound: a redirect that keeps the request
+     * body (307/308 always, 301/302 with methods other than POST) aborts
+     * with WTLS_ERR_HTTP_REDIRECT; applications with their own rewind set
+     * max_redirects = -1 and follow Location themselves. When the body is
+     * dropped, the callback is not called for the follow-up request. */
+    if (x->body_cb) {
+        if (!dropped) {
+            free(next);
+            return WTLS_ERR_HTTP_REDIRECT;
+        }
+        x->body_cb = NULL;
+        x->body_ctx = NULL;
+        x->body_chunked = false;
         x->body_len = 0;
     }
 
@@ -470,7 +550,9 @@ wtls_status wtls_http_open(wtls_http_response **out, const wtls_http_request *re
     if (!out) return WTLS_ERR_ARG;
     *out = NULL;
     if (!req || !req->url) return WTLS_ERR_ARG;
-    if (req->body_len && !req->body) return WTLS_ERR_ARG;
+    if (req->body_len && !req->body && !req->body_cb) return WTLS_ERR_ARG;
+    if (req->body && req->body_cb) return WTLS_ERR_ARG;
+    if (req->body_chunked && !req->body_cb) return WTLS_ERR_ARG;
 
     wtls_http_response *r = calloc(1, sizeof *r);
     if (!r) return WTLS_ERR_NOMEM;
@@ -496,6 +578,9 @@ wtls_status wtls_http_open(wtls_http_response **out, const wtls_http_request *re
                      .method = req->method ? req->method : "GET",
                      .body = req->body,
                      .body_len = req->body_len,
+                     .body_cb = req->body_cb,
+                     .body_ctx = req->body_ctx,
+                     .body_chunked = req->body_chunked,
                      .headers = req->headers,
                      .n_headers = req->n_headers};
 #if WTLS_GZIP

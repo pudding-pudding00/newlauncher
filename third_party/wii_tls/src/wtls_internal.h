@@ -22,6 +22,7 @@ struct wtls_conn {
     bool ip_literal;
     uint32_t ipv4_be;
     bool no_resumption;
+    const wtls_client_cred *cred; /* NULL, or held for the connection's lifetime */
     int bio_err;             /* WTLS_ERR_IO once the transport failed */
 };
 

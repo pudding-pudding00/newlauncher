@@ -11,6 +11,7 @@
 
 #include "plat/plat.h"
 #include "wtls_castore.h"
+#include "wtls_cred.h"
 #include "wtls_dns.h"
 #include "wtls_scache.h"
 #include "wtls_internal.h"
@@ -124,16 +125,22 @@ static int wait_io(const wtls_conn *c, int want, uint64_t deadline) {
 }
 
 static void conn_free(wtls_conn *c) {
+    if (c->cred) wtls_client_cred_release(c->cred);
     mbedtls_ssl_free(&c->ssl);
     mbedtls_ssl_config_free(&c->conf);
     if (c->fd >= 0) wtls_plat_close(c->fd);
     mbedtls_free(c);
 }
 
-/* Offers a cached ticket for host:port. Any failure just means a full handshake. */
+/* Offers a cached ticket for host:port with this connection's client
+ * identity. Any failure just means a full handshake. */
 static void offer_ticket(wtls_conn *c) {
     size_t len;
-    if (wtls_scache_take(c->host, c->port, s_blob, sizeof s_blob, &len, wtls_plat_now_ms()) != WTLS_OK) return;
+    bool has_cred = c->cred != NULL;
+    const uint8_t *fp = has_cred ? c->cred->fp : NULL;
+    if (wtls_scache_take(c->host, c->port, has_cred, fp, s_blob, sizeof s_blob, &len,
+                         wtls_plat_now_ms()) != WTLS_OK)
+        return;
     mbedtls_ssl_session sess;
     mbedtls_ssl_session_init(&sess);
     if (mbedtls_ssl_session_load(&sess, s_blob, len) == 0 && mbedtls_ssl_set_session(&c->ssl, &sess) == 0)
@@ -148,9 +155,11 @@ static void store_ticket(wtls_conn *c) {
     mbedtls_ssl_session sess;
     mbedtls_ssl_session_init(&sess);
     size_t len = 0;
+    bool has_cred = c->cred != NULL;
+    const uint8_t *fp = has_cred ? c->cred->fp : NULL;
     if (mbedtls_ssl_get_session(&c->ssl, &sess) == 0 &&
         mbedtls_ssl_session_save(&sess, s_blob, sizeof s_blob, &len) == 0)
-        wtls_scache_put(c->host, c->port, s_blob, len, wtls_plat_now_ms());
+        wtls_scache_put(c->host, c->port, has_cred, fp, s_blob, len, wtls_plat_now_ms());
     mbedtls_ssl_session_free(&sess);
     mbedtls_platform_zeroize(s_blob, sizeof s_blob);
 }
@@ -205,6 +214,20 @@ wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port, const
     wtls_prof_last.connect_wait_us = wtls_plat_poll_wait_us - w0;
 
     int r = wtls_conf_setup(&c->conf, opt);
+    if (r == 0 && opt->client_cred) {
+        /* mTLS: present the client chain. The credential is refcounted for
+         * the connection's lifetime (released in conn_free), so the
+         * application may call wtls_client_cred_free() while connections
+         * (including pooled HTTP ones) still use it. mbedtls_ssl_conf_own_cert
+         * keeps the pointers; the reference count keeps the material alive. */
+        r = mbedtls_ssl_conf_own_cert(&c->conf,
+                                      (mbedtls_x509_crt *)&opt->client_cred->chain,
+                                      (mbedtls_pk_context *)&opt->client_cred->key);
+        if (r == 0) {
+            wtls_client_cred_retain(opt->client_cred);
+            c->cred = opt->client_cred;
+        }
+    }
     if (r == 0) r = mbedtls_ssl_setup(&c->ssl, &c->conf);
     if (r == 0) r = mbedtls_ssl_set_hostname(&c->ssl, literal ? NULL : c->host);
     if (r != 0) {

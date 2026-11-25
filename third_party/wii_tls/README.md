@@ -11,15 +11,17 @@ TF-PSA-Crypto) and libogc.
 - TLS 1.3 preferred, TLS 1.2 minimum; ChaCha20-Poly1305 first (fast without AES
   hardware), AES-GCM as fallback; X25519, P-256, P-384.
 - Certificate chain + host name are always verified (incl. IP literals via
-  iPAddress SAN). The 118 Mozilla roots live in `.rodata` and are parsed lazily,
-  only the one needed by a handshake.
+  iPAddress SAN); optional mutual TLS (`wtls_client_cred_load`) with ECDSA
+  and RSA client certificates. The 118 Mozilla roots live in `.rodata` and are
+  parsed lazily, only the one needed by a handshake.
 - TLS 1.3 session tickets (8-entry cache) and a 16-entry DNS cache: a second
   connection to the same host skips DNS and the certificate-chain work.
 - Blocking API with timeouts, plus a non-blocking mode for your own poll loop.
 - HTTP/1.1 client (`<wiitls/http.h>`, own parser): `https://` and `http://`,
-  streaming or whole-body `wtls_http_fetch`, chunked bodies, gzip
-  decompression (zlib inflate, built in), keep-alive pool with reuse,
-  redirects with credential stripping across origins.
+  streaming downloads/uploads (`wtls_http_body_cb`, fixed or chunked) or
+  whole-body `wtls_http_fetch`, gzip decompression (zlib inflate, built in),
+  keep-alive pool with reuse, redirects with credential stripping across
+  origins, plus URL encoding and `Content-Range` helpers.
 - Entropy from the timing jitter of IOS IPC round trips, measured on a Wii
   ([docs/ios-socket-behaviour.md](docs/ios-socket-behaviour.md); health-tested,
   SHA-256 conditioned, fails closed if the tests fail; `wtls_init` spends
@@ -27,12 +29,13 @@ TF-PSA-Crypto) and libogc.
 
 > **Validated on a Wii.** The hardware suites pass on a real Wii over Wi-Fi:
 > `plat`, `crypto`, `time`, `tls`, `http` and `realworld`, the last against
-> public HTTPS servers. With the default build, a full TLS 1.3 handshake costs
-> about 66 ms of CPU (81 ms wall), a resumed one about 14 ms, and a further
-> HTTP request over a kept-alive connection about 2.4 ms CPU (5.3 ms wall).
-> ChaCha20-Poly1305 runs at 24 MB/s, and an X25519 key exchange (keygen,
-> export, agreement) takes 4.6 ms. The full matrix and the targets that are
-> still missed are in [docs/benchmarks.md](docs/benchmarks.md).
+> public HTTPS servers. With the default build (`WTLS_ACCEL_P256=ON`), a full
+> TLS 1.3 handshake costs about 28 ms of CPU (37 ms wall — meeting the ≤ 30 ms
+> CPU target), a resumed one about 16 ms (24 ms wall), and a further HTTP
+> request over a kept-alive connection about 3.0 ms CPU (5.9 ms wall).
+> ChaCha20-Poly1305 runs at 24 MB/s, an X25519 key exchange takes 4.6 ms, and
+> a P-256 ECDSA verify takes 5.3 ms. The full matrix and the resumed-handshake
+> target are in [docs/benchmarks.md](docs/benchmarks.md).
 
 **Documentation:** [usage guide](docs/usage.md) (setup, threading, error
 handling, resumption, non-blocking I/O, limits) ·
@@ -133,8 +136,9 @@ ctest --test-dir build-host --output-on-failure
 python tools/hwtest.py --wii 192.168.1.50 --dol build-wii/tests/hw/wtls_hwtest.dol --suite tls
 ```
 
-Suites: `selftest`, `spike`, `entropy`, `plat`, `time`, `tls` (against the PC
-test server), `realworld` (example.com, google.com, cloudflare.com, badssl.com).
+Suites: `selftest`, `spike`, `entropy`, `plat`, `crypto`, `time`, `tls`, `http`
+(against the PC test server), `realworld` (example.com, google.com,
+cloudflare.com, badssl.com).
 
 ## Using it in your project
 

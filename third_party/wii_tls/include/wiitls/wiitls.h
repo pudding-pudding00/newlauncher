@@ -32,7 +32,7 @@ extern "C" {
 #endif
 
 /** Library version; equals the CMake project version (checked at configure time). */
-#define WTLS_VERSION "0.2.0"
+#define WTLS_VERSION "0.3.0"
 
 /** Status codes. Every error is negative; WTLS_OK is 0. */
 typedef enum {
@@ -61,6 +61,9 @@ typedef enum {
 /** Opaque connection handle. */
 typedef struct wtls_conn wtls_conn;
 
+/** Opaque client certificate + private key pair for mutual TLS (mTLS). */
+typedef struct wtls_client_cred wtls_client_cred;
+
 /** Per-connection options. Zero-initialise and set what you need. */
 typedef struct {
     uint32_t connect_timeout_ms;    /**< 0 => 5000  */
@@ -71,6 +74,9 @@ typedef struct {
                                          must stay valid until wtls_close() */
     bool no_resumption;             /**< neither use nor store session tickets */
     bool insecure_skip_verify;      /**< TESTS ONLY: disables certificate verification; implies no_resumption */
+    const wtls_client_cred *client_cred; /**< NULL => no client certificate; must stay valid (see
+                                              wtls_client_cred_free) for as long as any connection,
+                                              pooled or active, uses it */
 } wtls_options;
 
 /** Facts about an established connection (see wtls_get_info()). */
@@ -109,6 +115,33 @@ void        wtls_shutdown(void);
  * @return WTLS_OK, WTLS_ERR_ARG (unparsable), WTLS_ERR_NOMEM, or WTLS_ERR_STATE.
  */
 wtls_status wtls_add_trusted_ca(const uint8_t *buf, size_t len);
+
+/**
+ * Loads a client certificate chain and the matching private key for mutual
+ * TLS (set wtls_options::client_cred to present it).
+ *
+ * @p cert is the certificate chain with the leaf first; @p key is the private
+ * key of the leaf. Both accept DER, or PEM with the terminating NUL byte
+ * included in len. Supported keys: ECDSA (P-256, P-384) and RSA. Password-
+ * protected keys are not supported. The data is copied; it is validated
+ * immediately that the private key matches the leaf certificate.
+ *
+ * The returned credential is reference-counted behind the scenes: connections
+ * (including idle keep-alive connections of the HTTP client) hold references,
+ * so wtls_client_cred_free() may be called while connections still use it.
+ *
+ * Requires wtls_init().
+ *
+ * @return WTLS_OK, WTLS_ERR_ARG (unparsable or cert/key mismatch),
+ *         WTLS_ERR_NOMEM, or WTLS_ERR_STATE.
+ */
+wtls_status wtls_client_cred_load(wtls_client_cred **out,
+                                  const uint8_t *cert, size_t cert_len,
+                                  const uint8_t *key, size_t key_len);
+
+/** Releases one reference to the credential (zeroizing private key material
+ *  once no connection uses it anymore). NULL is safe. */
+void wtls_client_cred_free(wtls_client_cred *cred);
 
 /**
  * Opens a TCP connection and completes the TLS handshake (blocking).

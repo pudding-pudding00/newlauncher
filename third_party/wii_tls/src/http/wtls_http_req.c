@@ -69,8 +69,8 @@ static void add_field(sbuf *b, const char *name, const char *value) {
 }
 
 int wtls_http_build_head(const char *method, const wtls_url *u, const wtls_http_header *h, size_t n,
-                         bool has_body, size_t body_len, bool no_keepalive, bool want_gzip, char **out,
-                         size_t *len) {
+                         bool has_body, size_t body_len, bool chunked, bool no_keepalive, bool want_gzip,
+                         char **out, size_t *len) {
     static const char *const reserved[] = {"host", "content-length", "transfer-encoding", "connection"};
     if (!u || !out || !len || (n && !h)) return WTLS_ERR_ARG;
     *out = NULL;
@@ -102,7 +102,10 @@ int wtls_http_build_head(const char *method, const wtls_url *u, const wtls_http_
     if (!wtls_http_headers_have(h, n, "Accept")) add_field(&b, "Accept", "*/*");
     if (want_gzip && !wtls_http_headers_have(h, n, "Accept-Encoding")) add_field(&b, "Accept-Encoding", "gzip");
     if (no_keepalive) add_field(&b, "Connection", "close");
-    if (has_body || strcmp(method, "POST") == 0 || strcmp(method, "PUT") == 0 || strcmp(method, "PATCH") == 0) {
+    if (chunked) {
+        add_field(&b, "Transfer-Encoding", "chunked");
+    } else if (has_body || strcmp(method, "POST") == 0 || strcmp(method, "PUT") == 0 ||
+               strcmp(method, "PATCH") == 0) {
         snprintf(num, sizeof num, "%llu", (unsigned long long)(has_body ? body_len : 0));
         add_field(&b, "Content-Length", num);
     }

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(libwiitls VERSION 0.2.0 LANGUAGES C)
+project(libwiitls VERSION 0.3.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -31,6 +31,7 @@ option(WTLS_BN_ASM "PPC32 bignum assembly (MBEDTLS_HAVE_ASM)" ON)
 option(WTLS_P256M "p256-m driver for P-256 (fails to build with 4.1.1 + PK)" OFF)
 option(WTLS_EVEREST "X25519 via Everest/HACL* (MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED)" ON)
 option(WTLS_ACCEL "X25519 with 32-bit limbs (src/accel), hooked into Everest" ON)
+option(WTLS_ACCEL_P256 "P-256 verify with 32-bit limbs (src/accel), hooked into the builtin driver" ON)
 set(WTLS_OPT O3 CACHE STRING "Optimisation level for library and Mbed TLS: O2 or O3")
 set_property(CACHE WTLS_OPT PROPERTY STRINGS O2 O3)
 if(NOT WTLS_OPT MATCHES "^O[23]$")
@@ -54,6 +55,9 @@ if(WTLS_ACCEL)
         message(FATAL_ERROR "WTLS_ACCEL=ON needs WTLS_EVEREST=ON: it replaces Everest's X25519")
     endif()
     add_compile_definitions(WTLS_ACCEL_X25519)
+endif()
+if(WTLS_ACCEL_P256)
+    add_compile_definitions(WTLS_ACCEL_P256)
 endif()
 add_compile_options(-${WTLS_OPT}) # after CMAKE_C_FLAGS_<CONFIG>: the last -O wins (Mbed TLS: below)
 
@@ -199,6 +203,53 @@ ${_wtls_fn}" _wtls_src "${_wtls_src}")
         file(WRITE ${_wtls_x25519} "${_wtls_src}")
     endif()
 endif()
+
+if(WTLS_ACCEL_P256)
+    # ECDSA P-256 verify with 8x32-bit limbs (src/accel/p256_verify.c): Shamir's
+    # trick with interleaved wNAF against a generated fixed-base table, public
+    # inputs only (variable time is fine). The hook sits at the top of
+    # mbedtls_psa_ecdsa_verify_hash and covers exactly what TLS does: an
+    # uncompressed 65-byte P-256 public key, a 64-byte raw r||s signature and
+    # an ECDSA algorithm; everything else (key pairs, compressed points, other
+    # curves, other families) falls through to the builtin code. It also skips
+    # the mbedtls_ecp_keypair heap allocation and the mbedtls_mpi parsing.
+    # Pinned by tests/common/crypto_tests.c. Idempotent.
+    set(_wtls_ecpv ${mbedtls_SOURCE_DIR}/tf-psa-crypto/drivers/builtin/src/psa_crypto_ecp.c)
+    file(READ ${_wtls_ecpv} _wtls_src)
+    set(_wtls_marker "/* libwiitls: P-256 verify via src/accel */")
+    string(FIND "${_wtls_src}" "${_wtls_marker}" _wtls_done)
+    if(_wtls_done LESS 0)
+        set(_wtls_anchor "psa_status_t mbedtls_psa_ecdsa_verify_hash(
+    const psa_key_attributes_t *attributes,
+    const uint8_t *key_buffer, size_t key_buffer_size,
+    psa_algorithm_t alg, const uint8_t *hash, size_t hash_length,
+    const uint8_t *signature, size_t signature_length)
+{
+    psa_status_t status = PSA_ERROR_CORRUPTION_DETECTED;
+    mbedtls_ecp_keypair *ecp = NULL;
+    size_t curve_bytes;
+    mbedtls_mpi r, s;
+")
+        string(FIND "${_wtls_src}" "${_wtls_anchor}" _wtls_at)
+        if(_wtls_at LESS 0)
+            message(FATAL_ERROR "WTLS_ACCEL_P256: unexpected layout of ${_wtls_ecpv}")
+        endif()
+        string(REPLACE "${_wtls_anchor}" "${_wtls_anchor}    ${_wtls_marker}
+#if defined(WTLS_ACCEL_P256)
+    extern psa_status_t wtls_p256_verify(const uint8_t *pub, const uint8_t *hash,
+                                         size_t hash_len, const uint8_t *sig);
+    if (attributes->bits == 256 &&
+        attributes->type == PSA_KEY_TYPE_ECC_PUBLIC_KEY(PSA_ECC_FAMILY_SECP_R1) &&
+        PSA_ALG_IS_ECDSA(alg) &&
+        key_buffer_size == 65 && key_buffer[0] == 0x04 &&
+        signature_length == 64 && hash_length > 0) {
+        return wtls_p256_verify(key_buffer, hash, hash_length, signature);
+    }
+#endif
+" _wtls_src "${_wtls_src}")
+        file(WRITE ${_wtls_ecpv} "${_wtls_src}")
+    endif()
+endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     foreach(t mbedtls mbedx509 tfpsacrypto)
         target_compile_definitions(${t} PUBLIC WTLS_DEBUG)
@@ -242,6 +293,7 @@ add_library(wiitls STATIC
     src/wtls_jitter.c
     src/wtls_time.c
     src/wtls_castore.c
+    src/wtls_cred.c
     src/wtls_conn.c
     src/wtls_scache.c
     src/wtls_dns.c
@@ -249,6 +301,7 @@ add_library(wiitls STATIC
     src/http/wtls_http_req.c
     src/http/wtls_http_parse.c
     src/http/wtls_http_chunked.c
+    src/http/wtls_http_util.c
     src/http/wtls_http.c
     src/http/wtls_http_pool.c
     ${WTLS_CA_BUNDLE_C}
@@ -269,6 +322,11 @@ if(WTLS_ACCEL)
             VERBATIM)
     endif()
 endif()
+if(WTLS_ACCEL_P256)
+    # Called from the patched builtin driver (psa_crypto_ecp.c) above; the
+    # tfpsacrypto -> wiitls link edge resolves it.
+    target_sources(wiitls PRIVATE src/accel/p256_verify.c)
+endif()
 if(WTLS_GZIP)
     target_sources(wiitls PRIVATE src/http/wtls_http_gzip.c $<TARGET_OBJECTS:wtls_zlib>)
     target_include_directories(wiitls PRIVATE ${zlib_SOURCE_DIR})
@@ -282,6 +340,11 @@ target_link_libraries(wiitls PUBLIC mbedtls mbedx509 tfpsacrypto)
 # tfpsacrypto calls back into libwiitls (mbedtls_platform_get_entropy): close the
 # static-link cycle so linkers that do not rescan archives still resolve it.
 target_link_libraries(tfpsacrypto INTERFACE wiitls)
+# tests/common/crypto_tests.c compares the accelerated P-256 verify against the
+# builtin driver's mbedtls_ecdsa_verify; those headers are driver-private in
+# Mbed TLS 4.1.1 (tf-psa-crypto) and not exported by the tfpsacrypto target.
+target_include_directories(tfpsacrypto INTERFACE
+    ${mbedtls_SOURCE_DIR}/tf-psa-crypto/drivers/builtin/include)
 target_compile_options(wiitls PRIVATE -Wall -Wextra)
 # Lower bound of the clock sanity check (honours SOURCE_DATE_EPOCH for reproducible builds).
 string(TIMESTAMP WTLS_BUILD_UNIX_TIME "%s" UTC)
@@ -371,6 +434,7 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     wtls_host_test(test_http_req)
     wtls_host_test(test_http_parse)
     wtls_host_test(test_http_chunked)
+    wtls_host_test(test_http_util)
     if(WTLS_GZIP)
         wtls_host_test(test_http_gzip)
     endif()
@@ -393,6 +457,11 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     if(CMAKE_NM)
         add_test(NAME http_not_linked_into_tls_only
                  COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DFILE=$<TARGET_FILE:test_tls> -DPATTERN=wtls_http_
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_no_symbol.cmake)
+        # An application without client certificates must not link the
+        # credential parsing (mbedtls_pk_parse_key and friends).
+        add_test(NAME cred_parse_not_linked_without_mtls
+                 COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DFILE=$<TARGET_FILE:test_plat> -DPATTERN=wtls_client_cred_
                          -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_no_symbol.cmake)
     endif()
 

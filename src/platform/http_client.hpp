@@ -1,9 +1,8 @@
 #pragma once
-// HTTP-GET über die IOS-Sockets (Spec 6.4), mit NL_TLS auch HTTPS über wii_tls (M11, Spec v2 4.2). Nur im Netz-Thread
-// (NetService) aufrufen; dort laufen net_init und wtls_init, und nur dort dürfen wtls_*-Aufrufe stehen.
+// HTTP/HTTPS-Client über wii_tls (<wiitls/http.h>, ab M11/v0.2.0 mit Keep-Alive-Pool, gzip und Weiterleitungen);
+// ohne NL_TLS Klartext-Sockets mit core/http. Nur im Netz-Thread (NetService) aufrufen; dort laufen net_init und
+// wtls_init, und nur dort dürfen wtls_*-Aufrufe stehen.
 
-#include <functional>
-#include <span>
 #include <string>
 #include <vector>
 
@@ -23,21 +22,6 @@ struct HttpResult {
 
 // Marker an den Aufrufer (NL_NET_FAIL <name>, NL_TLS_CA, NL_TLS_TIMESYNC, NL_TLS_MISSING); muss threadsicher sein.
 using HttpLog = std::function<void(std::string)>;
-
-// Verbindung: Klartext-Socket oder TLS-Sitzung. send/recv warten selbst (Timeouts, Abbruch etwa alle 100 ms).
-// send: >0 gesendete Bytes, <0 Fehler. recv: >0 Bytes, 0 = sauberes Ende, <0 Fehler. Nach einem Fehler nennt error()
-// die Ursache.
-class Transport {
-public:
-    virtual ~Transport() = default;
-    virtual s32 send(std::span<const u8> data) = 0;
-    virtual s32 recv(std::span<u8> buf) = 0;
-    virtual void close() = 0;
-    NetError error() const { return error_; }
-
-protected:
-    NetError error_ = NetError::None;
-};
 
 // Pfad einer zusätzlichen Test-CA ([debug] tls_ca, "sd:/…"); leer = nur das eingebaute Mozilla-Bundle. Vom
 // Haupt-Thread vor dem ersten NetService::submit setzen; geladen wird beim ersten HTTPS-Auftrag (Log NL_TLS_CA).

@@ -1,5 +1,6 @@
 """Dolphin-Dev-Umgebung: eigener User-Ordner, SD-Sync, Logausgabe und Marker-Suche."""
 
+import os
 import time
 from pathlib import Path
 from typing import Callable
@@ -38,27 +39,34 @@ def write_dev_config(user_dir: Path) -> None:
         "UpdateTrack = \n",
         encoding="utf-8",
     )
+    # Diagnose: NL_DOLPHIN_LOGS=IOS,IOS_SD,WII_IPC schaltet weitere Log-Typen ein (dann ausführlich).
+    extra = [t.strip() for t in os.environ.get("NL_DOLPHIN_LOGS", "").split(",") if t.strip()]
     (config / "Logger.ini").write_text(
         "[Options]\n"
         "WriteToFile = True\n"
         "WriteToConsole = False\n"
         "WriteToWindow = False\n"
-        "Verbosity = 1\n"
+        f"Verbosity = {5 if extra else 1}\n"
         "[Logs]\n"
         "OSREPORT = True\n"
-        "OSREPORT_HLE = True\n",
+        "OSREPORT_HLE = True\n" + "".join(f"{t} = True\n" for t in extra),
         encoding="utf-8",
     )
 
 
-def dolphin_command(exe: Path, user_dir: Path, dol: Path, sd_image: Path | None = None) -> list[str]:
+def dolphin_command(exe: Path, user_dir: Path, dol: Path, sd_image: Path | None = None,
+                    cheats: bool = False) -> list[str]:
     """Startbefehl; -u isoliert die Konfiguration vom privaten Dolphin des Nutzers.
 
     -C setzt die Lautstärke nur für diesen Lauf auf 0 (nicht gespeichert): die Test-Musik ist ein Dauerton,
     der DSP läuft trotzdem wie sonst. Muss hinter -u <dir> stehen (Fake-Dolphin in den Tests ist Python).
     sd_image (M16): rohes SD-Image statt Ordner-Sync; nur für diesen Lauf, die Dev-Konfiguration bleibt.
+    cheats (M20): Ohne Cheats legt Dolphin bei Wii-Homebrew den HLE-Haken "HBReload" auf 0x80001800 und
+    hält die Emulation beim Sprung dorthin an; der Rückkehr-Stub würde nie ausgeführt.
     """
     cmd = [str(exe), "-u", str(user_dir), "-b", "-C", "Dolphin.DSP.Volume=0"]
+    if cheats:
+        cmd += ["-C", "Dolphin.Core.EnableCheats=True"]
     if sd_image is not None:
         cmd += ["-C", f"Dolphin.General.WiiSDCardPath={sd_image}", "-C", "Dolphin.Core.WiiSDCardEnableFolderSync=False"]
     return cmd + ["-e", str(dol)]

@@ -22,6 +22,7 @@
 #include "core/data_dir.hpp"
 #include "core/emu_catalog.hpp"
 #include "core/emu_install.hpp"
+#include "core/self_update.hpp"
 #include "core/emu_profiles.hpp"
 #include "core/emulators.hpp"
 #include "core/index_file.hpp"
@@ -46,6 +47,7 @@
 #include "gfx/font_loader.hpp"
 #include "gfx/renderer.hpp"
 #include "launch/chainloader.hpp"
+#include "launch/return_stub.hpp"
 #include "launch/channel.hpp"
 #include "launch/wii_boot.hpp"
 #include "platform/crash.hpp"
@@ -58,6 +60,7 @@
 #include "platform/http_client.hpp"
 #include "platform/net_service.hpp"
 #include "platform/net_worker.hpp"
+#include "platform/remote_server.hpp"
 #include "platform/nand_titles.hpp"
 #include "platform/scan_worker.hpp"
 #include "platform/std_fs.hpp"
@@ -265,6 +268,7 @@ int main(int argc, char** argv) {
     if (launchAllowed) SYS_SetArena2Hi(reinterpret_cast<void*>(nl::kDolBufferAddr));
     nl::log::init();
     nl::log::line("newlauncher %s", NL_VERSION);
+    nl::platform::logPreviousCrash();
     if (!launchAllowed) nl::log::line("NL_WARN Arena2 schon belegt");
 
     // 1. SD und Konfiguration (Spec 6.1 Schritt 2)
@@ -314,6 +318,26 @@ int main(int argc, char** argv) {
     // 2. Video, Renderer, Atlas, Theme aus der Konfiguration
     nl::platform::Video video;
     video.init();
+    // M20: Fernsteuerung nur auf ausdrücklichen Wunsch (wiiload … --remote oder [debug] remote = 1).
+    nl::platform::RemoteServer remote;
+    if (nl::hasRemoteFlag(argc, argv) || config.debugRemote) {
+        nl::log::line("NL_REMOTE %s", remote.start() ? "start" : "fail");
+    }
+    // Eigene boot.dol für RESTART: argv[0], wenn es ein Gerätepfad ist (HBC), sonst der Standardort (wiiload).
+    const std::string_view argv0 = argc > 0 && argv != nullptr && argv[0] != nullptr ? argv[0] : "";
+    const std::string selfDol = [&]() -> std::string {
+        if (argv0.find(":/") != std::string_view::npos && argv0.size() > 4 && argv0.substr(argv0.size() - 4) == ".dol")
+            return std::string(argv0);
+        return "sd:/apps/newlauncher/boot.dol";
+    }();
+    // Rückkehr-Stub (Spec 4.1 / R5): nur bei echtem Start von SD (nicht per wiiload aus dem RAM).
+    // Ohne argv[0] (Dolphin / Forwarder) gilt weiterhin der Standardort auf SD.
+    const std::string returnStubDol = argv0.empty() ? selfDol : std::string(argv0);
+    // M20 (Spec 4.3): Hat uns der Rückkehr-Stub geladen? Fortschrittscode loggen und löschen.
+    const bool stubAtBoot = nl::launch::returnStubInstalled();
+    if (stubAtBoot) {
+        nl::log::line("NL_RETURN_STUB present stage=%u", static_cast<unsigned>(nl::launch::takeReturnStubStage()));
+    }
     nl::platform::installCrashHandler();
     nl::gfx::Renderer renderer;
     if (auto r = renderer.init(video); !r.isOk()) {
@@ -1180,6 +1204,9 @@ int main(int argc, char** argv) {
         net.join();
         emu.join();
         cheatWorker.join();
+        const bool keepRemote = remote.running();
+        remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
+        for (const std::string& line : remote.takeLogLines()) nl::log::line("%s", line.c_str());
         netService.shutdown();  // wtls_shutdown im Netz-Thread, dann Thread beendet
         covers.shutdown();
         banners.shutdown();
@@ -1221,6 +1248,9 @@ int main(int argc, char** argv) {
             showError({nl::LaunchFailure::EmuInvalid, plan.dolPath});
             return;
         }
+        std::vector<std::string> stubArgs;
+        if (keepRemote) stubArgs.push_back("--remote");
+        nl::launch::installReturnStub(returnStubDol, stubArgs);  // M20: exit() der DOL führt zurück zu newlauncher
         stopAudio();
         logPerfSummary();
         if (data.writable) nl::log::flushLogFile(fs, logPath);
@@ -1359,8 +1389,10 @@ int main(int argc, char** argv) {
     };
 
     // Emulator-Verwaltung (Spec 6.9). EmuWorker und NetWorker reihen ihre Aufträge in den NetService ein.
-    enum class EmuJob : u8 { None, List, Install };
+    enum class EmuJob : u8 { None, List, Install, SelfUpdate };
     EmuJob emuJob = EmuJob::None;
+    bool restartPending = false;  // M20: neu starten, sobald kein Dialog und kein Fern-KEY mehr läuft
+    int updateToastFrames = 0;
     std::string emuDebugPending = config.debugEmuInstall;  // Komma-Liste; nach dem Laden der Liste installieren
     bool autostartPending = false;                         // debug autostart wartet auf diese Installation
     auto refreshEmuRows = [&]() {
@@ -1404,6 +1436,17 @@ int main(int argc, char** argv) {
         for (const std::string& line : emu.takeLogLines()) nl::log::line("%s", line.c_str());
         for (const auto& [name, r] : emu.takeResults()) emuScene.setError(name, r.error);
         if (emu.running()) {
+            if (emuJob == EmuJob::SelfUpdate && updateToastFrames-- <= 0) {
+                char buf[96];
+                const u32 total = emu.total(), done = emu.done();
+                if (emu.step() == nl::EmuStep::Download && total > 0)
+                    std::snprintf(buf, sizeof buf, nl::ui::tr(nl::ui::Str::UpdateProgress),
+                                  static_cast<unsigned>(u64{done} * 100 / total));
+                else
+                    std::snprintf(buf, sizeof buf, "%s", nl::ui::tr(nl::ui::Str::UpdateChecking));
+                mainScene.showToast(buf);
+                updateToastFrames = 30;
+            }
             if (emuJob == EmuJob::Install)
                 emuScene.setBusy(nl::ui::EmuProgress{emu.currentName(), emu.step(), emu.done(), emu.total(),
                                                      emu.appIndex(), emu.appCount()});
@@ -1414,7 +1457,31 @@ int main(int argc, char** argv) {
         emuJob = EmuJob::None;
         for (const std::string& line : emu.takeLogLines()) nl::log::line("%s", line.c_str());
         for (const auto& [name, r] : emu.takeResults()) emuScene.setError(name, r.error);
-        if (finished == EmuJob::List) {
+        if (finished == EmuJob::SelfUpdate) {
+            const nl::SelfUpdateResult r = emu.takeSelfUpdate().value_or(nl::SelfUpdateResult{});
+            char text[256];
+            switch (r.outcome) {
+                case nl::SelfUpdateOutcome::UpToDate:
+                    std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::UpdateCurrent), NL_VERSION);
+                    break;
+                case nl::SelfUpdateOutcome::Installed:
+                    std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::UpdateInstalled), r.version.c_str());
+                    restartPending = true;
+                    break;
+                case nl::SelfUpdateOutcome::NoManifest:
+                    std::snprintf(text, sizeof text, "%s", nl::ui::tr(nl::ui::Str::UpdateNoManifest));
+                    break;
+                case nl::SelfUpdateOutcome::BadManifest:
+                    std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::UpdateFailed), "update.ini");
+                    break;
+                case nl::SelfUpdateOutcome::Failed:
+                    std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::UpdateFailed),
+                                  std::string(nl::emuInstallErrorName(r.install.error)).c_str());
+                    break;
+            }
+            dialog.open(nl::ui::tr(nl::ui::Str::UpdateTitle), text);
+            scenes.push(&dialog);
+        } else if (finished == EmuJob::List) {
             if (auto list = emu.takeList()) {
                 emuList = std::move(*list);
                 emuScene.setListState(nl::ui::EmulatorsScene::ListState::Loaded);
@@ -1444,6 +1511,20 @@ int main(int argc, char** argv) {
         }
         if (data.writable) nl::log::flushLogFile(fs, logPath);
         if (perf) perf->pause();
+    };
+
+    // M20: Update aus dem GitHub-Release ([debug] update_url für den Smoke). Läuft als EmuWorker-Auftrag.
+    auto startSelfUpdate = [&]() {
+        const std::string url =
+            config.debugUpdateUrl.empty() ? std::string(nl::kDefaultUpdateUrl) : config.debugUpdateUrl;
+        if (emu.running() || net.running() || !emu.startSelfUpdate(fs, url, NL_VERSION)) {
+            nl::log::line("NL_SELF_UPDATE busy");
+            dialog.open(nl::ui::tr(nl::ui::Str::UpdateTitle), nl::ui::tr(nl::ui::Str::UpdateBusy));
+            scenes.push(&dialog);
+            return;
+        }
+        emuJob = EmuJob::SelfUpdate;
+        updateToastFrames = 0;
     };
 
     // debug autostart (nur für Tests); wartet ggf. auf die Debug-Emulator-Installation.
@@ -1589,6 +1670,149 @@ int main(int argc, char** argv) {
     u64 nextWifiProbeMs = 0;
 #endif
     bool running = true;
+
+    // M20: Fernsteuerung. Der Socket-Thread liefert höchstens eine Anfrage gleichzeitig; hier wird sie ausgeführt.
+    u64 remoteKeyBits = 0;
+    u32 remoteKeyFrames = 0, remoteKeyRelease = 0;
+    auto replyAndWait = [&](bool ok, std::string info) {  // vor Start/Neustart/Ende: Antwort muss raus sein
+        const u32 before = remote.sentCount();
+        remote.reply(ok, std::move(info));
+        for (int i = 0; i < 200 && remote.sentCount() == before; ++i) usleep(10 * 1000);
+    };
+    auto pumpRemoteLog = [&]() {
+        for (const std::string& line : remote.takeLogLines()) nl::log::line("%s", line.c_str());
+    };
+    // fromRemote: Antwort an den Client; die Fernsteuerung bleibt nach dem Neustart an, wenn sie jetzt läuft.
+    auto restartSelf = [&](bool fromRemote) {
+        std::vector<std::string> extra;
+        if (remote.running()) extra.push_back("--remote");
+        auto plan = nl::preflightDol(fs, selfDol, extra);
+        if (!plan.isOk()) {
+            nl::log::line("NL_WARN Neustart: %s %s", selfDol.c_str(), plan.error().context.c_str());
+            if (fromRemote) {
+                remote.reply(false, selfDol + ": " + plan.error().context);
+            } else {
+                audio.play(nl::UiSound::Error);
+            }
+            return;
+        }
+        nl::log::line("NL_RESTART %s", selfDol.c_str());
+        if (fromRemote) replyAndWait(true, selfDol);
+        worker.cancelAndJoin();
+        discDrive.shutdown();
+        net.join();
+        emu.join();
+        cheatWorker.join();
+        remote.stop();
+        pumpRemoteLog();
+        netService.shutdown();
+        covers.shutdown();
+        banners.shutdown();
+        if (auto loaded = nl::launch::loadDolToBuffer(fs, plan.value()); !loaded.isOk()) {
+            nl::log::line("NL_WARN Neustart: %s", loaded.error().context.c_str());
+            running = false;  // Netz ist schon unten: sauber zum HBC zurück
+            return;
+        }
+        stopAudio();
+        logPerfSummary();
+        if (data.writable) nl::log::flushLogFile(fs, logPath);
+        input.shutdown();
+        nl::platform::unmountAll();
+        nl::platform::shutdownVideo();
+        nl::launch::chainload(plan.value());
+    };
+    auto handleRemote = [&]() {
+        if (!remote.running() || remoteKeyFrames > 0 || remoteKeyRelease > 0) return;
+        nl::RemoteRequest rq;
+        std::vector<u8> body;
+        if (!remote.take(rq, body)) return;
+        auto textBytes = [](const std::string& s) { return std::vector<u8>(s.begin(), s.end()); };
+        switch (rq.cmd) {
+            case nl::RemoteCmd::Hello:
+                remote.reply(true, std::string("newlauncher ") + NL_VERSION);
+                break;
+            case nl::RemoteCmd::Log:
+                remote.reply(true, "", nl::log::snapshot());
+                break;
+            case nl::RemoteCmd::Shot: {  // XFB ist ungecacht (video.cpp): direkt lesbar
+                const GXRModeObj* m = video.mode();
+                const u8* fb = static_cast<const u8*>(video.shownFramebuffer());
+                if (m == nullptr || fb == nullptr) {
+                    remote.reply(false, "kein Framebuffer");
+                    break;
+                }
+                const std::size_t bytes = static_cast<std::size_t>(m->fbWidth) * m->xfbHeight * 2;
+                remote.reply(true, std::to_string(m->fbWidth) + " " + std::to_string(m->xfbHeight) + " yuyv",
+                             std::vector<u8>(fb, fb + bytes));
+                break;
+            }
+            case nl::RemoteCmd::State: {
+                std::string s = std::string("version\t") + NL_VERSION + "\nfocus\t" + mainScene.focusedKey() +
+                                "\ndepth\t" + std::to_string(scenes.depth()) + "\ngames\t" +
+                                std::to_string(store.games().size()) + "\nwifi\t" +
+                                std::to_string(static_cast<int>(ctx.wifi)) + "\ndata\t" + data.dir + "\nself\t" +
+                                selfDol + "\n";
+                remote.reply(true, "", textBytes(s));
+                break;
+            }
+            case nl::RemoteCmd::Games: {
+                std::string s;
+                for (const nl::Game& g : store.games()) {
+                    s += g.key;
+                    s += '\t';
+                    s += nl::consoleInfo(g.console).key;
+                    s += '\t';
+                    s += g.title != nullptr ? g.title : "";
+                    s += '\n';
+                }
+                remote.reply(true, std::to_string(store.games().size()), textBytes(s));
+                break;
+            }
+            case nl::RemoteCmd::Key:  // Antwort nach dem Loslassen (oben in der Schleife)
+                remoteKeyBits = rq.buttons;
+                remoteKeyFrames = rq.frames;
+                remoteKeyRelease = 2;
+                break;
+            case nl::RemoteCmd::Launch: {
+                const nl::Game* found = nullptr;
+                for (const nl::Game& g : store.games()) {
+                    if (rq.text == g.key) {
+                        found = &g;
+                        break;
+                    }
+                }
+                if (found == nullptr) {
+                    remote.reply(false, "Spiel unbekannt: " + rq.text);
+                    break;
+                }
+                nl::log::line("NL_REMOTE launch %s", rq.text.c_str());
+                replyAndWait(true, rq.text);  // Ergebnis zeigen LOG/STATE; ein Start beendet die Verbindung
+                requestLaunch(*found);
+                break;
+            }
+            case nl::RemoteCmd::Put: {
+                if (!nl::remotePutAllowed(rq.text, data.dir)) {
+                    remote.reply(false, "Pfad nicht erlaubt");
+                    break;
+                }
+                const std::string dir = rq.text.substr(0, rq.text.rfind('/'));
+                const bool ok = fs.makeDirs(dir).isOk() && fs.writeAtomic(rq.text, body).isOk();
+                nl::log::line("NL_REMOTE put %s bytes=%u %s", rq.text.c_str(), static_cast<unsigned>(body.size()),
+                              ok ? "ok" : "fail");
+                remote.reply(ok, ok ? std::to_string(body.size()) : std::string("Schreiben fehlgeschlagen"));
+                break;
+            }
+            case nl::RemoteCmd::Restart:
+                restartSelf(true);
+                break;
+            case nl::RemoteCmd::Exit:
+                nl::log::line("NL_REMOTE exit");
+                replyAndWait(true, "");
+                running = false;
+                break;
+        }
+    };
+
     u64 prevFrameStart = 0;
     for (int frameNo = 0; running; ++frameNo) {
         static_cast<void>(frameNo);  // nur im Selbsttest gelesen
@@ -1610,8 +1834,24 @@ int main(int argc, char** argv) {
         input.poll();  // Geräte weiter abfragen, Eingaben kommen aber aus dem Skript
         nl::ui::InputFrame in = frame.begin(nl::app::selftestInput(frameNo, view));
 #else
-        nl::ui::InputFrame in = frame.begin(input.poll());
+        nl::ui::RawInput raw = input.poll();
+        if (remoteKeyFrames > 0) {  // M20: KEY hält die Tasten N Bilder lang, dann zwei Bilder loslassen
+            raw.held |= remoteKeyBits;
+            --remoteKeyFrames;
+        } else if (remoteKeyRelease > 0 && --remoteKeyRelease == 0) {
+            if (restartPending)
+                replyAndWait(true, "");  // Antwort muss vor dem Neustart raus sein
+            else
+                remote.reply(true, "");
+        }
+        nl::ui::InputFrame in = frame.begin(raw);
 #endif
+        pumpRemoteLog();
+        if (readyReported) handleRemote();
+        if (restartPending && !scenes.contains(&dialog) && remoteKeyFrames == 0 && remoteKeyRelease == 0) {
+            restartPending = false;  // M20: nach „Neu starten“ oder dem Update-Dialog
+            restartSelf(false);
+        }
         if (detailsBackAt != 0 && gettime() >= detailsBackAt) {  // nur für Tests (M18): [debug] details_back_ms
             detailsBackAt = 0;
             if (scenes.top() == &details) {
@@ -1837,6 +2077,8 @@ int main(int argc, char** argv) {
                 net.join();
                 emu.join();
                 cheatWorker.join();
+                remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
+                pumpRemoteLog();
                 netService.shutdown();
                 covers.shutdown();
                 banners.shutdown();
@@ -1890,6 +2132,14 @@ int main(int argc, char** argv) {
             case nl::ui::AppCommand::SaveCheats:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 saveCheats();
+                break;
+            case nl::ui::AppCommand::SelfUpdate:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                startSelfUpdate();
+                break;
+            case nl::ui::AppCommand::RestartSelf:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                restartPending = true;
                 break;
             case nl::ui::AppCommand::OpenAbout:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
@@ -1974,13 +2224,16 @@ int main(int argc, char** argv) {
             if (!config.debugFakeDisc.empty()) applyDiscResult(discDrive.readSync(), false);
             else discDrive.requestRead(false);
             if (config.music) startMusic();
-            autostartPending = !config.debugAutostart.empty();
+            // Nach der Rückkehr über den Stub nicht erneut starten (Smoke --return-stub liefe sonst im Kreis).
+            autostartPending = !config.debugAutostart.empty() && !stubAtBoot;
+            if (stubAtBoot && !config.debugAutostart.empty()) nl::log::line("NL_AUTOSTART skip return_stub");
             if (!emuDebugPending.empty()) startEmuList();  // nur für Tests; Autostart wartet auf die Installation
             if (emuJob == EmuJob::None) {
                 emuDebugPending.clear();  // Thread startet nicht: nichts zu warten
                 runPendingAutostart();
             }
             if (config.debugFetchCovers) fetchCovers();  // nur für Tests
+            if (config.debugSelfUpdate && emuJob == EmuJob::None) startSelfUpdate();  // nur für Tests (M20)
             if (!config.debugCheatFetch.empty() && !startCheatFetch(config.debugCheatFetch, false))  // nur für Tests (M15)
                 nl::log::line("NL_CHEAT_FETCH nosource");
             if (!config.debugFilter.empty()) {  // nur für Tests (M17)
@@ -2087,13 +2340,24 @@ int main(int argc, char** argv) {
     net.join();
     emu.join();
     cheatWorker.join();
+    remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
+    pumpRemoteLog();
     netService.shutdown();
     covers.shutdown();
     banners.shutdown();
+    banners.release();
     stopAudio();
     logPerfSummary();
     if (data.writable) nl::log::flushLogFile(fs, logPath);
     input.shutdown();
     nl::platform::unmountAll();
+    // M20 (Spec 4.4): Unser Stub würde bei exit() newlauncher neu laden; den HBC dann als Titel starten.
+    if (nl::launch::returnStubInstalled()) {
+        const u32 hbc = nl::hbcReturnTo(installedTitles);
+        nl::log::line("NL_RETURN_STUB exit hbc=%08x", static_cast<unsigned>(hbc));
+        nl::platform::shutdownVideo();
+        if (hbc != 0) static_cast<void>(nl::launch::launchChannel(0x0001000100000000ull | hbc));
+        SYS_ResetSystem(SYS_RETURNTOMENU, 0, 0);
+    }
     return 0;
 }

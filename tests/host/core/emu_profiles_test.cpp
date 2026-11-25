@@ -189,6 +189,15 @@ TEST_CASE("resolveTable: N64 und Nintendont aus der Erkennung, zipConsoles aus d
     CHECK((zip & (1u << static_cast<unsigned>(Console::N64))) == 0);
 }
 
+TEST_CASE("resolveTable: v1-Datei mit alter Not64-Zeile args = {path} startet mit dem Profil-Schema") {
+    // v1 schrieb args = {path}; Not64 liest argv aber als „rompath = "…"“ (main_gc-menu2.cpp, readArgs).
+    const EmulatorTable ini = EmulatorTable::fromIni(IniDoc::parse(kV1File));
+    const std::vector<FoundApp> found{app("sd", "not64"), app("sd", "wii64")};
+    const EmulatorTable t = resolveTable(ini, found);
+    CHECK(t.forN64(N64Method::Not64)->args == "rompath=\"{path}\"");
+    CHECK(t.forN64(N64Method::Wii64)->args == "{path}");  // Wii64 nimmt argv[1] als Autoboot-Pfad
+}
+
 TEST_CASE("zipConsoles: eigener INI-Eintrag behält das Standardbit") {
     const EmulatorTable ini = EmulatorTable::fromIni(IniDoc::parse("[nes]\ndol = sd:/apps/argv_echo/boot.dol\n"));
     const EmulatorTable t = resolveTable(ini, {});

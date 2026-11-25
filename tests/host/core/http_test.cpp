@@ -165,3 +165,65 @@ TEST_CASE("HttpParser mit Senke: maxBody gilt weiter") {
     q.setSink([](std::span<const u8>) { return true; });
     CHECK(q.feed(bytes("HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n9\r\n")) == HttpParser::State::Error);
 }
+
+TEST_CASE("HttpParser: 302 merkt sich Location und gibt den Body nie an die Senke (M20)") {
+    HttpParser p(1024);
+    std::string sunk;
+    p.setSink([&](std::span<const u8> d) {
+        sunk += text(d);
+        return true;
+    });
+    const auto st = p.feed(bytes("HTTP/1.1 302 Found\r\nLocation: https://cdn.example.org/a.zip?sig=1\r\n"
+                                 "Content-Length: 5\r\n\r\nmoved"));
+    CHECK(st == HttpParser::State::Done);
+    CHECK(p.status() == 302);
+    CHECK(p.location() == "https://cdn.example.org/a.zip?sig=1");
+    CHECK(sunk.empty());
+    p.reset();  // nächster Sprung: Senke bleibt, Zustand leer
+    CHECK(p.feed(bytes("HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nzip")) == HttpParser::State::Done);
+    CHECK(p.status() == 200);
+    CHECK(p.location().empty());
+    CHECK(sunk == "zip");
+    CHECK(p.received() == 3);
+}
+
+TEST_CASE("isRedirectStatus") {
+    for (int s : {301, 302, 303, 307, 308}) CHECK(isRedirectStatus(s));
+    for (int s : {200, 300, 304, 404}) CHECK_FALSE(isRedirectStatus(s));
+}
+
+TEST_CASE("redirectTarget: absolut, pfad-relativ, nie von HTTPS auf HTTP") {
+    const Url from = *parseUrl("https://github.com/o/r/releases/latest/download/update.ini");
+    auto abs = redirectTarget(from, "https://objects.example.net:8443/x?y=1");
+    REQUIRE(abs.has_value());
+    CHECK(abs->host == "objects.example.net");
+    CHECK(abs->port == 8443);
+    CHECK(abs->path == "/x?y=1");
+    CHECK(abs->tls);
+    auto rel = redirectTarget(from, "/o/r/releases/download/v1/update.ini");
+    REQUIRE(rel.has_value());
+    CHECK(rel->host == "github.com");
+    CHECK(rel->tls);
+    CHECK(rel->path == "/o/r/releases/download/v1/update.ini");
+    CHECK_FALSE(redirectTarget(from, "http://github.com/x").has_value());  // kein Rückfall auf Klartext
+    CHECK_FALSE(redirectTarget(from, "").has_value());
+    CHECK_FALSE(redirectTarget(from, "relativ/ohne/slash").has_value());
+    CHECK_FALSE(redirectTarget(from, "//host/protokoll-relativ").has_value());
+    const Url plain = *parseUrl("http://lan:8000/a");
+    CHECK(redirectTarget(plain, "https://lan:8443/b").has_value());  // Aufwertung ist erlaubt
+}
+
+TEST_CASE("formatUrl") {
+    CHECK(formatUrl(Url{"art.gametdb.com", 80, "/wii/cover", false}) == "http://art.gametdb.com/wii/cover");
+    CHECK(formatUrl(Url{"127.0.0.1", 8123, "/x", false}) == "http://127.0.0.1:8123/x");
+    CHECK(formatUrl(Url{"example.com", 443, "/a", true}) == "https://example.com/a");
+    CHECK(formatUrl(Url{"example.com", 8443, "/a", true}) == "https://example.com:8443/a");
+    CHECK(formatUrl(Url{"example.com", 80, "/a", true}) == "https://example.com:80/a");
+    CHECK(formatUrl(Url{"example.com", 443, "", true}) == "https://example.com/");
+    for (const char* raw : {"http://art.gametdb.com/wii/cover", "http://127.0.0.1:8123/x",
+                            "https://example.com/a?x=1", "https://example.com:8443/"}) {
+        const auto parsed = parseUrl(raw);
+        REQUIRE(parsed.has_value());
+        CHECK(formatUrl(*parsed) == raw);
+    }
+}

@@ -41,6 +41,8 @@ Neu in newlauncher:
 | `main.cpp:58` | `memcpy(&normalCFG, (void*)NL_WII_CFG_ADDR, …)` statt `memcpy(&normalCFG, (void*)*EXT_ADDR_CFG, …)` | Der Launcher legt `the_CFG` fest bei `0x93200000` ab. `0x90100000` liegt im MEM2-Heap des Launchers; ein Schreiben dort vor dem Abbau könnte Malloc-Metadaten zerstören (Plan M9). |
 | `Config.hpp`, `types.h`, `frag.h`, `cios.h`, `wip.h` | Die Definitionen von `the_CFG`, den `TYPE_*`/`IOS_TYPE_*`-Enums, `MAX_FRAG`/`Fragment`/`FragList`, `IOS_Info` und `WIP_Code` stehen wortgleich in `include/booter_cfg.h`; die Header binden sie ein. | Eine Definition für Launcher und Booter. Ein `static_assert` hält das Layout fest (121 Byte bzw. 240 012 Byte). |
 | `patchcode.c:31` | `#include "booter_defines.h"` statt `#include "../../../source/defines.h"` | Der Booter liegt nicht mehr im WiiFlow-Baum. Gebraucht werden nur `APP_NAME`/`APP_VERSION` für die Patcher-Kennung an Wiimmfi; der Launcher meldet sich ehrlich als `newlauncher <Version>`. |
+| `wdvd.c` `WDVD_SetFragList` | Liefert `IOS_Ioctl` `1`, wird der Rückgabewert des cIOS aus `outbuf[0]` weitergegeben (upstream: immer `0`). | d2x meldet Fehler von `Frag_Init` (z. B. `-4` = `usbstorage_Init` fehlgeschlagen) nur in `outbuf[0]`. Upstream sah das als Erfolg und lief ins Schwarzbild (M20, R6). |
+| `main.cpp` (Wii-Spiel-Zweig) | Jeder Schritt (`WDVD_Init`, `Disc_SetUSB`, `Disc_Open`, `Disc_FindPartition`, `WDVD_OpenPartition`) wird geprüft; bei einem Fehler oder `AppEntrypoint == 0` zeigt der Booter eine Fehlermeldung (DE+EN, bei `-4` mit Hinweis auf USB-Port 0) samt Rückgabewerten, legt sie als Absturzbericht (`NLCR`, `0x932F0000`) in MEM2 ab und kehrt nach RESET zurück. | Upstream sprang auch bei Fehlern nach `AppEntrypoint = 0`: dauerhaft schwarzes Bild ohne Hinweis (M20, R6). |
 | alle | Zeilenenden CRLF → LF | `.gitattributes` des Repos (`eol=lf`) |
 
 ### Bauoptionen (CMake-Ziel `nl_game_booter`)
@@ -52,6 +54,8 @@ Neu in newlauncher:
 | `-std=gnu17` (nur C) | GCC 15+ übersetzt C standardmäßig als C23; dort heißt `int (**main)()` „keine Argumente“, und `apploader.c` passt nicht mehr zum Zeigertyp. Upstream wurde mit gnu17 gebaut; Code bleibt unverändert. |
 | `-Wa,-mno-regnames` (nur `patchhook.S`) | Die Plattform setzt `-mregnames` für alle Assemblerdateien. `patchhook.S` definiert `r0`…`r31` selbst per `.set`; mit `-mregnames` meldet gas „invalid register expression“. |
 | `-Wl,--section-start,.init=0x80A80000` | Ladeadresse wie upstream |
+| `-fno-exceptions -fno-rtti` (nur C++) | Projektregel „keine Exceptions, kein RTTI“, jetzt für alle C++-Dateien des Booters statt nur für die LZ77-Brücke (M20) |
+| `-ffunction-sections -fdata-sections`, `-Wl,--gc-sections` | Unbenutzter Code fällt weg; der Booter muss unter `0x80B00000` bleiben, auch mit Fehlermeldung und Konsole (M20) |
 
 ### libogc
 

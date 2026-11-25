@@ -364,6 +364,18 @@ Result<WiiBootPlan, LaunchError> preflightEmuChannel(const Game& g, const CiosSt
     return plan;
 }
 
+Result<LaunchPlan, LaunchError> preflightDol(FileSystem& fs, std::string_view dolPath, std::span<const std::string> extraArgs) {
+    const std::string dol(dolPath);
+    auto size = checkDol(fs, dol, LaunchFailure::EmuMissing);
+    if (!size.isOk()) return PlanResult::err(size.error());
+    LaunchPlan plan;
+    plan.dolPath = dol;
+    plan.dolSize = size.value();
+    plan.args.push_back(dol);
+    for (const std::string& a : extraArgs) plan.args.push_back(a);
+    return finish(std::move(plan));
+}
+
 Result<LaunchPlan, LaunchError> preflightEmulator(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus) {
     const EmulatorEntry* emu = emus.forConsole(g.console);
     if (emu == nullptr) return fail(LaunchFailure::Unsupported, consoleInfo(g.console).name);

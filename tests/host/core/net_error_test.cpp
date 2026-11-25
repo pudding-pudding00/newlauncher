@@ -18,7 +18,7 @@ TEST_CASE("netErrorFromTls: Statuscodes aus wiitls.h") {
     CHECK(netErrorFromTls(-21) == NetError::Clock);
     CHECK(netErrorFromTls(-40) == NetError::Handshake);
     CHECK(netErrorFromTls(-12) == NetError::NoMem);
-    for (int other : {-1, -2, -10, -11, -20, -30, -34, -35, -99, -1000, 5}) {
+    for (int other : {-1, -2, -10, -11, -20, -30, -34, -35, -50, -51, -52, -99, -1000, 5}) {
         CAPTURE(other);
         CHECK(netErrorFromTls(other) == NetError::Other);
     }

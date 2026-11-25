@@ -42,13 +42,17 @@ void line(const char* fmt, ...) {
     appendRing("\n");
 }
 
-bool flushLogFile(FileSystem& fs, std::string_view path) {
+std::vector<u8> snapshot() {
     // Älteste Bytes zuerst: bei Überlauf ab g_head bis zum Ende, dann vom Anfang bis g_head.
     const std::size_t tail = g_wrapped ? kRingBytes - g_head : 0;
     std::vector<u8> data(tail + g_head);
     if (tail > 0) std::memcpy(data.data(), g_ring + g_head, tail);
     if (g_head > 0) std::memcpy(data.data() + tail, g_ring, g_head);
-    return fs.writeAtomic(path, data).isOk();  // Fehler beim Log-Schreiben sind nicht kritisch
+    return data;
+}
+
+bool flushLogFile(FileSystem& fs, std::string_view path) {
+    return fs.writeAtomic(path, snapshot()).isOk();  // Fehler beim Log-Schreiben sind nicht kritisch
 }
 
 }  // namespace nl::log

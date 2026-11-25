@@ -1,4 +1,4 @@
-"""Reduziert M PLUS Rounded 1c auf Latin-1 plus „…" (Spec 3.7) und legt sie unter assets/fonts/ ab.
+"""Reduziert M PLUS Rounded 1c auf Latin-1 plus Zusatzzeichen (Spec 3.7, M20) und legt sie unter assets/fonts/ ab.
 
 Einmaliges Dev-Werkzeug, nicht Teil des Builds. Braucht fonttools (`pip install fonttools`).
 Quelle: github.com/google/fonts, Ordner ofl/mplusrounded1c (SIL Open Font License 1.1).
@@ -13,7 +13,8 @@ from fontTools import subset
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUT_DIR = REPO_ROOT / "assets/fonts"
-UNICODES = "U+0020-007E,U+00A0-00FF,U+2026"
+# Zusatzzeichen wie kExtraGlyphs in src/gfx/font.hpp: …, –, —, →, ▲, ▶, ▼, ◀
+UNICODES = "U+0020-007E,U+00A0-00FF,U+2026,U+2013,U+2014,U+2192,U+25B2,U+25B6,U+25BC,U+25C0"
 
 
 def subset_font(src: Path, dst: Path) -> None:

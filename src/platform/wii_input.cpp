@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include <bte/bte.h>
 #include <gccore.h>
 #include <wiiuse/wpad.h>
 
@@ -116,6 +117,10 @@ ui::RawInput WiiInput::poll() {
 
 void WiiInput::shutdown() {
     if (!initialized_) return;
+    // libogc 3.2.1 WPAD_Shutdown gibt __wpads frei und aktiviert IRQs vor BTE_Shutdown: trifft dazwischen ein
+    // BT-Paket ein, dereferenziert __wpad_eventCB das freigegebene wm (DSI). BTE zuerst stoppen, solange
+    // __wpads noch gültig ist; das zweite BTE_Shutdown in WPAD_Shutdown wird dann übersprungen.
+    BTE_Shutdown();
     WPAD_Shutdown();
     initialized_ = false;
 }

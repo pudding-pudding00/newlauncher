@@ -1,0 +1,119 @@
+/**
+ * @file http.h
+ * @brief libwiitls HTTP/1.1 client on top of wiitls.h.
+ *
+ * https:// (TLS through wtls_connect) and plain http://. Responses are
+ * streamed; wtls_http_fetch() reads a whole body into memory. Idle
+ * connections are kept in a small keep-alive pool and reused by the next
+ * request to the same scheme, host and port. Redirects are followed (default
+ * 5). Bodies with Content-Encoding gzip are decompressed by default.
+ *
+ * Same threading rule as wiitls.h: call every function from one thread.
+ * wtls_init() must have succeeded. An HTTP status >= 400 is not an error:
+ * wtls_http_open() returns WTLS_OK and wtls_http_status() has the code.
+ */
+#ifndef WIITLS_HTTP_H
+#define WIITLS_HTTP_H
+
+#include <wiitls/wiitls.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/** One request header field. */
+typedef struct {
+    const char *name;  /**< RFC 9110 token; Host, Content-Length, Transfer-Encoding and Connection are refused */
+    const char *value; /**< no CR, LF or other control characters except HTAB */
+} wtls_http_header;
+
+/** A request. Zero-initialise and set what you need. */
+typedef struct {
+    const char *method;              /**< NULL => "GET"; RFC 9110 token, case-sensitive */
+    const char *url;                 /**< "https://host[:port][/path][?query][#fragment]" or "http://..." */
+    const wtls_http_header *headers; /**< extra request headers, may be NULL */
+    size_t n_headers;                /**< <= 64 */
+    const void *body;                /**< request body, may be NULL; sent with Content-Length */
+    size_t body_len;
+    int max_redirects;               /**< 0 => 5; -1 => do not follow redirects */
+    uint32_t header_timeout_ms;      /**< 0 => 15000: request sent -> response head complete */
+    bool no_keepalive;               /**< send "Connection: close" and never pool the connection */
+    bool no_gzip;                    /**< do not offer gzip; bodies are returned as sent */
+    const wtls_options *tls;         /**< NULL => defaults; ALPN is always "http/1.1"; for http:// only
+                                          connect_timeout_ms and io_timeout_ms are used */
+} wtls_http_request;
+
+/** Opaque response handle. */
+typedef struct wtls_http_response wtls_http_response;
+
+/** Facts about a response (see wtls_http_get_info()). */
+typedef struct {
+    const char *url;        /**< effective URL after redirects; valid until wtls_http_close() */
+    uint8_t redirects;      /**< redirects followed */
+    bool reused_connection; /**< came from the keep-alive pool: no connect, no handshake */
+    bool secure;            /**< https (TLS); false for http:// */
+    bool gzip;              /**< the body is being decompressed from gzip */
+    wtls_conn_info tls;     /**< as wtls_get_info(); all zero when !secure */
+} wtls_http_info;
+
+/**
+ * Sends the request and reads the response head (following redirects).
+ * On success *out is the response; read the body with wtls_http_read() and
+ * always release it with wtls_http_close(). On failure *out is NULL.
+ *
+ * @return WTLS_OK, WTLS_ERR_ARG (bad URL, method or header), any connection
+ *         error of wtls_connect(), WTLS_ERR_TIMEOUT, WTLS_ERR_IO,
+ *         WTLS_ERR_HTTP, WTLS_ERR_HTTP_LIMIT, WTLS_ERR_HTTP_REDIRECT.
+ */
+wtls_status wtls_http_open(wtls_http_response **out, const wtls_http_request *req);
+
+/** Status code 100..599, or 0 for NULL. */
+int wtls_http_status(const wtls_http_response *r);
+
+/** Value of the first field named name (case-insensitive), or NULL. */
+const char *wtls_http_get_header(const wtls_http_response *r, const char *name);
+
+/** Field i in arrival order (names in lower case); false past the end. */
+bool wtls_http_header_at(const wtls_http_response *r, size_t i, const char **name, const char **value);
+
+/** Body length from Content-Length, or -1 if unknown (chunked, until close, gzip). */
+int64_t wtls_http_content_length(const wtls_http_response *r);
+
+/**
+ * Reads body bytes. Unlike wtls_read(), the end of the body is a normal
+ * event here: returns > 0 bytes, 0 at the end of the body (again on every
+ * later call), or a negative wtls_status (WTLS_ERR_IO: truncated body).
+ */
+int wtls_http_read(wtls_http_response *r, void *buf, size_t len);
+
+/** Effective URL, redirects, connection reuse and TLS facts. */
+wtls_status wtls_http_get_info(const wtls_http_response *r, wtls_http_info *out);
+
+/** Frees the response. The connection goes back to the pool only if the
+ *  body was read to its end (wtls_http_read returned 0); NULL is allowed. */
+void wtls_http_close(wtls_http_response *r);
+
+/** Result of wtls_http_fetch(). */
+typedef struct {
+    int status;      /**< HTTP status */
+    char *body;      /**< NUL-terminated (NUL not counted in body_len); NULL on error */
+    size_t body_len;
+} wtls_http_result;
+
+#define WTLS_HTTP_FETCH_DEFAULT_MAX (1024u * 1024u)
+
+/** Whole request in one call; max_body 0 => WTLS_HTTP_FETCH_DEFAULT_MAX.
+ *  A body over max_body is WTLS_ERR_HTTP_LIMIT. Free with wtls_http_result_free(). */
+wtls_status wtls_http_fetch(const wtls_http_request *req, size_t max_body, wtls_http_result *out);
+
+/** Frees the body of a result; NULL and empty results are fine. */
+void wtls_http_result_free(wtls_http_result *res);
+
+/** Closes all idle keep-alive connections (wtls_shutdown() does this too). */
+void wtls_http_pool_flush(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

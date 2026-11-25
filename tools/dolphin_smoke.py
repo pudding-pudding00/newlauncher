@@ -15,6 +15,7 @@ import shutil
 import threading
 import time
 import zipfile
+import zlib
 from pathlib import Path
 
 from deploy_dolphin import ARGV_ECHO_DOL, DEFAULT_DOL, DIST_DIR, FIXTURES_DIR, deploy
@@ -23,8 +24,9 @@ from make_disk_image import make_image
 from make_fixtures import disc_header
 from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_path, reset_log,
                      sd_sync_dir, wait_for_markers, write_dev_config)
-from pngfile import solid_png
+from pngfile import solid_png, write_png
 from test_ca import make as make_test_ca
+from wii_remote import REMOTE_PORT, RemoteClient, RemoteError, yuyv_to_rgba
 from wii_title import TEST_CHANNEL_ID, TEST_CHANNEL_NAMES, install_channel
 
 DEFAULT_MARKERS = ["NL_READY"]
@@ -137,6 +139,33 @@ def write_emu_server_files(root: Path, dol: Path) -> None:
     (root / "hbb/listv036.txt").write_bytes(("\r\n".join(lines) + "\r\n").encode("utf-8"))
 
 
+UPDATE_SERVER_VERSION = "99.0.0"
+
+
+# M20: Rückkehr-Stub. Erster Lauf startet die ROM, argv_echo ruft exit(); der Stub lädt newlauncher von der SD,
+# der zweite Lauf meldet den Stub und überspringt den Autostart.
+RETURN_STUB_ROM = "gb/Tetris (World) (Rev 1).gb"
+RETURN_STUB_MARKERS = ["NL_RETURN_STUB installed", "NL_ARGV 3 --exit", "NL_ARGV exit",
+                       "NL_RETURN_STUB present stage=0", "NL_AUTOSTART skip return_stub"]
+
+
+def write_update_server_files(root: Path, dol: Path) -> None:
+    """M20: rel/update.ini und rel/newlauncher-<v>.zip wie aus make_release.py; boot.dol ist argv_echo, damit
+    der Neustart nach dem Update sichtbar in der neuen DOL landet."""
+    rel = root / "rel"
+    rel.mkdir(parents=True, exist_ok=True)
+    zip_path = rel / f"newlauncher-{UPDATE_SERVER_VERSION}.zip"
+    entries = {"apps/newlauncher/boot.dol": dol.read_bytes(),
+               "apps/newlauncher/meta.xml": b"<app version=\"1\"><name>newlauncher</name></app>\n"}
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in entries.items():
+            z.writestr(name, data)
+    unzipped = sum(len(d) for d in entries.values())
+    lines = ["[update]", f"version = {UPDATE_SERVER_VERSION}", f"zip = {zip_path.name}",
+             f"zip_size = {zip_path.stat().st_size}", f"unzipped_size = {unzipped}", ""]
+    (rel / "update.ini").write_bytes("\n".join(lines).encode("utf-8"))
+
+
 def set_ini_value(path: Path, section: str, key: str, value: str) -> None:
     """Ersetzt key im Abschnitt section (Textform bleibt sonst unverändert)."""
     out, current, done = [], None, False
@@ -238,13 +267,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--theme-pack", metavar="NAME",
                         help="Fixture-Theme newlauncher/themes/NAME mit einem kaputten Token anlegen und in config.ini "
                              "wählen; verlangt genau eine NL_THEME_BAD-Zeile (M17). Ohne die Option wird themes/ entfernt")
+    parser.add_argument("--update-server", action="store_true",
+                        help="M20: Selbst-Update von einem lokalen Server; A per Fernsteuerung, dann startet die "
+                             "neue DOL (argv_echo)")
+    parser.add_argument("--remote-check", action="store_true",
+                        help="Fernsteuerung an, dann über 127.0.0.1:4300 HELLO/GAMES/KEY/STATE/SHOT/PUT/LOG prüfen (M20)")
+    parser.add_argument("--return-stub", action="store_true",
+                        help="M20: GB-ROM mit argv_echo --exit starten; dessen exit() muss über den Rückkehr-Stub "
+                             "newlauncher neu laden")
     parser.add_argument("--emunand", action="store_true",
                         help="Fixture-EmuNAND sd:/emunand mit Testkanal 000100014E4C5443 anlegen (M19)")
     args = parser.parse_args(argv)
     tls = args.tls or args.tls_wrong_ca
-    if tls and not (args.cover_server or args.emu_server or args.cheat_server):
+    if tls and not (args.cover_server or args.emu_server or args.cheat_server or args.update_server):
         parser.error("--tls/--tls-wrong-ca braucht --cover-server, --emu-server oder --cheat-server")
     markers = args.markers or DEFAULT_MARKERS
+    if args.remote_check:
+        args.debug.append("remote=1")
+        markers = markers + ["NL_REMOTE listen"]
     args.sd_disk_layout = None
     if args.sd_disk:
         layout = [k.strip() for k in args.sd_disk.split(",")]
@@ -320,6 +360,16 @@ def main(argv: list[str] | None = None) -> int:
         server, port = start_cover_server(Path(server_dirs[-1].name), ssl_context)
         servers.append(server)
         debug_lines += [f"emu_repo = {scheme_host}:{port}/hbb", f"emu_install = {EMU_SERVER_APP}"]
+    if args.update_server:
+        if not ARGV_ECHO_DOL.is_file():
+            print(f"SMOKE FEHLER: argv_echo.dol nicht gebaut: {ARGV_ECHO_DOL}")
+            return 2
+        server_dirs.append(tempfile.TemporaryDirectory(prefix="nl_update_"))
+        write_update_server_files(Path(server_dirs[-1].name), ARGV_ECHO_DOL)
+        server, port = start_cover_server(Path(server_dirs[-1].name), ssl_context)
+        servers.append(server)
+        debug_lines += [f"update_url = {scheme_host}:{port}/rel/update.ini", "self_update = 1", "remote = 1"]
+        markers = markers + [f"NL_SELF_UPDATE ok {UPDATE_SERVER_VERSION}", "NL_REMOTE listen"]
     if args.cheat_server:
         server_dirs.append(tempfile.TemporaryDirectory(prefix="nl_cheats_"))
         write_cheat_server_files(Path(server_dirs[-1].name), args.cheat_server)
@@ -327,6 +377,9 @@ def main(argv: list[str] | None = None) -> int:
         servers.append(server)
         debug_lines += [f"cheat_url = {scheme_host}:{port}/codes/{{id6}}.txt", f"cheat_fetch = {CHEAT_SERVER_ID6}"]
         markers = markers + ["NL_CHEAT_FETCH " + ("ok" if args.cheat_server == "ok" else "nocodes")]
+    if getattr(args, "return_stub", False):
+        debug_lines.append(f"autostart = {RETURN_STUB_ROM}")
+        markers = markers + RETURN_STUB_MARKERS
     if args.expect_sysinfo:
         debug_lines.append("sysinfo_save = 1")
         markers = markers + ["NL_SYSINFO_SAVED"]
@@ -445,6 +498,8 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
             shutil.copyfile(ARGV_ECHO_DOL, sd / f"apps/{EMU_SERVER_APP}/boot.dol")
             (sd / f"apps/{EMU_SERVER_APP}/meta.xml").write_text(
                 "<app><name>FCE Ultra GX</name></app>", encoding="utf-8")
+        if getattr(args, "return_stub", False):
+            set_ini_value(sd / "newlauncher/emulators.ini", "gb", "args", "{dir}|{file}|--exit")
         if getattr(args, "cheat_server", None):
             (sd / CHEAT_TXT_REL).unlink(missing_ok=True)  # sonst endet der Lauf mit „exists“
         if getattr(args, "sd_ca", None) is not None:
@@ -516,13 +571,18 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
 def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -> int:
     try:
         proc = subprocess.Popen(dolphin_command(args.dolphin, user_dir, args.dol.resolve(),
-                                                getattr(args, "sd_image", None)))
+                                                getattr(args, "sd_image", None),
+                                                cheats=getattr(args, "return_stub", False)))
     except OSError as e:
         print(f"SMOKE FEHLER: Dolphin startet nicht: {e}")
         return 2
     try:
         missing = wait_for_markers(log_path(user_dir), markers, args.timeout,
                                    is_alive=lambda: proc.poll() is None)
+        if not missing and getattr(args, "remote_check", False):
+            missing = _remote_session(user_dir)
+        if not missing and getattr(args, "update_server", False):
+            missing = _update_restart(user_dir)
         if not missing and getattr(args, "cheat_server", None):
             # Dolphin puffert SD-Schreibzugriffe; ein sofortiges Beenden verliert die gerade geschriebene Datei.
             time.sleep(SD_SETTLE_SECONDS)
@@ -553,6 +613,69 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
         return 0
     print(f"SMOKE FEHLGESCHLAGEN: fehlende Marker nach {args.timeout:g} s: {', '.join(missing)}")
     return 1
+
+
+def _update_restart(user_dir: Path) -> list[str]:
+    """M20: Der Dialog „Version … ist installiert“ steht; A schließt ihn, newlauncher startet die neue boot.dol
+    von der SD (hier argv_echo) mit --remote."""
+    try:
+        with RemoteClient("127.0.0.1", REMOTE_PORT, timeout=20) as c:
+            c.call("KEY a")
+    except (OSError, RemoteError) as e:
+        return [f"UPDATE KEY a ({e})"]
+    log = log_path(user_dir)
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        text = log.read_text(encoding="utf-8", errors="replace")
+        if "NL_ARGV 1 --remote" in text and "NL_RESTART sd:/apps/newlauncher/boot.dol" in text:
+            return []
+        time.sleep(0.5)
+    return ["NL_RESTART + NL_ARGV 1 --remote (neue DOL nach dem Update)"]
+
+
+def _remote_session(user_dir: Path) -> list[str]:
+    """M20: eine Sitzung gegen den Fernsteuerungs-Server; Dolphin reicht Wii-Sockets an den PC durch."""
+    try:
+        with RemoteClient("127.0.0.1", REMOTE_PORT, timeout=20) as c:
+            if not c.call("HELLO")[0].startswith("newlauncher "):
+                return ["REMOTE HELLO"]
+            games = [ln for ln in c.call("GAMES")[1].decode().splitlines() if ln]
+            if not games or any(ln.count("\t") != 2 for ln in games):
+                return ["REMOTE GAMES"]
+            state = dict(ln.split("\t", 1) for ln in c.call("STATE")[1].decode().splitlines() if "\t" in ln)
+            c.call("KEY right")
+            moved = dict(ln.split("\t", 1) for ln in c.call("STATE")[1].decode().splitlines() if "\t" in ln)
+            if state.get("focus") == moved.get("focus"):
+                return [f"REMOTE KEY (Fokus blieb {state.get('focus')})"]
+            info, shot = c.call("SHOT")
+            w, h, fmt = info.split(" ")
+            # Nur Format und Größe: Dolphin hält den XFB nicht im emulierten RAM (Inhalt: Hardware-Abnahme).
+            if fmt != "yuyv" or len(shot) != int(w) * int(h) * 2:
+                return [f"REMOTE SHOT {info} {len(shot)}"]
+            write_png(user_dir / "remote_shot.png", int(w), int(h), yuyv_to_rgba(shot, int(w), int(h)))
+            target = state["data"] + "/remote_put.txt"
+            c.put(b"remote\n", target)
+            one = b"\x01"
+            if (c.request(f"PUT 1 {zlib.crc32(one):08x} sd:/wbfs/x", one)[0]
+                    or c.request(f"PUT 1 {zlib.crc32(b'x'):08x} {target}", one)[0]):
+                return ["REMOTE PUT (verbotener Pfad oder falsche CRC angenommen)"]
+            if f"NL_REMOTE put {target} bytes=7 ok" not in c.call("LOG")[1].decode("utf-8", "replace"):
+                return ["REMOTE LOG"]
+            restarted = c.call("RESTART")[0]
+        # Die neue Instanz startet mit --remote und lauscht wieder: zweite listen-Zeile, dann HELLO.
+        log = log_path(user_dir)
+        deadline = time.monotonic() + 45
+        while log.read_text(encoding="utf-8", errors="replace").count("NL_REMOTE listen") < 2:
+            if time.monotonic() > deadline:
+                return [f"REMOTE RESTART ({restarted}) lauscht nicht wieder"]
+            time.sleep(0.5)
+        with RemoteClient("127.0.0.1", REMOTE_PORT, timeout=20) as c:
+            if not c.call("HELLO")[0].startswith("newlauncher "):
+                return ["REMOTE HELLO nach RESTART"]
+    except (RemoteError, OSError, KeyError, ValueError) as e:
+        return [f"REMOTE {e}"]
+    print(f"REMOTE OK: {len(games)} Spiele, Fokus {state.get('focus')} -> {moved.get('focus')}, Bild {w}x{h}")
+    return []
 
 
 def _check_frag(user_dir: Path, rel_path: str) -> list[str]:

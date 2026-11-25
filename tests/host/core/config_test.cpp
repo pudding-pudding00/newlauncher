@@ -179,6 +179,16 @@ TEST_CASE("configFromIni: [debug] perf") {
     CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nperf = 1\n")).debugPerf);
 }
 
+TEST_CASE("configFromIni: [debug] remote") {
+    CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugRemote);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nremote = 1\n")).debugRemote);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("")).debugUpdateUrl.empty());
+    CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugSelfUpdate);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nself_update = 1\n")).debugSelfUpdate);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nupdate_url = https://127.0.0.1:8443/update.ini \n"))
+              .debugUpdateUrl == "https://127.0.0.1:8443/update.ini");
+}
+
 TEST_CASE("configFromIni: [emulators] repo, fehlt oder weder http:// noch https:// → Standard") {
     CHECK(configFromIni(IniDoc::parse("")).emulatorRepo == "https://hbb1.oscwii.org/hbb");
     CHECK(configFromIni(IniDoc::parse("[emulators]\nrepo = http://example.org/hbb\n")).emulatorRepo ==

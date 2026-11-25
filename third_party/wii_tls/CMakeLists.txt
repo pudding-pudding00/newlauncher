@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(libwiitls VERSION 0.1.0 LANGUAGES C)
+project(libwiitls VERSION 0.2.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -72,6 +72,29 @@ FetchContent_Declare(mbedtls
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 FetchContent_MakeAvailable(mbedtls)
+
+# gzip Content-Encoding: the inflate half of zlib, compiled with Z_PREFIX into
+# libwiitls itself (no -lz for applications, no clash with an application's zlib).
+option(WTLS_GZIP "gzip Content-Encoding in the HTTP client (zlib inflate, built in)" ON)
+if(WTLS_GZIP)
+    FetchContent_Declare(zlib
+        URL https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+        URL_HASH SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        SOURCE_SUBDIR _wtls_no_cmake # sources only: zlib's own CMakeLists is not used
+    )
+    FetchContent_MakeAvailable(zlib)
+    add_library(wtls_zlib OBJECT
+        ${zlib_SOURCE_DIR}/adler32.c
+        ${zlib_SOURCE_DIR}/crc32.c
+        ${zlib_SOURCE_DIR}/inffast.c
+        ${zlib_SOURCE_DIR}/inflate.c
+        ${zlib_SOURCE_DIR}/inftrees.c
+        ${zlib_SOURCE_DIR}/zutil.c)
+    target_include_directories(wtls_zlib PUBLIC ${zlib_SOURCE_DIR})
+    target_compile_definitions(wtls_zlib PUBLIC Z_PREFIX)
+    target_compile_options(wtls_zlib PRIVATE -w)
+endif()
 # Mbed TLS adds its own $<$<CONFIG:Release>:-O2> per target, after the global
 # options: repeat WTLS_OPT on each target so it comes last and wins.
 foreach(t mbedtls mbedx509 tfpsacrypto builtin everest p256-m platform utilities extras pqcp)
@@ -203,6 +226,15 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# WTLS_VERSION in the public header must match the project version.
+file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/include/wiitls/wiitls.h _wtls_ver_line
+     REGEX "^#define WTLS_VERSION \"[^\"]*\"")
+string(REGEX REPLACE ".*\"([^\"]*)\".*" "\\1" _wtls_ver "${_wtls_ver_line}")
+if(NOT _wtls_ver STREQUAL PROJECT_VERSION)
+    message(FATAL_ERROR "WTLS_VERSION in wiitls.h is '${_wtls_ver}', project version is ${PROJECT_VERSION}")
+endif()
+
+# ---------------------------------------------------------------------------
 # libwiitls
 add_library(wiitls STATIC
     src/wtls_core.c
@@ -213,6 +245,12 @@ add_library(wiitls STATIC
     src/wtls_conn.c
     src/wtls_scache.c
     src/wtls_dns.c
+    src/http/wtls_url.c
+    src/http/wtls_http_req.c
+    src/http/wtls_http_parse.c
+    src/http/wtls_http_chunked.c
+    src/http/wtls_http.c
+    src/http/wtls_http_pool.c
     ${WTLS_CA_BUNDLE_C}
     src/plat/plat_common.c
     src/plat/plat_${WTLS_PLATFORM}.c
@@ -230,6 +268,11 @@ if(WTLS_ACCEL)
                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_ct.cmake
             VERBATIM)
     endif()
+endif()
+if(WTLS_GZIP)
+    target_sources(wiitls PRIVATE src/http/wtls_http_gzip.c $<TARGET_OBJECTS:wtls_zlib>)
+    target_include_directories(wiitls PRIVATE ${zlib_SOURCE_DIR})
+    target_compile_definitions(wiitls PRIVATE Z_PREFIX WTLS_GZIP=1)
 endif()
 set_target_properties(wiitls PROPERTIES OUTPUT_NAME wiitls PREFIX lib)
 target_include_directories(wiitls
@@ -324,6 +367,15 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     wtls_host_test(test_scache)
     wtls_host_test(test_dns)
     wtls_host_test(test_crypto tests/common/crypto_tests.c)
+    wtls_host_test(test_http_url)
+    wtls_host_test(test_http_req)
+    wtls_host_test(test_http_parse)
+    wtls_host_test(test_http_chunked)
+    if(WTLS_GZIP)
+        wtls_host_test(test_http_gzip)
+    endif()
+    wtls_host_test(test_http_fuzz)
+    wtls_host_test(test_http_pool)
     add_dependencies(test_castore wtls_test_certs)
     target_compile_definitions(test_castore PRIVATE
         WTLS_TEST_CERT_DIR="${WTLS_TEST_CERT_DIR}"
@@ -331,6 +383,18 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     wtls_host_server_test(test_tls tests/common/tls_tests.c)
     add_dependencies(test_tls wtls_test_certs)
     set_tests_properties(test_tls PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
+    wtls_host_server_test(test_http tests/common/http_tests.c)
+    add_dependencies(test_http wtls_test_certs)
+    if(WTLS_GZIP)
+        target_compile_definitions(test_http PRIVATE WTLS_GZIP=1)
+    endif()
+    set_tests_properties(test_http PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
+    # A TLS-only application must not link the HTTP layer.
+    if(CMAKE_NM)
+        add_test(NAME http_not_linked_into_tls_only
+                 COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DFILE=$<TARGET_FILE:test_tls> -DPATTERN=wtls_http_
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_no_symbol.cmake)
+    endif()
 
     # Benchmarks on the host: proves every benchmark runs; the numbers are the PC's.
     add_executable(test_bench bench/host_main.c bench/bench_core.c bench/psa_prof.c)

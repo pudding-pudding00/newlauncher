@@ -65,7 +65,7 @@ TEST_CASE("forN64 liefert Not64/Wii64 aus emulators.ini, VC nullptr") {
     const EmulatorTable d = EmulatorTable::fromIni(IniDoc::parse(""));
     REQUIRE(d.forN64(N64Method::Not64) != nullptr);
     CHECK(d.forN64(N64Method::Not64)->dol == "sd:/apps/not64/boot.dol");
-    CHECK(d.forN64(N64Method::Not64)->args == "{path}");
+    CHECK(d.forN64(N64Method::Not64)->args == "rompath=\"{path}\"");  // Not64 liest argv als Schlüssel=Wert
     REQUIRE(d.forN64(N64Method::Wii64) != nullptr);
     CHECK(d.forN64(N64Method::Wii64)->dol == "sd:/apps/wii64/boot.dol");
     CHECK(d.forN64(N64Method::Wii64)->args == "{path}");
@@ -74,6 +74,6 @@ TEST_CASE("forN64 liefert Not64/Wii64 aus emulators.ini, VC nullptr") {
 
     const EmulatorTable t = EmulatorTable::fromIni(IniDoc::parse("[n64_not64]\ndol = sd:/apps/argv_echo/boot.dol\n[n64_wii64]\ndol =\n"));
     CHECK(t.forN64(N64Method::Not64)->dol == "sd:/apps/argv_echo/boot.dol");
-    CHECK(t.forN64(N64Method::Not64)->args == "{path}");
+    CHECK(t.forN64(N64Method::Not64)->args == "rompath=\"{path}\"");
     CHECK(t.forN64(N64Method::Wii64)->dol == "sd:/apps/wii64/boot.dol");
 }

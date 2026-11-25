@@ -76,6 +76,8 @@ add_library(nl_core STATIC
     src/core/zip_reader.cpp
     src/core/emu_catalog.cpp
     src/core/emu_install.cpp
+    src/core/self_update.cpp
+    src/core/return_stub.cpp
     src/core/nin_cfg.cpp
     src/core/fat_chain.cpp
     src/core/wbfs_map.cpp
@@ -110,6 +112,7 @@ add_library(nl_core STATIC
     src/core/banner_budget.cpp
     src/core/aes128.cpp
     src/core/wii_partition.cpp
+    src/core/remote_proto.cpp
     src/gfx/draw_list.cpp
     src/gfx/shapes.cpp
     src/gfx/atlas.cpp
@@ -155,8 +158,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     # libpng für die Cover (pacman -S ppc-libpng); FreeType bringt sie meist schon mit.
     pkg_check_modules(PNG REQUIRED libpng)
 
-    # HTTPS über wii_tls (M11, Spec v2 4.1): vendort nach third_party/wii_tls (tools/vendor_wii_tls.py), holt
-    # Mbed TLS 4.1.1 per FetchContent mit festem SHA256. Ohne NL_TLS baut der Launcher wie bisher nur HTTP.
+    # HTTPS und HTTP/1.1 über wii_tls v0.2.0 (M11, Spec v2 4.1): vendort nach third_party/wii_tls
+    # (tools/vendor_wii_tls.py), holt Mbed TLS 4.1.1 und zlib 1.3.1 (Inflate mit Z_PREFIX für gzip) per
+    # FetchContent mit festem SHA256. Ohne NL_TLS baut der Launcher wie bisher nur HTTP.
     option(NL_TLS "HTTPS über wii_tls" ON)
     if(NL_TLS)
         set(WTLS_PLATFORM ogc CACHE STRING "" FORCE)
@@ -169,6 +173,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         set(WTLS_EVEREST ON CACHE BOOL "" FORCE)
         set(WTLS_ACCEL ON CACHE BOOL "" FORCE)
         set(WTLS_OPT O3 CACHE STRING "" FORCE)
+        set(WTLS_GZIP ON CACHE BOOL "" FORCE)
         # Mbed TLS 4.1.1 ruft cmake_minimum_required mit einer Version < 3.10 auf, neuere CMake-Versionen
         # warnen dafür. Die Mindest-Policy-Version hebt nur den Upstream-Code an; danach wieder aus.
         set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
@@ -178,6 +183,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         # nur für dieses Fremdziel abgeschaltet, unser Code bleibt bei 0 Warnungen.
         if(TARGET mbedx509)
             target_compile_options(mbedx509 PRIVATE -Wno-format-truncation)
+        endif()
+        # zlib 1.3.1 benennt bei Z_PREFIX alle Symbole außer z_errmsg um; ohne Umbenennung kollidiert
+        # wtls_zlib mit dem statischen portlibs-libz (FreeType/libpng). Nur dieses Fremdziel anpassen.
+        if(TARGET wtls_zlib)
+            target_compile_definitions(wtls_zlib PRIVATE z_errmsg=wtls_z_errmsg)
         endif()
     endif()
 
@@ -214,6 +224,25 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     dkp_set_target_file(nl_app_booter ${NL_BOOTER_BIN})
     dkp_add_embedded_binary_library(nl_booter nl_app_booter)
 
+    # Rückkehr-Stub (M20, Spec 4): frei stehend bei 0x80001800, wie der App-Booter gebaut.
+    set(NL_RSTUB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/launch/return_stub)
+    set(NL_RSTUB_ELF ${CMAKE_CURRENT_BINARY_DIR}/return_stub.elf)
+    set(NL_RSTUB_BIN ${CMAKE_CURRENT_BINARY_DIR}/return_stub.bin)
+    add_custom_command(
+        OUTPUT ${NL_RSTUB_BIN}
+        COMMAND ${CMAKE_C_COMPILER} -mcpu=750 -meabi -mhard-float -mregnames -G0 -Os -std=c11 -ffreestanding
+                -fno-builtin -fno-tree-loop-distribute-patterns -nostdlib -nostartfiles -Wall -Wextra -Werror
+                -Wl,-T,${NL_RSTUB_DIR}/stub.ld -Wl,--gc-sections -Wl,--no-warn-rwx-segments
+                -o ${NL_RSTUB_ELF} ${NL_RSTUB_DIR}/crt0.S ${NL_RSTUB_DIR}/stub.c -lgcc
+        COMMAND ${DKP_OBJCOPY} -O binary ${NL_RSTUB_ELF} ${NL_RSTUB_BIN}
+        DEPENDS ${NL_RSTUB_DIR}/stub.c ${NL_RSTUB_DIR}/stub_check.h ${NL_RSTUB_DIR}/crt0.S ${NL_RSTUB_DIR}/stub.ld
+        COMMENT "Rückkehr-Stub bauen"
+        VERBATIM
+    )
+    add_custom_target(nl_return_stub DEPENDS ${NL_RSTUB_BIN})
+    dkp_set_target_file(nl_return_stub ${NL_RSTUB_BIN})
+    dkp_add_embedded_binary_library(nl_rstub nl_return_stub)
+
     # Gecko-Codehandler (M15, Spec v2 3.3): aus Quelltext (Dolphin docs/codehandler.s, MIT) ab 0x80001800 assembliert.
     # NlCodehandler.cmake erzeugt das Byte-Array für den Booter und die Adressen für Booter und Launcher und bricht ab,
     # wenn die Patch-Stellen des Codelisten-Zeigers (0x104/0x108) nicht passen.
@@ -245,8 +274,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     set(NL_BOOTER_NL_SOURCES boot/nl/exception_close.cpp boot/nl/lz77_bridge.cpp boot/nl/progress.c
         src/core/lz77.cpp src/core/assert.cpp)
     add_executable(nl_game_booter ${NL_GAME_BOOTER_SOURCES} ${NL_BOOTER_NL_SOURCES})
-    set_source_files_properties(boot/nl/lz77_bridge.cpp src/core/lz77.cpp src/core/assert.cpp
-        TARGET_DIRECTORY nl_game_booter PROPERTIES COMPILE_OPTIONS "-fno-exceptions;-fno-rtti")
     set_target_properties(nl_game_booter PROPERTIES OUTPUT_NAME game_booter)
     target_include_directories(nl_game_booter PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/boot/source ${CMAKE_CURRENT_SOURCE_DIR}/boot/include
@@ -254,9 +281,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     add_dependencies(nl_game_booter nl_codehandler)
     # NL_BOOTER_CHEATS=1 (M15): Codehandler aus Quelltext statt des Ocarina-Blobs (M11, Spec v2 3.2).
     target_compile_definitions(nl_game_booter PRIVATE HAVE_CONFIG_H NL_VERSION="${PROJECT_VERSION}" NL_BOOTER_CHEATS=1)
-    target_compile_options(nl_game_booter PRIVATE $<$<COMPILE_LANGUAGE:C>:-std=gnu17> -O1 -Wall -Wextra -Wno-shift-negative-value
+    target_compile_options(nl_game_booter PRIVATE
+        $<$<COMPILE_LANGUAGE:C>:-std=gnu17>
+        $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions;-fno-rtti>
+        -ffunction-sections -fdata-sections
+        -O1 -Wall -Wextra -Wno-shift-negative-value
         -Wno-array-bounds -Wno-stringop-overflow -Wno-stringop-overread)
-    target_link_options(nl_game_booter PRIVATE -Wl,--section-start,.init=0x80A80000)
+    target_link_options(nl_game_booter PRIVATE -Wl,--section-start,.init=0x80A80000 -Wl,--gc-sections)
     # Die Plattform setzt -mregnames für alle ASM-Dateien; patchhook.S definiert r0…r31 selbst per .set.
     set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/boot/source/patchhook.S PROPERTIES
         COMPILE_OPTIONS -Wa,-mno-regnames)
@@ -279,6 +310,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/log.cpp
         src/platform/video.cpp
         src/launch/chainloader.cpp
+        src/launch/return_stub.cpp
         src/launch/channel.cpp
         src/launch/wii_boot.cpp
         src/platform/nand_titles.cpp
@@ -295,6 +327,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/banner_worker.cpp
         src/platform/http_client.cpp
         src/platform/net_service.cpp
+        src/platform/remote_server.cpp
         src/platform/net_worker.cpp
         src/platform/emu_worker.cpp
         src/platform/cheat_worker.cpp
@@ -318,7 +351,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         target_include_directories(${name} PRIVATE ${FREETYPE_STATIC_INCLUDE_DIRS} ${PNG_STATIC_INCLUDE_DIRS} boot/include ${NL_CH_DIR})
         add_dependencies(${name} nl_codehandler)
         target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
-        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} nl_game_booter_blob fat wiiuse bte asnd vorbisidec ogg)
+        target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter nl_rstub ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} nl_game_booter_blob fat wiiuse bte asnd vorbisidec ogg)
         # NL_WII_CHEATS=1 (M15): der Booter bringt den Codehandler mit, die Cheat-Szene bietet Wii-Codes an.
         target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}" NL_WII_CHEATS=1)
         if(NL_TLS)

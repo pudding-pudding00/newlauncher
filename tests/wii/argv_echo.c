@@ -5,6 +5,7 @@
 
 #include <gccore.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 // Die Fixture-Karte startet argv_echo als Nintendont; der Launcher sucht diese Versionsangabe.
@@ -53,12 +54,21 @@ int main(int argc, char** argv) {
 
     (void)*(volatile const char*)kVersionTag;  // Referenz: sonst entfernt --gc-sections den String trotz used
 
+    // M20: Signatur des Rückkehr-Stubs bei 0x80001800 (+4 "STUBHAXX").
+    const volatile unsigned* stub = (const volatile unsigned*)0x80001800;
+    SYS_Report("NL_ARGV stub=%08x %08x %08x\n", stub[0], stub[1], stub[2]);
     SYS_Report("NL_ARGV argc=%d\n", argc);
     printf("NL_ARGV argc=%d\n", argc);
     const int nin = argc > 1 && argv[1] != NULL && echoNinCfg(argv[1]);
     for (int i = 0; i < (nin ? 1 : argc); ++i) {
         SYS_Report("NL_ARGV %d %s\n", i, argv[i] != NULL ? argv[i] : "(null)");
         printf("NL_ARGV %d %s\n", i, argv[i] != NULL ? argv[i] : "(null)");
+    }
+    // M20: letztes Argument "--exit" → nach kurzer Zeit exit(0); libogc springt dann in den Stub bei 0x80001800.
+    if (!nin && argc > 1 && argv[argc - 1] != NULL && strcmp(argv[argc - 1], "--exit") == 0) {
+        for (int i = 0; i < 60; ++i) VIDEO_WaitVSync();
+        SYS_Report("NL_ARGV exit\n");
+        exit(0);
     }
     for (;;) VIDEO_WaitVSync();
 }

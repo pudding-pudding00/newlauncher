@@ -48,6 +48,9 @@ struct Config {
     bool debugFetchCovers = false;  // [debug] fetch_covers = 1: „Fehlende Cover laden“ nach NL_READY
     bool debugSysinfoSave = false;  // [debug] sysinfo_save = 1: <data>/sysinfo.txt nach NL_READY schreiben (Smoke, M13)
     bool debugPerf = false;         // [debug] perf = 1: NL_PERF-Zeilen für die Hardware-Messung (M7)
+    bool debugRemote = false;       // [debug] remote = 1: Fernsteuerung auf TCP 4300 (M20), sonst nur mit argv --remote
+    std::string debugUpdateUrl;     // [debug] update_url: ersetzt die Manifest-URL des Selbst-Updates (Smoke, M20)
+    bool debugSelfUpdate = false;   // [debug] self_update = 1: „Update installieren“ nach NL_READY (Smoke, M20)
     bool debugIgnoreAhbprot = false;  // [debug] ignore_ahbprot = 1: AHBPROT-Prüfung für GC überbrücken (Dolphin-Smoke, M8)
     std::string debugTlsCa;         // [debug] tls_ca: PEM der Test-CA statt Mozilla-Bundle (Smoke, M11)
     std::string debugOptionSet;     // [debug] option_set = <schlüssel>=<wert>: in der Options-Szene setzen und schließen (M14)

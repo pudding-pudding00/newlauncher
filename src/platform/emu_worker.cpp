@@ -25,8 +25,10 @@ bool EmuWorker::launch(Job job) {
     jobId_ = service_.submit([this](const volatile bool& cancel) {
         if (job_ == Job::List)
             runList(cancel);
-        else
+        else if (job_ == Job::Install)
             runInstall(cancel);
+        else
+            runSelfUpdateJob(cancel);
         running_ = false;
     });
     if (jobId_ == 0) {
@@ -57,6 +59,29 @@ bool EmuWorker::startInstall(FileSystem& fs, std::string repo, std::vector<OscAp
     root_ = std::move(root);
     appCount_ = static_cast<u32>(apps_.size());
     return launch(Job::Install);
+}
+
+bool EmuWorker::startSelfUpdate(FileSystem& fs, std::string manifestUrl, std::string currentVersion) {
+    if (running_) return false;
+    join();
+    fs_ = &fs;
+    manifestUrl_ = std::move(manifestUrl);
+    currentVersion_ = std::move(currentVersion);
+    root_ = "sd:";
+    appCount_ = 1;
+    LWP_MutexLock(mutex_);
+    selfUpdate_.reset();
+    current_ = "newlauncher";
+    LWP_MutexUnlock(mutex_);
+    return launch(Job::SelfUpdate);
+}
+
+std::optional<SelfUpdateResult> EmuWorker::takeSelfUpdate() {
+    LWP_MutexLock(mutex_);
+    std::optional<SelfUpdateResult> out = std::move(selfUpdate_);
+    selfUpdate_.reset();
+    LWP_MutexUnlock(mutex_);
+    return out;
 }
 
 void EmuWorker::cancel() {
@@ -148,8 +173,7 @@ void EmuWorker::runList(const volatile bool& cancel) {
     LWP_MutexUnlock(mutex_);
 }
 
-void EmuWorker::runInstall(const volatile bool& cancel) {
-    const bool net = network();
+EmuInstallIo EmuWorker::installIo(const volatile bool& cancel, bool net) {
     EmuInstallIo io;
     io.download = [this, net, &cancel](const std::string& url, const std::string& dest, u32 maxBytes) {
         const auto u = parseUrl(url);
@@ -165,6 +189,27 @@ void EmuWorker::runInstall(const volatile bool& cancel) {
         done_ = done;
         total_ = total;
     };
+    return io;
+}
+
+void EmuWorker::runSelfUpdateJob(const volatile bool& cancel) {
+    const bool net = network();
+    EmuInstallIo io = installIo(cancel, net);
+    const ManifestFetch fetch = [this, net, &cancel](const std::string& url) -> std::optional<std::string> {
+        const auto u = parseUrl(url);
+        if (!net || !u) return std::nullopt;
+        std::vector<u8> body;
+        if (httpGet(*u, kMaxManifestBytes, body, &cancel, logFn()).outcome != HttpOutcome::Ok) return std::nullopt;
+        return std::string(body.begin(), body.end());
+    };
+    SelfUpdateResult r = runSelfUpdate(*fs_, io, fetch, manifestUrl_, currentVersion_, "sd:");
+    LWP_MutexLock(mutex_);
+    selfUpdate_ = std::move(r);
+    LWP_MutexUnlock(mutex_);
+}
+
+void EmuWorker::runInstall(const volatile bool& cancel) {
+    EmuInstallIo io = installIo(cancel, network());
     for (u32 i = 0; i < apps_.size(); ++i) {
         appIndex_ = i;
         LWP_MutexLock(mutex_);

@@ -75,11 +75,52 @@ std::optional<Url> parseUrl(std::string_view url) {
     return out;
 }
 
+std::string formatUrl(const Url& url) {
+    std::string r = url.tls ? "https://" : "http://";
+    r += url.host;
+    if (url.port != (url.tls ? 443 : 80)) r += ":" + std::to_string(url.port);
+    if (url.path.empty()) r += '/';
+    else r += url.path;
+    return r;
+}
+
 std::string buildGetRequest(const Url& url) {
     std::string r = "GET " + url.path + " HTTP/1.1\r\nHost: " + url.host;
     if (url.port != (url.tls ? 443 : 80)) r += ":" + std::to_string(url.port);
     r += "\r\nUser-Agent: newlauncher\r\nConnection: close\r\n\r\n";
     return r;
+}
+
+bool isRedirectStatus(int status) {
+    return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
+}
+
+std::optional<Url> redirectTarget(const Url& from, std::string_view location) {
+    location = trim(location);
+    if (location.empty()) return std::nullopt;
+    if (location.front() == '/') {
+        if (location.size() > 1 && location[1] == '/') return std::nullopt;
+        Url out = from;
+        out.path = std::string(location);
+        return out;
+    }
+    auto out = parseUrl(location);
+    if (!out || (from.tls && !out->tls)) return std::nullopt;
+    return out;
+}
+
+void HttpParser::reset() {
+    state_ = State::Headers;
+    head_.clear();
+    location_.clear();
+    status_ = 0;
+    chunked_ = false;
+    length_.reset();
+    body_.clear();
+    received_ = 0;
+    chunk_ = Chunk::Size;
+    line_.clear();
+    chunkLeft_ = 0;
 }
 
 bool HttpParser::parseHead() {
@@ -104,6 +145,8 @@ bool HttpParser::parseHead() {
         if (iequals(name, "content-length")) {
             length_ = parseDec(value);
             if (!length_) return false;
+        } else if (iequals(name, "location")) {
+            location_ = std::string(value);
         } else if (iequals(name, "transfer-encoding")) {
             std::string v(value);
             std::transform(v.begin(), v.end(), v.begin(), [](unsigned char c) { return char(std::tolower(c)); });
@@ -117,6 +160,7 @@ bool HttpParser::append(const u8* p, std::size_t n) {
     if (u64{received_} + n > maxBody_) return false;
     received_ += u32(n);
     if (n == 0) return true;
+    if (isRedirectStatus(status_)) return true;  // Body einer Weiterleitung: verwerfen, nie in die Zieldatei
     if (sink_) return sink_(std::span<const u8>(p, n));
     body_.insert(body_.end(), p, p + n);
     return true;

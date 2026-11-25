@@ -18,6 +18,10 @@ namespace nl::platform {
 namespace {
 
 constexpr u32 kReturnAfterSec = 30;
+// Ungecachter MEM2-Bereich 64 KiB unter kBooterAddr (0x93300000): außerhalb der DOL (~4,5 MiB ab 0x92800000)
+// und außerhalb von HBC/Arena2; überlebt __reload() in den HBC.
+constexpr u32 kCrashPersistAddr = 0x932F0000u;
+constexpr u32 kCrashMagic = 0x4E4C4352u;  // "NLCR"
 
 // Nur ausgerichtete Adressen in MEM1 und MEM2 (gecachter Bereich) gelten als lesbar.
 bool readWord(u32 addr, u32& out) {
@@ -42,6 +46,18 @@ u32 readDsisr() {
 }
 
 char g_report[2048];
+
+void saveCrashReport(const char* text) {
+    volatile u32* hdr = reinterpret_cast<volatile u32*>(kCrashPersistAddr | 0x40000000u);
+    volatile u8* dst = reinterpret_cast<volatile u8*>((kCrashPersistAddr + 8u) | 0x40000000u);
+    hdr[0] = 0;
+    std::size_t len = std::strlen(text);
+    if (len >= sizeof g_report) len = sizeof g_report - 1;
+    for (std::size_t i = 0; i < len; ++i) dst[i] = static_cast<u8>(text[i]);
+    dst[len] = 0;
+    hdr[1] = static_cast<u32>(len);
+    hdr[0] = kCrashMagic;
+}
 
 // Schreibt direkt über das Konsolen-Device statt über stdio: printf könnte beim ersten Aufruf einen
 // Puffer per malloc anlegen – auf einem kaputten Heap (häufigste Absturzursache) hinge der Handler.
@@ -80,6 +96,7 @@ void onException(unsigned exid, PPCContext* ctx) {
     u32 trace[16];
     const int n = backtrace(info.gpr[1], &readWord, trace);
     formatCrashReport(info, std::span<const u32>(trace, static_cast<std::size_t>(n)), g_report, sizeof g_report);
+    saveCrashReport(g_report);
 
     GX_AbortFrame();
     GXRModeObj* mode = VIDEO_GetPreferredMode(nullptr);
@@ -87,6 +104,8 @@ void onException(unsigned exid, PPCContext* ctx) {
     if (fb != nullptr) {
         VIDEO_ClearFrameBuffer(mode, fb, COLOR_BLACK);
         CON_Init(fb, 24, 24, mode->fbWidth - 48, mode->xfbHeight - 48, mode->fbWidth * VI_DISPLAY_PIX_SZ);
+        VIDEO_SetBlack(false);
+        VIDEO_Flush();
         writeConsole("newlauncher ist abgestuerzt.\n\n");
         writeConsole(g_report);
         writeConsole("\nRESET oder START: zurueck zum Homebrew Channel\n");
@@ -104,6 +123,26 @@ void onException(unsigned exid, PPCContext* ctx) {
 void installCrashHandler() {
     PPCExcptCurPanicFn = &onException;
     setPanicHandler(&onPanic);
+}
+
+void logPreviousCrash() {
+    volatile u32* hdr = reinterpret_cast<volatile u32*>(kCrashPersistAddr | 0x40000000u);
+    if (hdr[0] != kCrashMagic) return;
+    const u32 len = hdr[1];
+    hdr[0] = 0;
+    if (len == 0 || len >= sizeof g_report) return;
+    const volatile u8* src = reinterpret_cast<const volatile u8*>((kCrashPersistAddr + 8u) | 0x40000000u);
+    char buf[sizeof g_report];
+    for (u32 i = 0; i < len; ++i) buf[i] = static_cast<char>(src[i]);
+    buf[len] = '\0';
+    char* cur = buf;
+    while (*cur != '\0') {
+        char* nl = std::strchr(cur, '\n');
+        if (nl != nullptr) *nl = '\0';
+        if (*cur != '\0') log::line("NL_PREV_CRASH %s", cur);
+        if (nl == nullptr) break;
+        cur = nl + 1;
+    }
 }
 
 }  // namespace nl::platform

@@ -139,7 +139,7 @@ Game n64Game() {
 }
 }  // namespace
 
-TEST_CASE("preflightGame: N64 über Not64 baut argv mit {path}") {
+TEST_CASE("preflightGame: N64 über Not64 baut argv mit rompath=\"{path}\"") {
     test::MemFileSystem fs;
     fs.addFile("sd:/apps/not64/boot.dol", goodDol());
     fs.addFile(kSm64, {});
@@ -151,7 +151,7 @@ TEST_CASE("preflightGame: N64 über Not64 baut argv mit {path}") {
     CHECK(r.value().n64 == N64Method::Not64);
     REQUIRE(r.value().dol.args.size() == 2);
     CHECK(r.value().dol.args[0] == "sd:/apps/not64/boot.dol");
-    CHECK(r.value().dol.args[1] == kSm64);
+    CHECK(r.value().dol.args[1] == std::string("rompath=\"") + kSm64 + "\"");
 }
 
 TEST_CASE("preflightGame: N64 über VC liefert Kanalziel") {
@@ -885,4 +885,21 @@ TEST_CASE("preflightGame: vWii ohne GC-Port-Warnungen und mit wiiu_wide-Standard
     CHECK((static_cast<u8>(r.value().dol.args[1][0x00A]) & 0x80) != 0);
     CHECK((static_cast<u8>(r.value().dol.args[1][0x00A]) & 0x40) == 0);
     CHECK((static_cast<u8>(r.value().dol.args[1][0x00B]) & 0x08) != 0);
+}
+
+TEST_CASE("preflightDol (M20): eigene DOL mit Zusatzargumenten, z. B. Neustart über die Fernsteuerung") {
+    const auto dol = goodDol();
+    test::MemFileSystem fs;
+    fs.addFile("sd:/apps/newlauncher/boot.dol", dol);
+    const std::vector<std::string> extra{"--remote"};
+    auto r = preflightDol(fs, "sd:/apps/newlauncher/boot.dol", extra);
+    REQUIRE(r.isOk());
+    CHECK(r.value().dolPath == "sd:/apps/newlauncher/boot.dol");
+    CHECK(r.value().dolSize == dol.size());
+    CHECK(r.value().args == std::vector<std::string>{"sd:/apps/newlauncher/boot.dol", "--remote"});
+    CHECK_FALSE(r.value().argvBlock.empty());
+
+    auto missing = preflightDol(fs, "sd:/apps/fehlt/boot.dol", {});
+    REQUIRE_FALSE(missing.isOk());
+    CHECK(missing.error().kind == LaunchFailure::EmuMissing);
 }

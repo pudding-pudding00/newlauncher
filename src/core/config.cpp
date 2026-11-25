@@ -66,6 +66,9 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     c.debugListGames = parseIntIn(ini.get("debug", "list_games"), 0, 1, 0) == 1;
     c.debugSdAsDisk = parseIntIn(ini.get("debug", "sd_as_disk"), 0, 1, 0) == 1;
     c.debugPerf = parseIntIn(ini.get("debug", "perf"), 0, 1, 0) == 1;
+    c.debugRemote = parseIntIn(ini.get("debug", "remote"), 0, 1, 0) == 1;
+    c.debugUpdateUrl = std::string(trim(ini.get("debug", "update_url")));
+    c.debugSelfUpdate = parseIntIn(ini.get("debug", "self_update"), 0, 1, 0) == 1;
     c.debugIgnoreAhbprot = parseIntIn(ini.get("debug", "ignore_ahbprot"), 0, 1, 0) == 1;
     c.debugWiiDryRun = parseIntIn(ini.get("debug", "wii_dry_run"), 0, 1, 0) == 1;
     c.debugOpenScene = std::string(trim(ini.get("debug", "open_scene")));

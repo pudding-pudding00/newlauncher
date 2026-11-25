@@ -31,6 +31,9 @@
 extern "C" {
 #endif
 
+/** Library version; equals the CMake project version (checked at configure time). */
+#define WTLS_VERSION "0.2.0"
+
 /** Status codes. Every error is negative; WTLS_OK is 0. */
 typedef enum {
     WTLS_OK            =   0,
@@ -49,6 +52,9 @@ typedef enum {
     WTLS_ERR_CLOSED    = -35,  /**< clean close_notify from the peer */
     WTLS_ERR_HANDSHAKE = -40,  /**< TLS handshake failed (protocol, version, suite) */
     WTLS_ERR_CERT      = -41,  /**< certificate rejected; see wtls_last_verify_flags() */
+    WTLS_ERR_HTTP          = -50,  /**< malformed or unsupported HTTP response (<wiitls/http.h>) */
+    WTLS_ERR_HTTP_LIMIT    = -51,  /**< response head, field count or fetch body over its limit */
+    WTLS_ERR_HTTP_REDIRECT = -52,  /**< too many redirects, bad Location, or redirect https -> http */
     WTLS_ERR_INTERNAL  = -99,  /**< unexpected library error */
 } wtls_status;
 

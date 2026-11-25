@@ -1,5 +1,7 @@
 #include "ui/strings.hpp"
 
+#include "gfx/font.hpp"
+
 #include <doctest/doctest.h>
 
 #include <string>
@@ -44,6 +46,25 @@ TEST_CASE("jede Str hat in DE und EN nicht-leeren Text") {
         CHECK(std::string(tr(s)).size() > 0);
         setLanguage(Lang::En);
         CHECK(std::string(tr(s)).size() > 0);
+    }
+}
+
+TEST_CASE("jede Str besteht nur aus Zeichen, die die Schrift hat (M20: kein ?-Ersatz)") {
+    LangGuard g;
+    const int questionMark = gfx::glyphIndex('?');
+    for (Lang lang : {Lang::De, Lang::En}) {
+        setLanguage(lang);
+        for (u16 i = 0; i < static_cast<u16>(Str::Count); ++i) {
+            const std::string_view text = tr(static_cast<Str>(i));
+            std::size_t pos = 0;
+            while (pos < text.size()) {
+                const u32 cp = gfx::decodeUtf8(text, pos);
+                if (cp == '?' || cp == '\n') continue;
+                CAPTURE(i);
+                CAPTURE(cp);
+                CHECK(gfx::glyphIndex(cp) != questionMark);
+            }
+        }
     }
 }
 

@@ -106,9 +106,13 @@ TEST_CASE("settingEnabled") {
     CHECK(settingEnabled(c, SettingRow::Language));
 }
 
-TEST_CASE("Zeile Über ist die letzte und eine Aktion (M11)") {
-    CHECK(static_cast<int>(SettingRow::About) + 1 == static_cast<int>(SettingRow::Count));
+TEST_CASE("Zeile Über ist eine Aktion (M11), danach Update und Neustart (M20)") {
+    CHECK(static_cast<int>(SettingRow::About) + 1 == static_cast<int>(SettingRow::SelfUpdate));
+    CHECK(static_cast<int>(SettingRow::SelfUpdate) + 1 == static_cast<int>(SettingRow::Restart));
+    CHECK(static_cast<int>(SettingRow::Restart) + 1 == static_cast<int>(SettingRow::Count));
     CHECK(isAction(SettingRow::About));
+    CHECK(isAction(SettingRow::SelfUpdate));
+    CHECK(isAction(SettingRow::Restart));
 }
 
 TEST_CASE("Zeile Systeminfo steht vor Über und ist eine Aktion (M13)") {

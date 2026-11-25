@@ -14,7 +14,7 @@ enum class NetError : u8 { None, Dns, Connect, Timeout, Cert, Clock, Handshake, 
 // Statuscodes aus wiitls.h (WTLS_*), die netErrorFromTls auswertet.
 namespace wtls_status {
 inline constexpr int kOk = 0, kNoMem = -12, kClock = -21, kDns = -31, kConnect = -32, kTimeout = -33,
-                     kHandshake = -40, kCert = -41;
+                     kHandshake = -40, kCert = -41, kHttp = -50, kHttpLimit = -51, kHttpRedirect = -52;
 }  // namespace wtls_status
 
 // MBEDTLS_X509_BADCERT_EXPIRED / _FUTURE (Mbed TLS 4.1.1).

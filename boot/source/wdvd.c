@@ -197,5 +197,7 @@ s32 WDVD_SetFragList(int device, void *fraglist, int size)
 	s32 ret = IOS_Ioctl(di_fd, IOCTL_DI_SETFRAG, inbuf, sizeof(inbuf), outbuf, sizeof(outbuf));
 	if(ret < 0)
 		return ret;
-	return (ret == 1) ? 0 : -ret;
+	if(ret != 1)
+		return ret > 0 ? -ret : -1;
+	return (s32)outbuf[0];
 }

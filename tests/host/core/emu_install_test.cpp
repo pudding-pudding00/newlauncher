@@ -271,3 +271,32 @@ TEST_CASE("recoverEmuInstall und clearEmuTmp mit Wurzel") {
     CHECK(text(fs.file("usb:/apps/fceugx/boot.dol")) == "ALT");
     CHECK(fs.filesUnder("usb:/newlauncher/tmp/").empty());
 }
+
+TEST_CASE("installZipApp: freie URL, ohne Eintrag in emulators_installed.ini (Selbst-Update)") {
+    Harness h;
+    h.zip = test::buildZip({
+        test::dirEntry("apps/newlauncher/"),
+        test::storedEntry("apps/newlauncher/boot.dol", "NL-NEU"),
+        test::storedEntry("apps/newlauncher/meta.xml", "<app>nl</app>"),
+    });
+    h.fs.addFile("sd:/apps/newlauncher/boot.dol", bytes("NL-ALT"));
+    OscApp a = appFor(h.zip);
+    a.name = "newlauncher";
+    const auto r = installZipApp(h.fs, h.io, "https://x/rel/newlauncher-0.2.0.zip", a);
+    CHECK(r.error == EmuInstallError::None);
+    CHECK(h.lastUrl == "https://x/rel/newlauncher-0.2.0.zip");
+    CHECK(text(h.fs.file("sd:/apps/newlauncher/boot.dol")) == "NL-NEU");
+    CHECK(h.fs.file(std::string(kInstalledEmusPath)) == nullptr);
+    CHECK(h.tmpEmpty());
+    CHECK(h.logHas("NL_EMU_INSTALL newlauncher ok files=2"));
+}
+
+TEST_CASE("installZipApp: ZIP ohne apps/newlauncher/boot.dol wird abgelehnt, alte DOL bleibt") {
+    Harness h;
+    h.zip = test::buildZip({test::storedEntry("apps/andere/boot.dol", "X")});
+    h.fs.addFile("sd:/apps/newlauncher/boot.dol", bytes("NL-ALT"));
+    OscApp a = appFor(h.zip);
+    a.name = "newlauncher";
+    CHECK(installZipApp(h.fs, h.io, "https://x/a.zip", a).error == EmuInstallError::BadZip);
+    CHECK(text(h.fs.file("sd:/apps/newlauncher/boot.dol")) == "NL-ALT");
+}

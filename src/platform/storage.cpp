@@ -96,7 +96,9 @@ bool DeviceTable::setSdAsDisk(bool on) {
 bool DeviceTable::mountUsb() {
     if (isUsbMounted(devices_)) return true;
     const DISC_INTERFACE* io = sdAsDisk_ ? &__io_wiisd : &__io_usbstorage;
-    if (!io->startup() || !io->isInserted()) return false;
+    if (!io->startup()) return false;
+    if (!sdAsDisk_) usbIo_ = io;  // die SD als Platte gehört weiter dem sd:-Mount
+    if (!io->isInserted()) return false;
 
     RawDevice raw(!sdAsDisk_);
     auto parts = readPartitions(raw, 0);  // libogc nennt die Gerätegröße nicht
@@ -148,6 +150,12 @@ void DeviceTable::unmountAll() {
         if (it->mounted) unmountSlot(it->slot);
     devices_.clear();
     usbLogged_ = false;
+    // M20: Der Treiber hält sein Gerät in der IOS offen. Ohne shutdown findet ein per Chainload gestartetes
+    // Programm (Emulator, Neustart) ohne IOS-Neuladen kein USB-Laufwerk mehr.
+    if (usbIo_ != nullptr) {
+        usbIo_->shutdown();
+        usbIo_ = nullptr;
+    }
 }
 
 bool mountSd() { return deviceTable().mountSd(); }

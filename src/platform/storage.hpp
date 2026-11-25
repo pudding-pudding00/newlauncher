@@ -6,6 +6,8 @@
 #include "core/device_names.hpp"
 #include "core/types.hpp"
 
+#include <ogc/disc_io.h>
+
 #include <span>
 #include <string>
 #include <string_view>
@@ -40,6 +42,7 @@ private:
     std::vector<Device> devices_;
     bool usbLogged_ = false;
     bool sdAsDisk_ = false;
+    const DISC_INTERFACE* usbIo_ = nullptr;  // gestarteter USB-Treiber; unmountAll fährt ihn herunter (M20)
 };
 
 DeviceTable& deviceTable();

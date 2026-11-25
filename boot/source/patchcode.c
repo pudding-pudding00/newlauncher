@@ -362,10 +362,11 @@ void PatchVideoSneek(void *addr, u32 len)
 static u32 ad[4] = {0, 0, 0, 0}; // these variables are global on the off chance the different parts needed
 static u8 found = 0;             // to find in the dol are found in different sections of the dol
 static u8 returnToPatched = 0;
+u8 returnToStub = 0; // newlauncher (M21): Rückkehr-Stub bei 0x80001800 statt einer Title-ID
 
 bool PatchReturnTo(void *Address, int Size, u32 id)
 {
-    if(!id || returnToPatched)
+    if((!id && !returnToStub) || returnToPatched)
         return 0;
     //gprintf("PatchReturnTo( %p, %08x, %08x )\n", Address, Size, id );
 
@@ -437,6 +438,22 @@ bool PatchReturnTo(void *Address, int Size, u32 id)
             }
             Addr += 4;
         }
+    }
+
+    // newlauncher (M21): ES_LaunchTitle in __OSLaunchMenu durch einen Sprung in den Rückkehr-Stub ersetzen.
+    // Die Befehle dahinter werden nie mehr erreicht; die beiden ES_GetTicketViews-Aufrufe bleiben unverändert.
+    if(found == 3 && returnToStub)
+    {
+        static const u32 toStub[4] = {
+            0x3C608000, // lis r3,0x8000
+            0x60631800, // ori r3,r3,0x1800
+            0x7C6903A6, // mtctr r3
+            0x4E800420  // bctr
+        };
+        memcpy((void *)ad[2], toStub, sizeof(toStub));
+        returnToPatched = 1;
+        gprintf("Return to stub patched.\n");
+        return returnToPatched;
     }
 
     // if the function is found

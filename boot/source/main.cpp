@@ -34,6 +34,7 @@
 #include "fst.h"
 #include "wdvd.h"
 #include "gecko.h"
+#include "launch/return_stub/stub_check.h" // newlauncher (M21): Rückkehr-Stub erkennen
 
 #define EXT_ADDR_CFG	((vu32*)0x90100000)
 IOS_Info CurrentIOS;
@@ -109,6 +110,10 @@ int main()
 #endif
 	debuggerselect = normalCFG.debugger;
 	CurrentIOS = normalCFG.IOS;
+	// newlauncher (M21): Liegt ein gültiger Parameterblock des Rückkehr-Stubs vor und läuft kein Codehandler
+	// (der belegt denselben Speicher), führt „Wii-Menü“ im Spiel zurück in newlauncher.
+	returnToStub = hooktype == 0 && nlrs_params_ok((const unsigned char*)NLRS_PARAMS_ADDR);
+	gprintf("Return stub: %s\n", returnToStub ? "yes" : "no");
 	set_wip_list(normalCFG.wip_list, normalCFG.wip_count);
 	app_gameconfig_set(normalCFG.gameconf, normalCFG.gameconfsize);
 	ocarina_set_codes(normalCFG.codelist, normalCFG.codelistend, normalCFG.cheats, normalCFG.cheatSize);
@@ -238,7 +243,8 @@ int main()
 	setprog(320);
 
 	/* Set Disc ID for WiiRD - must be set after ocarina stuff is done */
-	memcpy((void*)0x80001800, (void*)Disc_ID, 8);
+	if(!returnToStub) // newlauncher (M21): sonst überschriebe die Disc-ID den Einsprung des Stubs
+		memcpy((void*)0x80001800, (void*)Disc_ID, 8);
 	
 	/* Error 002 Fix (thanks WiiPower and uLoader) */
 	*Current_IOS = (GameIOS << 16) | 0xffff;

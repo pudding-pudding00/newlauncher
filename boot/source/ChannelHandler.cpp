@@ -227,7 +227,7 @@ void PatchChannel(u8 vidMode, GXRModeObj *vmode, bool vipatch, bool countryStrin
 			PatchCountryStrings(dolchunkoffset[i], dolchunksize[i]);
 		if(aspectRatio != -1)
 			PatchAspectRatio(dolchunkoffset[i], dolchunksize[i], aspectRatio);
-		if(returnTo)
+		if(returnTo || returnToStub) // newlauncher (M21)
 			PatchReturnTo(dolchunkoffset[i], dolchunksize[i], returnTo);
 		if(private_server)
 			PrivateServerPatcher(dolchunkoffset[i], dolchunksize[i], private_server, server_addr);	

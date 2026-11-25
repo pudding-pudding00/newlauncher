@@ -41,6 +41,7 @@ void PatchVideoSneek(void *addr, u32 len);
 void PatchCountryStrings(void *Address, int Size);
 void PatchAspectRatio(void *addr, u32 len, u8 aspect);
 bool PatchReturnTo(void *Address, int Size, u32 id);
+extern u8 returnToStub; // newlauncher (M21): PatchReturnTo springt in den Rückkehr-Stub
 void Patch_fwrite(void *Address, int Size);
 s32 BlockIOSReload(void);
 void PatchRegion(void *Address, int Size);

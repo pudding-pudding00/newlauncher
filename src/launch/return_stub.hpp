@@ -4,13 +4,15 @@
 
 #include "core/types.hpp"
 
+#include <span>
+#include <string>
 #include <string_view>
 
 namespace nl::launch {
 
 // Nur, wenn selfDol auf "sd:/" liegt und dessen Extents (FAT32) ermittelbar sind; sonst bleibt der
 // vorhandene Stub (HBC) unangetastet. Muss vor unmountAll laufen. Loggt NL_RETURN_STUB.
-bool installReturnStub(std::string_view selfDol);
+bool installReturnStub(std::string_view selfDol, std::span<const std::string> extraArgs = {});
 
 // Liegt unser Stub (nicht der des HBC) bei 0x80001800? Dann würde exit() newlauncher neu laden.
 bool returnStubInstalled();

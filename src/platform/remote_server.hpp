@@ -33,6 +33,8 @@ public:
     void reply(bool ok, std::string info, std::vector<u8> payload = {});
     // Zahl vollständig gesendeter Antworten; vor einem Start oder Neustart darauf warten.
     u32 sentCount() const { return sent_; }
+    // Vom Worker-Thread gesammelte Log-Zeilen; im Haupt-Thread über log::line ausgeben.
+    std::vector<std::string> takeLogLines();
 
 private:
     enum class State : u8 { Idle, Pending, Taken, Replied };
@@ -46,6 +48,7 @@ private:
     bool waitReady(s32 fd, u32 events);  // false bei stop_ oder Fehler
     bool openListen();
     void closeListen();
+    void log(std::string line);
 
     lwp_t thread_ = LWP_THREAD_NULL;
     mutable mutex_t mutex_ = LWP_MUTEX_NULL;
@@ -60,6 +63,7 @@ private:
     bool replyOk_ = false;
     std::string replyInfo_;
     std::vector<u8> replyPayload_;
+    std::vector<std::string> logLines_;
     volatile u32 sent_ = 0;
 };
 

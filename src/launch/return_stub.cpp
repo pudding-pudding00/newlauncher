@@ -36,7 +36,7 @@ const char* errorName(ReturnStubError e) {
 
 }  // namespace
 
-bool installReturnStub(std::string_view selfDol) {
+bool installReturnStub(std::string_view selfDol, std::span<const std::string> extraArgs) {
     static_assert(NLRS_STUB_ADDR + NLRS_STUB_MAX == NLRS_PARAMS_ADDR);
     if (selfDol.substr(0, 4) != "sd:/") {
         log::line("NL_RETURN_STUB skip self=%.*s", static_cast<int>(selfDol.size()), selfDol.data());
@@ -64,7 +64,8 @@ bool installReturnStub(std::string_view selfDol) {
         log::line("NL_RETURN_STUB skip chain=%u", static_cast<unsigned>(ext.error()));
         return false;
     }
-    const std::vector<std::string> args{path};
+    std::vector<std::string> args{path};
+    args.insert(args.end(), extraArgs.begin(), extraArgs.end());
     auto argv = packArgvBlock(args, kReturnArgvAddr);
     if (!argv.isOk()) {
         log::line("NL_RETURN_STUB skip argv");

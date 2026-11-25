@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <utility>
@@ -10,7 +11,6 @@
 #include <unistd.h>
 
 #include "core/crc32.hpp"
-#include "platform/log.hpp"
 #include "ui/input.hpp"
 
 namespace nl::platform {
@@ -102,9 +102,25 @@ bool RemoteServer::openListen() {
     net_fcntl(fd, F_SETFL, kIosNonBlock);
     listen_ = fd;
     const u32 ip = net_gethostip();
-    log::line("NL_REMOTE listen %u.%u.%u.%u:%u", (ip >> 24) & 0xff, (ip >> 16) & 0xff, (ip >> 8) & 0xff, ip & 0xff,
-              static_cast<unsigned>(kRemotePort));
+    char line[64];
+    std::snprintf(line, sizeof line, "NL_REMOTE listen %u.%u.%u.%u:%u", (ip >> 24) & 0xff, (ip >> 16) & 0xff,
+                  (ip >> 8) & 0xff, ip & 0xff, static_cast<unsigned>(kRemotePort));
+    log(line);
     return true;
+}
+
+std::vector<std::string> RemoteServer::takeLogLines() {
+    LWP_MutexLock(mutex_);
+    std::vector<std::string> out = std::move(logLines_);
+    logLines_.clear();
+    LWP_MutexUnlock(mutex_);
+    return out;
+}
+
+void RemoteServer::log(std::string line) {
+    LWP_MutexLock(mutex_);
+    logLines_.push_back(std::move(line));
+    LWP_MutexUnlock(mutex_);
 }
 
 void RemoteServer::closeListen() {
@@ -133,11 +149,11 @@ void RemoteServer::loop() {
         const s32 fd = net_accept(listen_, reinterpret_cast<sockaddr*>(&peer), &len);
         if (fd < 0) continue;
         net_fcntl(fd, F_SETFL, kIosNonBlock);
-        log::line("NL_REMOTE connect");
+        log("NL_REMOTE connect");
         pending_.clear();
         serve(fd);
         net_close(fd);
-        log::line("NL_REMOTE disconnect");
+        log("NL_REMOTE disconnect");
     }
     closeListen();
 }

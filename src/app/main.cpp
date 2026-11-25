@@ -1201,6 +1201,7 @@ int main(int argc, char** argv) {
         emu.join();
         cheatWorker.join();
         remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
+        for (const std::string& line : remote.takeLogLines()) nl::log::line("%s", line.c_str());
         netService.shutdown();  // wtls_shutdown im Netz-Thread, dann Thread beendet
         covers.shutdown();
         banners.shutdown();
@@ -1242,7 +1243,9 @@ int main(int argc, char** argv) {
             showError({nl::LaunchFailure::EmuInvalid, plan.dolPath});
             return;
         }
-        nl::launch::installReturnStub(selfDol);  // M20: exit() der DOL führt zurück zu newlauncher
+        std::vector<std::string> stubArgs;
+        if (remote.running()) stubArgs.push_back("--remote");
+        nl::launch::installReturnStub(selfDol, stubArgs);  // M20: exit() der DOL führt zurück zu newlauncher
         stopAudio();
         logPerfSummary();
         if (data.writable) nl::log::flushLogFile(fs, logPath);
@@ -1671,6 +1674,9 @@ int main(int argc, char** argv) {
         remote.reply(ok, std::move(info));
         for (int i = 0; i < 200 && remote.sentCount() == before; ++i) usleep(10 * 1000);
     };
+    auto pumpRemoteLog = [&]() {
+        for (const std::string& line : remote.takeLogLines()) nl::log::line("%s", line.c_str());
+    };
     // fromRemote: Antwort an den Client; die Fernsteuerung bleibt nach dem Neustart an, wenn sie jetzt läuft.
     auto restartSelf = [&](bool fromRemote) {
         std::vector<std::string> extra;
@@ -1693,6 +1699,7 @@ int main(int argc, char** argv) {
         emu.join();
         cheatWorker.join();
         remote.stop();
+        pumpRemoteLog();
         netService.shutdown();
         covers.shutdown();
         banners.shutdown();
@@ -1834,6 +1841,7 @@ int main(int argc, char** argv) {
         }
         nl::ui::InputFrame in = frame.begin(raw);
 #endif
+        pumpRemoteLog();
         if (readyReported) handleRemote();
         if (restartPending && !scenes.contains(&dialog) && remoteKeyFrames == 0 && remoteKeyRelease == 0) {
             restartPending = false;  // M20: nach „Neu starten“ oder dem Update-Dialog
@@ -2065,6 +2073,7 @@ int main(int argc, char** argv) {
                 emu.join();
                 cheatWorker.join();
                 remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
+                pumpRemoteLog();
                 netService.shutdown();
                 covers.shutdown();
                 banners.shutdown();
@@ -2327,9 +2336,11 @@ int main(int argc, char** argv) {
     emu.join();
     cheatWorker.join();
     remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
+    pumpRemoteLog();
     netService.shutdown();
     covers.shutdown();
     banners.shutdown();
+    banners.release();
     stopAudio();
     logPerfSummary();
     if (data.writable) nl::log::flushLogFile(fs, logPath);

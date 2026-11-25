@@ -306,3 +306,39 @@ TEST_CASE("clearCoverCache auf leerer Wurzel ist kein Fehler (M23)") {
     CHECK(r.removed == 0);
     CHECK(r.failed == 0);
 }
+
+TEST_CASE("orderCoverJobs: Generation absteigend, innerhalb einer Konsole stabil (M24)") {
+    std::vector<CoverJob> jobs;
+    auto add = [&](Console c, const char* stem) {
+        CoverJob j{"", stem};
+        j.console = c;
+        jobs.push_back(j);
+    };
+    add(Console::Nes, "nes1");
+    add(Console::Wii, "wii1");
+    add(Console::Snes, "snes1");
+    add(Console::Gc, "gc1");
+    add(Console::Wii, "wii2");
+    add(Console::Gb, "gb1");
+    add(Console::Gba, "gba1");
+    add(Console::N64, "n641");
+    add(Console::Gbc, "gbc1");
+    orderCoverJobs(jobs);
+    std::string order;
+    for (const CoverJob& j : jobs) order += j.stem + ",";
+    CHECK(order == "wii1,wii2,gc1,gba1,n641,gbc1,snes1,gb1,nes1,");
+    CHECK(coverJobRank(Console::Wii) < coverJobRank(Console::Gc));
+    CHECK(coverJobRank(Console::Gb) < coverJobRank(Console::Nes));
+}
+
+TEST_CASE("coverDownloadJobs setzt die Konsole des Auftrags (M24)") {
+    Game g{};
+    g.console = Console::Snes;
+    g.key = "snes:F-Zero";
+    g.title = "F-Zero";
+    g.path = "usb:/roms/snes/F-Zero (Europe).sfc";
+    const Game* gs[] = {&g};
+    const auto jobs = coverDownloadJobs(gs, [](const std::string&) { return false; }, "usb:", "https://x");
+    REQUIRE(jobs.size() == 1);
+    CHECK(jobs[0].console == Console::Snes);
+}

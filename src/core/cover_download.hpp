@@ -43,7 +43,14 @@ struct CoverJob {
     std::string stem;
     std::string root = {};  // Cover-Wurzel des Geräts (coverRoot), Ziel von coverSrcPath
     std::string url = {};   // M22: feste Adresse (libretro); leer = GameTDB über die Regionen
+    Console console = Console::Wii;  // M24: bestimmt die Reihenfolge (orderCoverJobs)
 };
+
+// M24: Rang der Download-Reihenfolge, Konsolen von neu nach alt wie die Konsolenleiste:
+// Wii 0, GC 1, GBA 2, N64 3, GBC 4, SNES 5, GB 6, NES 7, Kanäle danach.
+int coverJobRank(Console c);
+// Sortiert stabil nach coverJobRank; innerhalb einer Konsole bleibt die Reihenfolge (Titel der Bibliothek).
+void orderCoverJobs(std::vector<CoverJob>& jobs);
 
 // Wii/GC (und mit retroBase auch Retro-Konsolen), bei denen weder covers_src-PNG noch .tex existiert. Stämme in
 // skip (Fehlliste, M22) werden übersprungen.

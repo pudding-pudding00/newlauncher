@@ -96,15 +96,35 @@ std::vector<CoverJob> coverDownloadJobs(std::span<const Game* const> games,
         if (skip != nullptr && skip->count(stem) > 0) continue;
         if (exists(coverSrcPath(libRoot, stem)) || exists(coverTexPath(libRoot, stem))) continue;
         if (disc) {
-            jobs.push_back({std::string(g->key), std::move(stem), std::string(libRoot), {}});
+            jobs.push_back({std::string(g->key), std::move(stem), std::string(libRoot), {}, g->console});
             continue;
         }
         const std::string_view fileStem = std::string_view(stem).substr(stem.find('/') + 1);
         std::string url = libretroCoverUrl(retroBase, g->console, fileStem);
         if (url.empty()) continue;
-        jobs.push_back({stem, stem, std::string(libRoot), std::move(url)});
+        jobs.push_back({stem, stem, std::string(libRoot), std::move(url), g->console});
     }
     return jobs;
+}
+
+int coverJobRank(Console c) {
+    if (c == Console::Channel) return kConsoleCount;
+    // Generation absteigend, innerhalb einer Generation Heimkonsole vor Handheld (wie buildBarEntries).
+    const ConsoleInfo& info = consoleInfo(c);
+    int rank = 0;
+    for (int i = 0; i < kConsoleCount; ++i) {
+        const Console o = static_cast<Console>(i);
+        if (o == Console::Channel || o == c) continue;
+        const ConsoleInfo& oi = consoleInfo(o);
+        if (oi.generation > info.generation || (oi.generation == info.generation && !oi.handheld && info.handheld))
+            ++rank;
+    }
+    return rank;
+}
+
+void orderCoverJobs(std::vector<CoverJob>& jobs) {
+    std::stable_sort(jobs.begin(), jobs.end(),
+                     [](const CoverJob& a, const CoverJob& b) { return coverJobRank(a.console) < coverJobRank(b.console); });
 }
 
 std::string missingListPath(std::string_view libRoot) {

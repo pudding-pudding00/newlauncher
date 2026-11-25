@@ -23,7 +23,7 @@ constexpr const char* kDefaultText =
     "args = {dir}|{file}\n"
     "[n64_not64]\n"
     "dol = sd:/apps/not64/boot.dol\n"
-    "args = {path}\n"
+    "args = rompath=\"{path}\"\n"  // Not64 liest jedes argv als „schlüssel = wert“ (readArgs)
     "[n64_wii64]\n"
     "dol = sd:/apps/wii64/boot.dol\n"
     "args = {path}\n"

@@ -139,7 +139,7 @@ Game n64Game() {
 }
 }  // namespace
 
-TEST_CASE("preflightGame: N64 über Not64 baut argv mit {path}") {
+TEST_CASE("preflightGame: N64 über Not64 baut argv mit rompath=\"{path}\"") {
     test::MemFileSystem fs;
     fs.addFile("sd:/apps/not64/boot.dol", goodDol());
     fs.addFile(kSm64, {});
@@ -151,7 +151,7 @@ TEST_CASE("preflightGame: N64 über Not64 baut argv mit {path}") {
     CHECK(r.value().n64 == N64Method::Not64);
     REQUIRE(r.value().dol.args.size() == 2);
     CHECK(r.value().dol.args[0] == "sd:/apps/not64/boot.dol");
-    CHECK(r.value().dol.args[1] == kSm64);
+    CHECK(r.value().dol.args[1] == std::string("rompath=\"") + kSm64 + "\"");
 }
 
 TEST_CASE("preflightGame: N64 über VC liefert Kanalziel") {

@@ -20,7 +20,7 @@ constexpr std::array<EmuProfile, 10> kProfiles{{
     {"snes9xgx", "snes9xgx", "boot.dol", "Snes9x GX", bit(Console::Snes), "{dir}|{file}", true, kFsFat},
     {"vbagx", "vbagx", "boot.dol", "Visual Boy Advance GX",
      static_cast<u8>(bit(Console::Gb) | bit(Console::Gbc) | bit(Console::Gba)), "{dir}|{file}", true, kFsFat},
-    {"not64", "not64", "boot.dol", "Not64", bit(Console::N64), "{path}", false, kFsFat},
+    {"not64", "not64", "boot.dol", "Not64", bit(Console::N64), "rompath=\"{path}\"", false, kFsFat},  // argv = Schlüssel=Wert
     {"wii64", "wii64", "boot.dol", "Wii64", bit(Console::N64), "{path}", false, kFsFat},
     {"nintendont", "nintendont", "boot.dol", "Nintendont", bit(Console::Gc), "", false, kFsFat},
     {"retroarch-fceumm", "retroarch-wii", "fceumm_libretro_wii.dol", nullptr, bit(Console::Nes), "{dir}|{file}",
@@ -116,8 +116,12 @@ ResolvedEmu resolveSection(const Section& s, const EmulatorEntry& e, std::span<c
         }
     }
     // Ab hier ist e die v1-Vorgabe: v1 schrieb sie immer, sie ist keine Nutzerentscheidung → fromIni = false.
-    // 3. v1-Vorgabe, deren Datei es gibt: bleibt, wie v1 sie startete
-    if (const char* id = profileOfDol(e.dol, found)) return ResolvedEmu{e.dol, e.args, id, false, bad, 0};
+    // 3. v1-Vorgabe, deren Datei es gibt: bleibt, startet aber mit dem Schema des Profils (v1 schrieb für Not64
+    //    noch „{path}“, das Not64 als Schlüssel=Wert-Paar verwirft und dann nur das Menü zeigt).
+    if (const char* id = profileOfDol(e.dol, found)) {
+        const EmuProfile* p = findProfile(id);
+        return ResolvedEmu{e.dol, p != nullptr ? std::string(p->args) : e.args, id, false, bad, 0};
+    }
     // 4. Profilreihenfolge
     for (const char* id : s.order) {
         const EmuProfile* p = findProfile(id);

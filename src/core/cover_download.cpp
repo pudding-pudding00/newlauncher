@@ -342,7 +342,8 @@ std::unordered_set<std::string> existingCoverFiles(FileSystem& fs, std::string_v
     return out;
 }
 
-CoverClearResult clearCoverCache(FileSystem& fs, std::string_view libRoot, const std::function<void()>& onRemoved) {
+CoverClearResult clearCoverCache(FileSystem& fs, std::string_view libRoot, const std::function<void()>& onRemoved,
+                                 const std::function<bool()>& cancelled) {
     CoverClearResult r;
     std::vector<std::string> files;
     for (const std::string& f : existingCoverFiles(fs, libRoot, true)) files.push_back(f);
@@ -353,6 +354,10 @@ CoverClearResult clearCoverCache(FileSystem& fs, std::string_view libRoot, const
             if (!e.isDir && e.name == std::string_view(missing).substr(slash + 1)) files.push_back(missing);
     }
     for (const std::string& f : files) {
+        if (cancelled && cancelled()) {
+            r.cancelled = true;
+            break;
+        }
         if (fs.removeFile(f).isOk()) {
             ++r.removed;
             if (onRemoved) onRemoved();
@@ -445,7 +450,7 @@ bool isPng(std::span<const u8> data) {
 }
 
 bool shouldAutoFetchCovers(const CoverAutoInputs& in) {
-    return in.enabled && in.ready && !in.scanRunning && !in.netBusy && !in.alreadyRan;
+    return in.enabled && in.ready && !in.scanRunning && !in.netBusy && !in.alreadyRan && !in.clearing;
 }
 
 }  // namespace nl

@@ -26,6 +26,7 @@ public:
     u32 removed() const { return removed_; }
     std::optional<CoverClearResult> take();  // Summe aller Wurzeln, genau einmal nach dem Ende
     void join();                             // auf das Ende warten (vor dem Aushängen der Laufwerke)
+    void cancel() { cancel_ = true; }        // M24: vor der nächsten Datei aufhören; danach join()
 
 private:
     static void* entry(void* self);
@@ -36,6 +37,7 @@ private:
     std::vector<std::string> roots_;
     volatile u32 removed_ = 0;
     volatile bool running_ = false;
+    volatile bool cancel_ = false;
     std::optional<CoverClearResult> result_;
 };
 

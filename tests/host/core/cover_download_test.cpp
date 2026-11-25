@@ -189,6 +189,7 @@ TEST_CASE("shouldAutoFetchCovers (M21)") {
     CHECK_FALSE(shouldAutoFetchCovers({true, true, true, false, false}));    // Scan läuft
     CHECK_FALSE(shouldAutoFetchCovers({true, true, false, true, false}));    // anderer Netz-Auftrag
     CHECK_FALSE(shouldAutoFetchCovers({true, true, false, false, true}));    // schon gelaufen
+    CHECK_FALSE(shouldAutoFetchCovers({true, true, false, false, false, true}));  // M24: Cover-Cache wird gelöscht
 }
 
 // ---- M22: Retro-Cover (libretro-thumbnails) und Fehlliste ----
@@ -468,4 +469,19 @@ TEST_CASE("runCoverDownloads: folgt Symlinks und probiert weitere Kandidaten (M2
     CHECK(net.calls == std::vector<std::string>{"http://r/S/A1.png", "http://r/S/A.png", "http://r/S/B1.png",
                                                 "http://r/S/B2.png", "http://r/S/C1.png", "http://r/S/C1.png",
                                                 "http://r/S/C1.png"});
+}
+
+TEST_CASE("clearCoverCache bricht zwischen zwei Dateien ab, wenn cancelled meldet (M24)") {
+    test::MemFileSystem fs;
+    fs.addFile("sd:/newlauncher/covers_src/nes/A.png", {1});
+    fs.addFile("sd:/newlauncher/covers_src/nes/B.png", {1});
+    fs.addFile("sd:/newlauncher/covers_src/nes/C.png", {1});
+    int calls = 0;
+    const CoverClearResult r = clearCoverCache(fs, "sd:", [&] { ++calls; }, [&] { return calls >= 1; });
+    CHECK(r.removed == 1);
+    CHECK(r.failed == 0);
+    CHECK(r.cancelled);
+    const CoverClearResult rest = clearCoverCache(fs, "sd:");
+    CHECK(rest.removed == 2);
+    CHECK_FALSE(rest.cancelled);
 }

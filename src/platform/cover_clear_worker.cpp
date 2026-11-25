@@ -20,6 +20,7 @@ bool CoverClearWorker::start(FileSystem& fs, std::vector<std::string> roots) {
     fs_ = &fs;
     roots_ = std::move(roots);
     removed_ = 0;
+    cancel_ = false;
     LWP_MutexLock(mutex_);
     result_.reset();
     LWP_MutexUnlock(mutex_);
@@ -43,9 +44,14 @@ void* CoverClearWorker::entry(void* arg) {
     auto* self = static_cast<CoverClearWorker*>(arg);
     CoverClearResult sum;
     for (const std::string& root : self->roots_) {
-        const CoverClearResult r = clearCoverCache(*self->fs_, root, [self] { self->removed_ = self->removed_ + 1; });
+        const CoverClearResult r = clearCoverCache(
+            *self->fs_, root, [self] { self->removed_ = self->removed_ + 1; }, [self] { return self->cancel_; });
         sum.removed += r.removed;
         sum.failed += r.failed;
+        if (r.cancelled) {
+            sum.cancelled = true;
+            break;
+        }
     }
     LWP_MutexLock(self->mutex_);
     self->result_ = sum;

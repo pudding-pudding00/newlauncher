@@ -91,9 +91,12 @@ std::string missingListText(const std::vector<std::string>& stems);
 // Kanälen) und die Fehlliste. Andere Dateien bleiben. failed zählt Dateien, die sich nicht löschen ließen.
 struct CoverClearResult {
     u32 removed = 0, failed = 0;
+    bool cancelled = false;  // M24: vor dem Ende abgebrochen
 };
-// M24: onRemoved nach jeder gelöschten Datei (Fortschritt; läuft im Lösch-Thread).
-CoverClearResult clearCoverCache(FileSystem& fs, std::string_view libRoot, const std::function<void()>& onRemoved = {});
+// M24: onRemoved nach jeder gelöschten Datei (Fortschritt; läuft im Lösch-Thread); cancelled wird vor jeder Datei
+// geprüft (Start eines Spiels, Neustart, Ausschalten warten so nicht auf das ganze Löschen).
+CoverClearResult clearCoverCache(FileSystem& fs, std::string_view libRoot, const std::function<void()>& onRemoved = {},
+                                 const std::function<bool()>& cancelled = {});
 
 bool isPng(std::span<const u8> data);
 
@@ -127,6 +130,7 @@ struct CoverAutoInputs {
     bool scanRunning;  // Bibliotheks-Scan läuft noch
     bool netBusy;      // anderer Netz-Auftrag läuft
     bool alreadyRan;   // in dieser Sitzung schon gestartet
+    bool clearing = false;  // M24: Cover-Cache wird gerade gelöscht
 };
 bool shouldAutoFetchCovers(const CoverAutoInputs& in);
 

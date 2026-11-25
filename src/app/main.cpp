@@ -1222,6 +1222,7 @@ int main(int argc, char** argv) {
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
         discDrive.shutdown();
         net.join();
+        coverClearWorker.cancel();  // M24: nicht auf das ganze Löschen warten
         coverClearWorker.join();
         emu.join();
         cheatWorker.join();
@@ -1775,6 +1776,7 @@ int main(int argc, char** argv) {
         worker.cancelAndJoin();
         discDrive.shutdown();
         net.join();
+        coverClearWorker.cancel();  // M24: nicht auf das ganze Löschen warten
         coverClearWorker.join();
         emu.join();
         cheatWorker.join();
@@ -2107,7 +2109,8 @@ int main(int argc, char** argv) {
                 if (storageChanged) {  // M24: Cover-Speicher ohne Neustart umstellen
                     coverStorageApplied = config.coverStorage;
                     net.join();         // Downloads schreiben sonst an den alten Ort
-                    coverClearWorker.join();  // Löschen am alten Ort erst zu Ende
+                    // M24: ein laufendes Löschen nicht abwarten: es leert den alten Ort weiter (wie gewünscht), Cover
+                    // werden erst nach dem Ende wieder geladen (covers.pump nur im Leerlauf).
                     covers.clearAll();  // Texturen frei (Vorframe ist per GX_DrawDone fertig)
                     covers.setRoots(coverRootsOf(store.devices()));
                     nl::log::line("NL_COVER_STORAGE %s",
@@ -2172,6 +2175,7 @@ int main(int argc, char** argv) {
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
                 discDrive.shutdown();
                 net.join();
+                coverClearWorker.cancel();  // M24: nicht auf das ganze Löschen warten
                 coverClearWorker.join();
                 emu.join();
                 cheatWorker.join();
@@ -2467,7 +2471,8 @@ int main(int argc, char** argv) {
         // M21: fehlende Cover einmal pro Sitzung still laden, sobald Scan fertig und WLAN verbunden ist.
         // Läuft gerade ein Netz-Auftrag, versucht es der nächste Frame erneut.
         if (nl::shouldAutoFetchCovers({config.coverAuto, readyReported && ctx.wifi == nl::WifiStatus::Connected,
-                                       worker.running(), net.running() || emu.running(), coverAutoRan})) {
+                                       worker.running(), net.running() || emu.running(), coverAutoRan,
+                                       coverClear != CoverClear::Idle})) {
             coverAutoRan = true;
             fetchCovers(true);
         }
@@ -2479,6 +2484,7 @@ int main(int argc, char** argv) {
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
     discDrive.shutdown();
     net.join();
+    coverClearWorker.cancel();  // M24: nicht auf das ganze Löschen warten
     coverClearWorker.join();
     emu.join();
     cheatWorker.join();

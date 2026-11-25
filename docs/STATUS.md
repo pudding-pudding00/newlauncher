@@ -20,6 +20,21 @@ Die CI (`.github/workflows/build.yml`) baut Wii mit und ohne TLS und führt die 
 
 Alle Code-Meilensteine (M0–M19) der v2-Spec sowie die offenen Review-Kleinigkeiten sind umgesetzt; offen ist die Hardware-Abnahme auf echter Hardware.
 
+### 0. M20 in Arbeit (Branch `feat/m20-direktstart`, Stand 2026-11-25)
+
+- Fertig und auf Hardware geprüft:
+  - Fernsteuerung über TCP 4300: HELLO, STATE, LOG, KEY und SHOT.
+  - SHOT liefert seit dem Fix in `remote_server.cpp` korrekte Bilder. Senden läuft jetzt blockierend über einen 4-KB-Puffer; nicht-blockierendes `net_send` hatte große Antworten zerhackt.
+  - `update` schreibt boot.dol auf die SD und startet neu, mit USB (698 Spiele).
+  - Einstellungen → „Update installieren“ zeigt „Keine Update-Information erreichbar“, weil es noch kein Release gibt (`NL_NET_FAIL other`).
+  - „newlauncher neu starten“ startet neu.
+- Offen:
+  - USB nach dem Neustart über das Menü erneut prüfen. Beim letzten Test war der Stick abgezogen.
+  - newlauncher ist am Ende der Sitzung auf der Hardware abgestürzt. Das geschah bei Exit/Neustart-Tests, die Ursache ist unklar. Zuerst das Log `sd:/newlauncher` prüfen.
+  - Fehlende Pfeil-Glyphen in der Hinweiszeile der Einstellungen („?? Ändern“).
+  - Rückkehr-Stub Emulator → newlauncher (Plan: Stub bei 0x80001800, liest boot.dol roh über `/dev/sdio`).
+  - Spec, Plan, `docs/acceptance/m20-wii.md`, PR.
+
 ### 1. Hardware-Abnahme auf der echten Wii
 
 Bisher ist **kein** Punkt abgehakt, die Spalte „Ergebnis“ ist überall leer bzw. `ungeprüft` (gesamt 125 Punkte).

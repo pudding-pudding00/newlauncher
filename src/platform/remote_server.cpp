@@ -24,7 +24,7 @@ constexpr u32 kStackBytes = 32 * 1024;
 constexpr u8 kPriority = 40;              // unter dem Haupt-Thread, wie NetService
 constexpr s32 kSliceMs = 100;             // Abbruch-Prüfung beim Warten
 constexpr u32 kIosNonBlock = 4;           // IOS-Wert für O_NONBLOCK (wie http_client.cpp)
-constexpr u32 kPollIn = 0x0001, kPollOut = 0x0008;
+constexpr u32 kPollIn = 0x0001;
 constexpr u32 kIdleTimeoutSlices = 600;   // 60 s ohne Daten: Verbindung schließen
 }  // namespace
 
@@ -189,19 +189,29 @@ bool RemoteServer::recvExact(s32 fd, u8* out, u32 size) {
     return true;
 }
 
+namespace {
+// Ausgerichteter Zwischenpuffer in MEM1: große Puffer (SHOT, 600 KB) kamen direkt übergeben falsch an.
+alignas(32) u8 g_sendBuf[4096];
+}
+
 bool RemoteServer::sendAll(s32 fd, const u8* data, std::size_t size) {
+    // Auf der Hardware meldet net_send im nicht-blockierenden Modus Bytes als gesendet bzw. -EAGAIN, die so
+    // nicht ankommen (SHOT zerhackt, M20). Zum Senden daher blockierend, danach wieder nicht-blockierend.
+    net_fcntl(fd, F_SETFL, 0);
     std::size_t done = 0;
+    bool ok = true;
     while (done < size) {
-        const s32 want = static_cast<s32>(std::min<std::size_t>(size - done, 32 * 1024));
-        const s32 r = net_send(fd, data + done, want, 0);
-        if (r > 0) {
-            done += static_cast<std::size_t>(r);
-            continue;
+        const s32 want = static_cast<s32>(std::min<std::size_t>(size - done, sizeof(g_sendBuf)));
+        std::memcpy(g_sendBuf, data + done, static_cast<std::size_t>(want));
+        const s32 r = net_send(fd, g_sendBuf, want, 0);
+        if (r <= 0) {
+            ok = false;
+            break;
         }
-        if (r != -EAGAIN) return false;
-        if (!waitReady(fd, kPollOut)) return false;
+        done += static_cast<std::size_t>(r);
     }
-    return true;
+    net_fcntl(fd, F_SETFL, kIosNonBlock);
+    return ok;
 }
 
 void RemoteServer::serve(s32 fd) {

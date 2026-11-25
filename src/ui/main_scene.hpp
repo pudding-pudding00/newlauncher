@@ -99,7 +99,7 @@ private:
     void applyCurrentFilter(std::string_view keepKey);
     void layoutBar(const UiContext& ctx);
     void refreshTexts(const UiContext& ctx);
-    void handlePointer(const UiContext& ctx, const InputFrame& in);
+    void handlePointer(const UiContext& ctx, const InputFrame& in, float dtMs);
     void drawTopBar(const UiContext& ctx, gfx::DrawList& dl) const;
     void drawInfoBar(const UiContext& ctx, gfx::DrawList& dl) const;
     const Game* focusedGame() const;

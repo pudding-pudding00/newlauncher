@@ -33,13 +33,18 @@ struct GridMetrics {
     float tileW, tileH, gap, marginX, topBarH, infoBarH;
     int columns;
 };
-GridMetrics gridMetrics(float logicalWidth);
+// M23: coverAspect (Breite/Höhe) bestimmt die Kachelhöhe; die Breite bleibt (6 Spalten).
+GridMetrics gridMetrics(float logicalWidth, float coverAspect = 5.0f / 7.0f);
 
 class GridModel {
 public:
     void reset(int itemCount, const GridMetrics& m, float viewHeight);
     void move(int dx, int dy);
-    void setFocus(int index);  // -1 = kein Fokus; der letzte Fokus bleibt für Richtungstasten gemerkt
+    // -1 = kein Fokus; der letzte Fokus bleibt für Richtungstasten gemerkt. Ohne scrollIntoView (Zeiger, M23)
+    // bleibt die Scrollposition, sonst wird die Reihe ganz sichtbar.
+    void setFocus(int index, bool scrollIntoView = true);
+    void scrollBy(float dy);  // M23: Zeiger-Randscrollen, begrenzt auf [0, maxScroll()]
+    float maxScroll() const;
     int focus() const { return focus_; }
     int count() const { return count_; }
     float targetScroll() const { return scroll_; }

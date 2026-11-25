@@ -25,6 +25,9 @@ namespace {
 // Nur vom Haupt-Thread vor dem ersten Auftrag geschrieben (submit ordnet über den Mutex), danach nur gelesen.
 std::string g_tlsCaPath;
 bool g_perf = false;  // [debug] perf: NL_PERF tls je Handshake
+// M23: Stand der letzten Anfrage im Netz-Thread (nur dort gelesen und geschrieben)
+bool g_lastReused = false;
+u32 g_lastHandshakeMs = 0;
 
 void emit(const HttpLog& log, std::string line) {
     if (log) log(std::move(line));
@@ -119,6 +122,8 @@ HttpResult wtlsRequest(const Url& url, u32 maxBody, const volatile bool* cancel,
     req.tls = &tlsOpt;
 
     wtls_http_response* res = nullptr;
+    g_lastReused = false;
+    g_lastHandshakeMs = 0;
     int heapBefore = 0;
     auto openOnce = [&]() {
         heapBefore = g_perf ? mallinfo().uordblks : 0;
@@ -145,6 +150,8 @@ HttpResult wtlsRequest(const Url& url, u32 maxBody, const volatile bool* cancel,
 
     wtls_http_info info{};
     wtls_http_get_info(res, &info);
+    g_lastReused = info.reused_connection;
+    g_lastHandshakeMs = info.secure && !info.reused_connection ? static_cast<u32>(info.tls.handshake_ms) : 0;
     if (g_perf && info.secure && !info.reused_connection) {
         char line[64];
         std::snprintf(line, sizeof line, "NL_PERF tls heap=%d ms=%u", mallinfo().uordblks - heapBefore,
@@ -377,6 +384,9 @@ HttpResult request(const Url& first, HttpParser& parser, const volatile bool* ca
 
 void setTlsCaPath(std::string path) { g_tlsCaPath = std::move(path); }
 void setNetPerf(bool on) { g_perf = on; }
+bool netPerf() { return g_perf; }
+bool lastRequestReused() { return g_lastReused; }
+u32 lastHandshakeMs() { return g_lastHandshakeMs; }
 
 HttpResult httpGet(const Url& url, u32 maxBody, std::vector<u8>& body, const volatile bool* cancel,
                    const HttpLog& log) {

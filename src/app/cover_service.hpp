@@ -30,6 +30,10 @@ public:
     void libraryChanged() { stems_.clear(); }  // Game-Zeiger sind ungültig; der Cache (Stämme) bleibt
     void invalidate(std::string_view stem) { cache_.invalidate(stem); }  // neue Quelle geladen: Missing erneut versuchen
     void shutdown();                // vor dem Aushängen der Laufwerke; danach geht pump() normal weiter
+    void clearAll() {               // M23 „Cover-Cache löschen“: Thread anhalten, alle Texturen verwerfen
+        shutdown();
+        cache_.clear();
+    }
     bool idle() const { return cache_.idle() && !worker_.running(); }
     u32 readyCount() const { return cache_.readyCount(); }
     u32 bytesUsed() const { return cache_.bytesUsed(); }

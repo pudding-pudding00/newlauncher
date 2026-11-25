@@ -1,6 +1,6 @@
 # Projektstand (Übergabe)
 
-Stand: 2026-11-25, M22 (Retro-Cover aus dem Netz) umgesetzt, Hardware-Abnahme von M21 und M22 offen. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
+Stand: 2026-11-25, M23 (Cover-Cache löschen, Zeiger-Scrollen, Kacheln im Cover-Format) umgesetzt, Hardware-Abnahme von M21 bis M23 offen. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
 
 ## Erledigt
 
@@ -16,7 +16,8 @@ Stand: 2026-11-25, M22 (Retro-Cover aus dem Netz) umgesetzt, Hardware-Abnahme vo
 | – | Emulator-Verwaltung „Alle installieren“, WLAN-Zustand in der Infoleiste | #30, #31 |
 | M20 | Direktstart von ROMs, Rückkehr-Stub, Fernsteuerung (TCP 4300), Selbst-Update, wii_tls **v0.2.0** mit HTTP/1.1-Client | #33 |
 | M21 | „Wii-Menü“ im Wii-Spiel führt über den Rückkehr-Stub zurück in newlauncher; Cover werden nach dem Start automatisch geladen (`[covers] auto`) | #34 |
-| M22 | Retro-Cover (NES bis GBA) lädt der Launcher selbst von libretro-thumbnails (GitHub, nur HTTPS) und merkt sich Fehltreffer in `cache/covers/missing.txt` | Branch `feat/m22-retro-cover` |
+| M22 | Retro-Cover (NES bis GBA) lädt der Launcher selbst von libretro-thumbnails (GitHub, nur HTTPS) und merkt sich Fehltreffer in `cache/covers/missing.txt` | #36 |
+| M23 | Einstellung „Cover-Cache löschen“, Raster scrollt mit dem Zeiger an den Rändern, Kachelhöhe nach Cover-Format der Konsole, Download-Messung (`[debug] perf`) | Branch `feat/m23-cover-speed` |
 
 Die CI (`.github/workflows/build.yml`) baut Wii mit und ohne TLS und führt die Host-Tests aus.
 
@@ -54,6 +55,12 @@ Spec `docs/superpowers/specs/2026-11-25-m20-direktstart-design.md`, Abnahme
   der automatische Lauf überspringt sie, der manuelle versucht alle erneut. Ohne TLS-Build keine Retro-Cover.
   `[covers] retro_base` ersetzt die Quelle, `[debug] cover_url` ersetzt im Smoke beide. Abnahme:
   [acceptance/m22-wii.md](acceptance/m22-wii.md), **ungeprüft**.
+- **M23 (2026-11-25):** Einstellungen → „Cover-Cache löschen“ (zweimal A) löscht `covers_src`, `cache/covers` und
+  `missing.txt` auf allen Cover-Wurzeln. Der Wiimote-Zeiger scrollt das Raster in 40-px-Randstreifen. Konsolenlisten
+  haben Kacheln im Cover-Format (SNES/N64 quer 10:7, GB/GBC/GBA 1:1, sonst 5:7); Cover werden unverzerrt eingepasst.
+  Messung auf der Wii: Keep-Alive greift schon (ein Handshake, 122 ms), die Zeit geht in die Übertragung
+  (300–550 KB je libretro-PNG bei ~400 KB/s) und ~170 ms Speichern. Parallele Downloads bräuchten einen
+  wii_tls-Umbau, offen. Abnahme: [acceptance/m23-wii.md](acceptance/m23-wii.md), **ungeprüft**.
 
 **Hinweise für die Arbeit:**
 

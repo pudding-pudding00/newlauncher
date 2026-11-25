@@ -13,11 +13,11 @@ using gfx::FontSize;
 using gfx::FontWeight;
 using gfx::Rect;
 
-constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 24.0f, kRowH = 16.0f, kHelpH = 24.0f;  // 25 Zeilen in 480 (Titel 22 px)
+constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kPadY = 8.0f, kTitleH = 24.0f, kRowH = 16.0f, kHelpH = 24.0f;  // 26 Zeilen in 480
 
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo, Str::ThemePack,  Str::Music,       Str::Volume,
-    Str::Sounds,   Str::Banners, Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::CoverAuto, Str::Rescan, Str::FetchCovers, Str::VcMapTitle,
+    Str::Sounds,   Str::Banners, Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::CoverAuto, Str::Rescan, Str::FetchCovers, Str::ClearCovers, Str::VcMapTitle,
     Str::Emulators, Str::WiiGames, Str::GcGames, Str::Parental, Str::Setup, Str::SysInfo, Str::About, Str::SelfUpdate, Str::RestartSelf,
 };
 
@@ -36,6 +36,7 @@ AppCommand actionCommand(SettingRow r) {
     switch (r) {
         case SettingRow::Rescan: return AppCommand::Rescan;
         case SettingRow::FetchCovers: return AppCommand::FetchCovers;
+        case SettingRow::ClearCovers: return AppCommand::ClearCovers;
         case SettingRow::VcMap: return AppCommand::OpenVcMap;
         case SettingRow::Emulators: return AppCommand::OpenEmulators;
         case SettingRow::WiiGames:
@@ -90,6 +91,7 @@ std::string valueText(const Config& c, SettingRow r) {
 }  // namespace
 
 std::string SettingsScene::valueTextFor(SettingRow row) const {
+    if (row == SettingRow::ClearCovers) return armed_ ? std::string(tr(Str::ClearCoversConfirm)) : std::string();
     if (live_ == nullptr) return {};
     if (row == SettingRow::ThemePack) return live_->themePack.empty() ? std::string(tr(Str::ThemePackDefault)) : live_->themePack;
     return valueText(*live_, row);
@@ -99,6 +101,7 @@ void SettingsScene::onEnter() {
     focus_ = 0;
     keysSincePointerMove_ = false;
     pendingAction_ = AppCommand::None;
+    armed_ = false;
     if (live_ != nullptr) saved_ = *live_;
 }
 
@@ -106,13 +109,13 @@ bool SettingsScene::dirty() const { return live_ != nullptr && !sameSettings(*li
 
 Rect SettingsScene::cardRect(const UiContext& ctx) const {
     const float w = ctx.width - 64.0f < kCardMaxW ? ctx.width - 64.0f : kCardMaxW;
-    const float h = kPad + kTitleH + kCount * kRowH + kHelpH + kPad;
+    const float h = kPadY + kTitleH + kCount * kRowH + kHelpH + kPadY;
     return Rect{(ctx.width - w) / 2, (ctx.height - h) / 2, w, h};
 }
 
 Rect SettingsScene::rowRect(const UiContext& ctx, int row) const {
     const Rect c = cardRect(ctx);
-    return Rect{c.x + kPad, c.y + kPad + kTitleH + static_cast<float>(row) * kRowH, c.w - 2 * kPad, kRowH};
+    return Rect{c.x + kPad, c.y + kPadY + kTitleH + static_cast<float>(row) * kRowH, c.w - 2 * kPad, kRowH};
 }
 
 int SettingsScene::hitTest(const UiContext& ctx, float x, float y) const {
@@ -144,10 +147,12 @@ void SettingsScene::update(const UiContext& ctx, const InputFrame& in, float, Sc
     if (in.pressed(Action::Up) && focus_ > 0) --focus_;
     if (in.pressed(Action::Down) && focus_ + 1 < kCount) ++focus_;
     if (in.pressed(Action::Up) || in.pressed(Action::Down)) keysSincePointerMove_ = true;
+    if (focus_ != static_cast<int>(SettingRow::ClearCovers)) armed_ = false;  // Fokuswechsel entschärft
     const bool pointerOff = in.pointerValid && hit < 0 && !keysSincePointerMove_;
 
     if (in.pressed(Action::Back) || in.pressed(Action::Home)) {
         out.pop = true;
+        armed_ = false;
         if (dirty()) {
             out.command = AppCommand::SaveSettings;
             saved_ = *live_;
@@ -158,6 +163,12 @@ void SettingsScene::update(const UiContext& ctx, const InputFrame& in, float, Sc
     const SettingRow row = static_cast<SettingRow>(focus_);
     if (isAction(row)) {
         if (in.pressed(Action::Confirm) && !pointerOff) {
+            if (row == SettingRow::ClearCovers && !armed_) {  // erstes A schärft nur
+                armed_ = true;
+                out.sound = UiSound::Confirm;
+                return;
+            }
+            armed_ = false;
             out.console = row == SettingRow::GcGames ? Console::Gc : Console::Wii;
             pendingConsole_ = out.console;
             if (dirty()) {
@@ -191,7 +202,7 @@ void SettingsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     gfx::roundRect(dl, s, card, 16.0f, t.bg);
 
     const gfx::FontFace& head = ctx.fonts->face(FontSize::Title, FontWeight::Medium);
-    gfx::drawTextEllipsis(dl, head, card.x + kPad, card.y + kPad + head.ascent, card.w - 2 * kPad, tr(Str::Settings),
+    gfx::drawTextEllipsis(dl, head, card.x + kPad, card.y + kPadY + head.ascent, card.w - 2 * kPad, tr(Str::Settings),
                           t.text);
 
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Body, FontWeight::Regular);
@@ -219,7 +230,7 @@ void SettingsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         if (!v.empty()) gfx::drawText(dl, value, r.x + r.w - 8 - vw, base, v, fg);
     }
 
-    const float helpBase = card.y + card.h - kPad - small.descent;
+    const float helpBase = card.y + card.h - kPadY - small.descent;
     gfx::drawTextEllipsis(dl, small, card.x + kPad, helpBase, card.w - 2 * kPad, tr(Str::SettingsHelp), t.textMuted);
 }
 

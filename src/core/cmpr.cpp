@@ -1,5 +1,6 @@
 #include "core/cmpr.hpp"
 
+#include <algorithm>
 #include <utility>
 
 namespace nl {
@@ -101,6 +102,26 @@ std::vector<u8> encodeCmpr(std::span<const u8> rgba, u16 width, u16 height) {
                 dst += 8;
             }
     return out;
+}
+
+std::optional<PixelBox> cmprOpaqueBox(std::span<const u8> cmpr, u16 width, u16 height) {
+    if (width == 0 || height == 0 || width % 8 != 0 || height % 8 != 0) return std::nullopt;
+    if (cmpr.size() < std::size_t(width) * height / 2) return std::nullopt;
+    u32 x0 = width, y0 = height, x1 = 0, y1 = 0;
+    const u8* b = cmpr.data();
+    for (u32 ty = 0; ty < height; ty += 8)
+        for (u32 tx = 0; tx < width; tx += 8)
+            for (u32 sub = 0; sub < 4; ++sub, b += 8) {
+                const u16 c0 = u16(b[0] << 8 | b[1]), c1 = u16(b[2] << 8 | b[3]);
+                if (c0 <= c1 && b[4] == 0xFF && b[5] == 0xFF && b[6] == 0xFF && b[7] == 0xFF) continue;
+                const u32 x = tx + (sub & 1) * 4, y = ty + (sub >> 1) * 4;
+                x0 = std::min(x0, x);
+                y0 = std::min(y0, y);
+                x1 = std::max(x1, x + 4);
+                y1 = std::max(y1, y + 4);
+            }
+    if (x1 == 0) return std::nullopt;
+    return PixelBox{u16(x0), u16(y0), u16(x1), u16(y1)};
 }
 
 }  // namespace nl

@@ -30,3 +30,13 @@ TEST_CASE("Konsolentabelle: Ordner und Endungen laut Spec 5.3") {
     CHECK(std::strcmp(consoleInfo(Console::N64).extensions[2], ".v64") == 0);
     CHECK(std::strcmp(consoleInfo(Console::Wii).extensions[1], ".iso") == 0);
 }
+
+TEST_CASE("coverAspect: typisches Cover-Format je Konsole (M23, libretro gemessen)") {
+    CHECK(coverAspect(Console::Snes) == doctest::Approx(10.0 / 7.0));
+    CHECK(coverAspect(Console::N64) == doctest::Approx(10.0 / 7.0));
+    CHECK(coverAspect(Console::Gb) == doctest::Approx(1.0));
+    CHECK(coverAspect(Console::Gbc) == doctest::Approx(1.0));
+    CHECK(coverAspect(Console::Gba) == doctest::Approx(1.0));
+    for (Console c : {Console::Nes, Console::Gc, Console::Wii, Console::Channel})
+        CHECK(coverAspect(c) == doctest::Approx(5.0 / 7.0));
+}

@@ -21,6 +21,7 @@ constexpr float kFocusScale = 0.08f;
 constexpr float kToastMs = 2000.0f;
 constexpr float kAnimMs = 200.0f;
 constexpr float kCoverInset = 4.0f;
+constexpr float kEdgeScrollPx = 40.0f, kEdgeRowMs = 250.0f;  // M23: Zeiger-Randstreifen, Tempo am Rand
 constexpr int kTitleLines = 3;
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
@@ -160,7 +161,9 @@ void MainScene::applyCurrentFilter(std::string_view keepKey) {
     if (std::find(choices_.begin(), choices_.end(), filter_) == choices_.end()) choices_.push_back(filter_);
     filtered_ = applyFilter(base_, filter_, favs, cats);
     games_ = filtered_;
-    const GridMetrics m = gridMetrics(gridWidth_);
+    // M23: in einer Konsolenliste folgt die Kachelhöhe dem Cover-Format; gemischte Listen bleiben 5:7.
+    const bool consoleList = filterEntryKnown_ && filterEntry_.kind == BarKind::ConsoleEntry;
+    const GridMetrics m = gridMetrics(gridWidth_, consoleList ? coverAspect(filterEntry_.console) : 5.0f / 7.0f);
     grid_.reset(static_cast<int>(games_.size()), m, gridHeight_ - m.topBarH - m.infoBarH);
     scroll_.snap(0.0f);
     animFocus_ = -1;
@@ -391,7 +394,7 @@ void MainScene::refreshTexts(const UiContext& ctx) {
     }
 }
 
-void MainScene::handlePointer(const UiContext& ctx, const InputFrame& in) {
+void MainScene::handlePointer(const UiContext& ctx, const InputFrame& in, float dtMs) {
     if (!in.pointerValid) {
         hover_ = Hover::None;
         hoverBar_ = -1;
@@ -415,12 +418,26 @@ void MainScene::handlePointer(const UiContext& ctx, const InputFrame& in) {
                 break;
             }
         }
-    } else if (in.pointerMoved && y < grid_.viewTop() + grid_.viewHeight()) {
-        // Leere Fläche löscht den Fokus nur, wenn der Zeiger vorher eine Kachel fokussiert hatte;
-        // ein Zeiger, der irgendwo neben dem Raster auftaucht, nimmt den Fokus nicht weg.
-        const int hit = grid_.hitTest(x, y, scroll_.value());
-        if (hit >= 0 || pointerOnTile_) grid_.setFocus(hit);
-        pointerOnTile_ = hit >= 0;
+    } else if (y < grid_.viewTop() + grid_.viewHeight()) {
+        // M23: Randstreifen oben/unten scrollen stetig, schneller zum Rand hin (höchstens eine Reihe je 0,25 s).
+        const float top = grid_.viewTop(), bottom = top + grid_.viewHeight();
+        float depth = 0.0f;
+        if (y < top + kEdgeScrollPx) depth = -(top + kEdgeScrollPx - y) / kEdgeScrollPx;
+        else if (y > bottom - kEdgeScrollPx) depth = (y - (bottom - kEdgeScrollPx)) / kEdgeScrollPx;
+        bool scrolled = false;
+        if (depth != 0.0f) {
+            const float before = grid_.targetScroll();
+            grid_.scrollBy(depth * grid_.rowPitch() / kEdgeRowMs * dtMs);
+            scrolled = grid_.targetScroll() != before;
+            if (scrolled) scroll_.snap(grid_.targetScroll());
+        }
+        if (in.pointerMoved || scrolled) {
+            // Leere Fläche löscht den Fokus nur, wenn der Zeiger vorher eine Kachel fokussiert hatte;
+            // ein Zeiger, der irgendwo neben dem Raster auftaucht, nimmt den Fokus nicht weg.
+            const int hit = grid_.hitTest(x, y, scroll_.value());
+            if (hit >= 0 || pointerOnTile_) grid_.setFocus(hit, false);
+            pointerOnTile_ = hit >= 0;
+        }
         return;
     }
     if (in.pointerMoved) pointerOnTile_ = false;
@@ -446,7 +463,7 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
 
     const int focusBefore = grid_.focus(), barBefore = barIndex_;
     layoutBar(ctx);
-    handlePointer(ctx, in);
+    handlePointer(ctx, in, dtMs);
 
     if (in.pressed(Action::PrevConsole) && barIndex_ > 0) selectBar(barIndex_ - 1, ctx.width, ctx.height);
     if (in.pressed(Action::NextConsole) && barIndex_ + 1 < barCount_) selectBar(barIndex_ + 1, ctx.width, ctx.height);
@@ -557,7 +574,7 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
         const CoverView cv = covers_->view(g);
         if (cv.texture != 0 && cv.alpha > 0.0f) {
             const u8 a = static_cast<u8>(std::clamp(cv.alpha, 0.0f, 1.0f) * 255.0f);
-            dl.quad(cv.texture, fitCoverRect(r, kCoverInset), gfx::UvRect{0, 0, 1, 1}, Color{255, 255, 255, a});
+            dl.quad(cv.texture, fitAspectRect(r, kCoverInset, cv.aspect), cv.uv, Color{255, 255, 255, a});
         }
     }
 

@@ -26,4 +26,5 @@ Retro-ROMs mit No-Intro-Dateinamen). Spec: `docs/superpowers/specs/2026-11-25-m2
 
 - Der Dateiname der ROM muss dem libretro-/No-Intro-Namen entsprechen (Region und Revision eingeschlossen),
   sonst gibt es keinen Treffer.
-- Viele Aufträge dauern auf der Wii: jede Anfrage ist ein eigener TLS-Handshake.
+- Viele Aufträge dauern auf der Wii: libretro-PNGs sind 300–550 KB groß (etwa 1–1,5 s je Cover bei ~400 KB/s);
+  die Verbindung wird wiederverwendet (gemessen in M23).

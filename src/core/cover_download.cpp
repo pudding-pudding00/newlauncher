@@ -168,6 +168,26 @@ std::unordered_set<std::string> existingCoverFiles(FileSystem& fs, std::string_v
     return out;
 }
 
+CoverClearResult clearCoverCache(FileSystem& fs, std::string_view libRoot) {
+    CoverClearResult r;
+    std::vector<std::string> files;
+    for (const std::string& f : existingCoverFiles(fs, libRoot, true)) files.push_back(f);
+    const std::string missing = missingListPath(libRoot);
+    const std::size_t slash = missing.rfind('/');
+    if (auto entries = fs.list(std::string_view(missing).substr(0, slash)); entries.isOk()) {
+        for (const DirEntry& e : entries.value())
+            if (!e.isDir && e.name == std::string_view(missing).substr(slash + 1)) files.push_back(missing);
+    }
+    for (const std::string& f : files) {
+        if (fs.removeFile(f).isOk()) {
+            ++r.removed;
+        } else {
+            ++r.failed;
+        }
+    }
+    return r;
+}
+
 DownloadSummary runCoverDownloads(std::span<const CoverJob> jobs, std::span<const std::string> regions,
                                   std::string_view baseUrl, const CoverDownloadIo& io) {
     DownloadSummary sum;

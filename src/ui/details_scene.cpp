@@ -347,7 +347,7 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         const CoverView cv = covers_->view(game_);
         if (cv.texture != 0 && cv.alpha > 0.0f) {
             const u8 a = static_cast<u8>(std::min(cv.alpha, 1.0f) * 255.0f);
-            dl.quad(cv.texture, cover, gfx::UvRect{0, 0, 1, 1}, Color{255, 255, 255, a});
+            dl.quad(cv.texture, fitAspectRect(cover, 0, cv.aspect), cv.uv, Color{255, 255, 255, a});
         }
     }
     // Banner (M18) 2× unter dem Cover: dort ist bis zur Infoleiste Platz, die Beschreibung behält ihre Zeilen.

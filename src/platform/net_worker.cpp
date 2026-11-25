@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <span>
 
+#include <ogc/lwp_watchdog.h>
+
 #include "core/cover_paths.hpp"
 #include "core/http.hpp"
 #include "platform/http_client.hpp"
@@ -116,9 +118,19 @@ DownloadSummary NetWorker::run(const volatile bool& cancel) {
     CoverDownloadIo io;
     const HttpLog httpLog = [this](std::string line) { log(std::move(line)); };
     NetError lastError = NetError::None;
-    io.get = [&cancel, &httpLog, &lastError](const Url& url, std::vector<u8>& body) {
+    const bool perf = netPerf();
+    io.get = [this, perf, &cancel, &httpLog, &lastError](const Url& url, std::vector<u8>& body) {
+        const u64 t0 = gettime();
         const HttpResult r = httpGet(url, kMaxCoverDownloadBytes, body, &cancel, httpLog);
         if (r.outcome == HttpOutcome::Failed) lastError = r.error;
+        if (perf) {  // M23: wohin geht die Zeit je Cover? (Handshake, Übertragung, Größe)
+            char line[112];
+            std::snprintf(line, sizeof line, "NL_PERF cover get status=%u ms=%u hs=%u bytes=%u reuse=%d",
+                          static_cast<unsigned>(r.status), static_cast<unsigned>(ticks_to_millisecs(diff_ticks(t0, gettime()))),
+                          static_cast<unsigned>(lastHandshakeMs()), static_cast<unsigned>(body.size()),
+                          lastRequestReused() ? 1 : 0);
+            log(line);
+        }
         return r.outcome;
     };
     io.save = [this](const std::string& stem, std::span<const u8> png) {
@@ -128,8 +140,16 @@ DownloadSummary NetWorker::run(const volatile bool& cancel) {
             if (j.stem == stem) job = &j;
         if (job == nullptr) return false;
         const std::string path = coverSrcPath(job->root, stem);
+        const u64 t0 = gettime();
         static_cast<void>(fs_->makeDirs(parentDir(path)));
-        return fs_->writeAtomic(path, png).isOk();
+        const bool ok = fs_->writeAtomic(path, png).isOk();
+        if (netPerf()) {
+            char line[64];
+            std::snprintf(line, sizeof line, "NL_PERF cover save ms=%u",
+                          static_cast<unsigned>(ticks_to_millisecs(diff_ticks(t0, gettime()))));
+            log(line);
+        }
+        return ok;
     };
     io.cancelled = [&cancel] { return cancel; };
     io.log = [this](std::string line) { log(std::move(line)); };

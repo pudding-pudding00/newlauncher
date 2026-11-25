@@ -231,3 +231,45 @@ TEST_CASE("JumpBar: ohne Filter keine Filterzeile; Zeichnen nennt den aktiven Fi
     b.draw(fx.ctx, fx.dl);  // darf nicht abstürzen; Zeile liegt über den Buchstaben
     CHECK(b.filterRect(fx.ctx).y + b.filterRect(fx.ctx).h <= b.cellRect(fx.ctx, 0).y);
 }
+
+namespace {
+struct SortTarget final : JumpTarget {
+    void jumpToBucket(char) override {}
+    Scene* openSearch() override { return nullptr; }
+    bool hasBucket(char) const override { return true; }
+    char currentBucket() const override { return 'A'; }
+    std::string sortLabel() const override { return "Sortierung: Titel"; }
+};
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "JumpBar: − schaltet die Sortierung um, Leiste bleibt offen (M24)") {
+    SortTarget target;
+    JumpBar bar(target);
+    bar.onEnter();
+    const SceneRequests r = step(bar, action(Action::PrevConsole));
+    CHECK(r.command == AppCommand::ToggleSort);
+    CHECK_FALSE(r.pop);
+    CHECK(std::string(appCommandName(AppCommand::ToggleSort)) == "toggle_sort");
+}
+
+TEST_CASE_FIXTURE(Fixture, "JumpBar: A auf der Sortier-Plakette schaltet um (M24)") {
+    SortTarget target;
+    JumpBar bar(target);
+    bar.onEnter();
+    const gfx::Rect r = bar.sortRect(ctx);
+    CHECK(r.w > 0);
+    CHECK(r.x + r.w <= bar.filterRect(ctx).x);
+    step(bar, pointer(r.x + r.w / 2, r.y + r.h / 2, true));
+    const SceneRequests out = step(bar, pointer(r.x + r.w / 2, r.y + r.h / 2, false, kConfirm));
+    CHECK(out.command == AppCommand::ToggleSort);
+    CHECK_FALSE(out.pop);
+}
+
+TEST_CASE_FIXTURE(Fixture, "JumpBar: ohne Sortier-Plakette tut − nichts (M24)") {
+    SpyTarget target;
+    JumpBar bar(target);
+    bar.onEnter();
+    CHECK(bar.sortRect(ctx).w == 0);
+    const SceneRequests r = step(bar, action(Action::PrevConsole));
+    CHECK(r.command == AppCommand::None);
+}

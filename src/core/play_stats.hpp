@@ -44,6 +44,7 @@ enum class SortOrder : u8 { Title, Year, Recent, Most };
 // gestartet zuerst, nie gestartete am Ende. Most: meiste Starts zuerst.
 void sortGames(std::span<const Game*> v, SortOrder o, const PlayStats& s);
 
+SortOrder toggledSort(SortOrder o);  // M24: Schnellumschaltung Titel ↔ Jahr, sonst Titel
 const char* sortOrderName(SortOrder o);  // "title", "year", "recent", "most"
 std::optional<SortOrder> parseSortOrder(std::string_view s);  // getrimmt, Groß/klein egal
 

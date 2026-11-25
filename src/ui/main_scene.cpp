@@ -144,6 +144,14 @@ void MainScene::loadBase(int index) {
     }
 }
 
+float tagAlpha(bool disc, float coverAlpha) { return disc ? 1.0f : 1.0f - std::clamp(coverAlpha, 0.0f, 1.0f); }
+
+std::string MainScene::sortLabel() const {
+    constexpr Str kNames[] = {Str::SortTitle, Str::SortYear, Str::SortRecent, Str::SortMost};
+    const int i = static_cast<int>(sort_);
+    return std::string(tr(Str::SortOrder)) + ": " + tr(kNames[i >= 0 && i < 4 ? i : 0]);
+}
+
 void MainScene::setSort(SortOrder order, const PlayStats* stats) {
     sort_ = order;
     playStats_ = stats;
@@ -576,8 +584,10 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
         baseline += body.lineHeight;
     }
 
+    float coverAlpha = 0.0f;
     if (covers_ != nullptr) {
         const CoverView cv = covers_->view(g);
+        if (cv.texture != 0) coverAlpha = cv.alpha;
         if (cv.texture != 0 && cv.alpha > 0.0f) {
             const u8 a = static_cast<u8>(std::clamp(cv.alpha, 0.0f, 1.0f) * 255.0f);
             dl.quad(cv.texture, fitAspectRect(r, kCoverInset, cv.aspect), cv.uv, Color{255, 255, 255, a});
@@ -585,9 +595,15 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
     }
 
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Small, FontWeight::Medium);
-    const char* tag = (g.flags & kFlagDisc) != 0 ? tr(Str::Disc) : consoleLabel(g.console);
+    const bool disc = (g.flags & kFlagDisc) != 0;
+    const char* tag = disc ? tr(Str::Disc) : consoleLabel(g.console);
+    const float tagA = tagAlpha(disc, coverAlpha);
+    auto faded = [tagA](Color c) {
+        c.a = static_cast<u8>(static_cast<float>(c.a) * tagA);
+        return c;
+    };
     const float tagW = gfx::measureText(label, tag) + 12.0f;
-    gfx::roundRect(dl, s, Rect{r.x + 8, r.y + 8, tagW, 18}, 9, t.accentSoft);
+    if (tagA > 0.0f) gfx::roundRect(dl, s, Rect{r.x + 8, r.y + 8, tagW, 18}, 9, faded(t.accentSoft));
     if (store_ != nullptr && store_->isFavorite(g.key)) gfx::circle(dl, s, r.x + r.w - 14, r.y + 17, 4, t.accent);
     if (isGameLocked(g)) {  // Schloss: Bügel als Ring, Körper als Rechteck, auf einer Plakette links vom Favoritenpunkt
         const float cx = r.x + r.w - 34, cy = r.y + 17;
@@ -596,7 +612,8 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
         gfx::circle(dl, s, cx, cy - 2, 2.0f, t.accentSoft);
         gfx::fillRect(dl, s, Rect{cx - 4, cy - 1, 8, 6}, t.accentSoftText);
     }
-    gfx::drawText(dl, label, r.x + 14, r.y + 8 + 9 + (label.ascent - label.descent) / 2, tag, t.accentSoftText);
+    if (tagA > 0.0f)
+        gfx::drawText(dl, label, r.x + 14, r.y + 8 + 9 + (label.ascent - label.descent) / 2, tag, faded(t.accentSoftText));
 }
 
 void MainScene::drawTopBar(const UiContext& ctx, gfx::DrawList& dl) const {

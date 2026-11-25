@@ -870,3 +870,19 @@ TEST_CASE_FIXTURE(Fixture, "Favoriten gemischt: Kachel im Cover-Format, Reihe so
     CHECK(n64.y + n64.h / 2 == doctest::Approx(nes.y + nes.h / 2));
     CHECK(gb.y + gb.h / 2 == doctest::Approx(nes.y + nes.h / 2));
 }
+
+TEST_CASE("tagAlpha: Konsolen-Plakette blendet mit dem Cover aus, Disc bleibt (M24)") {
+    CHECK(tagAlpha(false, 0.0f) == doctest::Approx(1.0f));
+    CHECK(tagAlpha(false, 0.25f) == doctest::Approx(0.75f));
+    CHECK(tagAlpha(false, 1.0f) == doctest::Approx(0.0f));
+    CHECK(tagAlpha(false, 2.0f) == doctest::Approx(0.0f));
+    CHECK(tagAlpha(true, 1.0f) == doctest::Approx(1.0f));
+}
+
+TEST_CASE_FIXTURE(Fixture, "sortLabel zeigt die Sortierung der Konsolenlisten (M24)") {
+    const MixedGames mixed;
+    MainScene s(mixed.library());
+    CHECK(s.sortLabel() == std::string(tr(Str::SortOrder)) + ": " + tr(Str::SortTitle));
+    s.setSort(SortOrder::Year, nullptr);
+    CHECK(s.sortLabel() == std::string(tr(Str::SortOrder)) + ": " + tr(Str::SortYear));
+}

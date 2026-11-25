@@ -42,6 +42,7 @@
     X(SortYear, "Jahr", "Year") \
     X(SortRecent, "Zuletzt gestartet", "Recently played") \
     X(SortMost, "Am häufigsten", "Most played") \
+    X(SortedBy, "Sortiert nach", "Sorted by") \
     X(StatsStarts, "%u-mal gestartet", "Started %u times") \
     X(StatsOnce, "Einmal gestartet", "Started once") \
     X(StatsLast, ", zuletzt am %s", ", last on %s") \

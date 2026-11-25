@@ -2065,6 +2065,17 @@ int main(int argc, char** argv) {
                 refreshParental();
                 break;
             }
+            case nl::ui::AppCommand::ToggleSort: {  // M24: A–Z-Leiste, − bzw. A auf der Plakette
+                config.sortOrder = nl::toggledSort(config.sortOrder);
+                nl::log::line("NL_CMD %s %s", nl::ui::appCommandName(cmd), nl::sortOrderName(config.sortOrder));
+                saveConfig();
+                mainScene.setSort(config.sortOrder, &playStats);
+                const std::string sortToast = std::string(nl::ui::tr(nl::ui::Str::SortedBy)) + " " +
+                                              nl::ui::tr(config.sortOrder == nl::SortOrder::Year ? nl::ui::Str::SortYear
+                                                                                                : nl::ui::Str::SortTitle);
+                mainScene.showToast(sortToast.c_str());
+                break;
+            }
             case nl::ui::AppCommand::SaveSettings: {
                 config.themeMode = ctx.themeMode;
                 const bool storageChanged = config.coverStorage != coverStorageApplied;

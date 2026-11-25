@@ -127,3 +127,10 @@ TEST_CASE("PlayStats: 5000 Einträge laden < 100 ms (Release)") {
     CHECK(ms < 100);
 }
 #endif
+
+TEST_CASE("toggledSort: Titel ↔ Jahr, sonst Titel (M24)") {
+    CHECK(toggledSort(SortOrder::Title) == SortOrder::Year);
+    CHECK(toggledSort(SortOrder::Year) == SortOrder::Title);
+    CHECK(toggledSort(SortOrder::Recent) == SortOrder::Title);
+    CHECK(toggledSort(SortOrder::Most) == SortOrder::Title);
+}

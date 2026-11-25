@@ -20,6 +20,9 @@
 
 namespace nl::ui {
 
+// M24: Deckkraft der Plakette oben links: die Konsolen-Plakette blendet mit dem Cover aus, „Disc“ bleibt.
+float tagAlpha(bool disc, float coverAlpha);
+
 class MainScene final : public Scene, public JumpTarget, public SearchTarget {
 public:
     explicit MainScene(const Library& lib);
@@ -50,6 +53,7 @@ public:
     Scene* openSearch() override { return keyboard_; }
     bool hasBucket(char bucket) const override;
     char currentBucket() const override;
+    std::string sortLabel() const override;  // M24: „Sortierung: Titel“ für die A–Z-Leiste
     // Filterzeile (M17): Alle, Favoriten, vorhandene Genres, Kategorien. Gilt je Leisten-Eintrag;
     // ein Wechsel des Eintrags setzt auf Alle zurück.
     int filterCount() const override { return static_cast<int>(choices_.size()); }

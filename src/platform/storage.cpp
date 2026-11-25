@@ -1,6 +1,7 @@
 #include "platform/storage.hpp"
 
 #include <fat.h>
+#include <ogc/usb.h>
 #include <ogc/usbstorage.h>
 #include <sdcard/wiisd_io.h>
 #ifdef NL_FS_NTFS
@@ -156,6 +157,10 @@ void DeviceTable::unmountAll() {
         usbIo_->shutdown();
         usbIo_ = nullptr;
     }
+    // shutdown schließt nur das Laufwerk; erst USB_Deinitialize gibt die Host-Treiber (/dev/usb/ven, hid) der
+    // IOS frei. Ohne bindet der per Chainload gestartete Emulator kein USB ein (Hardware, M20). Ohne vorheriges
+    // USB_Initialize tut es nichts.
+    USB_Deinitialize();
 }
 
 bool mountSd() { return deviceTable().mountSd(); }

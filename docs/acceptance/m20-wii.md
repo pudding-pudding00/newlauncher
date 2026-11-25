@@ -13,8 +13,8 @@ Status: **ungeprüft** (erfordert eine echte Wii mit HBC, newlauncher auf der SD
 
 | Punkt | Prüfung | Erwartetes Ergebnis | Ergebnis |
 |---|---|---|---|
-| R1 | ROM-Eintrag (N64, GBC …) in newlauncher starten | Emulator startet direkt mit der ROM, ohne eigenes Menü | ungeprüft |
-| R2 | Im Emulator „Exit“ bzw. „Zurück zum Loader“ wählen | newlauncher erscheint wieder (nicht der HBC); Log enthält `NL_RETURN_STUB present stage=0` | ungeprüft |
+| R1 | ROM-Eintrag (N64, GBC …) in newlauncher starten | Emulator startet direkt mit der ROM, ohne eigenes Menü | 2026-11-25 fehlgeschlagen: VBA GX (ROM auf USB) zeigt nur sein Menü, USB nach Chainload tot (STATUS 0) |
+| R2 | Im Emulator „Exit“ bzw. „Zurück zum Loader“ wählen | newlauncher erscheint wieder (nicht der HBC); Log enthält `NL_RETURN_STUB present stage=0` | 2026-11-25 bestanden (`14284c7`); danach aber kein USB (STATUS 0) |
 | R3 | R1/R2 dreimal hintereinander | Jede Rückkehr klappt; kein Absturz, kein Systemmenü-Neustart | ungeprüft |
 | R4 | Nach R2: HOME → Homebrew Channel | HBC startet (als Titel); newlauncher lädt sich nicht erneut | ungeprüft |
 | R5 | newlauncher per wiiload (RAM, nicht SD) starten, dann einen Emulator starten und beenden | Kein Stub (`NL_RETURN_STUB skip self=…`); Rückkehr in den HBC wie bisher | ungeprüft |

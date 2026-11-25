@@ -1,6 +1,6 @@
 # Projektstand (Übergabe)
 
-Stand: 2026-11-24, `main` nach PR #28 (M19) und Review-Bereinigung. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
+Stand: 2026-11-25, `main` nach PR #28 (M19); M20 läuft auf `feat/m20-direktstart` (Abschnitt 0). Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
 
 ## Erledigt
 
@@ -22,18 +22,87 @@ Alle Code-Meilensteine (M0–M19) der v2-Spec sowie die offenen Review-Kleinigke
 
 ### 0. M20 in Arbeit (Branch `feat/m20-direktstart`, Stand 2026-11-25)
 
-- Fertig und auf Hardware geprüft:
-  - Fernsteuerung über TCP 4300: HELLO, STATE, LOG, KEY und SHOT.
-  - SHOT liefert seit dem Fix in `remote_server.cpp` korrekte Bilder. Senden läuft jetzt blockierend über einen 4-KB-Puffer; nicht-blockierendes `net_send` hatte große Antworten zerhackt.
-  - `update` schreibt boot.dol auf die SD und startet neu, mit USB (698 Spiele).
-  - Einstellungen → „Update installieren“ zeigt „Keine Update-Information erreichbar“, weil es noch kein Release gibt (`NL_NET_FAIL other`).
-  - „newlauncher neu starten“ startet neu.
-- Offen:
-  - USB nach dem Neustart über das Menü erneut prüfen. Beim letzten Test war der Stick abgezogen.
-  - newlauncher ist am Ende der Sitzung auf der Hardware abgestürzt. Das geschah bei Exit/Neustart-Tests, die Ursache ist unklar. Zuerst das Log `sd:/newlauncher` prüfen.
-  - Fehlende Pfeil-Glyphen in der Hinweiszeile der Einstellungen („?? Ändern“).
-  - Rückkehr-Stub Emulator → newlauncher (Plan: Stub bei 0x80001800, liest boot.dol roh über `/dev/sdio`).
-  - Spec, Plan, `docs/acceptance/m20-wii.md`, PR.
+Ziele (Spec `docs/superpowers/specs/2026-11-25-m20-direktstart-design.md`, Plan
+`docs/superpowers/plans/2026-11-25-m20-rueckkehr-stub.md`, Abnahme `docs/acceptance/m20-wii.md`):
+
+1. ROM-Einträge starten den Emulator direkt mit der ROM.
+2. Wer den Emulator beendet, landet wieder in newlauncher (Rückkehr-Stub).
+3. Update per Netzwerk über den HBC, Fernstart und Fernsteuerung zum Debuggen.
+4. Update und Neustart aus newlauncher aus den GitHub-Releases von `pudding-pudding00/newlauncher`.
+
+**Fertig und auf Hardware geprüft:**
+
+- Fernsteuerung über TCP 4300 (`tools/wii_remote.py`, Host über `--host` oder `NL_WII_HOST`): `hello`,
+  `state`, `games`, `log`, `key`, `shot`, `launch <key>`, `update`, `restart`. Sie läuft nur mit dem Argument
+  `--remote` (z. B. `wiiload boot.dol --remote`) oder mit `[debug] remote = 1`.
+- SHOT liefert seit dem Fix in `remote_server.cpp` korrekte Bilder (blockierendes Senden über 4-KB-Puffer).
+- `update` schreibt boot.dol auf die SD und startet neu, mit USB (698 Spiele).
+- Einstellungen → „Update installieren“ meldet „Keine Update-Information erreichbar“: Es gibt noch kein
+  Release (`NL_NET_FAIL other`).
+- „newlauncher neu starten“ startet neu.
+- Pfeil-Glyphen in der Hinweiszeile sind behoben (`d9b5184`).
+- **Rückkehr-Stub (R2):** Emulator → „Exit“ → newlauncher erscheint wieder (Wii, 2026-11-25, mit `14284c7`).
+
+**Rückkehr-Stub, Aufbau** (`src/launch/return_stub/`, `src/core/return_stub.*`, `src/launch/return_stub.cpp`):
+
+- Vor dem Chainload einer Emulator-DOL legt `installReturnStub(selfDol)` einen frei stehenden Stub bei
+  0x80001800 ab („STUBHAXX“ bei +4, libogc springt bei `exit()` dorthin), dazu einen Parameterblock bei
+  0x80002800 mit den FAT-Extents von `sd:/apps/newlauncher/boot.dol`. Fortschrittscode bei 0x80002FF0.
+- Der Stub schließt IOS-fds, öffnet `/dev/sdio/slot0`, liest die DOL sektorweise, lädt sie und startet sie
+  mit argv. Bei Fehlern gibt es einen PI-Reset ins Systemmenü.
+- Beim Start prüft newlauncher `returnStubInstalled()` → Log `NL_RETURN_STUB present stage=N`. Beendet man
+  newlauncher bei liegendem Stub, startet es den HBC als Titel statt `exit()`.
+- Nur, wenn newlauncher von `sd:/` läuft. Ein wiiload-Start liefert in argv[0] ebenfalls
+  `sd:/apps/newlauncher/boot.dol`, deshalb legt auch er den Stub (der dann die **SD**-Version lädt).
+- Fallen, die schon gelöst sind (Details in der Spec 4.2/4.5):
+  - libogc `build_argv` schreibt argv[] hinter die Kommandozeile → Freiraum `NLRS_ARGV_SLACK`.
+  - Dolphin-HLE „HBReload“ ersetzt den Sprung nach 0x80001800 → Smoke mit `EnableCheats=True`.
+  - Dolphin-HLE an 0x800018A8 zählt das Wort bei 0x80001800 hoch → Lücke bis 0xB0 in `crt0.S`.
+  - IOS-Pfade aus `.rodata`, nicht aus ungecachtem MEM2.
+- Smoke: `python tools/dolphin_smoke.py --return-stub` (Marker `NL_RETURN_STUB present stage=0`,
+  `NL_AUTOSTART skip return_stub`).
+
+**Aktuelles Problem: USB nach Programmwechsel tot** (Hardware, 2026-11-25):
+
+- Symptom 1: GBC-Eintrag (VBA GX, ROM auf USB) startet nur das VBA-GX-Menü, nicht das Spiel. VBA GX bindet USB
+  erst beim Autoload ein (`argv[1]` = `usb:/…/`, `argv[2]` = Datei) und fällt bei Fehlern stumm ins Menü.
+  Das passiert auch nach frischem Start aus dem HBC.
+- Symptom 2: Nach der Rückkehr über den Stub findet newlauncher kein USB.
+- Befund (Disassembly von `libogc.a`): Kein Abschaltpfad (`__usbstorage_Shutdown`, `SYS_ResetSystem`,
+  `__IOS_ShutdownSubsystems`) ruft `USB_Deinitialize()` auf. Erst das gibt die IOS-Host-Treiber frei
+  (`IOS_Ioctl(fd, 2 /*USBV5 SHUTDOWN*/)` + `IOS_Close` auf `/dev/usb/ven` und `/dev/usb/hid`).
+- Fix, **gebaut, Dolphin-Smoke grün, auf der Wii noch nicht geprüft**:
+  - `platform/storage.cpp` `unmountAll()`: zusätzlich `USB_Deinitialize()` (für den Weg zum Emulator und den
+    Neustart; `__usbstorage_Startup` ruft `USB_Initialize` wieder auf).
+  - `stub.c` `usbHostsShutdown()`: öffnet `/dev/usb/ven` und `/dev/usb/hid`, schickt ioctl 2 und schließt.
+    Das läuft vor und nach der fd-Schleife, weil unklar ist, ob IOS einen zweiten Handle zulässt.
+- **Vorbehalt:** Der Neustart newlauncher → newlauncher fand USB schon *ohne* `USB_Deinitialize`. Die Ursache
+  ist also plausibel, aber nicht bewiesen. Hilft der Fix nicht, als Nächstes prüfen:
+  - welche libogc bzw. welchen USB-Code VBA GX nutzt;
+  - ob ein `IOS_ReloadIOS` vor dem Chainload hilft. Achtung: Der schaltet AHBPROT wieder ein, und newlauncher
+    nutzt `ahbprotOff`.
+
+**Nächste Schritte:**
+
+1. Hardware-Test des USB-Fixes ohne SD-Schreiben:
+   - Wii im HBC: `wiiload build/wii/newlauncher.dol --remote` (`WIILOAD=tcp:192.0.2.10`).
+   - Dann `python tools/wii_remote.py launch "gbc/Azure Dreams (USA) (SGB Enhanced) (GB Compatible).gbc"`.
+   - Erwartet: Das Spiel startet direkt, nach „Exit“ erscheint newlauncher, und USB ist da.
+   - Der Stub kommt aus der wiiload-DOL, die geladene newlauncher von der SD.
+2. Klappt das, die neue boot.dol auf die SD bringen (Nutzer vorher fragen) und R1–R6 aus
+   `docs/acceptance/m20-wii.md` abhaken. Der Stub reicht `--remote` nicht weiter; für Beobachtung nach der
+   Rückkehr `installReturnStub` um Zusatz-Argumente erweitern (wie `restartSelf`).
+3. Offener Punkt aus früheren Tests: newlauncher stürzte bei Exit/Neustart-Tests ab, Ursache unklar
+   (Log `usb:/newlauncher/log.txt` bzw. `sd:/newlauncher`). Möglicherweise dasselbe USB-Problem.
+4. Abnahme und STATUS nachtragen, PR, CI (`gh run watch`), Merge.
+
+**Hinweise für die Arbeit:**
+
+- Wii: 192.0.2.10, HBC/wiiload auf Port 4299, Fernsteuerung auf Port 4300. Vor jedem Schreiben auf die SD
+  den Nutzer fragen.
+- Dolphin emuliert kein USB-Laufwerk: USB-Fehler zeigen sich nur auf der Hardware.
+- Dateien mit dem Edit-Tool bearbeiten, nicht mit PowerShell `Get-Content`/`Set-Content`. PS 5.1 liest UTF-8
+  ohne BOM als ANSI und erzeugt Mojibake.
 
 ### 1. Hardware-Abnahme auf der echten Wii
 

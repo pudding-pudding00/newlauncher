@@ -171,9 +171,27 @@ static void syncRange(u32 addr, u32 size) {
     __asm__ volatile("sync\n\tisync" : : : "memory");
 }
 
-// TRACE (vorübergehend): Dolphin loggt das Öffnen unbekannter Geräte; so wird die Stufe sichtbar.
 static void stage(u32 n) {
     *uc(NLRS_STAGE_ADDR) = n;
+}
+
+// USB-Host-Treiber der IOS freigeben wie libogc USB_Deinitialize (ioctl 2 = USBV5 SHUTDOWN, dann close).
+// Kein libogc-Abschaltpfad tut das: Ohne findet das nächste Programm kein USB-Laufwerk. Fehler (Gerät fehlt,
+// schon frei) sind normal.
+static void usbHostShutdown(const char* path) {
+    req(IOS_OPEN, 0, PHYS((u32)path), 0, 0, 0, 0);
+    const int fd = ipc();
+    if (fd < 0) return;
+    req(IOS_IOCTL, (u32)fd, 2u, 0, 0, 0, 0);
+    (void)ipc();
+    (void)ios_close((u32)fd);
+}
+
+static void usbHostsShutdown(void) {
+    static const char ven[] = "/dev/usb/ven";
+    static const char hid[] = "/dev/usb/hid";
+    usbHostShutdown(ven);
+    usbHostShutdown(hid);
 }
 
 void stub_main(void) {
@@ -185,9 +203,13 @@ void stub_main(void) {
     const u32 argvSize = nlrs_be32(p + 0x10);
     const unsigned char* ext = nlrs_extents(p);
 
-    // Offene Deskriptoren des beendeten Programms schließen (Fehler bei unbenutzten sind normal).
+    // Offene Deskriptoren des beendeten Programms schließen (Fehler bei unbenutzten sind normal). Die
+    // USB-Host-Treiber davor und danach freigeben: ob die IOS dafür einen zweiten Handle zulässt, solange der
+    // alte offen ist, ist nicht belegt.
     stage(2);
+    usbHostsShutdown();
     for (u32 fd = 0; fd < 32; ++fd) (void)ios_close(fd);
+    usbHostsShutdown();
 
     stage(3);
     // Pfad direkt aus .rodata (MEM1): der Installer hat ihn mit DCFlushRange in den RAM geschrieben. Eine

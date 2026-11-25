@@ -9,11 +9,14 @@
 //   zip_size = 123456
 //   unzipped_size = 400000
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
 
 #include "core/emu_catalog.hpp"
+#include "core/emu_install.hpp"
+#include "core/fs.hpp"
 #include "core/types.hpp"
 
 namespace nl {
@@ -39,5 +42,21 @@ std::optional<UpdateManifest> parseUpdateManifest(std::string_view text, std::st
 
 // Eintrag für installZipApp: Name "newlauncher" → apps/newlauncher/boot.dol muss im ZIP liegen.
 OscApp selfUpdateApp(const UpdateManifest& m);
+
+enum class SelfUpdateOutcome : u8 { UpToDate, Installed, NoManifest, BadManifest, Failed };
+
+struct SelfUpdateResult {
+    SelfUpdateOutcome outcome = SelfUpdateOutcome::Failed;
+    std::string version;       // Version im Manifest (leer ohne Manifest)
+    EmuInstallResult install;  // bei Failed
+};
+
+// Text des Manifests oder nullopt (Netzfehler, 404, zu groß).
+using ManifestFetch = std::function<std::optional<std::string>(const std::string& url)>;
+
+// Manifest laden, mit currentVersion vergleichen und nur bei echt neuerer Version installZipApp aufrufen.
+SelfUpdateResult runSelfUpdate(FileSystem& fs, EmuInstallIo& io, const ManifestFetch& fetch,
+                               std::string_view manifestUrl, std::string_view currentVersion,
+                               std::string_view root = "sd:");
 
 }  // namespace nl

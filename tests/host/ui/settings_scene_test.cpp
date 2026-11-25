@@ -116,6 +116,20 @@ TEST_CASE_FIXTURE(Fixture, "A auf Über öffnet die Über-Seite (M11)") {
     CHECK(std::string(appCommandName(AppCommand::OpenAbout)) == "open_about");
 }
 
+TEST_CASE_FIXTURE(Fixture, "A auf Update installieren und Neu starten (M20)") {
+    focusRow(SettingRow::SelfUpdate);
+    SceneRequests r = press(Action::Confirm);
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::SelfUpdate);
+    CHECK(std::string(appCommandName(AppCommand::SelfUpdate)) == "self_update");
+    s.onEnter();
+    focusRow(SettingRow::Restart);
+    r = press(Action::Confirm);
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::RestartSelf);
+    CHECK(std::string(appCommandName(AppCommand::RestartSelf)) == "restart_self");
+}
+
 TEST_CASE_FIXTURE(Fixture, "A auf Systeminfo öffnet die Systeminfo (M13)") {
     focusRow(SettingRow::SysInfo);
     const SceneRequests r = press(Action::Confirm);

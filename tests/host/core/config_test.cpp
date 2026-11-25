@@ -182,6 +182,11 @@ TEST_CASE("configFromIni: [debug] perf") {
 TEST_CASE("configFromIni: [debug] remote") {
     CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugRemote);
     CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nremote = 1\n")).debugRemote);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("")).debugUpdateUrl.empty());
+    CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugSelfUpdate);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nself_update = 1\n")).debugSelfUpdate);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nupdate_url = https://127.0.0.1:8443/update.ini \n"))
+              .debugUpdateUrl == "https://127.0.0.1:8443/update.ini");
 }
 
 TEST_CASE("configFromIni: [emulators] repo, fehlt oder weder http:// noch https:// → Standard") {

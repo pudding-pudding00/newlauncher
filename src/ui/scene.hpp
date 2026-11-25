@@ -61,6 +61,8 @@ enum class AppCommand : u8 {
     RemovePin,        // Kindersicherung: PIN löschen, Kindersicherung aus
     PinEntered,       // PinScene: vier Ziffern bestätigt, PinScene::pinText()
     ReadDisc,         // HOME-Menü (M19): Laufwerk im Hintergrund lesen
+    SelfUpdate,       // Einstellungen (M20): Update aus dem GitHub-Release suchen und installieren
+    RestartSelf,      // Einstellungen (M20): newlauncher von der SD neu laden
 };
 const char* appCommandName(AppCommand c);
 

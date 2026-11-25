@@ -70,3 +70,83 @@ TEST_CASE("selfUpdateApp beschreibt newlauncher für den Installer") {
 TEST_CASE("Standard-URL zeigt auf das neueste GitHub-Release") {
     CHECK(kDefaultUpdateUrl == "https://github.com/pudding-pudding00/newlauncher/releases/latest/download/update.ini");
 }
+
+#include "support/mem_fs.hpp"
+#include "support/zip_builder.hpp"
+
+namespace {
+
+struct UpdateHarness {
+    test::MemFileSystem fs;
+    std::vector<u8> zip = test::buildZip({test::storedEntry("apps/newlauncher/boot.dol", "NL-NEU")});
+    std::string manifest;
+    std::vector<std::string> urls;
+    EmuInstallIo io;
+    bool manifestFails = false;
+
+    UpdateHarness() {
+        fs.addDir("sd:/newlauncher");
+        fs.addFile("sd:/apps/newlauncher/boot.dol", std::vector<u8>{'A', 'L', 'T'});
+        manifest = "[update]\nversion=0.2.0\nzip=nl.zip\nzip_size=" + std::to_string(zip.size()) +
+                   "\nunzipped_size=6\n";
+        io.download = [this](const std::string& url, const std::string& dest, u32) {
+            urls.push_back(url);
+            fs.addFile(dest, zip);
+            return HttpOutcome::Ok;
+        };
+        io.freeBytes = [] { return u64{1} << 30; };
+    }
+    SelfUpdateResult run(std::string_view current) {
+        return runSelfUpdate(fs, io,
+                             [this](const std::string& url) -> std::optional<std::string> {
+                                 urls.push_back(url);
+                                 if (manifestFails) return std::nullopt;
+                                 return manifest;
+                             },
+                             "https://h/rel/update.ini", current);
+    }
+    std::string dol() {
+        auto* f = fs.file("sd:/apps/newlauncher/boot.dol");
+        return f ? std::string(f->data.begin(), f->data.end()) : "";
+    }
+};
+
+}  // namespace
+
+TEST_CASE("runSelfUpdate: neuere Version wird installiert") {
+    UpdateHarness h;
+    const auto r = h.run("0.1.0");
+    CHECK(r.outcome == SelfUpdateOutcome::Installed);
+    CHECK(r.version == "0.2.0");
+    CHECK(h.dol() == "NL-NEU");
+    REQUIRE(h.urls.size() == 2);
+    CHECK(h.urls[0] == "https://h/rel/update.ini");
+    CHECK(h.urls[1] == "https://h/rel/nl.zip");
+}
+
+TEST_CASE("runSelfUpdate: gleiche oder ältere Version lädt nichts") {
+    UpdateHarness h;
+    CHECK(h.run("0.2.0").outcome == SelfUpdateOutcome::UpToDate);
+    CHECK(h.run("0.3.0").outcome == SelfUpdateOutcome::UpToDate);
+    CHECK(h.urls.size() == 2);  // nur die beiden Manifeste
+    CHECK(h.dol() == "ALT");
+}
+
+TEST_CASE("runSelfUpdate: Manifest fehlt oder ist kaputt") {
+    UpdateHarness h;
+    h.manifestFails = true;
+    CHECK(h.run("0.1.0").outcome == SelfUpdateOutcome::NoManifest);
+    h.manifestFails = false;
+    h.manifest = "[update]\nversion=kaputt\n";
+    CHECK(h.run("0.1.0").outcome == SelfUpdateOutcome::BadManifest);
+    CHECK(h.dol() == "ALT");
+}
+
+TEST_CASE("runSelfUpdate: Installationsfehler wird gemeldet") {
+    UpdateHarness h;
+    h.manifest = "[update]\nversion=0.2.0\nzip=nl.zip\nzip_size=5\nunzipped_size=6\n";  // falsche Größe
+    const auto r = h.run("0.1.0");
+    CHECK(r.outcome == SelfUpdateOutcome::Failed);
+    CHECK(r.install.error == EmuInstallError::BadSize);
+    CHECK(h.dol() == "ALT");
+}

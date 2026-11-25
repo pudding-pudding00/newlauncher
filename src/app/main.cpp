@@ -22,6 +22,7 @@
 #include "core/data_dir.hpp"
 #include "core/emu_catalog.hpp"
 #include "core/emu_install.hpp"
+#include "core/self_update.hpp"
 #include "core/emu_profiles.hpp"
 #include "core/emulators.hpp"
 #include "core/index_file.hpp"
@@ -1373,8 +1374,10 @@ int main(int argc, char** argv) {
     };
 
     // Emulator-Verwaltung (Spec 6.9). EmuWorker und NetWorker reihen ihre Aufträge in den NetService ein.
-    enum class EmuJob : u8 { None, List, Install };
+    enum class EmuJob : u8 { None, List, Install, SelfUpdate };
     EmuJob emuJob = EmuJob::None;
+    bool restartPending = false;  // M20: neu starten, sobald kein Dialog und kein Fern-KEY mehr läuft
+    int updateToastFrames = 0;
     std::string emuDebugPending = config.debugEmuInstall;  // Komma-Liste; nach dem Laden der Liste installieren
     bool autostartPending = false;                         // debug autostart wartet auf diese Installation
     auto refreshEmuRows = [&]() {
@@ -1418,6 +1421,17 @@ int main(int argc, char** argv) {
         for (const std::string& line : emu.takeLogLines()) nl::log::line("%s", line.c_str());
         for (const auto& [name, r] : emu.takeResults()) emuScene.setError(name, r.error);
         if (emu.running()) {
+            if (emuJob == EmuJob::SelfUpdate && updateToastFrames-- <= 0) {
+                char buf[96];
+                const u32 total = emu.total(), done = emu.done();
+                if (emu.step() == nl::EmuStep::Download && total > 0)
+                    std::snprintf(buf, sizeof buf, nl::ui::tr(nl::ui::Str::UpdateProgress),
+                                  static_cast<unsigned>(u64{done} * 100 / total));
+                else
+                    std::snprintf(buf, sizeof buf, "%s", nl::ui::tr(nl::ui::Str::UpdateChecking));
+                mainScene.showToast(buf);
+                updateToastFrames = 30;
+            }
             if (emuJob == EmuJob::Install)
                 emuScene.setBusy(nl::ui::EmuProgress{emu.currentName(), emu.step(), emu.done(), emu.total(),
                                                      emu.appIndex(), emu.appCount()});
@@ -1428,7 +1442,31 @@ int main(int argc, char** argv) {
         emuJob = EmuJob::None;
         for (const std::string& line : emu.takeLogLines()) nl::log::line("%s", line.c_str());
         for (const auto& [name, r] : emu.takeResults()) emuScene.setError(name, r.error);
-        if (finished == EmuJob::List) {
+        if (finished == EmuJob::SelfUpdate) {
+            const nl::SelfUpdateResult r = emu.takeSelfUpdate().value_or(nl::SelfUpdateResult{});
+            char text[256];
+            switch (r.outcome) {
+                case nl::SelfUpdateOutcome::UpToDate:
+                    std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::UpdateCurrent), NL_VERSION);
+                    break;
+                case nl::SelfUpdateOutcome::Installed:
+                    std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::UpdateInstalled), r.version.c_str());
+                    restartPending = true;
+                    break;
+                case nl::SelfUpdateOutcome::NoManifest:
+                    std::snprintf(text, sizeof text, "%s", nl::ui::tr(nl::ui::Str::UpdateNoManifest));
+                    break;
+                case nl::SelfUpdateOutcome::BadManifest:
+                    std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::UpdateFailed), "update.ini");
+                    break;
+                case nl::SelfUpdateOutcome::Failed:
+                    std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::UpdateFailed),
+                                  std::string(nl::emuInstallErrorName(r.install.error)).c_str());
+                    break;
+            }
+            dialog.open(nl::ui::tr(nl::ui::Str::UpdateTitle), text);
+            scenes.push(&dialog);
+        } else if (finished == EmuJob::List) {
             if (auto list = emu.takeList()) {
                 emuList = std::move(*list);
                 emuScene.setListState(nl::ui::EmulatorsScene::ListState::Loaded);
@@ -1458,6 +1496,20 @@ int main(int argc, char** argv) {
         }
         if (data.writable) nl::log::flushLogFile(fs, logPath);
         if (perf) perf->pause();
+    };
+
+    // M20: Update aus dem GitHub-Release ([debug] update_url für den Smoke). Läuft als EmuWorker-Auftrag.
+    auto startSelfUpdate = [&]() {
+        const std::string url =
+            config.debugUpdateUrl.empty() ? std::string(nl::kDefaultUpdateUrl) : config.debugUpdateUrl;
+        if (emu.running() || net.running() || !emu.startSelfUpdate(fs, url, NL_VERSION)) {
+            nl::log::line("NL_SELF_UPDATE busy");
+            dialog.open(nl::ui::tr(nl::ui::Str::UpdateTitle), nl::ui::tr(nl::ui::Str::UpdateBusy));
+            scenes.push(&dialog);
+            return;
+        }
+        emuJob = EmuJob::SelfUpdate;
+        updateToastFrames = 0;
     };
 
     // debug autostart (nur für Tests); wartet ggf. auf die Debug-Emulator-Installation.
@@ -1612,15 +1664,22 @@ int main(int argc, char** argv) {
         remote.reply(ok, std::move(info));
         for (int i = 0; i < 200 && remote.sentCount() == before; ++i) usleep(10 * 1000);
     };
-    auto restartSelf = [&]() {
-        const std::array<std::string, 1> extra{"--remote"};
+    // fromRemote: Antwort an den Client; die Fernsteuerung bleibt nach dem Neustart an, wenn sie jetzt läuft.
+    auto restartSelf = [&](bool fromRemote) {
+        std::vector<std::string> extra;
+        if (remote.running()) extra.push_back("--remote");
         auto plan = nl::preflightDol(fs, selfDol, extra);
         if (!plan.isOk()) {
-            remote.reply(false, selfDol + ": " + plan.error().context);
+            nl::log::line("NL_WARN Neustart: %s %s", selfDol.c_str(), plan.error().context.c_str());
+            if (fromRemote) {
+                remote.reply(false, selfDol + ": " + plan.error().context);
+            } else {
+                audio.play(nl::UiSound::Error);
+            }
             return;
         }
-        nl::log::line("NL_REMOTE restart %s", selfDol.c_str());
-        replyAndWait(true, selfDol);
+        nl::log::line("NL_RESTART %s", selfDol.c_str());
+        if (fromRemote) replyAndWait(true, selfDol);
         worker.cancelAndJoin();
         discDrive.shutdown();
         net.join();
@@ -1725,7 +1784,7 @@ int main(int argc, char** argv) {
                 break;
             }
             case nl::RemoteCmd::Restart:
-                restartSelf();
+                restartSelf(true);
                 break;
             case nl::RemoteCmd::Exit:
                 nl::log::line("NL_REMOTE exit");
@@ -1761,11 +1820,18 @@ int main(int argc, char** argv) {
             raw.held |= remoteKeyBits;
             --remoteKeyFrames;
         } else if (remoteKeyRelease > 0 && --remoteKeyRelease == 0) {
-            remote.reply(true, "");
+            if (restartPending)
+                replyAndWait(true, "");  // Antwort muss vor dem Neustart raus sein
+            else
+                remote.reply(true, "");
         }
         nl::ui::InputFrame in = frame.begin(raw);
 #endif
         if (readyReported) handleRemote();
+        if (restartPending && !scenes.contains(&dialog) && remoteKeyFrames == 0 && remoteKeyRelease == 0) {
+            restartPending = false;  // M20: nach „Neu starten“ oder dem Update-Dialog
+            restartSelf(false);
+        }
         if (detailsBackAt != 0 && gettime() >= detailsBackAt) {  // nur für Tests (M18): [debug] details_back_ms
             detailsBackAt = 0;
             if (scenes.top() == &details) {
@@ -2046,6 +2112,14 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 saveCheats();
                 break;
+            case nl::ui::AppCommand::SelfUpdate:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                startSelfUpdate();
+                break;
+            case nl::ui::AppCommand::RestartSelf:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                restartPending = true;
+                break;
             case nl::ui::AppCommand::OpenAbout:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 scenes.push(&aboutScene);
@@ -2136,6 +2210,7 @@ int main(int argc, char** argv) {
                 runPendingAutostart();
             }
             if (config.debugFetchCovers) fetchCovers();  // nur für Tests
+            if (config.debugSelfUpdate && emuJob == EmuJob::None) startSelfUpdate();  // nur für Tests (M20)
             if (!config.debugCheatFetch.empty() && !startCheatFetch(config.debugCheatFetch, false))  // nur für Tests (M15)
                 nl::log::line("NL_CHEAT_FETCH nosource");
             if (!config.debugFilter.empty()) {  // nur für Tests (M17)

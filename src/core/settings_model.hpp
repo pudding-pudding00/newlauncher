@@ -32,10 +32,12 @@ enum class SettingRow : u8 {
     Setup,    // Einrichtungs-Assistent (M13)
     SysInfo,  // Systeminfo (M13)
     About,  // Version, Lizenz, Drittanbieter (M11)
+    SelfUpdate,  // Update aus dem GitHub-Release (M20)
+    Restart,     // newlauncher neu starten (M20)
     Count
 };
 
-bool isAction(SettingRow r);  // Rescan, FetchCovers, VcMap, Emulators, WiiGames, GcGames, SysInfo, About: lösen etwas aus statt einen Wert zu ändern
+bool isAction(SettingRow r);  // Rescan, FetchCovers, VcMap, Emulators, WiiGames, GcGames, SysInfo, About, SelfUpdate, Restart: lösen etwas aus statt einen Wert zu ändern
 // dir = ±1. Uhrzeiten ±30 min mit Umlauf, Lautstärke ±10 begrenzt auf 0..100, sonst zyklisch.
 void stepSetting(Config& c, SettingRow r, int dir);
 // DarkFrom/DarkTo nur bei ThemeMode::Auto, Volume nur bei eingeschalteter Musik.

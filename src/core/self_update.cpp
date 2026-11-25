@@ -91,4 +91,34 @@ OscApp selfUpdateApp(const UpdateManifest& m) {
     return a;
 }
 
+SelfUpdateResult runSelfUpdate(FileSystem& fs, EmuInstallIo& io, const ManifestFetch& fetch,
+                               std::string_view manifestUrl, std::string_view currentVersion, std::string_view root) {
+    SelfUpdateResult r;
+    const std::string url(manifestUrl);
+    const std::optional<std::string> text = fetch ? fetch(url) : std::nullopt;
+    if (!text) {
+        r.outcome = SelfUpdateOutcome::NoManifest;
+        if (io.log) io.log("NL_SELF_UPDATE fail manifest " + url);
+        return r;
+    }
+    const auto m = parseUpdateManifest(*text, manifestUrl);
+    if (!m) {
+        r.outcome = SelfUpdateOutcome::BadManifest;
+        if (io.log) io.log("NL_SELF_UPDATE fail badmanifest");
+        return r;
+    }
+    r.version = m->version;
+    if (!versionNewer(m->version, currentVersion)) {
+        r.outcome = SelfUpdateOutcome::UpToDate;
+        if (io.log) io.log("NL_SELF_UPDATE current " + std::string(currentVersion) + " remote " + m->version);
+        return r;
+    }
+    if (io.log) io.log("NL_SELF_UPDATE install " + std::string(currentVersion) + " -> " + m->version);
+    r.install = installZipApp(fs, io, m->zipUrl, selfUpdateApp(*m), root);
+    r.outcome = r.install.error == EmuInstallError::None ? SelfUpdateOutcome::Installed : SelfUpdateOutcome::Failed;
+    if (io.log) io.log(r.outcome == SelfUpdateOutcome::Installed ? "NL_SELF_UPDATE ok " + m->version
+                                                                 : "NL_SELF_UPDATE fail install");
+    return r;
+}
+
 }  // namespace nl

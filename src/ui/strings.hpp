@@ -267,6 +267,19 @@
     X(EmuBusyHelp, "B Abbrechen", "B Cancel") \
     X(Wifi, "WLAN", "Wi-Fi") \
     X(About, "Über", "About") \
+    X(SelfUpdate, "Update installieren", "Install update") \
+    X(RestartSelf, "newlauncher neu starten", "Restart newlauncher") \
+    X(UpdateTitle, "Update", "Update") \
+    X(UpdateChecking, "Suche nach Updates …", "Checking for updates …") \
+    X(UpdateProgress, "Update wird geladen … %u %%", "Downloading update … %u %%") \
+    X(UpdateCurrent, "newlauncher ist aktuell (Version %s).", "newlauncher is up to date (version %s).") \
+    X(UpdateInstalled, "Version %s ist installiert.\nNach OK startet newlauncher neu.", \
+      "Version %s is installed.\nnewlauncher restarts after OK.") \
+    X(UpdateNoManifest, "Keine Update-Information erreichbar.\nBitte Netzwerk prüfen.", \
+      "No update information reachable.\nPlease check the network.") \
+    X(UpdateFailed, "Update fehlgeschlagen (%s).\nDie bisherige Version bleibt.", \
+      "Update failed (%s).\nThe current version stays.") \
+    X(UpdateBusy, "Gerade läuft ein anderer Download.", "Another download is running.") \
     X(AboutHttps, "HTTPS: %s", "HTTPS: %s") \
     X(AboutGpl, "Freie Software unter der GNU GPL v3 oder später, ohne jede Gewährleistung.", \
       "Free software under the GNU GPL v3 or later, without any warranty.") \

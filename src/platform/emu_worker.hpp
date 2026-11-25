@@ -15,11 +15,13 @@
 #include "platform/http_client.hpp"
 #include "core/emu_install.hpp"
 #include "core/fs.hpp"
+#include "core/self_update.hpp"
 #include "platform/net_service.hpp"
 
 namespace nl::platform {
 
 inline constexpr u32 kMaxOscListBytes = 1024 * 1024;
+inline constexpr u32 kMaxManifestBytes = 4 * 1024;
 
 class EmuWorker {
 public:
@@ -30,6 +32,9 @@ public:
 
     bool startFetchList(std::string repo);
     bool startInstall(FileSystem& fs, std::string repo, std::vector<OscApp> apps, std::string root = "sd:");
+    // Selbst-Update (M20): Manifest laden, bei neuerer Version apps/newlauncher/ ersetzen (immer sd:).
+    bool startSelfUpdate(FileSystem& fs, std::string manifestUrl, std::string currentVersion);
+    std::optional<SelfUpdateResult> takeSelfUpdate();
     bool running() const { return running_; }
     void cancel();
     void join();  // eigenen Auftrag abbrechen und auf sein Ende warten; vor dem Aushängen
@@ -48,11 +53,13 @@ public:
     std::string currentName();
 
 private:
-    enum class Job : u8 { List, Install };
+    enum class Job : u8 { List, Install, SelfUpdate };
     bool launch(Job job);
     bool network();
     void runList(const volatile bool& cancel);
     void runInstall(const volatile bool& cancel);
+    void runSelfUpdateJob(const volatile bool& cancel);
+    EmuInstallIo installIo(const volatile bool& cancel, bool net);
     void log(std::string line);
     HttpLog logFn();  // log() als HttpLog für httpGet/httpDownload
 
@@ -72,6 +79,8 @@ private:
     std::vector<std::pair<std::string, EmuInstallResult>> results_;
     std::vector<std::string> logLines_;
     std::string current_;
+    std::string manifestUrl_, currentVersion_;
+    std::optional<SelfUpdateResult> selfUpdate_;
 };
 
 }  // namespace nl::platform

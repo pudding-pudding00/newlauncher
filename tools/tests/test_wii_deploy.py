@@ -200,6 +200,16 @@ class DeployTest(unittest.TestCase):
         self.assertEqual(main([str(self.sd), "--init", "--dol", str(self.dol), "--perf", "on"]), 0)
         self.assertIn("perf = 1", (self.sd / "newlauncher/config.ini").read_text(encoding="utf-8"))
 
+    def test_cli_remote_on_off_keeps_user_settings(self):
+        cfg = self.sd / "newlauncher/config.ini"
+        cfg.parent.mkdir(parents=True)
+        cfg.write_text("[ui]\nmusic = 0\n[debug]\nperf = 1\n", encoding="utf-8")
+        self.assertEqual(main([str(self.sd), "--init", "--dol", str(self.dol), "--remote", "on"]), 0)
+        self.assertEqual(cfg.read_text(encoding="utf-8"), "[ui]\nmusic = 0\n[debug]\nperf = 1\nremote = 1\n")
+        self.assertEqual(main([str(self.sd), "--dol", str(self.dol), "--remote", "off"]), 0)
+        self.assertEqual(cfg.read_text(encoding="utf-8"), "[ui]\nmusic = 0\n[debug]\nperf = 1\n")
+        self.assertEqual(main([str(self.sd), "--selftest", "--remote", "on"]), 2)  # nur Release-Karte
+
 
 class EmulatorsCliTest(unittest.TestCase):
     """--emulators ohne Netz: urlopen liefert Liste und ZIP aus dem Speicher."""

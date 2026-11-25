@@ -67,4 +67,14 @@ struct CoverDownloadIo {
 DownloadSummary runCoverDownloads(std::span<const CoverJob> jobs, std::span<const std::string> regions,
                                   std::string_view baseUrl, const CoverDownloadIo& io);
 
+// M21: Wann der automatische Lauf von „Fehlende Cover laden“ startet (einmal pro Sitzung).
+struct CoverAutoInputs {
+    bool enabled;      // [covers] auto
+    bool ready;        // Netz bereit
+    bool scanRunning;  // Bibliotheks-Scan läuft noch
+    bool netBusy;      // anderer Netz-Auftrag läuft
+    bool alreadyRan;   // in dieser Sitzung schon gestartet
+};
+bool shouldAutoFetchCovers(const CoverAutoInputs& in);
+
 }  // namespace nl

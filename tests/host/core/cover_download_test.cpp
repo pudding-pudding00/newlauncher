@@ -180,3 +180,12 @@ TEST_CASE("runCoverDownloads: 200 ohne PNG gilt als nicht gefunden") {
     CHECK(s.missing == 1);
     CHECK(net.saved.empty());
 }
+
+TEST_CASE("shouldAutoFetchCovers (M21)") {
+    CHECK(shouldAutoFetchCovers({true, true, false, false, false}));
+    CHECK_FALSE(shouldAutoFetchCovers({false, true, false, false, false}));  // Einstellung aus
+    CHECK_FALSE(shouldAutoFetchCovers({true, false, false, false, false}));  // Netz nicht bereit
+    CHECK_FALSE(shouldAutoFetchCovers({true, true, true, false, false}));    // Scan läuft
+    CHECK_FALSE(shouldAutoFetchCovers({true, true, false, true, false}));    // anderer Netz-Auftrag
+    CHECK_FALSE(shouldAutoFetchCovers({true, true, false, false, true}));    // schon gelaufen
+}

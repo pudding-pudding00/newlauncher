@@ -48,6 +48,7 @@ void stepSetting(Config& c, SettingRow r, int dir) {
         case SettingRow::Volume: c.musicVolume = std::clamp(c.musicVolume + dir * 10, 0, 100); break;
         case SettingRow::Sounds: c.sounds = !c.sounds; break;
         case SettingRow::Banners: c.banners = !c.banners; break;
+        case SettingRow::CoverAuto: c.coverAuto = !c.coverAuto; break;
         case SettingRow::Sort: c.sortOrder = cycle(c.sortOrder, 4, dir); break;
         case SettingRow::Library:
         {

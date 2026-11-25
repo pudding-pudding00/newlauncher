@@ -34,6 +34,7 @@ struct Config {
     bool sounds = true;
     bool banners = true;  // [ui] banners: Kanal-/GC-Banner in der Detailansicht (M18)
     std::string coverRegion = "auto";
+    bool coverAuto = true;  // [covers] auto: fehlende Cover nach dem Scan selbst laden (M21)
     std::string emulatorRepo = std::string(defaultEmuRepo(true));  // [emulators] repo (Spec 6.9), http:// oder https://
     std::string coverBase = std::string(defaultCoverBase(true));   // [covers] base (M11): Cover-Quelle, http:// oder https://
     std::string cheatSource = std::string(defaultCheatSource(true));  // [cheats] source (M15): {id6}-Vorlage, leer = kein Laden

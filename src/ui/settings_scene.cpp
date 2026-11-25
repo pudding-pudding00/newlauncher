@@ -13,7 +13,7 @@ using gfx::FontSize;
 using gfx::FontWeight;
 using gfx::Rect;
 
-constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 32.0f, kRowH = 16.0f, kHelpH = 24.0f;  // 24 Zeilen in 480
+constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 24.0f, kRowH = 16.0f, kHelpH = 24.0f;  // 25 Zeilen in 480 (Titel 22 px)
 
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo, Str::ThemePack,  Str::Music,       Str::Volume,

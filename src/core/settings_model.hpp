@@ -22,6 +22,7 @@ enum class SettingRow : u8 {
     Library,
     Sort,  // Sortierung der Konsolenleisten (M17)
     CoverRegion,
+    CoverAuto,  // [covers] auto (M21)
     Rescan,
     FetchCovers,
     VcMap,

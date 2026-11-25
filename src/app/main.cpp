@@ -26,7 +26,9 @@
 #include "core/emu_profiles.hpp"
 #include "core/emulators.hpp"
 #include "core/index_file.hpp"
+#include "core/launch_args.hpp"
 #include "core/launch_layout.hpp"
+#include "core/return_stub.hpp"
 #include "core/launch_plan.hpp"
 #include "core/playlist.hpp"
 #include "core/library_store.hpp"
@@ -269,6 +271,8 @@ int main(int argc, char** argv) {
     nl::log::init();
     nl::log::line("newlauncher %s", NL_VERSION);
     nl::platform::logPreviousCrash();
+    // M21: Vom Rückkehr-Stub aus einem Wii-Spiel geladen: zuerst zurück auf IOS 58 (vor USB, Netz, Video).
+    if (nl::hasArgFlag(argc, argv, nl::kFromGameFlag)) nl::launch::recoverIosAfterGame();
     if (!launchAllowed) nl::log::line("NL_WARN Arena2 schon belegt");
 
     // 1. SD und Konfiguration (Spec 6.1 Schritt 2)
@@ -1232,6 +1236,17 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_WARN Game-Booter nicht geladen: %s", booter.error().context.c_str());
                 showError({nl::LaunchFailure::EmuInvalid, "game_booter"});
                 return;
+            }
+            // M21: „Wii-Menü“ im Spiel springt in den Stub, der newlauncher mit --from-game neu lädt.
+            // Mit Cheats nicht: der Codehandler belegt denselben Speicher (0x80001800).
+            if (nl::gameReturnStubWanted(returnStubDol, target.value().wii->gct.size())) {
+                std::vector<std::string> gameArgs{std::string(nl::kFromGameFlag)};
+                if (keepRemote) gameArgs.push_back("--remote");
+                nl::launch::installReturnStub(returnStubDol, gameArgs);
+            } else if (!target.value().wii->gct.empty()) {
+                nl::log::line("NL_RETURN_STUB skip cheats");
+            } else {
+                nl::log::line("NL_RETURN_STUB skip self=%s", returnStubDol.c_str());
             }
             stopAudio();
             logPerfSummary();

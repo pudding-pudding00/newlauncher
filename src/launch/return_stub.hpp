@@ -20,4 +20,9 @@ bool returnStubInstalled();
 // Fortschrittscode, den ein gescheiterter Stub hinterlassen hat (0 = keiner); löscht ihn.
 u32 takeReturnStubStage();
 
+// M21: newlauncher wurde aus einem Wii-Spiel über den Stub geladen (--from-game) und läuft noch unter dem cIOS
+// des Spiels, mit aktiver Reload-Sperre von d2x. Hebt die Sperre auf (/dev/es ioctlv 0xA0, Modus 0) und lädt
+// IOS 58. Fehler werden nur geloggt (NL_FROM_GAME).
+void recoverIosAfterGame();
+
 }  // namespace nl::launch

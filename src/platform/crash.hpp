@@ -5,5 +5,6 @@
 namespace nl::platform {
 
 void installCrashHandler();
+void logPreviousCrash();
 
 }  // namespace nl::platform

@@ -268,6 +268,7 @@ int main(int argc, char** argv) {
     if (launchAllowed) SYS_SetArena2Hi(reinterpret_cast<void*>(nl::kDolBufferAddr));
     nl::log::init();
     nl::log::line("newlauncher %s", NL_VERSION);
+    nl::platform::logPreviousCrash();
     if (!launchAllowed) nl::log::line("NL_WARN Arena2 schon belegt");
 
     // 1. SD und Konfiguration (Spec 6.1 Schritt 2)

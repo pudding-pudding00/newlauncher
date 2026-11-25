@@ -316,8 +316,21 @@ HttpResult exchange(const Url& url, HttpParser& parser, const volatile bool* can
     return {HttpOutcome::Ok, NetError::None, status};
 }
 
-HttpResult request(const Url& url, HttpParser& parser, const volatile bool* cancel, const HttpLog& log) {
-    const HttpResult r = exchange(url, parser, cancel, log);
+HttpResult request(const Url& first, HttpParser& parser, const volatile bool* cancel, const HttpLog& log) {
+    constexpr int kMaxRedirects = 5;  // GitHub-Releases: github.com → CDN (M20)
+    Url url = first;
+    HttpResult r = exchange(url, parser, cancel, log);
+    for (int hop = 0; hop < kMaxRedirects && r.error == NetError::Http && isRedirectStatus(r.status); ++hop) {
+        const auto next = redirectTarget(url, parser.location());
+        if (!next) {
+            emit(log, "NL_HTTP_REDIRECT abgelehnt");  // z. B. HTTPS → HTTP
+            break;
+        }
+        url = *next;
+        emit(log, "NL_HTTP_REDIRECT " + url.host);
+        parser.reset();
+        r = exchange(url, parser, cancel, log);
+    }
     // Abbruch ist kein Netzfehler; TlsMissing hat seinen eigenen Marker.
     if (r.error != NetError::None && r.error != NetError::Http && r.error != NetError::TlsMissing &&
         !isCancelled(cancel))

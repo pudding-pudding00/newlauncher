@@ -26,6 +26,12 @@ struct Url {
 std::optional<Url> parseUrl(std::string_view url);
 std::string buildGetRequest(const Url& url);
 
+// M20: 301/302/303/307/308.
+bool isRedirectStatus(int status);
+// Ziel einer Weiterleitung: absolute URL oder Pfad ab "/" auf demselben Server. Nie von HTTPS auf HTTP (Regel: kein
+// Rückfall auf Klartext); protokoll-relative ("//…") und andere relative Angaben → nullopt.
+std::optional<Url> redirectTarget(const Url& from, std::string_view location);
+
 class HttpParser {
 public:
     enum class State : u8 { Headers, Body, Done, Error };
@@ -40,6 +46,9 @@ public:
     void setSink(std::function<bool(std::span<const u8>)> sink) { sink_ = std::move(sink); }
     u32 received() const { return received_; }  // Body-Bytes bisher (mit und ohne Senke)
     State state() const { return state_; }
+    const std::string& location() const { return location_; }  // Location-Kopf (Weiterleitung), sonst leer
+    // Für den nächsten Sprung einer Weiterleitung: alles zurück außer maxBody und Senke.
+    void reset();
 
 private:
     enum class Chunk : u8 { Size, Data, DataEnd, Trailer };
@@ -52,6 +61,7 @@ private:
     u32 maxBody_;
     State state_ = State::Headers;
     std::string head_;
+    std::string location_;
     int status_ = 0;
     bool chunked_ = false;
     std::optional<u32> length_;

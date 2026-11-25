@@ -10,17 +10,18 @@
 namespace nl::ui {
 
 namespace {
+float infoBarH(const UiContext& ctx) { return gridMetrics(ctx.width).infoBarH; }  // M24: 60 statt 72
 using gfx::FontSize;
 using gfx::FontWeight;
 using gfx::Rect;
 
 constexpr float kBarPadX = 16.0f;
-constexpr float kPillH = 32.0f, kPillY = 12.0f, kMinBarGap = 6.0f;
+constexpr float kPillH = 32.0f, kPillY = 8.0f, kMinBarGap = 6.0f;
 constexpr float kButtonR = 22.0f;
 constexpr float kFocusScale = 0.08f;
 constexpr float kToastMs = 2000.0f;
 constexpr float kAnimMs = 200.0f;
-constexpr float kCoverInset = 4.0f;
+constexpr float kCoverInset = 2.0f;  // M24
 constexpr float kEdgeScrollPx = 40.0f, kEdgeRowMs = 250.0f;  // M23: Zeiger-Randstreifen, Tempo am Rand
 constexpr int kTitleLines = 3;
 
@@ -143,6 +144,14 @@ void MainScene::loadBase(int index) {
     }
 }
 
+float tagAlpha(bool disc, float coverAlpha) { return disc ? 1.0f : 1.0f - std::clamp(coverAlpha, 0.0f, 1.0f); }
+
+std::string MainScene::sortLabel() const {
+    constexpr Str kNames[] = {Str::SortTitle, Str::SortYear, Str::SortRecent, Str::SortMost};
+    const int i = static_cast<int>(sort_);
+    return std::string(tr(Str::SortOrder)) + ": " + tr(kNames[i >= 0 && i < 4 ? i : 0]);
+}
+
 void MainScene::setSort(SortOrder order, const PlayStats* stats) {
     sort_ = order;
     playStats_ = stats;
@@ -164,7 +173,11 @@ void MainScene::applyCurrentFilter(std::string_view keepKey) {
     // M23: in einer Konsolenliste folgt die Kachelhöhe dem Cover-Format; gemischte Listen bleiben 5:7.
     const bool consoleList = filterEntryKnown_ && filterEntry_.kind == BarKind::ConsoleEntry;
     const GridMetrics m = gridMetrics(gridWidth_, consoleList ? coverAspect(filterEntry_.console) : 5.0f / 7.0f);
-    grid_.reset(static_cast<int>(games_.size()), m, gridHeight_ - m.topBarH - m.infoBarH);
+    // M24: gemischte Listen (Favoriten, Zuletzt, Suche) im Cover-Format je Spiel (Variante B).
+    tileHeights_.clear();
+    if (!consoleList)
+        for (const Game* g : games_) tileHeights_.push_back(gridMetrics(gridWidth_, coverAspect(g->console)).tileH);
+    grid_.reset(static_cast<int>(games_.size()), m, gridHeight_ - m.topBarH - m.infoBarH, tileHeights_);
     scroll_.snap(0.0f);
     animFocus_ = -1;
     bucketMask_ = 0;
@@ -321,21 +334,22 @@ const char* MainScene::infoTitle() const {
 const char* MainScene::infoLineText() const { return toastMs_ > 0.0f ? toastBuf_ : infoBuf_; }
 
 Rect MainScene::homeRect(const UiContext& ctx) const {
-    return Rect{kBarPadX, ctx.height - 36 - kButtonR, 2 * kButtonR, 2 * kButtonR};
+    return Rect{kBarPadX, ctx.height - infoBarH(ctx) / 2 - kButtonR, 2 * kButtonR, 2 * kButtonR};
 }
 
 Rect MainScene::gearRect(const UiContext& ctx) const {
-    return Rect{ctx.width - kBarPadX - 2 * kButtonR, ctx.height - 36 - kButtonR, 2 * kButtonR, 2 * kButtonR};
+    return Rect{ctx.width - kBarPadX - 2 * kButtonR, ctx.height - infoBarH(ctx) / 2 - kButtonR, 2 * kButtonR,
+                2 * kButtonR};
 }
 
 Rect MainScene::wifiRect(const UiContext& ctx) const {
-    const float top = ctx.height - 72.0f;
+    const float barH = infoBarH(ctx), top = ctx.height - barH;
     const Rect gear = gearRect(ctx);
     const gfx::FontFace& clock = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
     const float clockW = gfx::measureText(clock, clockBuf_[0] != '\0' ? clockBuf_ : "00:00");
     const float clockX = gear.x - 12.0f - clockW;
     constexpr float kWifiW = 42.0f, kWifiH = 44.0f;
-    return Rect{clockX - 12.0f - kWifiW, top + (72.0f - kWifiH) / 2.0f, kWifiW, kWifiH};
+    return Rect{clockX - 12.0f - kWifiW, top + (barH - kWifiH) / 2.0f, kWifiW, kWifiH};
 }
 
 Rect MainScene::barRect(int index) const {
@@ -570,8 +584,10 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
         baseline += body.lineHeight;
     }
 
+    float coverAlpha = 0.0f;
     if (covers_ != nullptr) {
         const CoverView cv = covers_->view(g);
+        if (cv.texture != 0) coverAlpha = cv.alpha;
         if (cv.texture != 0 && cv.alpha > 0.0f) {
             const u8 a = static_cast<u8>(std::clamp(cv.alpha, 0.0f, 1.0f) * 255.0f);
             dl.quad(cv.texture, fitAspectRect(r, kCoverInset, cv.aspect), cv.uv, Color{255, 255, 255, a});
@@ -579,9 +595,15 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
     }
 
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Small, FontWeight::Medium);
-    const char* tag = (g.flags & kFlagDisc) != 0 ? tr(Str::Disc) : consoleLabel(g.console);
+    const bool disc = (g.flags & kFlagDisc) != 0;
+    const char* tag = disc ? tr(Str::Disc) : consoleLabel(g.console);
+    const float tagA = tagAlpha(disc, coverAlpha);
+    auto faded = [tagA](Color c) {
+        c.a = static_cast<u8>(static_cast<float>(c.a) * tagA);
+        return c;
+    };
     const float tagW = gfx::measureText(label, tag) + 12.0f;
-    gfx::roundRect(dl, s, Rect{r.x + 8, r.y + 8, tagW, 18}, 9, t.accentSoft);
+    if (tagA > 0.0f) gfx::roundRect(dl, s, Rect{r.x + 8, r.y + 8, tagW, 18}, 9, faded(t.accentSoft));
     if (store_ != nullptr && store_->isFavorite(g.key)) gfx::circle(dl, s, r.x + r.w - 14, r.y + 17, 4, t.accent);
     if (isGameLocked(g)) {  // Schloss: Bügel als Ring, Körper als Rechteck, auf einer Plakette links vom Favoritenpunkt
         const float cx = r.x + r.w - 34, cy = r.y + 17;
@@ -590,7 +612,8 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
         gfx::circle(dl, s, cx, cy - 2, 2.0f, t.accentSoft);
         gfx::fillRect(dl, s, Rect{cx - 4, cy - 1, 8, 6}, t.accentSoftText);
     }
-    gfx::drawText(dl, label, r.x + 14, r.y + 8 + 9 + (label.ascent - label.descent) / 2, tag, t.accentSoftText);
+    if (tagA > 0.0f)
+        gfx::drawText(dl, label, r.x + 14, r.y + 8 + 9 + (label.ascent - label.descent) / 2, tag, faded(t.accentSoftText));
 }
 
 void MainScene::drawTopBar(const UiContext& ctx, gfx::DrawList& dl) const {
@@ -619,8 +642,8 @@ void MainScene::drawTopBar(const UiContext& ctx, gfx::DrawList& dl) const {
 void MainScene::drawInfoBar(const UiContext& ctx, gfx::DrawList& dl) const {
     const Theme& t = *ctx.theme;
     const gfx::AtlasShapes& s = *ctx.shapes;
-    const float top = ctx.height - 72.0f;
-    gfx::fillRect(dl, s, Rect{0, top, ctx.width, 72}, t.bar);
+    const float barH = infoBarH(ctx), top = ctx.height - barH, mid = top + barH / 2;
+    gfx::fillRect(dl, s, Rect{0, top, ctx.width, barH}, t.bar);
     gfx::fillRect(dl, s, Rect{0, top, ctx.width, 1}, t.barBorder);
 
     const Rect home = homeRect(ctx), gear = gearRect(ctx);
@@ -633,7 +656,7 @@ void MainScene::drawInfoBar(const UiContext& ctx, gfx::DrawList& dl) const {
     const gfx::FontFace& clock = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
     const float clockW = gfx::measureText(clock, clockBuf_);
     const float clockX = gear.x - 12.0f - clockW;
-    gfx::drawText(dl, clock, clockX, top + 36 + (clock.ascent - clock.descent) / 2, clockBuf_, t.text2);
+    gfx::drawText(dl, clock, clockX, mid + (clock.ascent - clock.descent) / 2, clockBuf_, t.text2);
 
     const Rect wifi = wifiRect(ctx);
     drawWifiIcon(dl, s, wifi.x + (wifi.w - 22.0f) / 2.0f, wifi.y + 22.0f, ctx.wifi, t);
@@ -651,10 +674,10 @@ void MainScene::drawInfoBar(const UiContext& ctx, gfx::DrawList& dl) const {
     const gfx::FontFace& body = ctx.fonts->face(FontSize::Body, FontWeight::Regular);
     const char* line = infoLineText();
     if (line[0] == '\0') {
-        gfx::drawTextEllipsis(dl, title, textX, top + 36 + (title.ascent - title.descent) / 2, maxW, infoTitle(), t.text);
+        gfx::drawTextEllipsis(dl, title, textX, mid + (title.ascent - title.descent) / 2, maxW, infoTitle(), t.text);
     } else {
-        gfx::drawTextEllipsis(dl, title, textX, top + 30, maxW, infoTitle(), t.text);
-        gfx::drawTextEllipsis(dl, body, textX, top + 56, maxW, line, t.text2);
+        gfx::drawTextEllipsis(dl, title, textX, mid - 5, maxW, infoTitle(), t.text);
+        gfx::drawTextEllipsis(dl, body, textX, mid + 17, maxW, line, t.text2);
     }
 }
 

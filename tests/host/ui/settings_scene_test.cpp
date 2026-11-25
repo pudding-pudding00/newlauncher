@@ -152,7 +152,7 @@ TEST_CASE_FIXTURE(Fixture, "Karte mit allen Zeilen passt in 480 Zeilen") {
     const gfx::Rect first = s.rowRect(ctx, 0);
     const gfx::Rect last = s.rowRect(ctx, SettingsScene::kCount - 1);
     CHECK(first.y >= 0.0f);
-    CHECK(last.y + last.h + 24.0f + 8.0f <= 480.0f + 0.5f);
+    CHECK(last.y + last.h + 18.0f + 4.0f <= 480.0f + 0.5f);  // Hilfezeile + Rand (M24)
 }
 
 TEST_CASE_FIXTURE(Fixture, "A auf Fehlende Cover laden") {
@@ -162,34 +162,101 @@ TEST_CASE_FIXTURE(Fixture, "A auf Fehlende Cover laden") {
     CHECK(r.command == AppCommand::FetchCovers);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Cover-Cache löschen braucht zweimal A (M23)") {
+namespace {
+// M24: A gedrückt halten. first = Frame mit frischem Druck.
+InputFrame heldA(bool first) {
+    InputFrame f;
+    f.confirmHeld = true;
+    if (first) f.actions = 1u << static_cast<u32>(Action::Confirm);
+    return f;
+}
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "Cover-Cache löschen: A 1 s halten löst aus (M24)") {
     focusRow(SettingRow::ClearCovers);
-    CHECK(s.valueTextFor(SettingRow::ClearCovers).empty());
-    SceneRequests r = press(Action::Confirm);
-    CHECK_FALSE(r.pop);
+    CHECK(s.holdProgress() == 0.0f);
+    SceneRequests r;
+    s.update(ctx, heldA(true), 16, r);
     CHECK(r.command == AppCommand::None);
-    CHECK(s.valueTextFor(SettingRow::ClearCovers) == tr(Str::ClearCoversConfirm));
-    r = press(Action::Confirm);
-    CHECK(r.pop);
+    CHECK_FALSE(r.pop);
+    float t = 16;
+    while (t < kHoldConfirmMs - 20) {
+        r = {};
+        s.update(ctx, heldA(false), 16, r);
+        CHECK(r.command == AppCommand::None);
+        t += 16;
+    }
+    CHECK(s.holdProgress() > 0.9f);
+    CHECK(s.holdProgress() < 1.0f);
+    CHECK(s.valueTextFor(SettingRow::ClearCovers) == tr(Str::ClearCoversHold));
+    for (int i = 0; i < 3 && r.command == AppCommand::None; ++i) {
+        r = {};
+        s.update(ctx, heldA(false), 16, r);
+    }
     CHECK(r.command == AppCommand::ClearCovers);
-    CHECK(std::string(appCommandName(AppCommand::ClearCovers)) == "clear_covers");
+    CHECK(r.pop);
+    CHECK(s.holdProgress() == 0.0f);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Cover-Cache löschen: Fokuswechsel und B entschärfen (M23)") {
+TEST_CASE_FIXTURE(Fixture, "Cover-Cache löschen: zu früh loslassen bricht ab (M24)") {
     focusRow(SettingRow::ClearCovers);
-    press(Action::Confirm);
-    press(Action::Down);
-    CHECK(s.valueTextFor(SettingRow::ClearCovers).empty());
-    press(Action::Up);
-    SceneRequests r = press(Action::Confirm);
+    SceneRequests r;
+    s.update(ctx, heldA(true), 16, r);
+    for (int i = 0; i < 30; ++i) s.update(ctx, heldA(false), 16, r);  // ~0,5 s
+    CHECK(s.holdProgress() > 0.4f);
+    r = {};
+    s.update(ctx, InputFrame{}, 16, r);  // losgelassen
     CHECK(r.command == AppCommand::None);
-    r = press(Action::Back);
+    CHECK(s.holdProgress() == 0.0f);
+    for (int i = 0; i < 80; ++i) s.update(ctx, InputFrame{}, 16, r);
+    CHECK(r.command == AppCommand::None);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Cover-Cache löschen: Fokuswechsel und B brechen ab, Halten ohne frischen Druck startet nicht (M24)") {
+    focusRow(SettingRow::ClearCovers);
+    SceneRequests r;
+    s.update(ctx, heldA(true), 16, r);
+    for (int i = 0; i < 20; ++i) s.update(ctx, heldA(false), 16, r);
+    InputFrame down = heldA(false);
+    down.actions = 1u << static_cast<u32>(Action::Down);
+    r = {};
+    s.update(ctx, down, 16, r);
+    CHECK(s.holdProgress() == 0.0f);
+    InputFrame up = heldA(false);  // A noch gehalten, Fokus zurück: kein Start
+    up.actions = 1u << static_cast<u32>(Action::Up);
+    s.update(ctx, up, 16, r);
+    for (int i = 0; i < 80; ++i) {
+        r = {};
+        s.update(ctx, heldA(false), 16, r);
+        CHECK(r.command == AppCommand::None);
+    }
+    CHECK(s.holdProgress() == 0.0f);
+    s.update(ctx, InputFrame{}, 16, r);
+    s.update(ctx, heldA(true), 16, r);
+    for (int i = 0; i < 10; ++i) s.update(ctx, heldA(false), 16, r);
+    InputFrame back = heldA(false);
+    back.actions = 1u << static_cast<u32>(Action::Back);
+    r = {};
+    s.update(ctx, back, 16, r);
     CHECK(r.pop);
     CHECK(r.command == AppCommand::None);
-    s.onEnter();
+    CHECK(s.holdProgress() == 0.0f);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Cover-Cache löschen nach geänderter Einstellung: erst SaveSettings, dann ClearCovers (M24)") {
+    press(Action::Right);  // Sprache geändert
     focusRow(SettingRow::ClearCovers);
-    r = press(Action::Confirm);
-    CHECK(r.command == AppCommand::None);  // nach erneutem Öffnen wieder unscharf
+    SceneRequests r;
+    s.update(ctx, heldA(true), 16, r);
+    for (int i = 0; i < 70 && r.command == AppCommand::None; ++i) {
+        r = {};
+        s.update(ctx, heldA(false), 16, r);
+    }
+    CHECK(r.command == AppCommand::SaveSettings);
+    r = {};
+    s.update(ctx, heldA(false), 16, r);
+    CHECK(r.command == AppCommand::ClearCovers);
+    CHECK(r.pop);
 }
 
 TEST_CASE_FIXTURE(Fixture, "A auf Bibliothek neu scannen nach Änderung") {

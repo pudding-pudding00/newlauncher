@@ -87,6 +87,13 @@ TEST_CASE("configFromIni: [debug] cover_url und fetch_covers") {
     CHECK(c.debugFetchCovers);
 }
 
+TEST_CASE("configFromIni: [debug] clear_covers = 0|1|2, sonst 0 (M24)") {
+    CHECK(nl::configFromIni(nl::IniDoc::parse("")).debugClearCovers == 0);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nclear_covers = 1\n")).debugClearCovers == 1);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nclear_covers = 2\n")).debugClearCovers == 2);
+    CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nclear_covers = 7\n")).debugClearCovers == 0);
+}
+
 TEST_CASE("configFromIni: [debug] sd_as_disk (M16)") {
     CHECK_FALSE(nl::configFromIni(nl::IniDoc::parse("")).debugSdAsDisk);
     CHECK(nl::configFromIni(nl::IniDoc::parse("[debug]\nsd_as_disk = 1\n")).debugSdAsDisk);
@@ -436,4 +443,16 @@ TEST_CASE("configFromIni: [covers] retro_base, nur HTTPS-Standard mit TLS (M22)"
           "https://raw.githubusercontent.com/libretro-thumbnails");
     // Wird nicht in die config.ini geschrieben, wie [covers] base
     CHECK(configToIniText(configFromIni(IniDoc::parse("")), "").find("retro_base") == std::string::npos);
+}
+
+TEST_CASE("configFromIni: [covers] storage (M24), Standard sd, Round-Trip") {
+    CHECK(configFromIni(IniDoc::parse("")).coverStorage == CoverStorage::Sd);
+    CHECK(configFromIni(IniDoc::parse(defaultConfigText())).coverStorage == CoverStorage::Sd);
+    CHECK(configFromIni(IniDoc::parse("[covers]\nstorage = device\n")).coverStorage == CoverStorage::Device);
+    CHECK(configFromIni(IniDoc::parse("[covers]\nstorage = usb\n")).coverStorage == CoverStorage::Sd);  // ungültig
+    CHECK(defaultConfigText().find("auto = 1\nstorage = sd\n") != std::string::npos);
+    Config c;
+    c.coverStorage = CoverStorage::Device;
+    CHECK(configFromIni(IniDoc::parse(configToIniText(c, defaultConfigText()))).coverStorage == CoverStorage::Device);
+    CHECK(configFromIni(IniDoc::parse(configToIniText(c, ""))).coverStorage == CoverStorage::Device);
 }

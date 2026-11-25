@@ -17,6 +17,9 @@
 
 namespace nl {
 
+// M24: Cover (covers_src, cache/covers, missing.txt) auf der SD-Karte (Standard) oder auf dem Spielgerät.
+enum class CoverStorage : u8 { Sd, Device };
+
 struct Config {
     enum class Language : u8 { Auto, De, En };
     enum class LibraryDevice : u8 { Usb, Sd };
@@ -34,6 +37,7 @@ struct Config {
     bool sounds = true;
     bool banners = true;  // [ui] banners: Kanal-/GC-Banner in der Detailansicht (M18)
     std::string coverRegion = "auto";
+    CoverStorage coverStorage = CoverStorage::Sd;  // [covers] storage = sd|device (M24): Ort der Cover
     bool coverAuto = true;  // [covers] auto: fehlende Cover nach dem Scan selbst laden (M21)
     std::string emulatorRepo = std::string(defaultEmuRepo(true));  // [emulators] repo (Spec 6.9), http:// oder https://
     std::string coverBase = std::string(defaultCoverBase(true));   // [covers] base (M11): Cover-Quelle, http:// oder https://
@@ -48,6 +52,7 @@ struct Config {
     std::string debugCheatUrl;   // [debug] cheat_url: ersetzt [cheats] source (Smoke, M15)
     std::string debugCheatFetch; // [debug] cheat_fetch = <ID6>: Codes nach NL_READY laden (Smoke, M15)
     bool debugFetchCovers = false;  // [debug] fetch_covers = 1: „Fehlende Cover laden“ nach NL_READY
+    int debugClearCovers = 0;  // [debug] clear_covers (M24): 1 = nach NL_COVER_DL_DONE, 2 = gleich nach dem Download-Start
     bool debugSysinfoSave = false;  // [debug] sysinfo_save = 1: <data>/sysinfo.txt nach NL_READY schreiben (Smoke, M13)
     bool debugPerf = false;         // [debug] perf = 1: NL_PERF-Zeilen für die Hardware-Messung (M7)
     bool debugRemote = false;       // [debug] remote = 1: Fernsteuerung auf TCP 4300 (M20), sonst nur mit argv --remote

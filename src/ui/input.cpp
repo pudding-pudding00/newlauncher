@@ -46,6 +46,7 @@ InputFrame InputMapper::update(const RawInput& raw, float dtMs) {
     }
 
     if (down & (B::A | B::GcA | B::CcA)) f.actions |= bit(Action::Confirm);
+    f.confirmHeld = (held & (B::A | B::GcA | B::CcA)) != 0;
     if (down & (B::B | B::GcB | B::CcB)) f.actions |= bit(Action::Back);
     if (down & (B::Minus | B::GcL | B::CcL)) f.actions |= bit(Action::PrevConsole);
     if (down & (B::Plus | B::GcR)) f.actions |= bit(Action::NextConsole) | bit(Action::Options);

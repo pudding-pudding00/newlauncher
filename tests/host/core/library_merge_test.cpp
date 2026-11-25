@@ -110,3 +110,21 @@ TEST_CASE("library_merge: scanDevices scannt jedes Gerät für sich") {
     REQUIRE_FALSE(missing.isOk());
     CHECK(missing.error().code == ErrorCode::NotMounted);
 }
+
+TEST_CASE("coverRootsFor: SD bevorzugt, Rückfall auf die Gerätewurzeln (M24)") {
+    const std::vector<std::string> devs = {"usb", "sd", "usb2"};
+    const bool writable[] = {true, true, false};
+    const auto sd = coverRootsFor(devs, writable, "sd:/newlauncher", CoverStorage::Sd, true);
+    CHECK(sd == std::vector<std::string>{"sd:", "sd:", "sd:"});
+    const auto noSd = coverRootsFor(devs, writable, "sd:/newlauncher", CoverStorage::Sd, false);
+    CHECK(noSd == std::vector<std::string>{"usb:", "sd:", "sd:/newlauncher/cache/usb2"});
+    const auto dev = coverRootsFor(devs, writable, "sd:/newlauncher", CoverStorage::Device, true);
+    CHECK(dev == noSd);
+    const bool shortFlags[] = {true};  // fehlende Angabe gilt als nicht beschreibbar
+    CHECK(coverRootsFor(devs, shortFlags, "d", CoverStorage::Device, false)[2] == "d/cache/usb2");
+}
+
+TEST_CASE("uniqueRoots: Reihenfolge bleibt, Doppelte fallen weg (M24)") {
+    const std::vector<std::string> roots = {"sd:", "usb:", "sd:", "usb:", "x"};
+    CHECK(uniqueRoots(roots) == std::vector<std::string>{"sd:", "usb:", "x"});
+}

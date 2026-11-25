@@ -49,6 +49,9 @@ void stepSetting(Config& c, SettingRow r, int dir) {
         case SettingRow::Sounds: c.sounds = !c.sounds; break;
         case SettingRow::Banners: c.banners = !c.banners; break;
         case SettingRow::CoverAuto: c.coverAuto = !c.coverAuto; break;
+        case SettingRow::CoverStorage:
+            c.coverStorage = c.coverStorage == CoverStorage::Sd ? CoverStorage::Device : CoverStorage::Sd;
+            break;
         case SettingRow::Sort: c.sortOrder = cycle(c.sortOrder, 4, dir); break;
         case SettingRow::Library:
         {

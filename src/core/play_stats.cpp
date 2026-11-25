@@ -135,6 +135,8 @@ void sortGames(std::span<const Game*> v, SortOrder o, const PlayStats& s) {
     }
 }
 
+SortOrder toggledSort(SortOrder o) { return o == SortOrder::Title ? SortOrder::Year : SortOrder::Title; }
+
 const char* sortOrderName(SortOrder o) {
     switch (o) {
         case SortOrder::Year: return "year";

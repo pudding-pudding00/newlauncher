@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <span>
+#include <vector>
 
 namespace nl::ui {
 
@@ -38,7 +39,9 @@ GridMetrics gridMetrics(float logicalWidth, float coverAspect = 5.0f / 7.0f);
 
 class GridModel {
 public:
-    void reset(int itemCount, const GridMetrics& m, float viewHeight);
+    // M24: itemHeights (je Element, optional) für gemischte Listen: jede Reihe so hoch wie ihre höchste Kachel,
+    // kürzere Kacheln vertikal zentriert. Leer = alle m.tileH.
+    void reset(int itemCount, const GridMetrics& m, float viewHeight, std::span<const float> itemHeights = {});
     void move(int dx, int dy);
     // -1 = kein Fokus; der letzte Fokus bleibt für Richtungstasten gemerkt. Ohne scrollIntoView (Zeiger, M23)
     // bleibt die Scrollposition, sonst wird die Reihe ganz sichtbar.
@@ -50,17 +53,22 @@ public:
     float targetScroll() const { return scroll_; }
     gfx::Rect tileRect(int index, float scroll) const;
     int hitTest(float x, float y, float scroll) const;
-    float rowPitch() const { return m_.tileH + m_.gap; }
+    float rowPitch() const { return m_.tileH + m_.gap; }  // Grundmaß (Randscrollen, Vorladen)
+    float rowHeight(int row) const;
     float viewTop() const { return m_.topBarH; }
     float viewHeight() const { return viewHeight_; }
 
 private:
     void updateScroll();
+    int rowCount() const { return static_cast<int>(rowTop_.size()); }
+    float itemHeight(int index) const;
 
     GridMetrics m_{};
     float viewHeight_ = 0.0f;
     int count_ = 0, focus_ = -1, last_ = 0;
     float scroll_ = 0.0f;
+    std::vector<float> heights_;          // je Element; leer = m_.tileH
+    std::vector<float> rowTop_, rowH_;    // Reihenanfang (ab Rasteroberkante, mit kGridTopPad) und -höhe
 };
 
 // Alle Formatierer schreiben nullterminiert, kürzen bei kleinem Puffer und liefern die Länge.

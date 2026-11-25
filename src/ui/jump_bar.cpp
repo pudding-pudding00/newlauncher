@@ -8,7 +8,7 @@ namespace nl::ui {
 namespace {
 using gfx::Rect;
 
-constexpr float kMargin = 16.0f, kCellH = 44.0f, kSearchW = 84.0f, kGap = 8.0f, kInfoBarH = 72.0f, kFilterH = 36.0f;
+constexpr float kMargin = 16.0f, kCellH = 44.0f, kSearchW = 84.0f, kGap = 8.0f, kInfoBarH = 60.0f, kFilterH = 36.0f;
 
 char bucketOf(int cell) { return cell == 0 ? '#' : static_cast<char>('A' + cell - 1); }
 
@@ -35,6 +35,12 @@ Rect JumpBar::filterRect(const UiContext& ctx) const {
     return Rect{(ctx.width - w) / 2, first.y - 6 - 12 - kFilterH, w, kFilterH};
 }
 
+Rect JumpBar::sortRect(const UiContext& ctx) const {
+    if (target_.sortLabel().empty()) return Rect{0, 0, 0, 0};
+    const Rect f = filterRect(ctx);
+    return Rect{kMargin, f.y, f.x - kGap - kMargin, kFilterH};
+}
+
 void JumpBar::stepFilter(int dir, SceneRequests& out) {
     const int n = target_.filterCount();
     if (n <= 0) return;
@@ -47,11 +53,12 @@ void JumpBar::update(const UiContext& ctx, const InputFrame& in, float, SceneReq
     const bool hasFilter = target_.filterCount() > 0;
     if (!hasFilter) filterRow_ = false;
     int hit = -1;
-    bool hitFilter = false;
+    bool hitFilter = false, hitSort = false;
     if (in.pointerValid) {
         for (int i = 0; i < kCellCount && hit < 0; ++i)
             if (contains(cellRect(ctx, i), in.pointerX, in.pointerY)) hit = i;
         hitFilter = hasFilter && contains(filterRect(ctx), in.pointerX, in.pointerY);
+        hitSort = contains(sortRect(ctx), in.pointerX, in.pointerY);
         if (in.pointerMoved) {
             if (hit >= 0) {
                 focus_ = hit;
@@ -84,6 +91,13 @@ void JumpBar::update(const UiContext& ctx, const InputFrame& in, float, SceneReq
         out.pop = true;
         return;
     }
+    // M24: − (L) bzw. A auf der Plakette schaltet die Sortierung um; die Leiste bleibt offen.
+    const bool canSort = !target_.sortLabel().empty();
+    if (canSort && (in.pressed(Action::PrevConsole) || (in.pressed(Action::Confirm) && hitSort))) {
+        out.command = AppCommand::ToggleSort;
+        out.sound = UiSound::Confirm;
+        return;
+    }
     const bool pointerOff = in.pointerValid && hit < 0 && !hitFilter && !keysSincePointerMove_;
     if (in.pressed(Action::Confirm) && !pointerOff) {
         if (filterRow_) {
@@ -112,6 +126,12 @@ void JumpBar::draw(const UiContext& ctx, gfx::DrawList& dl) {
         const float x = w < r.w - 16 ? r.x + (r.w - w) / 2 : r.x + 8;
         gfx::drawTextEllipsis(dl, f, x, r.y + r.h / 2 + (f.ascent - f.descent) / 2, r.w - 16, label.c_str(),
                               filterRow_ ? t.onAccent : t.text);
+    }
+    const std::string sort = target_.sortLabel();
+    if (!sort.empty()) {
+        const Rect r = sortRect(ctx);
+        gfx::roundRect(dl, s, r, 10, t.bar);
+        gfx::drawTextEllipsis(dl, f, r.x + 8, r.y + r.h / 2 + (f.ascent - f.descent) / 2, r.w - 16, sort.c_str(), t.text);
     }
     for (int i = 0; i < kCellCount; ++i) {
         const Rect r = cellRect(ctx, i);

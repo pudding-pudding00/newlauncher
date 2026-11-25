@@ -1,5 +1,6 @@
 #include "ui/settings_scene.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
@@ -13,11 +14,11 @@ using gfx::FontSize;
 using gfx::FontWeight;
 using gfx::Rect;
 
-constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kPadY = 8.0f, kTitleH = 24.0f, kRowH = 16.0f, kHelpH = 24.0f;  // 26 Zeilen in 480
+constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kPadY = 4.0f, kTitleH = 22.0f, kRowH = 16.0f, kHelpH = 18.0f;  // 27 Zeilen in 480 (M24)
 
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo, Str::ThemePack,  Str::Music,       Str::Volume,
-    Str::Sounds,   Str::Banners, Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::CoverAuto, Str::Rescan, Str::FetchCovers, Str::ClearCovers, Str::VcMapTitle,
+    Str::Sounds,   Str::Banners, Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::CoverAuto, Str::CoverStorage, Str::Rescan, Str::FetchCovers, Str::ClearCovers, Str::VcMapTitle,
     Str::Emulators, Str::WiiGames, Str::GcGames, Str::Parental, Str::Setup, Str::SysInfo, Str::About, Str::SelfUpdate, Str::RestartSelf,
 };
 
@@ -72,6 +73,8 @@ std::string valueText(const Config& c, SettingRow r) {
         case SettingRow::Sounds: return tr(c.sounds ? Str::On : Str::Off);
         case SettingRow::Banners: return tr(c.banners ? Str::On : Str::Off);
         case SettingRow::CoverAuto: return tr(c.coverAuto ? Str::On : Str::Off);
+        case SettingRow::CoverStorage:
+            return tr(c.coverStorage == CoverStorage::Device ? Str::CoverStorageDevice : Str::CoverStorageSd);
         case SettingRow::Library:
             switch (sourceChoice(c.libraryRules.sources)) {
                 case SourceChoice::Auto: return std::string(tr(Str::LangAuto));
@@ -91,7 +94,7 @@ std::string valueText(const Config& c, SettingRow r) {
 }  // namespace
 
 std::string SettingsScene::valueTextFor(SettingRow row) const {
-    if (row == SettingRow::ClearCovers) return armed_ ? std::string(tr(Str::ClearCoversConfirm)) : std::string();
+    if (row == SettingRow::ClearCovers) return holding_ ? std::string(tr(Str::ClearCoversHold)) : std::string();
     if (live_ == nullptr) return {};
     if (row == SettingRow::ThemePack) return live_->themePack.empty() ? std::string(tr(Str::ThemePackDefault)) : live_->themePack;
     return valueText(*live_, row);
@@ -101,7 +104,8 @@ void SettingsScene::onEnter() {
     focus_ = 0;
     keysSincePointerMove_ = false;
     pendingAction_ = AppCommand::None;
-    armed_ = false;
+    holding_ = false;
+    holdMs_ = 0.0f;
     if (live_ != nullptr) saved_ = *live_;
 }
 
@@ -124,7 +128,7 @@ int SettingsScene::hitTest(const UiContext& ctx, float x, float y) const {
     return -1;
 }
 
-void SettingsScene::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
+void SettingsScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) {
     FocusSound sound(out, focus_);
     if (pendingAction_ != AppCommand::None) {  // SaveSettings lief im letzten Frame, der Klang auch
         sound.silence();
@@ -147,12 +151,15 @@ void SettingsScene::update(const UiContext& ctx, const InputFrame& in, float, Sc
     if (in.pressed(Action::Up) && focus_ > 0) --focus_;
     if (in.pressed(Action::Down) && focus_ + 1 < kCount) ++focus_;
     if (in.pressed(Action::Up) || in.pressed(Action::Down)) keysSincePointerMove_ = true;
-    if (focus_ != static_cast<int>(SettingRow::ClearCovers)) armed_ = false;  // Fokuswechsel entschärft
+    // M24: Loslassen und Fokuswechsel brechen das Halten ab.
+    if (focus_ != static_cast<int>(SettingRow::ClearCovers) || !in.confirmHeld) holding_ = false;
+    if (!holding_) holdMs_ = 0.0f;
     const bool pointerOff = in.pointerValid && hit < 0 && !keysSincePointerMove_;
 
     if (in.pressed(Action::Back) || in.pressed(Action::Home)) {
         out.pop = true;
-        armed_ = false;
+        holding_ = false;
+        holdMs_ = 0.0f;
         if (dirty()) {
             out.command = AppCommand::SaveSettings;
             saved_ = *live_;
@@ -162,13 +169,22 @@ void SettingsScene::update(const UiContext& ctx, const InputFrame& in, float, Sc
 
     const SettingRow row = static_cast<SettingRow>(focus_);
     if (isAction(row)) {
-        if (in.pressed(Action::Confirm) && !pointerOff) {
-            if (row == SettingRow::ClearCovers && !armed_) {  // erstes A schärft nur
-                armed_ = true;
-                out.sound = UiSound::Confirm;
+        bool fire = in.pressed(Action::Confirm) && !pointerOff;
+        if (row == SettingRow::ClearCovers) {  // M24: nur nach 1 s Halten; Start nur mit frischem Druck
+            if (fire && in.confirmHeld) {
+                holding_ = true;
+                holdMs_ = 0.0f;
+                out.sound = UiSound::Move;
                 return;
             }
-            armed_ = false;
+            if (holding_) holdMs_ += dtMs;
+            fire = holding_ && holdMs_ >= kHoldConfirmMs;
+            if (fire) {
+                holding_ = false;
+                holdMs_ = 0.0f;
+            }
+        }
+        if (fire) {
             out.console = row == SettingRow::GcGames ? Console::Gc : Console::Wii;
             pendingConsole_ = out.console;
             if (dirty()) {
@@ -228,6 +244,10 @@ void SettingsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         gfx::drawTextEllipsis(dl, label, r.x + 8, base, labelMax > 0 ? labelMax : 0, tr(kLabels[i]),
                               isAction(row) ? t.accent : fg);
         if (!v.empty()) gfx::drawText(dl, value, r.x + r.w - 8 - vw, base, v, fg);
+        if (row == SettingRow::ClearCovers && holding_) {  // M24: Fortschritt beim Halten
+            const float p = std::min(holdProgress(), 1.0f);
+            gfx::fillRect(dl, s, Rect{r.x, r.y + r.h - 3, r.w * p, 2}, t.accent);
+        }
     }
 
     const float helpBase = card.y + card.h - kPadY - small.descent;

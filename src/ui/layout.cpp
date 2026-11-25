@@ -10,7 +10,7 @@
 namespace nl::ui {
 
 namespace {
-constexpr float kGridTopPad = 12.0f;
+constexpr float kGridTopPad = 4.0f;  // M24: Luft über und unter dem Raster
 
 int clampi(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
@@ -68,19 +68,42 @@ std::span<const Game* const> gamesFor(const Library& lib, const BarEntry& e, std
 }
 
 GridMetrics gridMetrics(float logicalWidth, float coverAspect) {
-    GridMetrics m = logicalWidth >= 854.0f ? GridMetrics{104, 146, 16, 75, 56, 72, 6} : GridMetrics{88, 123, 12, 26, 56, 72, 6};
+    GridMetrics m = logicalWidth >= 854.0f ? GridMetrics{128, 179, 4, 33, 48, 60, 6} : GridMetrics{99, 139, 4, 13, 48, 60, 6};  // M24
     // Die 5:7-Höhe ist die Grundform; andere Formate skalieren sie (quer 10:7 → halbe Höhe).
     if (coverAspect > 0.0f) m.tileH = std::round(m.tileH * (5.0f / 7.0f) / coverAspect);
     return m;
 }
 
-void GridModel::reset(int itemCount, const GridMetrics& m, float viewHeight) {
+void GridModel::reset(int itemCount, const GridMetrics& m, float viewHeight, std::span<const float> itemHeights) {
     m_ = m;
     viewHeight_ = viewHeight;
     count_ = itemCount > 0 ? itemCount : 0;
     focus_ = count_ > 0 ? 0 : -1;
     last_ = 0;
     scroll_ = 0.0f;
+    heights_.assign(itemHeights.begin(), itemHeights.end());
+    const int cols = m_.columns > 0 ? m_.columns : 1;
+    const int rows = (count_ + cols - 1) / cols;
+    rowTop_.assign(static_cast<std::size_t>(rows), 0.0f);
+    rowH_.assign(static_cast<std::size_t>(rows), 0.0f);
+    float y = kGridTopPad;
+    for (int r = 0; r < rows; ++r) {
+        float h = 0.0f;
+        for (int i = r * cols; i < count_ && i < (r + 1) * cols; ++i) h = std::max(h, itemHeight(i));
+        rowTop_[static_cast<std::size_t>(r)] = y;
+        rowH_[static_cast<std::size_t>(r)] = h;
+        y += h + m_.gap;
+    }
+}
+
+float GridModel::itemHeight(int index) const {
+    if (index >= 0 && static_cast<std::size_t>(index) < heights_.size() && heights_[static_cast<std::size_t>(index)] > 0.0f)
+        return heights_[static_cast<std::size_t>(index)];
+    return m_.tileH;
+}
+
+float GridModel::rowHeight(int row) const {
+    return row >= 0 && row < rowCount() ? rowH_[static_cast<std::size_t>(row)] : m_.tileH;
 }
 
 void GridModel::setFocus(int index, bool scrollIntoView) {
@@ -93,9 +116,8 @@ void GridModel::setFocus(int index, bool scrollIntoView) {
 }
 
 float GridModel::maxScroll() const {
-    if (count_ == 0 || m_.columns <= 0) return 0.0f;
-    const int rows = (count_ + m_.columns - 1) / m_.columns;
-    const float content = 2 * kGridTopPad + static_cast<float>(rows) * rowPitch() - m_.gap;
+    if (rowCount() == 0) return 0.0f;
+    const float content = rowTop_.back() + rowH_.back() + kGridTopPad;
     return content > viewHeight_ ? content - viewHeight_ : 0.0f;
 }
 
@@ -123,9 +145,10 @@ void GridModel::move(int dx, int dy) {
 
 void GridModel::updateScroll() {
     if (focus_ < 0) return;
-    const float pitch = rowPitch();
-    const float rowTop = kGridTopPad + static_cast<float>(focus_ / m_.columns) * pitch;
-    const float rowBottom = rowTop + m_.tileH;
+    const int row = focus_ / (m_.columns > 0 ? m_.columns : 1);
+    if (row >= rowCount()) return;
+    const float rowTop = rowTop_[static_cast<std::size_t>(row)];
+    const float rowBottom = rowTop + rowH_[static_cast<std::size_t>(row)];
     if (rowTop - kGridTopPad < scroll_) scroll_ = rowTop - kGridTopPad;
     if (rowBottom + kGridTopPad > scroll_ + viewHeight_) scroll_ = rowBottom + kGridTopPad - viewHeight_;
     if (scroll_ < 0.0f) scroll_ = 0.0f;
@@ -134,22 +157,37 @@ void GridModel::updateScroll() {
 gfx::Rect GridModel::tileRect(int index, float scroll) const {
     const int cols = m_.columns > 0 ? m_.columns : 1;
     const int row = index / cols, col = index % cols;
+    float top = 0.0f, rowH = m_.tileH;
+    if (row < rowCount()) {
+        top = rowTop_[static_cast<std::size_t>(row)];
+        rowH = rowH_[static_cast<std::size_t>(row)];
+    } else {  // hinter dem letzten Element: Grundmaß fortsetzen
+        const float end = rowCount() > 0 ? rowTop_.back() + rowH_.back() + m_.gap : kGridTopPad;
+        top = end + static_cast<float>(row - rowCount()) * rowPitch();
+    }
+    const float h = index < count_ ? itemHeight(index) : m_.tileH;
     return gfx::Rect{m_.marginX + static_cast<float>(col) * (m_.tileW + m_.gap),
-                     m_.topBarH + kGridTopPad + static_cast<float>(row) * rowPitch() - scroll, m_.tileW, m_.tileH};
+                     m_.topBarH + top + (rowH - h) / 2.0f - scroll, m_.tileW, h};
 }
 
 int GridModel::hitTest(float x, float y, float scroll) const {
     if (count_ == 0 || y < m_.topBarH || y >= m_.topBarH + viewHeight_) return -1;
     const float lx = x - m_.marginX;
-    const float ly = y - m_.topBarH - kGridTopPad + scroll;
-    if (lx < 0.0f || ly < 0.0f) return -1;
+    if (lx < 0.0f) return -1;
     const int col = static_cast<int>(lx / (m_.tileW + m_.gap));
-    const int row = static_cast<int>(ly / rowPitch());
     if (col >= m_.columns) return -1;
     if (lx - static_cast<float>(col) * (m_.tileW + m_.gap) > m_.tileW) return -1;
-    if (ly - static_cast<float>(row) * rowPitch() > m_.tileH) return -1;
-    const int index = row * m_.columns + col;
-    return index < count_ ? index : -1;
+    const float ly = y - m_.topBarH + scroll;
+    for (int row = 0; row < rowCount(); ++row) {
+        const float top = rowTop_[static_cast<std::size_t>(row)], h = rowH_[static_cast<std::size_t>(row)];
+        if (ly < top) return -1;  // Luft oder Spalt
+        if (ly > top + h) continue;
+        const int index = row * m_.columns + col;
+        if (index >= count_) return -1;
+        const gfx::Rect r = tileRect(index, scroll);
+        return y >= r.y && y <= r.y + r.h ? index : -1;
+    }
+    return -1;
 }
 
 int infoLine(const Game& g, char* out, std::size_t cap) {

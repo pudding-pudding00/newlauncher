@@ -61,6 +61,7 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     c.debugCheatUrl = std::string(trim(ini.get("debug", "cheat_url")));
     c.debugCheatFetch = std::string(trim(ini.get("debug", "cheat_fetch")));
     c.debugFetchCovers = parseIntIn(ini.get("debug", "fetch_covers"), 0, 1, 0) == 1;
+    c.debugClearCovers = parseIntIn(ini.get("debug", "clear_covers"), 0, 2, 0);
     c.debugSysinfoSave = parseIntIn(ini.get("debug", "sysinfo_save"), 0, 1, 0) == 1;
     c.debugLogSounds = parseIntIn(ini.get("debug", "log_sounds"), 0, 1, 0) == 1;
     c.debugListGames = parseIntIn(ini.get("debug", "list_games"), 0, 1, 0) == 1;
@@ -113,6 +114,7 @@ Config configFromIni(const IniDoc& ini, bool tls) {
         if (region == allowed) c.coverRegion = std::string(region);
     }
     c.coverAuto = parseIntIn(ini.get("covers", "auto"), 0, 1, 1) == 1;
+    c.coverStorage = trim(ini.get("covers", "storage")) == "device" ? CoverStorage::Device : CoverStorage::Sd;
     const std::string_view repo = trim(ini.get("emulators", "repo"));
     c.emulatorRepo = sourceForBuild(repo, kDefaultEmuRepoHttp, kDefaultEmuRepoHttps, defaultEmuRepo(tls));
     const std::string_view coverBase = trim(ini.get("covers", "base"));
@@ -169,6 +171,7 @@ std::vector<IniValue> configValues(const Config& c) {
         {"ui", "banners", c.banners ? "1" : "0"},
         {"covers", "region", c.coverRegion},
         {"covers", "auto", c.coverAuto ? "1" : "0"},
+        {"covers", "storage", c.coverStorage == CoverStorage::Device ? "device" : "sd"},
         {"emulators", "repo", c.emulatorRepo},
         {"wii", "ios", c.wiiIos ? std::to_string(static_cast<unsigned>(*c.wiiIos)) : std::string("auto")},
     };
@@ -279,6 +282,7 @@ std::string defaultConfigText(bool tls) {
            "[covers]\n"
            "region = auto\n"
            "auto = 1\n"
+           "storage = sd\n"
            "[emulators]\n"
            "repo = " +
            std::string(defaultEmuRepo(tls)) + "\n" +

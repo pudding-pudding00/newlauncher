@@ -61,6 +61,7 @@
 #include "platform/music.hpp"
 #include "platform/http_client.hpp"
 #include "platform/net_service.hpp"
+#include "platform/cover_clear_worker.hpp"
 #include "platform/net_worker.hpp"
 #include "platform/remote_server.hpp"
 #include "platform/nand_titles.hpp"
@@ -511,10 +512,16 @@ int main(int argc, char** argv) {
         return d != nullptr && d->writable;
     };
     auto cacheDirOf = [&](const std::string& dev) { return nl::deviceCacheDir(dev, deviceWritable(dev), data.dir); };
+    // M24: Cover liegen nach [covers] storage auf der SD (Standard) oder auf dem Spielgerät; ohne beschreibbare SD
+    // gilt das Spielgerät.
     auto coverRootsOf = [&](std::span<const std::string> devices) {
-        std::vector<std::string> roots;
-        for (const std::string& dev : devices) roots.push_back(nl::coverRoot(dev, deviceWritable(dev), data.dir));
-        return roots;
+        std::unique_ptr<bool[]> writable(new bool[devices.size() + 1]);
+        for (std::size_t i = 0; i < devices.size(); ++i) writable[i] = deviceWritable(devices[i]);
+        const bool sdWritable = deviceWritable("sd");
+        if (config.coverStorage == nl::CoverStorage::Sd && !sdWritable)
+            nl::log::line("NL_WARN Cover-Speicher SD nicht beschreibbar, Cover auf dem Spielgerät");
+        return nl::coverRootsFor(devices, std::span<const bool>(writable.get(), devices.size()), data.dir,
+                                 config.coverStorage, sdWritable);
     };
 
     // 4. meta.bin, index.bin, Favoriten, Verlauf (Spec 6.1 Schritt 5)
@@ -666,6 +673,7 @@ int main(int argc, char** argv) {
 
     // 5. Hauptbildschirm
     nl::app::CoverService covers(fs, coverRootsOf(store.devices()));
+    nl::CoverStorage coverStorageApplied = config.coverStorage;  // M24: Ort, für den covers die Wurzeln hat
     nl::ui::MainScene mainScene(libraryView());
     mainScene.setCovers(&covers);
     covers.setPerf(perf.get());
@@ -685,6 +693,14 @@ int main(int argc, char** argv) {
     nl::platform::setNetPerf(config.debugPerf);
     nl::platform::NetService netService;  // ein Netz-Thread für Cover und Emulatoren (M11); lebt länger als die Worker
     nl::platform::NetWorker net(netService);
+    // M24 „Cover-Cache löschen“ ohne Hänger: erst den Netz-Auftrag abbrechen (WaitNet), dann im eigenen Thread
+    // löschen (Deleting). Cover-Laden und -Downloads ruhen, bis der Zustand wieder Idle ist.
+    enum class CoverClear : u8 { Idle, WaitNet, Deleting };
+    CoverClear coverClear = CoverClear::Idle;
+    nl::platform::CoverClearWorker coverClearWorker;
+    u64 coverClearStart = 0;
+    u32 coverClearToastRemoved = ~0u;
+    int coverClearToastFrames = 0;
     mainScene.setFavoriteKeys(&store);
     mainScene.setCategories(&categories);
     mainScene.setSort(config.sortOrder, &playStats);
@@ -1206,6 +1222,8 @@ int main(int argc, char** argv) {
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
         discDrive.shutdown();
         net.join();
+        coverClearWorker.cancel();  // M24: nicht auf das ganze Löschen warten
+        coverClearWorker.join();
         emu.join();
         cheatWorker.join();
         const bool keepRemote = remote.running();
@@ -1286,32 +1304,35 @@ int main(int argc, char** argv) {
     // silent (M21, [covers] auto): automatischer Lauf nach dem Start, ohne Dialog „Keine fehlenden Cover“.
     auto fetchCovers = [&](bool silent) {
         if (!silent) nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
+        if (coverClear != CoverClear::Idle) return;  // M24: erst fertig löschen
         if (net.running()) return;  // Emulator-Aufträge warten in derselben Warteschlange (NetService)
-        // Je Gerät: Cover landen dort, wo das Spiel liegt (oder in dessen Cache unter <data>).
+        // Cover-Wurzel je Gerät (M24: meist alle "sd:"); Spiele je eindeutiger Wurzel gesammelt, damit Ordner und
+        // Fehlliste einer gemeinsamen Wurzel nur einmal gelesen werden.
         const std::vector<std::string> roots = coverRootsOf(store.devices());
         // M22: Retro-Boxarts von libretro-thumbnails; [debug] cover_url ersetzt im Smoke beide Quellen.
         const std::string retroBase = config.debugCoverUrl.empty() ? config.retroCoverBase : config.debugCoverUrl;
         std::vector<nl::CoverJob> jobs;
         std::size_t skipped = 0;
-        for (std::size_t d = 0; d < roots.size(); ++d) {
+        for (const std::string& root : nl::uniqueRoots(roots)) {
             std::vector<const nl::Game*> games;
             for (const nl::Game& g : store.games())
-                if (g.device == d) games.push_back(&g);
+                if (g.device < roots.size() && roots[g.device] == root) games.push_back(&g);
             if (games.empty()) continue;
             // je Konsolenordner ein list() statt zwei Abfragen je Spiel
-            const auto present = nl::existingCoverFiles(fs, roots[d], !retroBase.empty());
+            const auto present = nl::existingCoverFiles(fs, root, !retroBase.empty());
             // Fehlliste (M22): der automatische Lauf überspringt, was zuletzt nicht gefunden wurde
             std::unordered_set<std::string> skip;
             if (silent) {
-                const std::string listPath = nl::missingListPath(roots[d]);
+                const std::string listPath = nl::missingListPath(root);
                 for (std::string& s : nl::parseMissingList(readText(fs, listPath.c_str(), 256u * 1024)))
                     skip.insert(std::move(s));
                 skipped += skip.size();
             }
             auto part = nl::coverDownloadJobs(games, [&](const std::string& path) { return present.count(path) > 0; },
-                                              roots[d], retroBase, &skip);
+                                              root, retroBase, &skip);
             for (nl::CoverJob& j : part) jobs.push_back(std::move(j));
         }
+        nl::orderCoverJobs(jobs);  // M24: Wii → GC → GBA → N64 → GBC → SNES → GB → NES, geräteübergreifend
         if (silent)
             nl::log::line("NL_COVER_AUTO jobs=%u skipped=%u", static_cast<unsigned>(jobs.size()),
                           static_cast<unsigned>(skipped));
@@ -1393,12 +1414,22 @@ int main(int argc, char** argv) {
             }
         }
     };
+    // M24: Löschen anstoßen; der Rest läuft Frame für Frame (WaitNet → Deleting → Idle, vor covers.pump).
+    auto startCoverClear = [&]() {
+        if (coverClear != CoverClear::Idle) return;  // läuft schon
+        if (net.active()) coverRunSilent = true;  // abgebrochener Download: keine Zusammenfassung
+        net.cancel();  // ohne Warten; Downloads schreiben sonst weiter nach covers_src
+        coverClear = CoverClear::WaitNet;
+        coverClearStart = gettime();
+        coverClearToastRemoved = ~0u;
+        coverClearToastFrames = 0;
+    };
     // Fortschritt, Marker und Ergebnis des Netz-Threads übernehmen (Haupt-Thread).
     auto pumpNet = [&]() {
         pumpCheats();
         for (const std::string& line : net.takeLogLines()) nl::log::line("%s", line.c_str());
         for (const std::string& stem : net.takeFinishedStems()) covers.invalidate(stem);
-        if (net.running()) {
+        if (net.running() && coverClear == CoverClear::Idle) {
             const u32 done = net.done();
             if (done != coverToastDone) {  // Text nur bei Änderung neu bauen
                 std::snprintf(coverToast, sizeof coverToast, nl::ui::tr(nl::ui::Str::CoverProgress), static_cast<unsigned>(done),
@@ -1418,6 +1449,7 @@ int main(int argc, char** argv) {
             nl::log::line("NL_COVER_DL_DONE ok=%u missing=%u failed=%u dialog=%d", static_cast<unsigned>(sum->ok),
                           static_cast<unsigned>(sum->missing), static_cast<unsigned>(sum->failed),
                           coverRunSilent ? 0 : 1);
+            if (config.debugClearCovers == 1) startCoverClear();  // nur für Tests (M24)
             if (data.writable) nl::log::flushLogFile(fs, logPath);
             if (perf) perf->pause();  // der Flush gehört zur Messung, nicht zum Launcher
             if (coverRunSilent) {  // M21: still im Hintergrund; neue Cover erscheinen von selbst
@@ -1744,6 +1776,8 @@ int main(int argc, char** argv) {
         worker.cancelAndJoin();
         discDrive.shutdown();
         net.join();
+        coverClearWorker.cancel();  // M24: nicht auf das ganze Löschen warten
+        coverClearWorker.join();
         emu.join();
         cheatWorker.join();
         remote.stop();
@@ -2056,11 +2090,34 @@ int main(int argc, char** argv) {
                 refreshParental();
                 break;
             }
-            case nl::ui::AppCommand::SaveSettings:
+            case nl::ui::AppCommand::ToggleSort: {  // M24: A–Z-Leiste, − bzw. A auf der Plakette
+                config.sortOrder = nl::toggledSort(config.sortOrder);
+                nl::log::line("NL_CMD %s %s", nl::ui::appCommandName(cmd), nl::sortOrderName(config.sortOrder));
+                saveConfig();
+                mainScene.setSort(config.sortOrder, &playStats);
+                const std::string sortToast = std::string(nl::ui::tr(nl::ui::Str::SortedBy)) + " " +
+                                              nl::ui::tr(config.sortOrder == nl::SortOrder::Year ? nl::ui::Str::SortYear
+                                                                                                : nl::ui::Str::SortTitle);
+                mainScene.showToast(sortToast.c_str());
+                break;
+            }
+            case nl::ui::AppCommand::SaveSettings: {
                 config.themeMode = ctx.themeMode;
+                const bool storageChanged = config.coverStorage != coverStorageApplied;
                 saveConfig();
                 refreshParental();
+                if (storageChanged) {  // M24: Cover-Speicher ohne Neustart umstellen
+                    coverStorageApplied = config.coverStorage;
+                    net.join();         // Downloads schreiben sonst an den alten Ort
+                    // M24: ein laufendes Löschen nicht abwarten: es leert den alten Ort weiter (wie gewünscht), Cover
+                    // werden erst nach dem Ende wieder geladen (covers.pump nur im Leerlauf).
+                    covers.clearAll();  // Texturen frei (Vorframe ist per GX_DrawDone fertig)
+                    covers.setRoots(coverRootsOf(store.devices()));
+                    nl::log::line("NL_COVER_STORAGE %s",
+                                  config.coverStorage == nl::CoverStorage::Device ? "device" : "sd");
+                }
                 break;
+            }
             case nl::ui::AppCommand::OpenParental:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 if (parental.enabled) askPin(PinPurpose::Parental, {});
@@ -2118,6 +2175,8 @@ int main(int argc, char** argv) {
                 worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
                 discDrive.shutdown();
                 net.join();
+                coverClearWorker.cancel();  // M24: nicht auf das ganze Löschen warten
+                coverClearWorker.join();
                 emu.join();
                 cheatWorker.join();
                 remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
@@ -2138,20 +2197,10 @@ int main(int argc, char** argv) {
             case nl::ui::AppCommand::FetchCovers:
                 fetchCovers(false);
                 break;
-            case nl::ui::AppCommand::ClearCovers: {
+            case nl::ui::AppCommand::ClearCovers:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
-                net.join();         // laufende Downloads abbrechen (schreiben sonst weiter nach covers_src)
-                covers.clearAll();  // Cover-Thread anhalten, Texturen frei (Vorframe ist per GX_DrawDone fertig)
-                u32 removed = 0, failed = 0;
-                for (const std::string& root : coverRootsOf(store.devices())) {
-                    const nl::CoverClearResult r = nl::clearCoverCache(fs, root);
-                    removed += r.removed;
-                    failed += r.failed;
-                }
-                nl::log::line("NL_COVERS_CLEARED files=%u failed=%u", static_cast<unsigned>(removed),
-                              static_cast<unsigned>(failed));
+                startCoverClear();
                 break;
-            }
             case nl::ui::AppCommand::OpenEmulators:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 refreshEmuRows();
@@ -2244,7 +2293,38 @@ int main(int argc, char** argv) {
         pumpNet();
         pumpEmu(runPendingAutostart);
         pumpMusic();
-        covers.pump();  // nach update (Wünsche dieses Frames), vor draw; Freigaben erst nach GX_DrawDone des Vorframes
+        if (coverClear == CoverClear::WaitNet && !net.active()) {
+            net.join();         // kehrt sofort zurück: der Auftrag ist schon beendet oder entfernt
+            covers.clearAll();  // Cover-Thread anhalten, Texturen frei (Vorframe ist per GX_DrawDone fertig)
+            if (coverClearWorker.start(fs, nl::uniqueRoots(coverRootsOf(store.devices())))) {
+                coverClear = CoverClear::Deleting;
+            } else {
+                nl::log::line("NL_COVERS_CLEARED files=0 failed=0 ms=0 start_failed");
+                coverClear = CoverClear::Idle;
+            }
+        }
+        if (coverClear != CoverClear::Idle) {  // Fortschritt als Toast, nur bei Änderung neu gebaut
+            const u32 removed = coverClearWorker.removed();
+            if (removed != coverClearToastRemoved || coverClearToastFrames-- <= 0) {
+                std::snprintf(coverToast, sizeof coverToast, nl::ui::tr(nl::ui::Str::ClearingCovers),
+                              static_cast<unsigned>(removed));
+                mainScene.showToast(coverToast);
+                coverClearToastRemoved = removed;
+                coverClearToastFrames = 90;
+            }
+        }
+        if (coverClear == CoverClear::Deleting) {
+            if (auto r = coverClearWorker.take()) {
+                nl::log::line("NL_COVERS_CLEARED files=%u failed=%u ms=%u", static_cast<unsigned>(r->removed),
+                              static_cast<unsigned>(r->failed),
+                              static_cast<unsigned>(msSince(coverClearStart)));
+                std::snprintf(coverToast, sizeof coverToast, nl::ui::tr(nl::ui::Str::CoversCleared),
+                              static_cast<unsigned>(r->removed));
+                mainScene.showToast(coverToast);
+                coverClear = CoverClear::Idle;
+            }
+        }
+        if (coverClear == CoverClear::Idle) covers.pump();  // nach update (Wünsche dieses Frames), vor draw; Freigaben erst nach GX_DrawDone des Vorframes
         if (scenes.top() == &details)
             banners.pump();
         else
@@ -2290,6 +2370,7 @@ int main(int argc, char** argv) {
                 runPendingAutostart();
             }
             if (config.debugFetchCovers) fetchCovers(false);  // nur für Tests
+            if (config.debugClearCovers == 2) startCoverClear();  // nur für Tests (M24): Abbruch eines laufenden Downloads
             if (config.debugSelfUpdate && emuJob == EmuJob::None) startSelfUpdate();  // nur für Tests (M20)
             if (!config.debugCheatFetch.empty() && !startCheatFetch(config.debugCheatFetch, false))  // nur für Tests (M15)
                 nl::log::line("NL_CHEAT_FETCH nosource");
@@ -2390,7 +2471,8 @@ int main(int argc, char** argv) {
         // M21: fehlende Cover einmal pro Sitzung still laden, sobald Scan fertig und WLAN verbunden ist.
         // Läuft gerade ein Netz-Auftrag, versucht es der nächste Frame erneut.
         if (nl::shouldAutoFetchCovers({config.coverAuto, readyReported && ctx.wifi == nl::WifiStatus::Connected,
-                                       worker.running(), net.running() || emu.running(), coverAutoRan})) {
+                                       worker.running(), net.running() || emu.running(), coverAutoRan,
+                                       coverClear != CoverClear::Idle})) {
             coverAutoRan = true;
             fetchCovers(true);
         }
@@ -2402,6 +2484,8 @@ int main(int argc, char** argv) {
     worker.cancelAndJoin();  // erst den Scan beenden, dann Laufwerke aushängen
     discDrive.shutdown();
     net.join();
+    coverClearWorker.cancel();  // M24: nicht auf das ganze Löschen warten
+    coverClearWorker.join();
     emu.join();
     cheatWorker.join();
     remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets

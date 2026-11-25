@@ -64,6 +64,7 @@ enum class AppCommand : u8 {
     ReadDisc,         // HOME-Menü (M19): Laufwerk im Hintergrund lesen
     SelfUpdate,       // Einstellungen (M20): Update aus dem GitHub-Release suchen und installieren
     RestartSelf,      // Einstellungen (M20): newlauncher von der SD neu laden
+    ToggleSort,       // A–Z-Leiste (M24): Sortierung Titel ↔ Jahr umschalten und speichern
 };
 const char* appCommandName(AppCommand c);
 

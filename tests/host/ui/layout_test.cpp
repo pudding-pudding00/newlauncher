@@ -4,6 +4,7 @@
 #include "ui/test_library.hpp"
 #include <doctest/doctest.h>
 #include <cstring>
+#include <span>
 #include <string_view>
 #include <vector>
 using namespace nl;
@@ -14,22 +15,22 @@ TEST_CASE("gridMetrics füllt die Breite exakt") {
         const GridMetrics m = gridMetrics(w);
         CHECK(m.columns == 6);
         CHECK(6 * m.tileW + 5 * m.gap + 2 * m.marginX == doctest::Approx(w));
-        CHECK(m.topBarH == 56);
-        CHECK(m.infoBarH == 72);
+        CHECK(m.topBarH == 48);
+        CHECK(m.infoBarH == 60);
     }
-    CHECK(gridMetrics(640).tileW == 88);
-    CHECK(gridMetrics(640).tileH == 123);
-    CHECK(gridMetrics(854).tileW == 104);
-    CHECK(gridMetrics(854).tileH == 146);
+    CHECK(gridMetrics(640).tileW == 99);
+    CHECK(gridMetrics(640).tileH == 139);
+    CHECK(gridMetrics(854).tileW == 128);
+    CHECK(gridMetrics(854).tileH == 179);
 }
 
 TEST_CASE("gridMetrics: Kachelhöhe folgt dem Cover-Format, Breite bleibt (M23)") {
-    CHECK(gridMetrics(854, 5.0f / 7.0f).tileH == 146);
-    CHECK(gridMetrics(854, 1.0f).tileH == 104);
-    CHECK(gridMetrics(854, 10.0f / 7.0f).tileH == 73);
-    CHECK(gridMetrics(640, 1.0f).tileH == 88);
-    CHECK(gridMetrics(640, 10.0f / 7.0f).tileH == 62);
-    CHECK(gridMetrics(854, 10.0f / 7.0f).tileW == 104);
+    CHECK(gridMetrics(854, 5.0f / 7.0f).tileH == 179);
+    CHECK(gridMetrics(854, 1.0f).tileH == 128);
+    CHECK(gridMetrics(854, 10.0f / 7.0f).tileH == 90);
+    CHECK(gridMetrics(640, 1.0f).tileH == 99);
+    CHECK(gridMetrics(640, 10.0f / 7.0f).tileH == 70);
+    CHECK(gridMetrics(854, 10.0f / 7.0f).tileW == 128);
 }
 
 TEST_CASE("fitAspectRect: zentriert, ohne Verzerrung (M23)") {
@@ -89,7 +90,7 @@ TEST_CASE("gamesFor liefert die Spiele einer Konsole bzw. Favoriten/Zuletzt") {
 namespace {
 GridModel model(int count, float width = 640) {
     GridModel g;
-    g.reset(count, gridMetrics(width), 480 - 56 - 72);
+    g.reset(count, gridMetrics(width), 480 - 48 - 60);
     return g;
 }
 }  // namespace
@@ -135,12 +136,12 @@ TEST_CASE("Richtung nach Fokusverlust nimmt den letzten Fokus wieder auf") {
 
 TEST_CASE("targetScroll hält die Fokuszeile sichtbar") {
     GridModel g = model(30);
-    const float view = 480 - 56 - 72;
+    const float view = 480 - 48 - 60;
     g.setFocus(18);  // Zeile 3
     const float s = g.targetScroll();
     const gfx::Rect r = g.tileRect(18, s);
-    CHECK(r.y >= 56);
-    CHECK(r.y + r.h <= 56 + view);
+    CHECK(r.y >= 48);
+    CHECK(r.y + r.h <= 48 + view);
     g.setFocus(0);
     CHECK(g.targetScroll() == 0);
 }
@@ -149,7 +150,7 @@ TEST_CASE("hitTest trifft Kachel, nicht Lücke, nicht außerhalb des Rasterberei
     GridModel g = model(20);
     const gfx::Rect r = g.tileRect(7, 0);
     CHECK(g.hitTest(r.x + r.w / 2, r.y + r.h / 2, 0) == 7);
-    CHECK(g.hitTest(r.x - 6, r.y + r.h / 2, 0) == -1);   // Lücke links
+    CHECK(g.hitTest(r.x - 2, r.y + r.h / 2, 0) == -1);   // Lücke links (4 px, M24)
     CHECK(g.hitTest(r.x + r.w / 2, 20, 0) == -1);        // Konsolenleiste
     CHECK(g.hitTest(r.x + r.w / 2, 470, 0) == -1);       // Infoleiste
     CHECK(g.hitTest(5, r.y + 10, 0) == -1);              // Rand
@@ -165,7 +166,7 @@ TEST_CASE("tileRect und hitTest sind bei Scroll konsistent") {
     GridModel g = model(30);
     for (float s : {0.0f, 50.0f, 135.0f}) {
         const gfx::Rect r = g.tileRect(13, s);
-        if (r.y >= 56 && r.y + 10 < 480 - 72) CHECK(g.hitTest(r.x + 10, r.y + 10, s) == 13);
+        if (r.y >= 48 && r.y + 10 < 480 - 60) CHECK(g.hitTest(r.x + 10, r.y + 10, s) == 13);
     }
 }
 
@@ -210,4 +211,60 @@ TEST_CASE("formatDate folgt der Sprache") {
     formatDate(0, 10, 11, 2026, buf, sizeof buf);
     CHECK(std::string_view(buf) == "Montag, 10. November 2026");
     setLanguage(saved);
+}
+
+// M24 Variante B: gemischte Listen, Reihe so hoch wie ihre höchste Kachel, Kacheln vertikal zentriert.
+namespace {
+GridModel mixed(std::span<const float> heights, float view = 480 - 48 - 60) {
+    GridModel g;
+    g.reset(static_cast<int>(heights.size()), gridMetrics(854), view, heights);
+    return g;
+}
+}  // namespace
+
+TEST_CASE("GridModel: Reihenhöhe = höchste Kachel, kürzere vertikal zentriert (M24)") {
+    const float h[] = {179, 90, 90, 90, 90, 90, 90, 90};
+    const GridModel g = mixed(h);
+    CHECK(g.rowHeight(0) == doctest::Approx(179));
+    CHECK(g.rowHeight(1) == doctest::Approx(90));  // letzte, unvollständige Reihe
+    const gfx::Rect a = g.tileRect(0, 0), b = g.tileRect(1, 0), c = g.tileRect(6, 0);
+    CHECK(a.h == doctest::Approx(179));
+    CHECK(b.h == doctest::Approx(90));
+    CHECK(b.y + b.h / 2 == doctest::Approx(a.y + a.h / 2));
+    CHECK(c.y == doctest::Approx(a.y + 179 + 4));
+    CHECK(a.y == doctest::Approx(48 + 4));  // kGridTopPad 4
+}
+
+TEST_CASE("GridModel: hitTest in der Lücke über einer kurzen Kachel trifft nichts (M24)") {
+    const float h[] = {179, 90, 90};
+    const GridModel g = mixed(h);
+    const gfx::Rect a = g.tileRect(0, 0), b = g.tileRect(1, 0);
+    CHECK(g.hitTest(b.x + b.w / 2, b.y + b.h / 2, 0) == 1);
+    CHECK(g.hitTest(b.x + b.w / 2, a.y + 5, 0) == -1);
+    CHECK(g.hitTest(a.x + a.w / 2, a.y + 5, 0) == 0);
+}
+
+TEST_CASE("GridModel: maxScroll aus der Summe der Reihenhöhen, Fokus macht hohe Reihe ganz sichtbar (M24)") {
+    std::vector<float> h;
+    for (int row = 0; row < 5; ++row)
+        for (int col = 0; col < 6; ++col) h.push_back(row % 2 == 0 ? 90.0f : 179.0f);
+    const float view = 480 - 48 - 60;
+    GridModel g = mixed(h, view);
+    const float content = 4 + 3 * 90 + 2 * 179 + 4 * 4 + 4;
+    CHECK(g.maxScroll() == doctest::Approx(content - view));
+    g.setFocus(19);  // Reihe 3 (hoch)
+    const gfx::Rect r = g.tileRect(19, g.targetScroll());
+    CHECK(r.y >= 48 - 0.5f);
+    CHECK(r.y + r.h <= 48 + view + 0.5f);
+    CHECK(g.hitTest(r.x + 10, r.y + 10, g.targetScroll()) == 19);
+    g.setFocus(29);
+    CHECK(g.targetScroll() == doctest::Approx(g.maxScroll()));
+}
+
+TEST_CASE("GridModel ohne Höhen: alle Reihen tileH (Konsolenliste wie M23)") {
+    GridModel g;
+    g.reset(14, gridMetrics(854), 372);
+    CHECK(g.rowHeight(0) == doctest::Approx(179));
+    CHECK(g.rowHeight(2) == doctest::Approx(179));
+    CHECK(g.tileRect(6, 0).y == doctest::Approx(g.tileRect(0, 0).y + 183));
 }

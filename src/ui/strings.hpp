@@ -42,6 +42,7 @@
     X(SortYear, "Jahr", "Year") \
     X(SortRecent, "Zuletzt gestartet", "Recently played") \
     X(SortMost, "Am häufigsten", "Most played") \
+    X(SortedBy, "Sortiert nach", "Sorted by") \
     X(StatsStarts, "%u-mal gestartet", "Started %u times") \
     X(StatsOnce, "Einmal gestartet", "Started once") \
     X(StatsLast, ", zuletzt am %s", ", last on %s") \
@@ -147,7 +148,9 @@
     X(VcNoGames, "Keine N64-Spiele in der Bibliothek.", "No N64 games in the library.") \
     X(FetchCovers, "Fehlende Cover laden", "Download missing covers") \
     X(ClearCovers, "Cover-Cache löschen", "Clear cover cache") \
-    X(ClearCoversConfirm, "A: wirklich löschen?", "A: really delete?") \
+    X(ClearCoversHold, "A halten zum Löschen …", "Hold A to delete …") \
+    X(ClearingCovers, "Cover werden gelöscht … %u", "Deleting covers … %u") \
+    X(CoversCleared, "Cover-Cache gelöscht (%u Dateien)", "Cover cache cleared (%u files)") \
     X(CoverProgress, "Cover: %u/%u", "Covers: %u/%u") \
     X(NoMissingCovers, "Keine fehlenden Cover", "No missing covers") \
     X(NoMissingCoversText, "Alle Wii- und GameCube-Spiele haben schon ein Cover.", "All Wii and GameCube games already have a cover.") \
@@ -172,6 +175,9 @@
     X(TakesEffectAfterRestart, "nach Neustart", "after restart") \
     X(CoverRegion, "Cover-Region", "Cover region") \
     X(CoverAuto, "Cover automatisch laden", "Download covers automatically") \
+    X(CoverStorage, "Cover-Speicher", "Cover storage") \
+    X(CoverStorageSd, "SD-Karte", "SD card") \
+    X(CoverStorageDevice, "Spielgerät", "Game drive") \
     X(Rescan, "Bibliothek neu scannen", "Rescan library") \
     X(SettingsHelp, "◀▶ Ändern · A Auswählen · B Zurück", "◀▶ Change · A Select · B Back") \
     X(Rescanning, "Bibliothek wird neu durchsucht …", "Rescanning library …") \

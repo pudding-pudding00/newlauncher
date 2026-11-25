@@ -58,6 +58,10 @@ bool NetWorker::start(FileSystem& fs, std::vector<CoverJob> jobs,
     return true;
 }
 
+void NetWorker::cancel() {
+    if (jobId_ != 0) service_.cancel(jobId_);
+}
+
 void NetWorker::join() {
     if (jobId_ == 0) return;
     service_.cancelAndWait(jobId_);  // wartend → entfernt, laufend → restliche Spiele auslassen

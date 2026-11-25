@@ -185,3 +185,15 @@ TEST_CASE("Zeile Cover automatisch folgt auf Cover-Region und schaltet [covers] 
     stepSetting(c, SettingRow::CoverAuto, -1);
     CHECK(c.coverAuto);
 }
+
+TEST_CASE("Zeile Cover-Speicher folgt auf Cover automatisch und schaltet SD/Gerät (M24)") {
+    CHECK(static_cast<int>(SettingRow::CoverAuto) + 1 == static_cast<int>(SettingRow::CoverStorage));
+    CHECK_FALSE(isAction(SettingRow::CoverStorage));
+    Config c;
+    CHECK(c.coverStorage == CoverStorage::Sd);
+    CHECK(settingEnabled(c, SettingRow::CoverStorage));
+    stepSetting(c, SettingRow::CoverStorage, 1);
+    CHECK(c.coverStorage == CoverStorage::Device);
+    stepSetting(c, SettingRow::CoverStorage, -1);
+    CHECK(c.coverStorage == CoverStorage::Sd);
+}

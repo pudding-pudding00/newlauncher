@@ -13,6 +13,8 @@ public:
     virtual Scene* openSearch() = 0;  // Szene, die nach dem Schließen der Leiste geöffnet wird (Tastatur)
     virtual bool hasBucket(char bucket) const = 0;
     virtual char currentBucket() const = 0;  // Buchstabe des fokussierten Spiels, sonst '#'
+    // M24: Text der Sortier-Plakette („Sortierung: Titel“); leer = keine Plakette, − tut nichts.
+    virtual std::string sortLabel() const { return {}; }
 };
 
 class JumpBar final : public Scene {
@@ -30,6 +32,7 @@ public:
     bool filterRowFocused() const { return filterRow_; }
     gfx::Rect cellRect(const UiContext& ctx, int index) const;
     gfx::Rect filterRect(const UiContext& ctx) const;  // liegt über der Buchstabenreihe
+    gfx::Rect sortRect(const UiContext& ctx) const;    // M24: links neben der Filterzeile; Breite 0 ohne Plakette
 
 private:
     void stepFilter(int dir, SceneRequests& out);

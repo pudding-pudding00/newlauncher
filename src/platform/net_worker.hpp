@@ -31,6 +31,10 @@ public:
     std::optional<DownloadSummary> take();          // einmal nach dem Ende des Laufs
     std::vector<std::string> takeFinishedStems();  // neu geladene Stämme, für CoverCache::invalidate
     std::vector<std::string> takeLogLines();
+    // M24: eigenen Auftrag abbrechen, ohne zu warten. Ein noch wartender Auftrag wird nur entfernt; deshalb das
+    // Ende über active() abfragen (nicht running()) und danach join() aufrufen (kehrt dann sofort zurück).
+    void cancel();
+    bool active() const { return jobId_ != 0 && service_.active(jobId_); }
     void join();  // eigenen Auftrag abbrechen und auf sein Ende warten; vor dem Aushängen der Laufwerke
 
 private:

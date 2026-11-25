@@ -126,6 +126,7 @@ private:
     bool filterEntryKnown_ = false;
     GridModel grid_;
     float gridWidth_ = 0.0f, gridHeight_ = 0.0f;
+    std::vector<float> tileHeights_;  // M24: Kachelhöhe je Spiel in gemischten Listen
     Tween scroll_, barScroll_, focusAnim_;
     int animFocus_ = -1;
 

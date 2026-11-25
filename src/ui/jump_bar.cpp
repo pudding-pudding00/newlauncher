@@ -8,7 +8,7 @@ namespace nl::ui {
 namespace {
 using gfx::Rect;
 
-constexpr float kMargin = 16.0f, kCellH = 44.0f, kSearchW = 84.0f, kGap = 8.0f, kInfoBarH = 72.0f, kFilterH = 36.0f;
+constexpr float kMargin = 16.0f, kCellH = 44.0f, kSearchW = 84.0f, kGap = 8.0f, kInfoBarH = 60.0f, kFilterH = 36.0f;
 
 char bucketOf(int cell) { return cell == 0 ? '#' : static_cast<char>('A' + cell - 1); }
 

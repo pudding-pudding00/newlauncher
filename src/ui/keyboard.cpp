@@ -10,7 +10,7 @@ using gfx::Rect;
 
 constexpr const char* kRows[5] = {"1234567890", "QWERTZUIOP", "ASDFGHJKL", "YXCVBNM", "\x01\x02\x03"};
 constexpr int kRowCount = 5;
-constexpr float kKeyW = 44.0f, kKeyH = 40.0f, kGap = 6.0f, kInfoBarH = 72.0f;
+constexpr float kKeyW = 44.0f, kKeyH = 40.0f, kGap = 6.0f, kInfoBarH = 60.0f;
 constexpr float kSpecialW[3] = {180.0f, 120.0f, 120.0f};
 constexpr float kFilterH = 36.0f;
 

@@ -771,7 +771,7 @@ struct MixedGames {  // je drei N64-, GB- und NES-Spiele
 };
 }  // namespace
 
-TEST_CASE_FIXTURE(Fixture, "Kachelhöhe je Konsole nach Cover-Format, gemischte Listen 5:7 (M23)") {
+TEST_CASE_FIXTURE(Fixture, "Kachelhöhe je Konsole nach Cover-Format (M23, Maße M24)") {
     ctx.width = 854;
     const MixedGames mixed;
     MainScene s(mixed.library());
@@ -781,12 +781,12 @@ TEST_CASE_FIXTURE(Fixture, "Kachelhöhe je Konsole nach Cover-Format, gemischte 
         s.selectBarForTest(i);
         const std::string label = s.barLabelText(i);
         const float h = s.grid().tileRect(0, 0).h;
-        float want = 146.0f;  // NES, Favoriten, Zuletzt
-        if (label == "N64") want = 73.0f;
-        if (label == "GB") want = 104.0f;
+        float want = 179.0f;  // NES; leere Favoriten/Zuletzt: Grundmaß
+        if (label == "N64") want = 90.0f;
+        if (label == "GB") want = 128.0f;
         if (label == "N64" || label == "GB" || label == "NES") ++seen;
         CHECK(h == want);
-        CHECK(s.grid().tileRect(0, 0).w == 104.0f);
+        CHECK(s.grid().tileRect(0, 0).w == 128.0f);
     }
     CHECK(seen == 3);
 }
@@ -816,7 +816,7 @@ TEST_CASE_FIXTURE(Fixture, "Cover: Inhaltsbereich als UV, eingepasst ohne Verzer
     CHECK(tl.v == doctest::Approx(64.0f / 280));
     CHECK(br.v == doctest::Approx(216.0f / 280));
     CHECK((br.x - tl.x) / (br.y - tl.y) == doctest::Approx(200.0 / 152.0).epsilon(0.01));
-    CHECK(br.y - tl.y < 73.0f);  // passt in die flache N64-Kachel (fokussiert leicht vergrößert)
+    CHECK(br.y - tl.y < 90.0f);  // passt in die flache N64-Kachel (fokussiert leicht vergrößert)
 }
 
 TEST_CASE_FIXTURE(Fixture, "Zeiger im unteren Randstreifen scrollt, Fokus folgt der Kachel darunter (M23)") {
@@ -852,4 +852,21 @@ TEST_CASE_FIXTURE(Fixture, "Zeiger-Randscrollen endet an der letzten Reihe (M23)
     const gfx::Rect last = s.grid().tileRect(59, s.grid().targetScroll());
     CHECK(last.y + last.h <= bottom);
     CHECK(last.y + last.h >= bottom - 20.0f);  // die letzte Reihe ist ganz zu sehen, nicht weiter
+}
+
+TEST_CASE_FIXTURE(Fixture, "Favoriten gemischt: Kachel im Cover-Format, Reihe so hoch wie die höchste (M24)") {
+    ctx.width = 854;
+    const MixedGames mixed;
+    const Game* favs[] = {&mixed.games[6], &mixed.games[0], &mixed.games[3]};  // N64, NES, GB
+    MainScene s(Library{mixed.games, favs, {}});
+    step(s, InputFrame{});
+    s.selectBarForTest(0);  // Favoriten
+    REQUIRE(std::string(s.barLabelText(0)) == std::string(tr(Str::Favorites)));
+    const gfx::Rect n64 = s.grid().tileRect(0, 0), nes = s.grid().tileRect(1, 0), gb = s.grid().tileRect(2, 0);
+    CHECK(n64.h == 90.0f);
+    CHECK(nes.h == 179.0f);
+    CHECK(gb.h == 128.0f);
+    CHECK(s.grid().rowHeight(0) == 179.0f);
+    CHECK(n64.y + n64.h / 2 == doctest::Approx(nes.y + nes.h / 2));
+    CHECK(gb.y + gb.h / 2 == doctest::Approx(nes.y + nes.h / 2));
 }

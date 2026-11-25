@@ -87,10 +87,12 @@ TEST_CASE("remoteReplyHeader: OK/ERR mit Länge und Info in einer Zeile") {
     CHECK(remoteReplyHeader(false, 0, "nicht\nerlaubt") == "ERR 0 nicht erlaubt\n");
 }
 
-TEST_CASE("hasRemoteFlag: --remote in argv ab Index 1") {
+TEST_CASE("hasRemoteFlag: --remote an jeder Stelle, auch argv[0] (wiiload schickt keinen Dateinamen mit)") {
     const char* withFlag[] = {"sd:/apps/newlauncher/boot.dol", "--remote"};
-    const char* without[] = {"--remote"};  // argv[0] ist der Pfad, nie ein Schalter
+    const char* wiiload[] = {"--remote"};
+    const char* other[] = {"sd:/apps/newlauncher/boot.dol", "--remotex"};
     CHECK(hasRemoteFlag(2, withFlag));
-    CHECK_FALSE(hasRemoteFlag(1, without));
+    CHECK(hasRemoteFlag(1, wiiload));
+    CHECK_FALSE(hasRemoteFlag(2, other));
     CHECK_FALSE(hasRemoteFlag(0, nullptr));
 }

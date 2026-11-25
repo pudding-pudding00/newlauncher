@@ -45,7 +45,7 @@ std::optional<u64> parseRemoteButtons(std::string_view names);
 // PUT darf nur Dateien unter <gerät>:/apps/newlauncher/ und unter dataRoot/ schreiben (kein „..“, kein „\“).
 bool remotePutAllowed(std::string_view path, std::string_view dataRoot);
 std::string remoteReplyHeader(bool ok, std::size_t length, std::string_view info);
-// argv[1…] enthält „--remote“ (z. B. „wiiload newlauncher.dol --remote“).
+// argv enthält „--remote“ (HBC: argv[1]; wiiload ohne Dateinamen: argv[0]).
 bool hasRemoteFlag(int argc, const char* const* argv);
 
 }  // namespace nl

@@ -24,6 +24,7 @@ struct Url {
 
 // http:// (Port 80) und https:// (Port 443), Schema ohne Groß-/Kleinschreibung, Port 1..65535 optional.
 std::optional<Url> parseUrl(std::string_view url);
+std::string formatUrl(const Url& url);
 std::string buildGetRequest(const Url& url);
 
 // M20: 301/302/303/307/308.

@@ -20,6 +20,9 @@ static_assert(nl::wtls_status::kConnect == WTLS_ERR_CONNECT);
 static_assert(nl::wtls_status::kTimeout == WTLS_ERR_TIMEOUT);
 static_assert(nl::wtls_status::kHandshake == WTLS_ERR_HANDSHAKE);
 static_assert(nl::wtls_status::kCert == WTLS_ERR_CERT);
+static_assert(nl::wtls_status::kHttp == WTLS_ERR_HTTP);
+static_assert(nl::wtls_status::kHttpLimit == WTLS_ERR_HTTP_LIMIT);
+static_assert(nl::wtls_status::kHttpRedirect == WTLS_ERR_HTTP_REDIRECT);
 static_assert(nl::kX509BadCertExpired == MBEDTLS_X509_BADCERT_EXPIRED);
 static_assert(nl::kX509BadCertFuture == MBEDTLS_X509_BADCERT_FUTURE);
 #endif

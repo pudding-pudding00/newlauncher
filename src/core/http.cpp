@@ -75,6 +75,15 @@ std::optional<Url> parseUrl(std::string_view url) {
     return out;
 }
 
+std::string formatUrl(const Url& url) {
+    std::string r = url.tls ? "https://" : "http://";
+    r += url.host;
+    if (url.port != (url.tls ? 443 : 80)) r += ":" + std::to_string(url.port);
+    if (url.path.empty()) r += '/';
+    else r += url.path;
+    return r;
+}
+
 std::string buildGetRequest(const Url& url) {
     std::string r = "GET " + url.path + " HTTP/1.1\r\nHost: " + url.host;
     if (url.port != (url.tls ? 443 : 80)) r += ":" + std::to_string(url.port);

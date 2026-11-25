@@ -212,3 +212,18 @@ TEST_CASE("redirectTarget: absolut, pfad-relativ, nie von HTTPS auf HTTP") {
     const Url plain = *parseUrl("http://lan:8000/a");
     CHECK(redirectTarget(plain, "https://lan:8443/b").has_value());  // Aufwertung ist erlaubt
 }
+
+TEST_CASE("formatUrl") {
+    CHECK(formatUrl(Url{"art.gametdb.com", 80, "/wii/cover", false}) == "http://art.gametdb.com/wii/cover");
+    CHECK(formatUrl(Url{"127.0.0.1", 8123, "/x", false}) == "http://127.0.0.1:8123/x");
+    CHECK(formatUrl(Url{"example.com", 443, "/a", true}) == "https://example.com/a");
+    CHECK(formatUrl(Url{"example.com", 8443, "/a", true}) == "https://example.com:8443/a");
+    CHECK(formatUrl(Url{"example.com", 80, "/a", true}) == "https://example.com:80/a");
+    CHECK(formatUrl(Url{"example.com", 443, "", true}) == "https://example.com/");
+    for (const char* raw : {"http://art.gametdb.com/wii/cover", "http://127.0.0.1:8123/x",
+                            "https://example.com/a?x=1", "https://example.com:8443/"}) {
+        const auto parsed = parseUrl(raw);
+        REQUIRE(parsed.has_value());
+        CHECK(formatUrl(*parsed) == raw);
+    }
+}

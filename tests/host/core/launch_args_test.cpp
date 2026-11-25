@@ -70,3 +70,12 @@ TEST_CASE("Bytes ≥ 0x80 (UTF-8-Umlaut) gehen unverändert durch") {
     const auto a = expandArgs(kDol, "{file}", "sd:/roms/gb/P\xC3\xB6kemon.gb");
     CHECK(a[1] == "P\xC3\xB6kemon.gb");
 }
+
+// M21: Startargumente prüfen (--remote, --from-game).
+TEST_CASE("hasArgFlag: an jeder Stelle, nullptr sicher") {
+    const char* a[] = {"sd:/apps/newlauncher/boot.dol", "--remote", "--from-game"};
+    CHECK(nl::hasArgFlag(3, a, "--from-game"));
+    CHECK(nl::hasArgFlag(3, a, "--remote"));
+    CHECK_FALSE(nl::hasArgFlag(2, a, "--from-game"));
+    CHECK_FALSE(nl::hasArgFlag(0, nullptr, "--from-game"));
+}

@@ -129,3 +129,12 @@ TEST_CASE("Stub-Konstanten passen zum Speicherlayout des Chainloaders") {
     CHECK(NLRS_STUB_ADDR + NLRS_STUB_MAX == NLRS_PARAMS_ADDR);
     CHECK(NLRS_PARAMS_ADDR + NLRS_PARAMS_MAX <= NLRS_STAGE_ADDR);
 }
+
+// M21: Stub auch vor Wii-Spielen, aber nur von SD und ohne Cheats (der Codehandler belegt 0x80001800).
+TEST_CASE("gameReturnStubWanted: nur von SD und ohne Cheats") {
+    CHECK(nl::gameReturnStubWanted("sd:/apps/newlauncher/boot.dol", 0));
+    CHECK_FALSE(nl::gameReturnStubWanted("sd:/apps/newlauncher/boot.dol", 16));
+    CHECK_FALSE(nl::gameReturnStubWanted("usb:/apps/newlauncher/boot.dol", 0));
+    CHECK_FALSE(nl::gameReturnStubWanted("", 0));
+    CHECK(nl::kFromGameFlag == "--from-game");
+}

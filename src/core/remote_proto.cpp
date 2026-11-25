@@ -1,5 +1,7 @@
 #include "core/remote_proto.hpp"
 
+#include "core/launch_args.hpp"
+
 #include <array>
 #include <charconv>
 
@@ -160,10 +162,7 @@ std::string remoteReplyHeader(bool ok, std::size_t length, std::string_view info
 }
 
 bool hasRemoteFlag(int argc, const char* const* argv) {
-    if (argv == nullptr) return false;
-    for (int i = 0; i < argc; ++i)  // auch argv[0]: wiiload schickt nur die Argumente, ohne Dateinamen
-        if (argv[i] != nullptr && std::string_view(argv[i]) == "--remote") return true;
-    return false;
+    return hasArgFlag(argc, argv, "--remote");
 }
 
 }  // namespace nl

@@ -6,7 +6,9 @@
 #include "core/result.hpp"
 #include "core/types.hpp"
 
+#include <cstddef>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace nl {
@@ -20,5 +22,12 @@ enum class ReturnStubError : u8 { NoExtents, NotContiguous, SectorMismatch, DolS
 // fileExtents); der Block enthält genau so viele.
 Result<std::vector<u8>, ReturnStubError> buildReturnParams(u32 dolSize, std::span<const Extent> extents,
                                                            std::span<const u8> argvBlock);
+
+// M21: Argument, mit dem der Stub newlauncher nach einem Wii-Spiel startet (IOS 58 wiederherstellen).
+inline constexpr std::string_view kFromGameFlag = "--from-game";
+
+// M21: Stub vor einem Wii-Spiel/Kanal nur, wenn newlauncher von sd:/ läuft (der Stub liest die SD) und keine
+// Cheats aktiv sind (der Codehandler des Booters belegt 0x80001800…0x80003000).
+bool gameReturnStubWanted(std::string_view selfDol, std::size_t gctBytes);
 
 }  // namespace nl

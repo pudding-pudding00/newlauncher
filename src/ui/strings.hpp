@@ -172,6 +172,9 @@
     X(TakesEffectAfterRestart, "nach Neustart", "after restart") \
     X(CoverRegion, "Cover-Region", "Cover region") \
     X(CoverAuto, "Cover automatisch laden", "Download covers automatically") \
+    X(CoverStorage, "Cover-Speicher", "Cover storage") \
+    X(CoverStorageSd, "SD-Karte", "SD card") \
+    X(CoverStorageDevice, "Spielgerät", "Game drive") \
     X(Rescan, "Bibliothek neu scannen", "Rescan library") \
     X(SettingsHelp, "◀▶ Ändern · A Auswählen · B Zurück", "◀▶ Change · A Select · B Back") \
     X(Rescanning, "Bibliothek wird neu durchsucht …", "Rescanning library …") \

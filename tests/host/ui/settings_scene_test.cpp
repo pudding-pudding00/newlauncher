@@ -152,7 +152,7 @@ TEST_CASE_FIXTURE(Fixture, "Karte mit allen Zeilen passt in 480 Zeilen") {
     const gfx::Rect first = s.rowRect(ctx, 0);
     const gfx::Rect last = s.rowRect(ctx, SettingsScene::kCount - 1);
     CHECK(first.y >= 0.0f);
-    CHECK(last.y + last.h + 24.0f + 8.0f <= 480.0f + 0.5f);
+    CHECK(last.y + last.h + 18.0f + 4.0f <= 480.0f + 0.5f);  // Hilfezeile + Rand (M24)
 }
 
 TEST_CASE_FIXTURE(Fixture, "A auf Fehlende Cover laden") {

@@ -17,6 +17,9 @@
 
 namespace nl {
 
+// M24: Cover (covers_src, cache/covers, missing.txt) auf der SD-Karte (Standard) oder auf dem Spielgerät.
+enum class CoverStorage : u8 { Sd, Device };
+
 struct Config {
     enum class Language : u8 { Auto, De, En };
     enum class LibraryDevice : u8 { Usb, Sd };
@@ -34,6 +37,7 @@ struct Config {
     bool sounds = true;
     bool banners = true;  // [ui] banners: Kanal-/GC-Banner in der Detailansicht (M18)
     std::string coverRegion = "auto";
+    CoverStorage coverStorage = CoverStorage::Sd;  // [covers] storage = sd|device (M24): Ort der Cover
     bool coverAuto = true;  // [covers] auto: fehlende Cover nach dem Scan selbst laden (M21)
     std::string emulatorRepo = std::string(defaultEmuRepo(true));  // [emulators] repo (Spec 6.9), http:// oder https://
     std::string coverBase = std::string(defaultCoverBase(true));   // [covers] base (M11): Cover-Quelle, http:// oder https://

@@ -437,3 +437,15 @@ TEST_CASE("configFromIni: [covers] retro_base, nur HTTPS-Standard mit TLS (M22)"
     // Wird nicht in die config.ini geschrieben, wie [covers] base
     CHECK(configToIniText(configFromIni(IniDoc::parse("")), "").find("retro_base") == std::string::npos);
 }
+
+TEST_CASE("configFromIni: [covers] storage (M24), Standard sd, Round-Trip") {
+    CHECK(configFromIni(IniDoc::parse("")).coverStorage == CoverStorage::Sd);
+    CHECK(configFromIni(IniDoc::parse(defaultConfigText())).coverStorage == CoverStorage::Sd);
+    CHECK(configFromIni(IniDoc::parse("[covers]\nstorage = device\n")).coverStorage == CoverStorage::Device);
+    CHECK(configFromIni(IniDoc::parse("[covers]\nstorage = usb\n")).coverStorage == CoverStorage::Sd);  // ungültig
+    CHECK(defaultConfigText().find("auto = 1\nstorage = sd\n") != std::string::npos);
+    Config c;
+    c.coverStorage = CoverStorage::Device;
+    CHECK(configFromIni(IniDoc::parse(configToIniText(c, defaultConfigText()))).coverStorage == CoverStorage::Device);
+    CHECK(configFromIni(IniDoc::parse(configToIniText(c, ""))).coverStorage == CoverStorage::Device);
+}

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "core/block_dev.hpp"
+#include "core/config.hpp"
 #include "core/fs.hpp"
 #include "core/index_file.hpp"
 #include "core/meta_db.hpp"
@@ -40,6 +41,12 @@ std::string deviceLabel(std::string_view device);
 // Wurzel für Cover- und Index-Dateien eines Geräts, passend für coverSrcPath/coverTexPath:
 // beschreibbar → "usb2:", sonst "<data>/cache/usb2" (darunter dieselbe Ordnerstruktur wie auf dem Gerät).
 std::string coverRoot(std::string_view device, bool writable, std::string_view dataDir);
+// M24: Cover-Wurzel je Gerät (Index wie devices). Sd und sdWritable: alle "sd:"; sonst coverRoot je Gerät.
+// writable[i] fehlt (kürzere Liste) = nicht beschreibbar.
+std::vector<std::string> coverRootsFor(std::span<const std::string> devices, std::span<const bool> writable,
+                                       std::string_view dataDir, CoverStorage storage, bool sdWritable);
+// Reihenfolge bleibt, Doppelte fallen weg (z. B. alle Geräte → "sd:"): Löschen und Fehllisten je Wurzel einmal.
+std::vector<std::string> uniqueRoots(std::span<const std::string> roots);
 // Ordner von index.bin: coverRoot(…) + "/newlauncher/cache".
 std::string deviceCacheDir(std::string_view device, bool writable, std::string_view dataDir);
 

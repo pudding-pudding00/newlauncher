@@ -13,11 +13,11 @@ using gfx::FontSize;
 using gfx::FontWeight;
 using gfx::Rect;
 
-constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kPadY = 8.0f, kTitleH = 24.0f, kRowH = 16.0f, kHelpH = 24.0f;  // 26 Zeilen in 480
+constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kPadY = 4.0f, kTitleH = 22.0f, kRowH = 16.0f, kHelpH = 18.0f;  // 27 Zeilen in 480 (M24)
 
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo, Str::ThemePack,  Str::Music,       Str::Volume,
-    Str::Sounds,   Str::Banners, Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::CoverAuto, Str::Rescan, Str::FetchCovers, Str::ClearCovers, Str::VcMapTitle,
+    Str::Sounds,   Str::Banners, Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::CoverAuto, Str::CoverStorage, Str::Rescan, Str::FetchCovers, Str::ClearCovers, Str::VcMapTitle,
     Str::Emulators, Str::WiiGames, Str::GcGames, Str::Parental, Str::Setup, Str::SysInfo, Str::About, Str::SelfUpdate, Str::RestartSelf,
 };
 
@@ -72,6 +72,8 @@ std::string valueText(const Config& c, SettingRow r) {
         case SettingRow::Sounds: return tr(c.sounds ? Str::On : Str::Off);
         case SettingRow::Banners: return tr(c.banners ? Str::On : Str::Off);
         case SettingRow::CoverAuto: return tr(c.coverAuto ? Str::On : Str::Off);
+        case SettingRow::CoverStorage:
+            return tr(c.coverStorage == CoverStorage::Device ? Str::CoverStorageDevice : Str::CoverStorageSd);
         case SettingRow::Library:
             switch (sourceChoice(c.libraryRules.sources)) {
                 case SourceChoice::Auto: return std::string(tr(Str::LangAuto));

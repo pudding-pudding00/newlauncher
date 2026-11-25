@@ -511,10 +511,16 @@ int main(int argc, char** argv) {
         return d != nullptr && d->writable;
     };
     auto cacheDirOf = [&](const std::string& dev) { return nl::deviceCacheDir(dev, deviceWritable(dev), data.dir); };
+    // M24: Cover liegen nach [covers] storage auf der SD (Standard) oder auf dem Spielgerät; ohne beschreibbare SD
+    // gilt das Spielgerät.
     auto coverRootsOf = [&](std::span<const std::string> devices) {
-        std::vector<std::string> roots;
-        for (const std::string& dev : devices) roots.push_back(nl::coverRoot(dev, deviceWritable(dev), data.dir));
-        return roots;
+        std::unique_ptr<bool[]> writable(new bool[devices.size() + 1]);
+        for (std::size_t i = 0; i < devices.size(); ++i) writable[i] = deviceWritable(devices[i]);
+        const bool sdWritable = deviceWritable("sd");
+        if (config.coverStorage == nl::CoverStorage::Sd && !sdWritable)
+            nl::log::line("NL_WARN Cover-Speicher SD nicht beschreibbar, Cover auf dem Spielgerät");
+        return nl::coverRootsFor(devices, std::span<const bool>(writable.get(), devices.size()), data.dir,
+                                 config.coverStorage, sdWritable);
     };
 
     // 4. meta.bin, index.bin, Favoriten, Verlauf (Spec 6.1 Schritt 5)
@@ -666,6 +672,7 @@ int main(int argc, char** argv) {
 
     // 5. Hauptbildschirm
     nl::app::CoverService covers(fs, coverRootsOf(store.devices()));
+    nl::CoverStorage coverStorageApplied = config.coverStorage;  // M24: Ort, für den covers die Wurzeln hat
     nl::ui::MainScene mainScene(libraryView());
     mainScene.setCovers(&covers);
     covers.setPerf(perf.get());
@@ -1287,31 +1294,33 @@ int main(int argc, char** argv) {
     auto fetchCovers = [&](bool silent) {
         if (!silent) nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
         if (net.running()) return;  // Emulator-Aufträge warten in derselben Warteschlange (NetService)
-        // Je Gerät: Cover landen dort, wo das Spiel liegt (oder in dessen Cache unter <data>).
+        // Cover-Wurzel je Gerät (M24: meist alle "sd:"); Spiele je eindeutiger Wurzel gesammelt, damit Ordner und
+        // Fehlliste einer gemeinsamen Wurzel nur einmal gelesen werden.
         const std::vector<std::string> roots = coverRootsOf(store.devices());
         // M22: Retro-Boxarts von libretro-thumbnails; [debug] cover_url ersetzt im Smoke beide Quellen.
         const std::string retroBase = config.debugCoverUrl.empty() ? config.retroCoverBase : config.debugCoverUrl;
         std::vector<nl::CoverJob> jobs;
         std::size_t skipped = 0;
-        for (std::size_t d = 0; d < roots.size(); ++d) {
+        for (const std::string& root : nl::uniqueRoots(roots)) {
             std::vector<const nl::Game*> games;
             for (const nl::Game& g : store.games())
-                if (g.device == d) games.push_back(&g);
+                if (g.device < roots.size() && roots[g.device] == root) games.push_back(&g);
             if (games.empty()) continue;
             // je Konsolenordner ein list() statt zwei Abfragen je Spiel
-            const auto present = nl::existingCoverFiles(fs, roots[d], !retroBase.empty());
+            const auto present = nl::existingCoverFiles(fs, root, !retroBase.empty());
             // Fehlliste (M22): der automatische Lauf überspringt, was zuletzt nicht gefunden wurde
             std::unordered_set<std::string> skip;
             if (silent) {
-                const std::string listPath = nl::missingListPath(roots[d]);
+                const std::string listPath = nl::missingListPath(root);
                 for (std::string& s : nl::parseMissingList(readText(fs, listPath.c_str(), 256u * 1024)))
                     skip.insert(std::move(s));
                 skipped += skip.size();
             }
             auto part = nl::coverDownloadJobs(games, [&](const std::string& path) { return present.count(path) > 0; },
-                                              roots[d], retroBase, &skip);
+                                              root, retroBase, &skip);
             for (nl::CoverJob& j : part) jobs.push_back(std::move(j));
         }
+        nl::orderCoverJobs(jobs);  // M24: Wii → GC → GBA → N64 → GBC → SNES → GB → NES, geräteübergreifend
         if (silent)
             nl::log::line("NL_COVER_AUTO jobs=%u skipped=%u", static_cast<unsigned>(jobs.size()),
                           static_cast<unsigned>(skipped));
@@ -2056,11 +2065,21 @@ int main(int argc, char** argv) {
                 refreshParental();
                 break;
             }
-            case nl::ui::AppCommand::SaveSettings:
+            case nl::ui::AppCommand::SaveSettings: {
                 config.themeMode = ctx.themeMode;
+                const bool storageChanged = config.coverStorage != coverStorageApplied;
                 saveConfig();
                 refreshParental();
+                if (storageChanged) {  // M24: Cover-Speicher ohne Neustart umstellen
+                    coverStorageApplied = config.coverStorage;
+                    net.join();         // Downloads schreiben sonst an den alten Ort
+                    covers.clearAll();  // Texturen frei (Vorframe ist per GX_DrawDone fertig)
+                    covers.setRoots(coverRootsOf(store.devices()));
+                    nl::log::line("NL_COVER_STORAGE %s",
+                                  config.coverStorage == nl::CoverStorage::Device ? "device" : "sd");
+                }
                 break;
+            }
             case nl::ui::AppCommand::OpenParental:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 if (parental.enabled) askPin(PinPurpose::Parental, {});
@@ -2143,7 +2162,7 @@ int main(int argc, char** argv) {
                 net.join();         // laufende Downloads abbrechen (schreiben sonst weiter nach covers_src)
                 covers.clearAll();  // Cover-Thread anhalten, Texturen frei (Vorframe ist per GX_DrawDone fertig)
                 u32 removed = 0, failed = 0;
-                for (const std::string& root : coverRootsOf(store.devices())) {
+                for (const std::string& root : nl::uniqueRoots(coverRootsOf(store.devices()))) {
                     const nl::CoverClearResult r = nl::clearCoverCache(fs, root);
                     removed += r.removed;
                     failed += r.failed;

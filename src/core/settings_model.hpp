@@ -22,7 +22,8 @@ enum class SettingRow : u8 {
     Library,
     Sort,  // Sortierung der Konsolenleisten (M17)
     CoverRegion,
-    CoverAuto,  // [covers] auto (M21)
+    CoverAuto,
+    CoverStorage,  // [covers] storage (M24)  // [covers] auto (M21)
     Rescan,
     FetchCovers,
     ClearCovers,  // M23: Cover-Cache löschen (zweimal A)

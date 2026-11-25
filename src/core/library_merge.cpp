@@ -46,6 +46,24 @@ std::string coverRoot(std::string_view device, bool writable, std::string_view d
     return std::string(dataDir) + "/cache/" + std::string(device);
 }
 
+std::vector<std::string> coverRootsFor(std::span<const std::string> devices, std::span<const bool> writable,
+                                       std::string_view dataDir, CoverStorage storage, bool sdWritable) {
+    std::vector<std::string> roots;
+    roots.reserve(devices.size());
+    for (std::size_t i = 0; i < devices.size(); ++i) {
+        if (storage == CoverStorage::Sd && sdWritable) roots.emplace_back("sd:");
+        else roots.push_back(coverRoot(devices[i], i < writable.size() && writable[i], dataDir));
+    }
+    return roots;
+}
+
+std::vector<std::string> uniqueRoots(std::span<const std::string> roots) {
+    std::vector<std::string> out;
+    for (const std::string& r : roots)
+        if (std::find(out.begin(), out.end(), r) == out.end()) out.push_back(r);
+    return out;
+}
+
 std::string deviceCacheDir(std::string_view device, bool writable, std::string_view dataDir) {
     return coverRoot(device, writable, dataDir) + "/newlauncher/cache";
 }

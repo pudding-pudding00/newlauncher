@@ -77,6 +77,7 @@ add_library(nl_core STATIC
     src/core/emu_catalog.cpp
     src/core/emu_install.cpp
     src/core/self_update.cpp
+    src/core/return_stub.cpp
     src/core/nin_cfg.cpp
     src/core/fat_chain.cpp
     src/core/wbfs_map.cpp

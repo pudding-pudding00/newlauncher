@@ -198,6 +198,8 @@ class DolphinToolsTest(unittest.TestCase):
             seen["us"] = (root / "US/GM8P01.png").read_bytes()[:8]
             seen["nes"] = (root / "Nintendo_-_Nintendo_Entertainment_System/master/Named_Boxarts/"
                            "Zelda (Europe) (Rev 1).png").read_bytes()[:8]  # M22: Retro-Cover
+            n64 = root / "Nintendo_-_Nintendo_64/master/Named_Boxarts"
+            seen["link"] = (n64 / "Super Mario 64 (Europe) (En,Fr,De).png").read_bytes()  # M24: Symlink-Text
             seen["count"] = len([p for p in root.rglob("*") if p.is_file()])
             return mock.Mock(), 12345
 
@@ -208,7 +210,8 @@ class DolphinToolsTest(unittest.TestCase):
         self.assertEqual(seen["en"], b"\x89PNG\r\n\x1a\n")
         self.assertEqual(seen["us"], b"\x89PNG\r\n\x1a\n")
         self.assertEqual(seen["nes"], b"\x89PNG\r\n\x1a\n")
-        self.assertEqual(seen["count"], 3)
+        self.assertEqual(seen["link"], b"Super Mario 64 (Europe).png")
+        self.assertEqual(seen["count"], 6)
         text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
         self.assertTrue(text.endswith("[debug]\ncover_url = http://127.0.0.1:12345\nfetch_covers = 1\n"))
         self.assertIn("[covers]\nregion = auto\nauto = 0\n", text)  # M21: Smokes laden nicht von selbst

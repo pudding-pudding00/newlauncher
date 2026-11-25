@@ -90,14 +90,22 @@ COVER_SERVER_FILES = {"EN/RMCP01.png": (160, 224, (200, 40, 40, 255)),
                       "US/GM8P01.png": (160, 224, (40, 40, 200, 255)),
                       # M22: Retro-Boxart im libretro-thumbnails-Schema (cover_url ersetzt auch die Retro-Basis)
                       "Nintendo_-_Nintendo_Entertainment_System/master/Named_Boxarts/Zelda (Europe) (Rev 1).png":
-                          (160, 224, (40, 200, 40, 255))}
+                          (160, 224, (40, 200, 40, 255)),
+                      # M24: Git-Symlink wie bei raw.githubusercontent (Text mit dem Zielnamen) …
+                      "Nintendo_-_Nintendo_64/master/Named_Boxarts/Super Mario 64 (Europe) (En,Fr,De).png":
+                          b"Super Mario 64 (Europe).png",
+                      "Nintendo_-_Nintendo_64/master/Named_Boxarts/Super Mario 64 (Europe).png":
+                          (160, 224, (200, 200, 40, 255)),
+                      # … und ein abweichender Name: libretro ergänzt „(En)“
+                      "Nintendo_-_Super_Nintendo_Entertainment_System/master/Named_Boxarts/F-Zero (Europe) (En).png":
+                          (160, 224, (200, 40, 200, 255))}
 
 
 def write_cover_server_files(root: Path) -> None:
-    for rel, (w, h, color) in COVER_SERVER_FILES.items():
+    for rel, spec in COVER_SERVER_FILES.items():
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(solid_png(w, h, color))
+        path.write_bytes(spec if isinstance(spec, bytes) else solid_png(*spec))
 
 
 # Selbst erzeugte Gecko-Codeliste (M15); "html" simuliert eine Fehlerseite statt einer Liste.

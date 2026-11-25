@@ -5,6 +5,13 @@
 
 #include <wiitls/wiitls.h>
 
+#if defined(WTLS_THREAD_CHECK) && WTLS_THREAD_CHECK
+#include <stdio.h>
+#if !defined(_WIN32)
+#include <pthread.h>
+#endif
+#endif
+
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -131,18 +138,73 @@ static bool is_wouldblock(int e) {
     return e == ERR_WOULDBLOCK;
 }
 
-int wtls_plat_resolve(const char *host, uint32_t *ipv4_be) {
-    if (!host || !*host || !ipv4_be) return WTLS_ERR_DNS;
-    if (wtls_plat_parse_ipv4(host, ipv4_be)) return WTLS_OK;
+int wtls_plat_resolve_all(const char *host, uint32_t *addrs, size_t cap, size_t *count) {
+    if (count) *count = 0;
+    if (!host || !*host || !addrs || cap == 0 || !count) return WTLS_ERR_DNS;
+    if (wtls_plat_parse_ipv4(host, &addrs[0])) {
+        *count = 1;
+        return WTLS_OK;
+    }
     struct addrinfo hints, *res = NULL;
     memset(&hints, 0, sizeof hints);
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     if (getaddrinfo(host, NULL, &hints, &res) != 0 || !res) return WTLS_ERR_DNS;
-    memcpy(ipv4_be, &((struct sockaddr_in *)res->ai_addr)->sin_addr, 4);
+    size_t n = 0;
+    for (struct addrinfo *p = res; p && n < cap; p = p->ai_next) {
+        if (p->ai_family != AF_INET || !p->ai_addr) continue;
+        uint32_t ip;
+        memcpy(&ip, &((struct sockaddr_in *)p->ai_addr)->sin_addr, 4);
+        bool dup = false;
+        for (size_t i = 0; i < n; i++) {
+            if (addrs[i] == ip) {
+                dup = true;
+                break;
+            }
+        }
+        if (!dup) addrs[n++] = ip;
+    }
     freeaddrinfo(res);
+    if (n == 0) return WTLS_ERR_DNS;
+    *count = n;
     return WTLS_OK;
 }
+
+int wtls_plat_resolve(const char *host, uint32_t *ipv4_be) {
+    if (!ipv4_be) return WTLS_ERR_DNS;
+    size_t n = 0;
+    return wtls_plat_resolve_all(host, ipv4_be, 1, &n);
+}
+
+bool wtls_plat_net_changed(void) { return false; }
+
+#if defined(WTLS_THREAD_CHECK) && WTLS_THREAD_CHECK
+static bool s_thread_bound;
+#if defined(_WIN32)
+static DWORD s_owner_tid;
+void wtls_plat_thread_bind(void) {
+    s_owner_tid = GetCurrentThreadId();
+    s_thread_bound = true;
+}
+bool wtls_plat_thread_ok(void) { return !s_thread_bound || GetCurrentThreadId() == s_owner_tid; }
+#else
+static pthread_t s_owner_tid;
+void wtls_plat_thread_bind(void) {
+    s_owner_tid = pthread_self();
+    s_thread_bound = true;
+}
+bool wtls_plat_thread_ok(void) { return !s_thread_bound || pthread_equal(s_owner_tid, pthread_self()) != 0; }
+#endif
+void wtls_plat_thread_unbind(void) { s_thread_bound = false; }
+void wtls_plat_report_thread_violation(const char *api) {
+    fprintf(stderr, "libwiitls: thread violation in %s (single-thread contract broken)\n", api);
+}
+#else
+void wtls_plat_thread_bind(void) {}
+void wtls_plat_thread_unbind(void) {}
+bool wtls_plat_thread_ok(void) { return true; }
+void wtls_plat_report_thread_violation(const char *api) { (void)api; }
+#endif
 
 /* Polls one socket; restarts on EINTR with the remaining time. */
 static int poll_one(sock_t s, short events, uint32_t timeout_ms, short *revents) {
@@ -162,9 +224,11 @@ static int poll_one(sock_t s, short events, uint32_t timeout_ms, short *revents)
     }
 }
 
-int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int *fd_out) {
+int wtls_plat_connect_abortable(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms,
+                                wtls_plat_abort_fn abort_cb, void *abort_ctx, int *fd_out) {
     if (!fd_out) return WTLS_ERR_ARG;
     *fd_out = -1;
+    if (abort_cb && abort_cb(abort_ctx)) return WTLS_ERR_CANCELLED;
     sock_t s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s == SOCK_INVALID) return WTLS_ERR_CONNECT;
     if (set_nonblocking(s) != 0) {
@@ -182,25 +246,46 @@ int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int 
             sock_close(s);
             return WTLS_ERR_CONNECT;
         }
-        short rev = 0;
-        uint64_t p0 = wtls_plat_now_us();
-        int r = poll_one(s, POLLOUT, timeout_ms, &rev);
-        wtls_plat_poll_wait_us += wtls_plat_now_us() - p0; /* counted as poll wait */
-        if (r == 0) {
-            sock_close(s);
-            return WTLS_ERR_TIMEOUT;
-        }
-        int soerr = 0;
-        socklen_t sl = sizeof soerr;
-        if (r < 0 || getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&soerr, &sl) != 0 || soerr != 0) {
-            sock_close(s);
-            return WTLS_ERR_CONNECT;
+        uint64_t deadline = wtls_plat_now_ms() + timeout_ms;
+        for (;;) {
+            if (abort_cb && abort_cb(abort_ctx)) {
+                sock_close(s);
+                return WTLS_ERR_CANCELLED;
+            }
+            uint64_t now = wtls_plat_now_ms();
+            if (now >= deadline) {
+                sock_close(s);
+                return WTLS_ERR_TIMEOUT;
+            }
+            uint64_t left = deadline - now;
+            uint32_t slice = (abort_cb && left > WTLS_POLL_SLICE_MS) ? WTLS_POLL_SLICE_MS
+                                                                     : (left > UINT32_MAX ? UINT32_MAX : (uint32_t)left);
+            short rev = 0;
+            uint64_t p0 = wtls_plat_now_us();
+            int r = poll_one(s, POLLOUT, slice, &rev);
+            wtls_plat_poll_wait_us += wtls_plat_now_us() - p0; /* counted as poll wait */
+            if (r == 0) {
+                if (abort_cb && wtls_plat_now_ms() < deadline) continue;
+                sock_close(s);
+                return WTLS_ERR_TIMEOUT;
+            }
+            int soerr = 0;
+            socklen_t sl = sizeof soerr;
+            if (r < 0 || getsockopt(s, SOL_SOCKET, SO_ERROR, (char *)&soerr, &sl) != 0 || soerr != 0) {
+                sock_close(s);
+                return WTLS_ERR_CONNECT;
+            }
+            break;
         }
     }
     int one = 1;
     (void)setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (const char *)&one, sizeof one);
     *fd_out = (int)s;
     return WTLS_OK;
+}
+
+int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int *fd_out) {
+    return wtls_plat_connect_abortable(ipv4_be, port, timeout_ms, NULL, NULL, fd_out);
 }
 
 int wtls_plat_send(int fd, const uint8_t *buf, size_t len) {

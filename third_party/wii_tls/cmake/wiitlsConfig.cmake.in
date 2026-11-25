@@ -1,0 +1,47 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+if(@_wtls_need_threads@)
+    find_dependency(Threads)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/wiitlsTargets.cmake")
+
+set_and_check(_wtls_includedir "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set_and_check(_wtls_libdir "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
+
+foreach(_lib IN ITEMS mbedtls mbedx509 tfpsacrypto)
+    if(NOT TARGET wiitls::${_lib})
+        add_library(wiitls::${_lib} STATIC IMPORTED)
+        set_target_properties(wiitls::${_lib} PROPERTIES
+            IMPORTED_LOCATION "${_wtls_libdir}/lib${_lib}.a"
+        )
+    endif()
+endforeach()
+
+# Preserve static link order and resolve the entropy symbol cycle cleanly even
+# on linkers that do not rescan static archives automatically.
+set_target_properties(wiitls::mbedx509 PROPERTIES
+    INTERFACE_LINK_LIBRARIES "wiitls::tfpsacrypto"
+)
+set_target_properties(wiitls::mbedtls PROPERTIES
+    INTERFACE_LINK_LIBRARIES "wiitls::mbedx509;wiitls::tfpsacrypto"
+)
+set_target_properties(wiitls::tfpsacrypto PROPERTIES
+    INTERFACE_LINK_LIBRARIES "wiitls::wiitls"
+)
+
+if(TARGET wiitls::wiitls)
+    set_property(TARGET wiitls::wiitls APPEND PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+        "${_wtls_includedir}"
+    )
+    set_property(TARGET wiitls::wiitls APPEND PROPERTY INTERFACE_LINK_LIBRARIES
+        "wiitls::mbedtls;wiitls::mbedx509;wiitls::tfpsacrypto"
+    )
+    set_property(TARGET wiitls::wiitls APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS
+        "MBEDTLS_CONFIG_FILE=\"wtls_mbedtls_config.h\""
+        "TF_PSA_CRYPTO_CONFIG_FILE=\"wtls_crypto_config.h\""
+    )
+endif()
+
+check_required_components(wiitls)

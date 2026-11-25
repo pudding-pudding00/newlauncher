@@ -38,7 +38,22 @@ typedef struct {
  */
 typedef int (*wtls_http_body_cb)(void *ctx, void *buf, size_t len);
 
-/** A request. Zero-initialise and set what you need. */
+/**
+ * Optional download progress callback for wtls_http_fetch().
+ *
+ * Called as response body bytes are received. @p done is the cumulative
+ * decoded byte count so far; @p total_or_minus_one is the expected length
+ * from Content-Length, or -1 if unknown (chunked, close-delimited, or gzip).
+ */
+typedef void (*wtls_http_progress_cb)(void *ctx, size_t done, int64_t total_or_minus_one);
+
+/**
+ * A request. Zero-initialise (`{0}`) and set what you need.
+ *
+ * @par Source & ABI evolution
+ * Always zero-initialise before use; new fields in 1.x minor updates are
+ * appended at the end with zero representing the backwards-compatible default.
+ */
 typedef struct {
     const char *method;              /**< NULL => "GET"; RFC 9110 token, case-sensitive */
     const char *url;                 /**< "https://host[:port][/path][?query][#fragment]" or "http://..." */
@@ -51,11 +66,14 @@ typedef struct {
     bool no_keepalive;               /**< send "Connection: close" and never pool the connection */
     bool no_gzip;                    /**< do not offer gzip; bodies are returned as sent */
     const wtls_options *tls;         /**< NULL => defaults; ALPN is always "http/1.1"; for http:// only
-                                          connect_timeout_ms and io_timeout_ms are used */
-    wtls_http_body_cb body_cb;        /**< streaming upload; mutually exclusive with body */
+                                          connect_timeout_ms, io_timeout_ms, and abort_cb/abort_ctx are used */
+    wtls_http_body_cb body_cb;        /**< streaming upload; mutually exclusive with body (when body_len == 0
+                                           and !body_chunked, sends Content-Length: 0 without invoking body_cb) */
     void *body_ctx;                   /**< opaque pointer passed to body_cb */
     bool body_chunked;                /**< with body_cb: send Transfer-Encoding: chunked (no Content-Length;
                                           the callback ends the body by returning 0) */
+    wtls_http_progress_cb progress_cb; /**< wtls_http_fetch() download progress; may be NULL */
+    void *progress_ctx;                /**< opaque pointer passed to progress_cb */
 } wtls_http_request;
 
 /** Opaque response handle. */
@@ -77,8 +95,8 @@ typedef struct {
  * always release it with wtls_http_close(). On failure *out is NULL.
  *
  * @return WTLS_OK, WTLS_ERR_ARG (bad URL, method or header), any connection
- *         error of wtls_connect(), WTLS_ERR_TIMEOUT, WTLS_ERR_IO,
- *         WTLS_ERR_HTTP, WTLS_ERR_HTTP_LIMIT, WTLS_ERR_HTTP_REDIRECT.
+ *         error of wtls_connect() (including WTLS_ERR_CANCELLED), WTLS_ERR_TIMEOUT,
+ *         WTLS_ERR_IO, WTLS_ERR_HTTP, WTLS_ERR_HTTP_LIMIT, WTLS_ERR_HTTP_REDIRECT.
  */
 wtls_status wtls_http_open(wtls_http_response **out, const wtls_http_request *req);
 
@@ -110,7 +128,8 @@ void wtls_http_close(wtls_http_response *r);
 
 /** Result of wtls_http_fetch(). */
 typedef struct {
-    int status;      /**< HTTP status */
+    int status;      /**< HTTP status (0 if the response head was not received; may still be set on
+                          post-head errors such as WTLS_ERR_HTTP_LIMIT) */
     char *body;      /**< NUL-terminated (NUL not counted in body_len); NULL on error */
     size_t body_len;
 } wtls_http_result;

@@ -31,8 +31,20 @@
 extern "C" {
 #endif
 
-/** Library version; equals the CMake project version (checked at configure time). */
-#define WTLS_VERSION "0.3.0"
+/** Library version components; equal the CMake project version (checked at configure time). */
+#define WTLS_VERSION_MAJOR 1
+#define WTLS_VERSION_MINOR 0
+#define WTLS_VERSION_PATCH 0
+/** Library version string; equals the CMake project version (checked at configure time). */
+#define WTLS_VERSION "1.0.0"
+
+/** Returns the library version string (equals WTLS_VERSION). */
+const char *wtls_version(void);
+
+/** Raw SHA-256 SubjectPublicKeyInfo (SPKI) pin length in bytes. */
+#define WTLS_SPKI_SHA256_LEN 32u
+/** Maximum number of SPKI pins per connection (primary + backup). */
+#define WTLS_SPKI_MAX_PINS 2u
 
 /** Status codes. Every error is negative; WTLS_OK is 0. */
 typedef enum {
@@ -42,6 +54,7 @@ typedef enum {
     WTLS_ERR_ARG       = -10,  /**< invalid argument (NULL, port 0, bad host name, bad CA data) */
     WTLS_ERR_STATE     = -11,  /**< wtls_init() has not been called */
     WTLS_ERR_NOMEM     = -12,  /**< out of memory */
+    WTLS_ERR_CANCELLED = -13,  /**< operation cancelled by abort_cb */
     WTLS_ERR_ENTROPY   = -20,  /**< the random generator could not be seeded */
     WTLS_ERR_CLOCK     = -21,  /**< system clock implausible; call wtls_time_sync_sntp() */
     WTLS_ERR_NET       = -30,  /**< network not initialised */
@@ -64,7 +77,23 @@ typedef struct wtls_conn wtls_conn;
 /** Opaque client certificate + private key pair for mutual TLS (mTLS). */
 typedef struct wtls_client_cred wtls_client_cred;
 
-/** Per-connection options. Zero-initialise and set what you need. */
+/**
+ * Cooperative cancellation callback.
+ *
+ * Checked before and periodically (at most every 100 ms) during blocking
+ * connect, handshake, read, write, and HTTP operations.
+ *
+ * @return true to abort the current operation with WTLS_ERR_CANCELLED.
+ */
+typedef bool (*wtls_abort_cb)(void *ctx);
+
+/**
+ * Per-connection options. Zero-initialise (`{0}`) and set what you need.
+ *
+ * @par Source & ABI evolution
+ * Always zero-initialise before use; new fields in 1.x minor updates are
+ * appended at the end with zero representing the backwards-compatible default.
+ */
 typedef struct {
     uint32_t connect_timeout_ms;    /**< 0 => 5000  */
     uint32_t handshake_timeout_ms;  /**< 0 => 10000 */
@@ -74,9 +103,16 @@ typedef struct {
                                          must stay valid until wtls_close() */
     bool no_resumption;             /**< neither use nor store session tickets */
     bool insecure_skip_verify;      /**< TESTS ONLY: disables certificate verification; implies no_resumption */
-    const wtls_client_cred *client_cred; /**< NULL => no client certificate; must stay valid (see
-                                              wtls_client_cred_free) for as long as any connection,
-                                              pooled or active, uses it */
+    const wtls_client_cred *client_cred; /**< NULL => no client certificate; connections retain an internal
+                                              reference, so wtls_client_cred_free() may be called while
+                                              connections still use it */
+    wtls_abort_cb abort_cb;         /**< NULL => no cancellation callback */
+    void *abort_ctx;                /**< opaque pointer passed to abort_cb */
+    uint8_t spki_pins[WTLS_SPKI_MAX_PINS][WTLS_SPKI_SHA256_LEN]; /**< optional SHA-256 digests of DER
+                                                                      SubjectPublicKeyInfo */
+    uint8_t n_spki_pins;            /**< 0 => disabled; 1..WTLS_SPKI_MAX_PINS => at least one cert in
+                                         the verified chain must match a pin (ignored when
+                                         insecure_skip_verify is set; > WTLS_SPKI_MAX_PINS => WTLS_ERR_ARG) */
 } wtls_options;
 
 /** Facts about an established connection (see wtls_get_info()). */
@@ -104,6 +140,14 @@ wtls_status wtls_init(void);
  * connection first. Safe to call when not initialised.
  */
 void        wtls_shutdown(void);
+
+/**
+ * Clears the DNS cache and closes all idle connections in the HTTP
+ * keep-alive pool. Call after re-initialising the network (net_deinit /
+ * net_init) or changing Wi-Fi access points; on the Wii, a change in
+ * net_gethostip() also triggers this automatically.
+ */
+void        wtls_net_reset(void);
 
 /**
  * Adds a trust anchor in addition to the built-in Mozilla CA bundle.
@@ -156,8 +200,9 @@ void wtls_client_cred_free(wtls_client_cred *cred);
  * @param opt   may be NULL for defaults.
  * @return WTLS_OK; WTLS_ERR_CLOCK when the system clock is implausible (sync it
  *         with wtls_time_sync_sntp() and retry); WTLS_ERR_DNS, WTLS_ERR_CONNECT,
- *         WTLS_ERR_TIMEOUT, WTLS_ERR_HANDSHAKE, WTLS_ERR_CERT (details in
- *         wtls_last_verify_flags()), WTLS_ERR_STATE, WTLS_ERR_ARG, WTLS_ERR_NOMEM.
+ *         WTLS_ERR_TIMEOUT, WTLS_ERR_CANCELLED, WTLS_ERR_HANDSHAKE, WTLS_ERR_CERT
+ *         (details in wtls_last_verify_flags()), WTLS_ERR_STATE, WTLS_ERR_ARG,
+ *         WTLS_ERR_NOMEM.
  *
  * WTLS_ERR_CLOCK only catches clocks before the library's build date or more
  * than 20 years after it. A clock that is off by a smaller amount shows up as

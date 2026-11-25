@@ -427,9 +427,6 @@ static void pt_jadd(pt *r, const pt *p, const pt *q) {
     fe_sq(hh, h);
     fe_mul(hhh, hh, h);
     fe_mul(v, u1, hh);
-    fe_sq(hh, h);
-    fe_mul(hhh, hh, h);
-    fe_mul(v, u1, hh);
     fe_sq(x3, rr);
     fe_add(t, v, v);
     fe_sub(x3, x3, t);

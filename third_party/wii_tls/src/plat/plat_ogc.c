@@ -8,6 +8,7 @@
 #include <gccore.h>
 #include <network.h>
 #include <ogc/ipc.h>
+#include <ogc/lwp.h>
 #include <ogc/lwp_watchdog.h>
 #include <ogc/mutex.h>
 
@@ -21,6 +22,11 @@
 #define IPC_RETRY_US 2000
 /* Poll slice while a non-blocking connect runs (two IPCs of ~135 us each). */
 #define CONNECT_SLICE_MS 5u
+/* IOS /dev/net/ip/top socket send buffer is ~4080 bytes, FIONSPACE /
+ * SO_SNDLOWAT return -22, SO_SNDTIMEO returns -109, and IOS_O_NONBLOCK
+ * corrupts streams on partial -EAGAIN even at 1024 B: cap single blocking
+ * net_send calls at 2048 B after POLLOUT (aligned, halves window drift). */
+#define OGC_SEND_MAX 2048u
 
 /* IOS poll bits and fcntl flag. */
 #define IOS_POLLIN  0x0003
@@ -46,27 +52,83 @@ uint64_t wtls_plat_now_us(void) { return (uint64_t)ticks_to_microsecs(gettime())
 uint64_t wtls_plat_poll_wait_us;
 
 static mutex_t g_dns_mutex = LWP_MUTEX_NULL;
+static uint32_t s_last_host_ip;
 
 int wtls_plat_init(void) {
-    if (net_gethostip() == 0) return WTLS_ERR_NET; /* app must call net_init() first */
+    uint32_t ip = net_gethostip();
+    if (ip == 0) return WTLS_ERR_NET; /* app must call net_init() first */
+    s_last_host_ip = ip;
     if (g_dns_mutex == LWP_MUTEX_NULL && LWP_MutexInit(&g_dns_mutex, false) < 0)
         return WTLS_ERR_INTERNAL;
     return WTLS_OK;
 }
 
-int wtls_plat_resolve(const char *host, uint32_t *ipv4_be) {
-    if (!host || !*host || !ipv4_be) return WTLS_ERR_DNS;
-    if (wtls_plat_parse_ipv4(host, ipv4_be)) return WTLS_OK;
+bool wtls_plat_net_changed(void) {
+    uint32_t ip = net_gethostip();
+    if (ip != s_last_host_ip) {
+        s_last_host_ip = ip;
+        return true;
+    }
+    return false;
+}
+
+#if defined(WTLS_THREAD_CHECK) && WTLS_THREAD_CHECK
+static lwp_t s_owner_lwp;
+static bool s_thread_bound;
+void wtls_plat_thread_bind(void) {
+    s_owner_lwp = LWP_GetSelf();
+    s_thread_bound = true;
+}
+void wtls_plat_thread_unbind(void) { s_thread_bound = false; }
+bool wtls_plat_thread_ok(void) { return !s_thread_bound || LWP_GetSelf() == s_owner_lwp; }
+void wtls_plat_report_thread_violation(const char *api) {
+    SYS_Report("libwiitls: thread violation in %s (single-thread contract broken)\n", api);
+}
+#else
+void wtls_plat_thread_bind(void) {}
+void wtls_plat_thread_unbind(void) {}
+bool wtls_plat_thread_ok(void) { return true; }
+void wtls_plat_report_thread_violation(const char *api) { (void)api; }
+#endif
+
+int wtls_plat_resolve_all(const char *host, uint32_t *addrs, size_t cap, size_t *count) {
+    if (count) *count = 0;
+    if (!host || !*host || !addrs || cap == 0 || !count) return WTLS_ERR_DNS;
+    if (wtls_plat_parse_ipv4(host, &addrs[0])) {
+        *count = 1;
+        return WTLS_OK;
+    }
     int ret = WTLS_ERR_DNS;
     /* net_gethostbyname uses static buffers: serialize it. */
     if (g_dns_mutex != LWP_MUTEX_NULL) LWP_MutexLock(g_dns_mutex);
     struct hostent *he = net_gethostbyname(host);
-    if (he && he->h_addrtype == AF_INET && he->h_addr_list && he->h_addr_list[0]) {
-        memcpy(ipv4_be, he->h_addr_list[0], 4);
-        ret = WTLS_OK;
+    if (he && he->h_addrtype == AF_INET && he->h_length == 4 && he->h_addr_list) {
+        size_t n = 0;
+        for (size_t i = 0; he->h_addr_list[i] && n < cap; i++) {
+            uint32_t ip;
+            memcpy(&ip, he->h_addr_list[i], 4);
+            bool dup = false;
+            for (size_t j = 0; j < n; j++) {
+                if (addrs[j] == ip) {
+                    dup = true;
+                    break;
+                }
+            }
+            if (!dup) addrs[n++] = ip;
+        }
+        if (n > 0) {
+            *count = n;
+            ret = WTLS_OK;
+        }
     }
     if (g_dns_mutex != LWP_MUTEX_NULL) LWP_MutexUnlock(g_dns_mutex);
     return ret;
+}
+
+int wtls_plat_resolve(const char *host, uint32_t *ipv4_be) {
+    if (!ipv4_be) return WTLS_ERR_DNS;
+    size_t n = 0;
+    return wtls_plat_resolve_all(host, ipv4_be, 1, &n);
 }
 
 static int set_nonblocking(s32 fd) {
@@ -82,9 +144,11 @@ static int poll_one(s32 fd, u32 events, uint32_t timeout_ms) {
     return r > 0 ? 1 : 0;
 }
 
-int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int *fd_out) {
+int wtls_plat_connect_abortable(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms,
+                                wtls_plat_abort_fn abort_cb, void *abort_ctx, int *fd_out) {
     if (!fd_out) return WTLS_ERR_ARG;
     *fd_out = -1;
+    if (abort_cb && abort_cb(abort_ctx)) return WTLS_ERR_CANCELLED;
     s32 fd = net_socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
     if (fd < 0) return WTLS_ERR_CONNECT;
     struct sockaddr_in sa;
@@ -104,6 +168,10 @@ int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int 
          * 0/EISCONN = connected, EALREADY/EINPROGRESS = still running. */
         uint64_t deadline = wtls_plat_now_ms() + timeout_ms;
         for (;;) {
+            if (abort_cb && abort_cb(abort_ctx)) {
+                net_close(fd);
+                return WTLS_ERR_CANCELLED;
+            }
             uint64_t now = wtls_plat_now_ms();
             if (now >= deadline) {
                 net_close(fd);
@@ -143,9 +211,13 @@ int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int 
     return WTLS_OK;
 }
 
+int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int *fd_out) {
+    return wtls_plat_connect_abortable(ipv4_be, port, timeout_ms, NULL, NULL, fd_out);
+}
+
 int wtls_plat_send(int fd, const uint8_t *buf, size_t len) {
     if (len == 0) return WTLS_ERR_ARG;
-    if (len > WTLS_PLAT_MAX_CHUNK) len = WTLS_PLAT_MAX_CHUNK;
+    if (len > OGC_SEND_MAX) len = OGC_SEND_MAX;
     /* IOS /dev/net/ip/top has a ~4080-byte socket send buffer and a bug when
      * IOS_O_NONBLOCK is set: if len exceeds the remaining space, net_send still
      * queues the partial prefix into the TCP stream and returns -EAGAIN (-11),

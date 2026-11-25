@@ -24,6 +24,7 @@ wtls_status wtls_client_cred_load(wtls_client_cred **out,
     *out = NULL;
     if (!cert || cert_len == 0 || !key || key_len == 0) return WTLS_ERR_ARG;
     if (!wtls_core_initialized()) return WTLS_ERR_STATE;
+    if (!WTLS_THREAD_GUARD("wtls_client_cred_load")) return WTLS_ERR_STATE;
 
     wtls_client_cred *c = mbedtls_calloc(1, sizeof *c);
     if (!c) return WTLS_ERR_NOMEM;
@@ -33,7 +34,7 @@ wtls_status wtls_client_cred_load(wtls_client_cred **out,
     /* A PEM blob needs its terminating NUL byte inside len (as documented
      * and as mbedtls_x509_crt_parse requires). */
     int r = mbedtls_x509_crt_parse(&c->chain, cert, cert_len);
-    if (r != 0) goto fail_arg;
+    if (r != 0 || !c->chain.raw.p) goto fail_arg;
     r = mbedtls_pk_parse_key(&c->key, key, key_len, NULL, 0);
     if (r != 0) goto fail_arg;
     /* The key must match the leaf certificate. mbedtls_pk_check_pair is
@@ -72,5 +73,7 @@ fail_arg:
 }
 
 void wtls_client_cred_free(wtls_client_cred *cred) {
+    if (!cred) return;
+    if (!WTLS_THREAD_GUARD("wtls_client_cred_free")) return;
     wtls_client_cred_release(cred);
 }

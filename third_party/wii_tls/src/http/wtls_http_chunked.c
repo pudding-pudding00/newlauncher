@@ -21,7 +21,9 @@ enum {
     S_FAILED,
 };
 
-void wtls_chunked_init(wtls_chunked *d) { memset(d, 0, sizeof *d); }
+void wtls_chunked_init(wtls_chunked *d) {
+    if (d) memset(d, 0, sizeof *d);
+}
 
 static int hexval(uint8_t c) {
     if (c >= '0' && c <= '9') return c - '0';
@@ -44,8 +46,9 @@ static void size_line_done(wtls_chunked *d) {
 
 int wtls_chunked_decode(wtls_chunked *d, uint8_t *buf, size_t len, size_t *out, size_t *rest) {
     size_t i = 0, o = 0;
-    *out = 0;
-    *rest = 0;
+    if (out) *out = 0;
+    if (rest) *rest = 0;
+    if (!d || !out || !rest || (!buf && len)) return WTLS_ERR_ARG;
     if (d->state == S_FAILED) return WTLS_ERR_HTTP;
     while (i < len && d->state != S_DONE) {
         if (d->state == S_DATA) {

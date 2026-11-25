@@ -5,6 +5,7 @@
 /* Built-in SHA-256, not PSA: this runs inside psa_crypto_init() (entropy driver).
  * Private in Mbed TLS 4.x; the version is pinned (4.1.1), so the API is stable. */
 #define MBEDTLS_DECLARE_PRIVATE_IDENTIFIERS
+#include <mbedtls/platform_util.h>
 #include <mbedtls/private/sha256.h>
 
 #include "wtls_internal.h"
@@ -68,7 +69,7 @@ int wtls_jitter_conditioned(wtls_sample_fn fn, void *ctx, uint8_t *out, size_t l
         out += n;
         len -= n;
     }
-    memset(raw, 0, sizeof raw);
-    memset(digest, 0, sizeof digest);
+    mbedtls_platform_zeroize(raw, sizeof raw);
+    mbedtls_platform_zeroize(digest, sizeof digest);
     return ret;
 }

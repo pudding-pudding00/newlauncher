@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <mbedtls/platform_util.h>
 #include <wiitls/wiitls.h>
 
 #define HOST_MAX 256
@@ -85,11 +86,11 @@ int wtls_scache_take(const char *host, uint16_t port, bool has_cred, const uint8
         memcpy(blob, s->blob, s->len);
         *len = s->len;
     }
-    memset(s, 0, sizeof *s); /* single use, and wipe the secret */
+    mbedtls_platform_zeroize(s, sizeof *s); /* single use, and wipe the secret */
     return ok ? WTLS_OK : WTLS_ERR_STATE;
 }
 
 void wtls_scache_clear(void) {
-    memset(s_slots, 0, sizeof s_slots);
+    mbedtls_platform_zeroize(s_slots, sizeof s_slots);
     s_seq = 0;
 }

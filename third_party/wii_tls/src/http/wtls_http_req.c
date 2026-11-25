@@ -32,6 +32,7 @@ static bool value_ok(const char *v) {
 }
 
 bool wtls_http_headers_have(const wtls_http_header *h, size_t n, const char *name) {
+    if (!h || !name) return false;
     for (size_t i = 0; i < n; i++)
         if (h[i].name && wtls_http_ieq(h[i].name, name)) return true;
     return false;
@@ -44,16 +45,29 @@ bool wtls_http_method_idempotent(const char *m) {
     return false;
 }
 
+#define HEAD_REQ_START 512u
+
 typedef struct {
     char *p;
     size_t len, cap;
-    bool over;
+    int err;
 } sbuf;
 
 static void add(sbuf *b, const char *s, size_t n) {
-    if (b->over || b->len + n > b->cap) {
-        b->over = true;
+    if (b->err) return;
+    if (n > WTLS_HTTP_MAX_HEAD - b->len) {
+        b->err = WTLS_ERR_ARG;
         return;
+    }
+    while (b->len + n > b->cap) {
+        size_t ncap = b->cap <= WTLS_HTTP_MAX_HEAD / 2 ? b->cap * 2 : WTLS_HTTP_MAX_HEAD;
+        char *np = realloc(b->p, ncap + 1);
+        if (!np) {
+            b->err = WTLS_ERR_NOMEM;
+            return;
+        }
+        b->p = np;
+        b->cap = ncap;
     }
     memcpy(b->p + b->len, s, n);
     b->len += n;
@@ -83,7 +97,7 @@ int wtls_http_build_head(const char *method, const wtls_url *u, const wtls_http_
             if (wtls_http_ieq(h[i].name, reserved[k])) return WTLS_ERR_ARG;
     }
 
-    sbuf b = {malloc(WTLS_HTTP_MAX_HEAD + 1), 0, WTLS_HTTP_MAX_HEAD, false};
+    sbuf b = {malloc(HEAD_REQ_START + 1), 0, HEAD_REQ_START, WTLS_OK};
     if (!b.p) return WTLS_ERR_NOMEM;
     char num[32];
 
@@ -112,9 +126,9 @@ int wtls_http_build_head(const char *method, const wtls_url *u, const wtls_http_
     for (size_t i = 0; i < n; i++) add_field(&b, h[i].name, h[i].value);
     add(&b, "\r\n", 2);
 
-    if (b.over) {
+    if (b.err != WTLS_OK) {
         free(b.p);
-        return WTLS_ERR_ARG;
+        return b.err;
     }
     b.p[b.len] = 0;
     *out = b.p;

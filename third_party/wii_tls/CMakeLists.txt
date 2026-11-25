@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(libwiitls VERSION 0.3.0 LANGUAGES C)
+project(libwiitls VERSION 1.0.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -32,6 +32,8 @@ option(WTLS_P256M "p256-m driver for P-256 (fails to build with 4.1.1 + PK)" OFF
 option(WTLS_EVEREST "X25519 via Everest/HACL* (MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED)" ON)
 option(WTLS_ACCEL "X25519 with 32-bit limbs (src/accel), hooked into Everest" ON)
 option(WTLS_ACCEL_P256 "P-256 verify with 32-bit limbs (src/accel), hooked into the builtin driver" ON)
+option(WTLS_THREAD_CHECK "Debug single-thread affinity checks (always ON in Debug builds)" OFF)
+option(WTLS_BUILD_FUZZ "Build Clang libFuzzer harnesses in tests/fuzz" OFF)
 set(WTLS_OPT O3 CACHE STRING "Optimisation level for library and Mbed TLS: O2 or O3")
 set_property(CACHE WTLS_OPT PROPERTY STRINGS O2 O3)
 if(NOT WTLS_OPT MATCHES "^O[23]$")
@@ -59,6 +61,9 @@ endif()
 if(WTLS_ACCEL_P256)
     add_compile_definitions(WTLS_ACCEL_P256)
 endif()
+if(WTLS_THREAD_CHECK OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_compile_definitions(WTLS_THREAD_CHECK=1)
+endif()
 add_compile_options(-${WTLS_OPT}) # after CMAKE_C_FLAGS_<CONFIG>: the last -O wins (Mbed TLS: below)
 
 include(FetchContent)
@@ -68,14 +73,29 @@ set(GEN_FILES OFF CACHE BOOL "" FORCE)
 set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
 set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
 set(USE_STATIC_MBEDTLS_LIBRARY ON CACHE BOOL "" FORCE)
+set(DISABLE_PACKAGE_CONFIG_AND_INSTALL ON CACHE BOOL "" FORCE)
+set(INSTALL_MBEDTLS_HEADERS OFF CACHE BOOL "" FORCE)
+set(INSTALL_TF_PSA_CRYPTO_HEADERS OFF CACHE BOOL "" FORCE)
 set(MBEDTLS_CONFIG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/config/wtls_mbedtls_config.h" CACHE FILEPATH "" FORCE)
 set(TF_PSA_CRYPTO_CONFIG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/config/wtls_crypto_config.h" CACHE FILEPATH "" FORCE)
+set(_wtls_mbedtls_extra_args)
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
+    list(APPEND _wtls_mbedtls_extra_args EXCLUDE_FROM_ALL)
+endif()
 FetchContent_Declare(mbedtls
     URL https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-4.1.1/mbedtls-4.1.1.tar.bz2
     URL_HASH SHA256=3359a349e23db3d5536fcee032ae7b2ecbfc08972fab643089b5cbf2a375c98c
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    ${_wtls_mbedtls_extra_args}
 )
 FetchContent_MakeAvailable(mbedtls)
+
+# Verify the fetched Mbed TLS source matches the pinned 4.1.x LTS branch.
+file(READ "${mbedtls_SOURCE_DIR}/include/mbedtls/build_info.h" _wtls_mb_info)
+if(NOT _wtls_mb_info MATCHES "#define MBEDTLS_VERSION_MAJOR[ \t]+4" OR
+   NOT _wtls_mb_info MATCHES "#define MBEDTLS_VERSION_MINOR[ \t]+1")
+    message(FATAL_ERROR "Expected Mbed TLS 4.1.x LTS in ${mbedtls_SOURCE_DIR}")
+endif()
 
 # gzip Content-Encoding: the inflate half of zlib, compiled with Z_PREFIX into
 # libwiitls itself (no -lz for applications, no clash with an application's zlib).
@@ -277,13 +297,21 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
-# WTLS_VERSION in the public header must match the project version.
+# WTLS_VERSION* in the public header must match the project version.
 file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/include/wiitls/wiitls.h _wtls_ver_line
      REGEX "^#define WTLS_VERSION \"[^\"]*\"")
 string(REGEX REPLACE ".*\"([^\"]*)\".*" "\\1" _wtls_ver "${_wtls_ver_line}")
 if(NOT _wtls_ver STREQUAL PROJECT_VERSION)
     message(FATAL_ERROR "WTLS_VERSION in wiitls.h is '${_wtls_ver}', project version is ${PROJECT_VERSION}")
 endif()
+foreach(_part MAJOR MINOR PATCH)
+    file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/include/wiitls/wiitls.h _wtls_p_line
+         REGEX "^#define WTLS_VERSION_${_part}[ \t]+[0-9]+")
+    string(REGEX REPLACE ".*[ \t]([0-9]+).*" "\\1" _wtls_p "${_wtls_p_line}")
+    if(NOT _wtls_p STREQUAL PROJECT_VERSION_${_part})
+        message(FATAL_ERROR "WTLS_VERSION_${_part} in wiitls.h is '${_wtls_p}', expected ${PROJECT_VERSION_${_part}}")
+    endif()
+endforeach()
 
 # ---------------------------------------------------------------------------
 # libwiitls
@@ -333,10 +361,19 @@ if(WTLS_GZIP)
     target_compile_definitions(wiitls PRIVATE Z_PREFIX WTLS_GZIP=1)
 endif()
 set_target_properties(wiitls PROPERTIES OUTPUT_NAME wiitls PREFIX lib)
+include(GNUInstallDirs)
 target_include_directories(wiitls
-    PUBLIC  ${CMAKE_CURRENT_SOURCE_DIR}/include
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(wiitls PUBLIC mbedtls mbedx509 tfpsacrypto)
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(wiitls
+    PUBLIC
+        $<BUILD_INTERFACE:mbedtls>
+        $<BUILD_INTERFACE:mbedx509>
+        $<BUILD_INTERFACE:tfpsacrypto>)
+add_library(wiitls::wiitls ALIAS wiitls)
 # tfpsacrypto calls back into libwiitls (mbedtls_platform_get_entropy): close the
 # static-link cycle so linkers that do not rescan archives still resolve it.
 target_link_libraries(tfpsacrypto INTERFACE wiitls)
@@ -353,6 +390,9 @@ if(WTLS_PLATFORM STREQUAL "host")
     target_compile_definitions(wiitls PRIVATE WTLS_PLATFORM_HOST)
     if(WIN32)
         target_link_libraries(wiitls PUBLIC ws2_32 bcrypt)
+    elseif(WTLS_THREAD_CHECK OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+        find_package(Threads REQUIRED)
+        target_link_libraries(wiitls PUBLIC Threads::Threads)
     endif()
 else()
     target_compile_definitions(wiitls PRIVATE WTLS_PLATFORM_OGC)
@@ -440,6 +480,28 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     endif()
     wtls_host_test(test_http_fuzz)
     wtls_host_test(test_http_pool)
+    if(WTLS_THREAD_CHECK OR CMAKE_BUILD_TYPE STREQUAL "Debug")
+        wtls_host_test(test_thread)
+    endif()
+
+    # Deterministic corpus regression tests for all libFuzzer harnesses (runs on every host build).
+    function(wtls_fuzz_corpus_test name corpus_dir)
+        add_executable(test_${name} tests/fuzz/${name}.c tests/fuzz/fuzz_standalone_main.c)
+        target_include_directories(test_${name} PRIVATE src)
+        target_link_libraries(test_${name} PRIVATE wiitls)
+        target_compile_definitions(test_${name} PRIVATE
+            WTLS_FUZZ_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/corpus/${corpus_dir}")
+        add_test(NAME test_${name} COMMAND test_${name})
+        set_tests_properties(test_${name} PROPERTIES PASS_REGULAR_EXPRESSION "WTLS-FUZZ DONE files=[0-9]+ fail=0")
+    endfunction()
+    wtls_fuzz_corpus_test(fuzz_http_parse http_parse)
+    wtls_fuzz_corpus_test(fuzz_http_chunked http_chunked)
+    wtls_fuzz_corpus_test(fuzz_url url)
+    wtls_fuzz_corpus_test(fuzz_content_range content_range)
+    if(WTLS_GZIP)
+        wtls_fuzz_corpus_test(fuzz_http_gzip http_gzip)
+    endif()
+    wtls_fuzz_corpus_test(fuzz_client_cred client_cred)
     add_dependencies(test_castore wtls_test_certs)
     target_compile_definitions(test_castore PRIVATE
         WTLS_TEST_CERT_DIR="${WTLS_TEST_CERT_DIR}"
@@ -453,6 +515,12 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
         target_compile_definitions(test_http PRIVATE WTLS_GZIP=1)
     endif()
     set_tests_properties(test_http PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
+    wtls_host_server_test(test_soak tests/common/soak_tests.c)
+    add_dependencies(test_soak wtls_test_certs)
+    if(WTLS_GZIP)
+        target_compile_definitions(test_soak PRIVATE WTLS_GZIP=1)
+    endif()
+    set_tests_properties(test_soak PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
     # A TLS-only application must not link the HTTP layer.
     if(CMAKE_NM)
         add_test(NAME http_not_linked_into_tls_only
@@ -462,6 +530,11 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
         # credential parsing (mbedtls_pk_parse_key and friends).
         add_test(NAME cred_parse_not_linked_without_mtls
                  COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DFILE=$<TARGET_FILE:test_plat> -DPATTERN=wtls_client_cred_
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_no_symbol.cmake)
+        # An application that does not call the HTTP helpers (url_encode /
+        # parse_content_range) must not link wtls_http_util.o.
+        add_test(NAME http_util_not_linked_without_helpers
+                 COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DFILE=$<TARGET_FILE:test_http> -DPATTERN="wtls_http_url_encode|wtls_http_parse_content_range"
                          -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_no_symbol.cmake)
     endif()
 
@@ -480,6 +553,31 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
         ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
 endif()
 
+if(WTLS_BUILD_FUZZ)
+    if(NOT WTLS_PLATFORM STREQUAL "host")
+        message(FATAL_ERROR "WTLS_BUILD_FUZZ requires WTLS_PLATFORM=host")
+    endif()
+    if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "WTLS_BUILD_FUZZ=ON requires Clang (-DCMAKE_C_COMPILER=clang)")
+    endif()
+    foreach(t wiitls wtls_zlib mbedtls mbedx509 tfpsacrypto builtin everest platform utilities extras pqcp)
+        if(TARGET ${t})
+            target_compile_options(${t} PRIVATE -fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
+        endif()
+    endforeach()
+    set(_wtls_fuzz_targets fuzz_http_parse fuzz_http_chunked fuzz_url fuzz_content_range fuzz_client_cred)
+    if(WTLS_GZIP)
+        list(APPEND _wtls_fuzz_targets fuzz_http_gzip)
+    endif()
+    foreach(ft ${_wtls_fuzz_targets})
+        add_executable(${ft} tests/fuzz/${ft}.c)
+        target_include_directories(${ft} PRIVATE src)
+        target_link_libraries(${ft} PRIVATE wiitls)
+        target_compile_options(${ft} PRIVATE -fsanitize=fuzzer,address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all)
+        target_link_options(${ft} PRIVATE -fsanitize=fuzzer,address,undefined -fno-sanitize-recover=all)
+    endforeach()
+endif()
+
 if(WTLS_PLATFORM STREQUAL "ogc")
     option(WTLS_BUILD_HWTEST "Build the Wii hardware test runner" ON)
     if(WTLS_BUILD_HWTEST)
@@ -492,5 +590,59 @@ if(WTLS_PLATFORM STREQUAL "ogc")
     option(WTLS_BUILD_EXAMPLES "Build the Wii example programs" ON)
     if(WTLS_BUILD_EXAMPLES)
         add_subdirectory(examples/https_get)
+        add_subdirectory(examples/upload_mtls_abort)
     endif()
+endif()
+
+# ---------------------------------------------------------------------------
+# Install & find_package(wiitls)
+option(WTLS_INSTALL "Install libwiitls, headers, bundled Mbed TLS archives, and CMake package" ${PROJECT_IS_TOP_LEVEL})
+if(WTLS_INSTALL)
+    include(CMakePackageConfigHelpers)
+
+    set(_wtls_need_threads FALSE)
+    if(WTLS_PLATFORM STREQUAL "host" AND NOT WIN32 AND (WTLS_THREAD_CHECK OR CMAKE_BUILD_TYPE STREQUAL "Debug"))
+        set(_wtls_need_threads TRUE)
+    endif()
+
+    install(TARGETS wiitls
+        EXPORT wiitlsTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    install(FILES
+        $<TARGET_FILE:mbedtls>
+        $<TARGET_FILE:mbedx509>
+        $<TARGET_FILE:tfpsacrypto>
+        DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/wiitls
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/config/wtls_mbedtls_config.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/config/wtls_crypto_config.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(DIRECTORY
+        ${mbedtls_SOURCE_DIR}/include/
+        ${mbedtls_SOURCE_DIR}/tf-psa-crypto/include/
+        ${mbedtls_SOURCE_DIR}/tf-psa-crypto/drivers/builtin/include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING PATTERN "*.h")
+
+    install(EXPORT wiitlsTargets
+        FILE wiitlsTargets.cmake
+        NAMESPACE wiitls::
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/wiitls)
+
+    configure_package_config_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/wiitlsConfig.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/wiitlsConfig.cmake
+        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/wiitls
+        PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_LIBDIR)
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/wiitlsConfigVersion.cmake
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMajorVersion)
+    install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/wiitlsConfig.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/wiitlsConfigVersion.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/wiitls)
 endif()

@@ -16,9 +16,12 @@ static bool unreserved(unsigned char c) {
 wtls_status wtls_http_url_encode(const char *in, size_t in_len, char *out, size_t out_size,
                                  size_t *out_len) {
     if (!in || !out_len) return WTLS_ERR_ARG;
+    if (in_len > SIZE_MAX - 1u) return WTLS_ERR_HTTP_LIMIT;
     size_t n = 0;
     for (size_t i = 0; i < in_len; i++) {
-        n += unreserved((unsigned char)in[i]) ? 1u : 3u;
+        size_t add = unreserved((unsigned char)in[i]) ? 1u : 3u;
+        if (n > SIZE_MAX - 1u - add) return WTLS_ERR_HTTP_LIMIT;
+        n += add;
     }
     if (!out) {
         *out_len = n;

@@ -5,6 +5,7 @@
 
 #include "core/config.hpp"
 #include "core/settings_model.hpp"
+#include "ui/input.hpp"
 #include "ui/scene.hpp"
 
 namespace nl::ui {
@@ -30,6 +31,7 @@ public:
     bool restartHintShown() const { return live_ != nullptr && !(live_->libraryRules.sources == bootSources_); }
     std::string valueTextFor(SettingRow row) const;  // angezeigter Wert einer Zeile (leer bei Aktionen)
     gfx::Rect rowRect(const UiContext& ctx, int row) const;
+    float holdProgress() const { return holding_ ? holdMs_ / kHoldConfirmMs : 0.0f; }  // M24: 0..1
 
 private:
     gfx::Rect cardRect(const UiContext& ctx) const;
@@ -43,7 +45,8 @@ private:
     AppCommand pendingAction_ = AppCommand::None;  // Aktion nach SaveSettings im nächsten Frame
     Console pendingConsole_ = Console::Wii;        // OpenOptions: Wii- oder GameCube-Spiele
     int focus_ = 0;
-    bool armed_ = false;  // M23: „Cover-Cache löschen“ wartet auf das zweite A
+    bool holding_ = false;  // M24: A wird auf „Cover-Cache löschen“ gehalten
+    float holdMs_ = 0.0f;
     bool keysSincePointerMove_ = false;
 };
 

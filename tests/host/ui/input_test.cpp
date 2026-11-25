@@ -262,3 +262,20 @@ TEST_CASE("Classic abstecken während ZL+ZR: kein DebugToggle beim Wiederansteck
     CHECK(m.update(RawInput{}, kDt).actions == 0);
     CHECK(countAction(m, held(both), Action::DebugToggle, 3) == 1);  // neuer Druck → einmal
 }
+
+TEST_CASE("InputMapper: confirmHeld solange A, GC-A oder Classic-A gehalten (M24)") {
+    for (nl::u64 btn : {nl::u64(RawInput::A), nl::u64(RawInput::GcA), nl::u64(RawInput::CcA)}) {
+        InputMapper m;
+        RawInput raw;
+        raw.held = btn;
+        InputFrame f = m.update(raw, 16);
+        CHECK(f.pressed(Action::Confirm));
+        CHECK(f.confirmHeld);
+        f = m.update(raw, 16);
+        CHECK_FALSE(f.pressed(Action::Confirm));
+        CHECK(f.confirmHeld);
+        raw.held = 0;
+        f = m.update(raw, 16);
+        CHECK_FALSE(f.confirmHeld);
+    }
+}

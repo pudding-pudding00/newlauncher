@@ -36,6 +36,7 @@ struct InputFrame {
     u32 actions = 0;
     bool pointerValid = false, pointerMoved = false;
     float pointerX = 0.0f, pointerY = 0.0f;
+    bool confirmHeld = false;  // M24: A (Wiimote, GC, Classic) ist in diesem Frame gedrückt (Halten zum Bestätigen)
 
     bool pressed(Action a) const { return (actions & (1u << static_cast<u32>(a))) != 0; }
 };
@@ -44,6 +45,7 @@ inline constexpr float kStickDeadZone = 0.35f;
 inline constexpr float kRepeatDelayMs = 400.0f;
 inline constexpr float kRepeatIntervalMs = 80.0f;
 inline constexpr float kPointerMoveThresholdPx = 4.0f;
+inline constexpr float kHoldConfirmMs = 1000.0f;  // M24: so lange A halten zum Bestätigen
 
 class InputMapper {
 public:

@@ -148,7 +148,7 @@
     X(VcNoGames, "Keine N64-Spiele in der Bibliothek.", "No N64 games in the library.") \
     X(FetchCovers, "Fehlende Cover laden", "Download missing covers") \
     X(ClearCovers, "Cover-Cache löschen", "Clear cover cache") \
-    X(ClearCoversConfirm, "A: wirklich löschen?", "A: really delete?") \
+    X(ClearCoversHold, "A halten zum Löschen …", "Hold A to delete …") \
     X(CoverProgress, "Cover: %u/%u", "Covers: %u/%u") \
     X(NoMissingCovers, "Keine fehlenden Cover", "No missing covers") \
     X(NoMissingCoversText, "Alle Wii- und GameCube-Spiele haben schon ein Cover.", "All Wii and GameCube games already have a cover.") \

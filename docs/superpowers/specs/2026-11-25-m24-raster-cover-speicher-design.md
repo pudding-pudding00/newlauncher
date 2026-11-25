@@ -25,10 +25,12 @@ sortiert (nicht Gerät für Gerät).
 
 ### 2. Sortierung
 Die Einstellung „Sortierung“ (Titel, Jahr, Zuletzt gespielt, Meistgespielt; Standard Titel) gibt es seit M17. Neu:
-die Taste **−** (Wiimote; Classic/GC sinngemäß) schaltet im Hauptbildschirm zwischen **Titel** und **Jahr** um und
-speichert die Wahl wie die Einstellung (`[library] sort`). Steht die Einstellung auf Zuletzt/Meistgespielt, wechselt
-− auf Titel. Kurzer Hinweis (Toast) „Sortiert nach Name“ / „Sortiert nach Jahr“. Favoriten, Zuletzt und Suche behalten
-ihre eigene Reihenfolge (wie bisher). Hilfeleiste nennt die Taste.
+eine Schnellumschaltung **Name ↔ Jahr** in der A–Z-Leiste (Taste 2 bzw. X). Dort schaltet **−** (Wiimote; L bei
+GC/Classic) um, ebenso A auf der Plakette „Sortierung: Name“ links über der Buchstabenreihe (Zeiger). Im Hauptbild-
+schirm ist − schon „vorige Konsole“ und bleibt das (Umsetzer-Entscheidung, weil die Wiimote keine freie Taste hat).
+Die Wahl wird wie die Einstellung gespeichert (`[library] sort`). Steht die Einstellung auf Zuletzt/Meistgespielt,
+wechselt die Umschaltung auf Titel. Hinweis (Toast) „Sortiert nach Name“ / „Sortiert nach Jahr“. Favoriten, Zuletzt
+und Suche behalten ihre eigene Reihenfolge (wie bisher).
 
 ### 3. Gemischte Listen im Cover-Format
 In Favoriten, Zuletzt und Suche hat jede Kachel die Höhe ihres Konsolenformats (`coverAspect`); die Spalten bleiben.
@@ -43,7 +45,7 @@ Die Konsolen-Plakette (oben links) blendet mit dem Cover aus (Deckkraft 1 − Co
 
 ### 5. Löschen ohne Hänger
 Das Löschen läuft in einem Hintergrund-Thread; der Hauptbildschirm zeichnet weiter und zeigt einen Fortschritt
-(„Cover werden gelöscht … n/N“). Ablauf: laufender Cover-Download wird abgebrochen, ohne den Hauptthread zu blockieren
+(„Cover werden gelöscht … n“, Zahl der schon gelöschten Dateien). Ablauf: laufender Cover-Download wird abgebrochen, ohne den Hauptthread zu blockieren
 (Abbruch anfordern, warten im Frame-Takt); der Cover-Cache im Speicher wird geleert; dann zählt und löscht der Thread
 die Dateien. Während des Löschens startet kein Cover-Download und kein Cover wird geladen. Ende: Log
 `NL_COVERS_CLEARED files= failed= ms=`, Toast mit Anzahl.
@@ -55,10 +57,12 @@ auf der Zeile. Das Zweimal-A aus M23 entfällt.
 
 ### 7. Kompakteres Raster
 - Spalt zwischen den Kacheln **16 → 4 px** (854) bzw. **12 → 4 px** (640).
-- Seitenrand **75 → 24 px** (854) bzw. **26 → 12 px** (640); weiterhin 6 Spalten. Kachelbreite damit
-  854: (854 − 48 − 20) / 6 = **131** px, 640: (640 − 24 − 20) / 6 = **99** px (abgerundet), 5:7-Höhe 183 bzw. 139.
+- Kachelbreite 854: **104 → 128 px** (Rand 33), 640: **88 → 99 px** (Rand 13); weiterhin 6 Spalten, Breite exakt
+  gefüllt. 5:7-Höhe 179 bzw. 139. Bei 854 passen so zwei volle 5:7-Reihen in die Höhe (Umsetzer-Entscheidung:
+  breiter ginge, dann wäre die zweite Reihe immer angeschnitten).
 - Luft über und unter dem Raster (`kGridTopPad`) **12 → 4 px**.
-- Infoleiste unten **72 → 56 px**, sofern Titel und Zeile darunter weiter passen (sonst kleinster passender Wert).
+- Konsolenleiste oben **56 → 48 px** (Pillen 8 px vom Rand), Infoleiste unten **72 → 60 px** (kleinster Wert, bei dem
+  Titel (22 px) und Zeile (16 px) und die runden Knöpfe (44 px) passen).
 - Cover-Einzug in der Kachel (`kCoverInset`) **4 → 2 px**.
 - Der Fokus (Rahmen, Vergrößerung) darf über den kleinen Spalt in Nachbarkacheln ragen; die fokussierte Kachel wird
   zuletzt gezeichnet.
@@ -91,4 +95,4 @@ NetService-Thread; FAT-Zugriffe aus dem Hintergrund-Thread wie beim Scan.
   einfaches Löschen, keine doppelten Bestände.
 
 ## Für den Umsetzer offen
-Genaue Darstellung von Fortschrittsbalken und Toast; Name der Thread-Hilfsklasse; ob die Infoleiste 56 px schafft.
+Genaue Darstellung von Fortschrittsbalken und Toast; Name der Thread-Hilfsklasse.

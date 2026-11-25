@@ -37,6 +37,8 @@ private:
     DownloadSummary run(const volatile bool& cancel);
     void log(std::string line);
     void finished(const std::string& stem);
+    // M22: <wurzel>/newlauncher/cache/covers/missing.txt je Wurzel fortführen (läuft im Netz-Thread).
+    void updateMissingLists(const std::vector<std::string>& tried, const std::vector<std::string>& missed);
 
     NetService& service_;
     u32 jobId_ = 0;

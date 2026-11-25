@@ -117,6 +117,8 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     c.emulatorRepo = sourceForBuild(repo, kDefaultEmuRepoHttp, kDefaultEmuRepoHttps, defaultEmuRepo(tls));
     const std::string_view coverBase = trim(ini.get("covers", "base"));
     c.coverBase = sourceForBuild(coverBase, kGametdbCoverBaseHttp, kGametdbCoverBaseHttps, defaultCoverBase(tls));
+    const std::string_view retroBase = trim(ini.get("covers", "retro_base"));
+    c.retroCoverBase = parseUrl(retroBase) ? std::string(retroBase) : std::string(defaultRetroCoverBase(tls));
     const std::string_view cheatSource = trim(ini.get("cheats", "source"));
     const bool cheatSourceOk = cheatSource.starts_with("https://") || cheatSource.starts_with("http://");
     c.cheatSource = std::string(cheatSourceOk ? cheatSource : defaultCheatSource(tls));

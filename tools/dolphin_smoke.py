@@ -87,7 +87,10 @@ def write_multi_layout(sd: Path) -> None:
 
 
 COVER_SERVER_FILES = {"EN/RMCP01.png": (160, 224, (200, 40, 40, 255)),
-                      "US/GM8P01.png": (160, 224, (40, 40, 200, 255))}
+                      "US/GM8P01.png": (160, 224, (40, 40, 200, 255)),
+                      # M22: Retro-Boxart im libretro-thumbnails-Schema (cover_url ersetzt auch die Retro-Basis)
+                      "Nintendo_-_Nintendo_Entertainment_System/master/Named_Boxarts/Zelda (Europe) (Rev 1).png":
+                          (160, 224, (40, 200, 40, 255))}
 
 
 def write_cover_server_files(root: Path) -> None:

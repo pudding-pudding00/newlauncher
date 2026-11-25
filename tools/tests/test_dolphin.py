@@ -196,6 +196,8 @@ class DolphinToolsTest(unittest.TestCase):
             root = Path(root)
             seen["en"] = (root / "EN/RMCP01.png").read_bytes()[:8]
             seen["us"] = (root / "US/GM8P01.png").read_bytes()[:8]
+            seen["nes"] = (root / "Nintendo_-_Nintendo_Entertainment_System/master/Named_Boxarts/"
+                           "Zelda (Europe) (Rev 1).png").read_bytes()[:8]  # M22: Retro-Cover
             seen["count"] = len([p for p in root.rglob("*") if p.is_file()])
             return mock.Mock(), 12345
 
@@ -205,7 +207,8 @@ class DolphinToolsTest(unittest.TestCase):
         start.assert_called_once()
         self.assertEqual(seen["en"], b"\x89PNG\r\n\x1a\n")
         self.assertEqual(seen["us"], b"\x89PNG\r\n\x1a\n")
-        self.assertEqual(seen["count"], 2)
+        self.assertEqual(seen["nes"], b"\x89PNG\r\n\x1a\n")
+        self.assertEqual(seen["count"], 3)
         text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
         self.assertTrue(text.endswith("[debug]\ncover_url = http://127.0.0.1:12345\nfetch_covers = 1\n"))
         self.assertIn("[covers]\nregion = auto\nauto = 0\n", text)  # M21: Smokes laden nicht von selbst

@@ -37,6 +37,7 @@ struct Config {
     bool coverAuto = true;  // [covers] auto: fehlende Cover nach dem Scan selbst laden (M21)
     std::string emulatorRepo = std::string(defaultEmuRepo(true));  // [emulators] repo (Spec 6.9), http:// oder https://
     std::string coverBase = std::string(defaultCoverBase(true));   // [covers] base (M11): Cover-Quelle, http:// oder https://
+    std::string retroCoverBase = std::string(defaultRetroCoverBase(true));  // [covers] retro_base (M22), leer = aus
     std::string cheatSource = std::string(defaultCheatSource(true));  // [cheats] source (M15): {id6}-Vorlage, leer = kein Laden
     ParentalConfig parental;                 // [parental] (M17, Spec v2 10.5): PIN als Hash, nie im Klartext
     std::optional<u8> wiiIos;                // [wii] ios (M13, Spec 6.2): auto → nullopt, sonst Slot 200–255

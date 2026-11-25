@@ -1289,18 +1289,32 @@ int main(int argc, char** argv) {
         if (net.running()) return;  // Emulator-Aufträge warten in derselben Warteschlange (NetService)
         // Je Gerät: Cover landen dort, wo das Spiel liegt (oder in dessen Cache unter <data>).
         const std::vector<std::string> roots = coverRootsOf(store.devices());
+        // M22: Retro-Boxarts von libretro-thumbnails; [debug] cover_url ersetzt im Smoke beide Quellen.
+        const std::string retroBase = config.debugCoverUrl.empty() ? config.retroCoverBase : config.debugCoverUrl;
         std::vector<nl::CoverJob> jobs;
+        std::size_t skipped = 0;
         for (std::size_t d = 0; d < roots.size(); ++d) {
             std::vector<const nl::Game*> games;
             for (const nl::Game& g : store.games())
                 if (g.device == d) games.push_back(&g);
             if (games.empty()) continue;
-            const auto present = nl::existingCoverFiles(fs, roots[d]);  // vier Ordnerlisten statt zwei je Spiel
+            // je Konsolenordner ein list() statt zwei Abfragen je Spiel
+            const auto present = nl::existingCoverFiles(fs, roots[d], !retroBase.empty());
+            // Fehlliste (M22): der automatische Lauf überspringt, was zuletzt nicht gefunden wurde
+            std::unordered_set<std::string> skip;
+            if (silent) {
+                const std::string listPath = nl::missingListPath(roots[d]);
+                for (std::string& s : nl::parseMissingList(readText(fs, listPath.c_str(), 256u * 1024)))
+                    skip.insert(std::move(s));
+                skipped += skip.size();
+            }
             auto part = nl::coverDownloadJobs(games, [&](const std::string& path) { return present.count(path) > 0; },
-                                              roots[d]);
+                                              roots[d], retroBase, &skip);
             for (nl::CoverJob& j : part) jobs.push_back(std::move(j));
         }
-        if (silent) nl::log::line("NL_COVER_AUTO jobs=%u", static_cast<unsigned>(jobs.size()));
+        if (silent)
+            nl::log::line("NL_COVER_AUTO jobs=%u skipped=%u", static_cast<unsigned>(jobs.size()),
+                          static_cast<unsigned>(skipped));
         nl::log::line("NL_COVER_DL_START jobs=%u", static_cast<unsigned>(jobs.size()));
         if (jobs.empty() && silent) return;
         if (jobs.empty()) {

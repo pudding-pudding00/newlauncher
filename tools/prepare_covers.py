@@ -19,7 +19,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pngfile import PNG_SIGNATURE  # noqa: E402
 from prepare_meta import RETRO  # noqa: E402
 
-THUMB_BASE = "https://thumbnails.libretro.com"
+# GitHub-Spiegel; thumbnails.libretro.com liefert seit 2026-11 nur 404 (wie der Launcher, M22).
+THUMB_BASE = "https://raw.githubusercontent.com/libretro-thumbnails"
 _RESERVED = set('&*/:`<>?\\|"')
 
 
@@ -31,7 +32,8 @@ def thumbnail_name(stem: str) -> str:
 def thumbnail_url(console: str, stem: str) -> str:
     system = RETRO[console][2]
     name = urllib.parse.quote(thumbnail_name(stem) + ".png", safe="")
-    return f"{THUMB_BASE}/{urllib.parse.quote(system, safe='')}/Named_Boxarts/{name}"
+    repo = system.replace(" ", "_")
+    return f"{THUMB_BASE}/{urllib.parse.quote(repo, safe='')}/master/Named_Boxarts/{name}"
 
 
 def _default_fetch(url: str) -> bytes | None:

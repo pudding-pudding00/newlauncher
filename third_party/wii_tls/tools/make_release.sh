@@ -26,6 +26,9 @@ FETCH=()
 if [ -d build-host/_deps/mbedtls-src ]; then # reuse the fetched sources if present
     FETCH=(-DFETCHCONTENT_SOURCE_DIR_MBEDTLS="$ROOT/build-host/_deps/mbedtls-src")
 fi
+if [ -d build-host/_deps/zlib-src ]; then
+    FETCH+=(-DFETCHCONTENT_SOURCE_DIR_ZLIB="$ROOT/build-host/_deps/zlib-src")
+fi
 
 rm -rf "$BUILD" "$OUT" "dist/$NAME.zip"
 cmake -S . -B "$BUILD" -G "Unix Makefiles" \
@@ -34,7 +37,7 @@ cmake -S . -B "$BUILD" -G "Unix Makefiles" \
     "${FETCH[@]}" >/dev/null
 cmake --build "$BUILD" -j8 >/dev/null # includes tools/check_ct.cmake
 
-if [ ${#FETCH[@]} -gt 0 ]; then MBED="$ROOT/build-host/_deps/mbedtls-src"; else MBED="$BUILD/_deps/mbedtls-src"; fi
+if [ -d build-host/_deps/mbedtls-src ]; then MBED="$ROOT/build-host/_deps/mbedtls-src"; else MBED="$BUILD/_deps/mbedtls-src"; fi
 [ -d "$MBED/include/mbedtls" ] || { echo "Mbed TLS sources not found ($MBED)" >&2; exit 1; }
 
 mkdir -p "$OUT/lib" "$OUT/include" "$OUT/example" "$OUT/docs" "$OUT/licenses"
@@ -48,6 +51,7 @@ cp "$BUILD/_deps/mbedtls-build/library/libmbedtls.a" \
 # Headers: libwiitls, the public Mbed TLS / TF-PSA-Crypto headers (for the
 # MBEDTLS_X509_BADCERT_* flags) and the configuration they were built with.
 cp -r include/wiitls "$OUT/include/"
+test -f "$OUT/include/wiitls/http.h" || { echo "include/wiitls/http.h missing from the package" >&2; exit 1; }
 for d in "$MBED/include" "$MBED/tf-psa-crypto/include" \
          "$MBED/tf-psa-crypto/drivers/builtin/include" \
          "$BUILD/_deps/mbedtls-build/tf-psa-crypto/include"; do
@@ -86,10 +90,14 @@ clean:
 EOF
 
 # Documentation and licences
-cp README.md "$OUT/"
+cp README.md CHANGELOG.md "$OUT/"
 cp docs/usage.md docs/performance.md "$OUT/docs/"
 cp LICENSE "$OUT/licenses/LICENSE-libwiitls.txt"
 cp "$MBED/LICENSE" "$OUT/licenses/LICENSE-mbedtls.txt"
+if grep -q '^WTLS_GZIP:BOOL=ON' "$BUILD/CMakeCache.txt"; then # zlib's inflate is compiled into libwiitls.a
+    if [ -d build-host/_deps/zlib-src ]; then ZLIB="$ROOT/build-host/_deps/zlib-src"; else ZLIB="$BUILD/_deps/zlib-src"; fi
+    cp "$ZLIB/LICENSE" "$OUT/licenses/LICENSE-zlib.txt"
+fi
 cat > "$OUT/licenses/NOTICE-ca-bundle.txt" <<'EOF'
 libwiitls embeds the Mozilla CA certificate bundle (via curl's extract,
 https://curl.se/docs/caextract.html). That data is licensed under the
@@ -100,7 +108,7 @@ libwiitls $VERSION, prebuilt for the Wii (devkitPPC, libogc)
 commit:   $(git rev-parse HEAD)$(git diff --quiet HEAD -- . ':!dist' || echo " (with local changes)")
 built:    $(date -u +%Y-%m-%dT%H:%MZ)
 compiler: $("$DEVKITPPC/bin/powerpc-eabi-gcc" --version | head -1)
-options:  $(grep -E '^WTLS_(EVEREST|ACCEL|OPT|BN_ASM|P256M):' "$BUILD/CMakeCache.txt" | sed 's/:[A-Z]*=/=/' | tr '\n' ' ')
+options:  $(grep -E '^WTLS_(EVEREST|ACCEL|OPT|BN_ASM|P256M|GZIP):' "$BUILD/CMakeCache.txt" | sed 's/:[A-Z]*=/=/' | tr '\n' ' ')
 EOF
 
 # Self-check: build the example from the package alone

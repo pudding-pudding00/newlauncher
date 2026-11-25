@@ -3,7 +3,7 @@
 Modern TLS for Wii homebrew: a small C library that gives homebrew apps
 HTTPS-grade connections to today's Internet: **TLS 1.3** (TLS 1.2 fallback),
 certificate verification against the embedded Mozilla CA bundle, session
-resumption and DNS caching for low latency.
+resumption and DNS caching for low latency, and an HTTP/1.1 client on top.
 
 Built on [Mbed TLS 4.1.1](https://github.com/Mbed-TLS/mbedtls) (with
 TF-PSA-Crypto) and libogc.
@@ -16,42 +16,70 @@ TF-PSA-Crypto) and libogc.
 - TLS 1.3 session tickets (8-entry cache) and a 16-entry DNS cache: a second
   connection to the same host skips DNS and the certificate-chain work.
 - Blocking API with timeouts, plus a non-blocking mode for your own poll loop.
+- HTTP/1.1 client (`<wiitls/http.h>`, own parser): `https://` and `http://`,
+  streaming or whole-body `wtls_http_fetch`, chunked bodies, gzip
+  decompression (zlib inflate, built in), keep-alive pool with reuse,
+  redirects with credential stripping across origins.
 - Entropy from the timing jitter of IOS IPC round trips, measured on a Wii
   ([docs/ios-socket-behaviour.md](docs/ios-socket-behaviour.md); health-tested,
   SHA-256 conditioned, fails closed if the tests fail; `wtls_init` spends
   about 400 ms seeding); SNTP clock sync for the often-wrong Wii RTC.
 
 > **Validated on a Wii.** The hardware suites pass on a real Wii over Wi-Fi:
-> `plat`, `crypto`, `time`, `tls` and `realworld`, the last against public HTTPS
-> servers. With the default build, a full TLS 1.3 handshake costs about 66 ms of
-> CPU (81 ms wall) and a resumed one about 14 ms. ChaCha20-Poly1305 runs at
-> 24 MB/s, and an X25519 key exchange (keygen, export, agreement) takes 4.6 ms.
-> The full matrix and the targets that are still missed are in
-> [docs/benchmarks.md](docs/benchmarks.md).
+> `plat`, `crypto`, `time`, `tls`, `http` and `realworld`, the last against
+> public HTTPS servers. With the default build, a full TLS 1.3 handshake costs
+> about 66 ms of CPU (81 ms wall), a resumed one about 14 ms, and a further
+> HTTP request over a kept-alive connection about 2.4 ms CPU (5.3 ms wall).
+> ChaCha20-Poly1305 runs at 24 MB/s, and an X25519 key exchange (keygen,
+> export, agreement) takes 4.6 ms. The full matrix and the targets that are
+> still missed are in [docs/benchmarks.md](docs/benchmarks.md).
 
 **Documentation:** [usage guide](docs/usage.md) (setup, threading, error
 handling, resumption, non-blocking I/O, limits) ·
 [performance](docs/performance.md) · API reference in
-[include/wiitls/wiitls.h](include/wiitls/wiitls.h). Prebuilt packages for
+[include/wiitls/wiitls.h](include/wiitls/wiitls.h) and
+[include/wiitls/http.h](include/wiitls/http.h) · [changelog](CHANGELOG.md). Prebuilt packages for
 devkitPPC are on the GitHub releases page.
 
 ## Quick example
 
 ```c
-#include <wiitls/wiitls.h>
+#include <wiitls/http.h>
 
 /* on your network thread, after net_init() */
 wtls_init();
+wtls_http_request req = {0};
+req.url = "https://example.com/";
+wtls_http_result res;
+int r = wtls_http_fetch(&req, 0, &res);    /* whole body, up to 1 MiB */
+if (r == WTLS_ERR_CLOCK) {                 /* Wii clock wrong: sync and retry */
+    wtls_time_sync_sntp(NULL, 3000);
+    r = wtls_http_fetch(&req, 0, &res);
+}
+if (r == WTLS_OK) {
+    printf("%d, %u bytes\n%s\n", res.status, (unsigned)res.body_len, res.body);
+    wtls_http_result_free(&res);
+} else {
+    printf("%s\n", wtls_strerror(r));
+}
+```
+
+Streaming, keep-alive, redirects and gzip are in the
+[usage guide](docs/usage.md#5-http-requests).
+
+### Raw TLS
+
+For protocols other than HTTP, use the TLS connection directly:
+
+```c
+#include <wiitls/wiitls.h>
+
 static const char *const alpn[] = {"http/1.1", NULL};
 wtls_options opt = {0};
 opt.alpn = alpn;
 
 wtls_conn *c;
 int r = wtls_connect(&c, "example.com", 443, &opt);
-if (r == WTLS_ERR_CLOCK) {                 /* Wii clock wrong: sync and retry */
-    wtls_time_sync_sntp(NULL, 3000);
-    r = wtls_connect(&c, "example.com", 443, &opt);
-}
 if (r == WTLS_OK) {
     const char req[] = "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n";
     wtls_write(c, req, sizeof req - 1);
@@ -66,7 +94,7 @@ if (r == WTLS_OK) {
 ```
 
 A complete Wii program (spinner on the UI thread, all networking on an LWP
-thread, second request showing `resumed=yes`) is in
+thread, second request showing `reused=yes`) is in
 [examples/https_get](examples/https_get/main.c):
 
 ```bash
@@ -163,6 +191,9 @@ buffered while the socket is not readable.
 | `WTLS_ERR_CLOSED` | -35 | peer closed cleanly (close_notify): normal end of stream |
 | `WTLS_ERR_HANDSHAKE` | -40 | TLS handshake failed |
 | `WTLS_ERR_CERT` | -41 | certificate rejected; `wtls_last_verify_flags()` has the `MBEDTLS_X509_BADCERT_*` bits. `EXPIRED`/`FUTURE` on an unsynced Wii usually means a wrong clock: sync with SNTP and retry once |
+| `WTLS_ERR_HTTP` | -50 | malformed or unsupported HTTP response, corrupt gzip body |
+| `WTLS_ERR_HTTP_LIMIT` | -51 | response head, field count or `wtls_http_fetch` body over its limit |
+| `WTLS_ERR_HTTP_REDIRECT` | -52 | too many redirects, bad `Location`, or redirect `https` → `http` |
 | `WTLS_ERR_INTERNAL` | -99 | unexpected library error |
 
 `wtls_strerror(code)` gives a short text. The full API documentation is in
@@ -192,6 +223,8 @@ itself (and verifies the SHA-256); otherwise it uses the checked-in
 - libwiitls itself: [Apache-2.0](LICENSE), Copyright 2026 pudding-pudding00.
 - [Mbed TLS / TF-PSA-Crypto](https://github.com/Mbed-TLS/mbedtls): Apache-2.0
   (fetched at build time, statically linked).
+- [zlib](https://zlib.net/) 1.3.1 inflate (with `WTLS_GZIP`, the default):
+  zlib license (fetched at build time, compiled into `libwiitls.a`).
 - Mozilla CA certificate bundle (`data/cacert.pem`, `src/gen/ca_bundle.c`):
   [MPL-2.0](https://www.mozilla.org/MPL/2.0/).
 

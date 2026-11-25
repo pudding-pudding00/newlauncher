@@ -35,9 +35,9 @@ cmake -S . -B build-wii -DCMAKE_TOOLCHAIN_FILE=$DEVKITPRO/cmake/Wii.cmake && cma
 python tools/hwtest.py --wii <IP> --dol build-wii/tests/hw/wtls_hwtest.dol --suite selftest
 ```
 
-Seit Release v0.1.0 (`9b1689b`) ist der vendorte Stand gleich dem Upstream-Tag; der errno-Fix (siehe unten)
-ist upstream. Laut Release sind die Suiten dort schon auf einer echten Wii gelaufen. Hier genügt es, sie auf
-dieser Wii einmal zu wiederholen.
+Seit Release v0.2.0 (`3962086`) ist der vendorte Stand gleich dem Upstream-Tag; der errno-Fix (seit v0.1.0,
+siehe unten) ist upstream. Laut Release sind die Suiten dort schon auf einer echten Wii gelaufen. Hier
+genügt es, sie auf dieser Wii einmal zu wiederholen.
 
 | Suite | Ergebnis | Notiz |
 |---|---|---|
@@ -46,6 +46,7 @@ dieser Wii einmal zu wiederholen.
 | `time` | | |
 | `entropy` | | |
 | `tls` (gegen den PC-Testserver) | | |
+| `http` (gegen den PC-Testserver) | | |
 | `realworld` | | |
 
 Seit v0.1.0 stehen in `third_party/wii_tls/src/plat/plat.h` upstream die errno-Werte von newlib (EAGAIN 11,

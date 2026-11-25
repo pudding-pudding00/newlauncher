@@ -25,6 +25,11 @@ struct wtls_conn {
     int bio_err;             /* WTLS_ERR_IO once the transport failed */
 };
 
+/* Called first by wtls_shutdown (then reset to NULL). The HTTP layer sets it
+ * to wtls_http_pool_flush when it pools a connection, so TLS-only programs do
+ * not link the HTTP code. */
+extern void (*wtls_shutdown_hook)(void);
+
 /* true between a successful wtls_init and wtls_shutdown. */
 bool wtls_core_initialized(void);
 

@@ -19,6 +19,9 @@ const char *wtls_strerror(int status) {
     case WTLS_ERR_CLOSED:    return "connection closed by peer";
     case WTLS_ERR_HANDSHAKE: return "TLS handshake failed";
     case WTLS_ERR_CERT:      return "certificate verification failed";
+    case WTLS_ERR_HTTP:      return "malformed HTTP response";
+    case WTLS_ERR_HTTP_LIMIT: return "HTTP limit exceeded";
+    case WTLS_ERR_HTTP_REDIRECT: return "HTTP redirect refused or too many redirects";
     case WTLS_ERR_INTERNAL:  return "internal error";
     default:                 return "unknown error";
     }
@@ -72,8 +75,15 @@ wtls_status wtls_init(void) {
     return WTLS_OK;
 }
 
+void (*wtls_shutdown_hook)(void);
+
 void wtls_shutdown(void) {
     if (!s_initialized) return;
+    if (wtls_shutdown_hook) {
+        void (*hook)(void) = wtls_shutdown_hook;
+        wtls_shutdown_hook = NULL;
+        hook(); /* closes pooled connections while the TLS state still exists */
+    }
     wtls_castore_free();
     wtls_scache_clear(); /* holds resumption secrets */
     wtls_dns_clear();

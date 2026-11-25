@@ -158,8 +158,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     # libpng für die Cover (pacman -S ppc-libpng); FreeType bringt sie meist schon mit.
     pkg_check_modules(PNG REQUIRED libpng)
 
-    # HTTPS über wii_tls (M11, Spec v2 4.1): vendort nach third_party/wii_tls (tools/vendor_wii_tls.py), holt
-    # Mbed TLS 4.1.1 per FetchContent mit festem SHA256. Ohne NL_TLS baut der Launcher wie bisher nur HTTP.
+    # HTTPS und HTTP/1.1 über wii_tls v0.2.0 (M11, Spec v2 4.1): vendort nach third_party/wii_tls
+    # (tools/vendor_wii_tls.py), holt Mbed TLS 4.1.1 und zlib 1.3.1 (Inflate mit Z_PREFIX für gzip) per
+    # FetchContent mit festem SHA256. Ohne NL_TLS baut der Launcher wie bisher nur HTTP.
     option(NL_TLS "HTTPS über wii_tls" ON)
     if(NL_TLS)
         set(WTLS_PLATFORM ogc CACHE STRING "" FORCE)
@@ -172,6 +173,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         set(WTLS_EVEREST ON CACHE BOOL "" FORCE)
         set(WTLS_ACCEL ON CACHE BOOL "" FORCE)
         set(WTLS_OPT O3 CACHE STRING "" FORCE)
+        set(WTLS_GZIP ON CACHE BOOL "" FORCE)
         # Mbed TLS 4.1.1 ruft cmake_minimum_required mit einer Version < 3.10 auf, neuere CMake-Versionen
         # warnen dafür. Die Mindest-Policy-Version hebt nur den Upstream-Code an; danach wieder aus.
         set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
@@ -181,6 +183,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         # nur für dieses Fremdziel abgeschaltet, unser Code bleibt bei 0 Warnungen.
         if(TARGET mbedx509)
             target_compile_options(mbedx509 PRIVATE -Wno-format-truncation)
+        endif()
+        # zlib 1.3.1 benennt bei Z_PREFIX alle Symbole außer z_errmsg um; ohne Umbenennung kollidiert
+        # wtls_zlib mit dem statischen portlibs-libz (FreeType/libpng). Nur dieses Fremdziel anpassen.
+        if(TARGET wtls_zlib)
+            target_compile_definitions(wtls_zlib PRIVATE z_errmsg=wtls_z_errmsg)
         endif()
     endif()
 

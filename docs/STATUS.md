@@ -1,6 +1,6 @@
 # Projektstand (Übergabe)
 
-Stand: 2026-11-25, M20 (Direktstart, Rückkehr, Fernsteuerung, Selbst-Update) abgeschlossen. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
+Stand: 2026-11-25, M21 (Rückkehr aus Wii-Spielen in newlauncher, Cover automatisch) umgesetzt, Hardware-Abnahme offen. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
 
 ## Erledigt
 
@@ -14,7 +14,8 @@ Stand: 2026-11-25, M20 (Direktstart, Rückkehr, Fernsteuerung, Selbst-Update) ab
 | – | Übergabe-Dokumentation (`AGENTS.md`, `STATUS.md`, `CLAUDE.md`) | #27 |
 | M19 | Weitere Startwege: optische Discs (Wii & GC über Nintendont), EmuNAND & Kanäle, vWii-Feinschliff | #28 |
 | – | Emulator-Verwaltung „Alle installieren“, WLAN-Zustand in der Infoleiste | #30, #31 |
-| M20 | Direktstart von ROMs, Rückkehr-Stub, Fernsteuerung (TCP 4300), Selbst-Update, wii_tls **v0.2.0** mit HTTP/1.1-Client | Branch `feat/m20-direktstart` |
+| M20 | Direktstart von ROMs, Rückkehr-Stub, Fernsteuerung (TCP 4300), Selbst-Update, wii_tls **v0.2.0** mit HTTP/1.1-Client | #33 |
+| M21 | „Wii-Menü“ im Wii-Spiel führt über den Rückkehr-Stub zurück in newlauncher; Cover werden nach dem Start automatisch geladen (`[covers] auto`) | Branch `feat/m21-rueckkehr-cover` |
 
 Die CI (`.github/workflows/build.yml`) baut Wii mit und ohne TLS und führt die Host-Tests aus.
 
@@ -40,9 +41,12 @@ Spec `docs/superpowers/specs/2026-11-25-m20-direktstart-design.md`, Abnahme
   Slot 249 ist nachweislich d2x (`BlockIOSReload` gelingt).
 - **Upstream `pudding-pudding00/wii_tls`:** `z_errmsg` kollidiert trotz `Z_PREFIX` (zlib 1.3.1). Hier per Define
   `z_errmsg=wtls_z_errmsg` umgangen, upstream melden.
-- **Wunsch des Nutzers (2026-11-25):** Im Wii-Spiel „Wii-Menü“ soll zurück in newlauncher führen. Geht nur über
-  `returnTo` auf eine Title-ID, also mit einem Forwarder-Kanal auf dem NAND. Der steht in Spec v1 und v2 unter
-  „Nicht-Ziele“. Heute möglich: `return_to = hbc` (Rückkehr in den HBC).
+- **M21 (2026-11-25):** „Wii-Menü“ im Wii-Spiel führt zurück in newlauncher: Der Booter biegt `ES_LaunchTitle` in
+  `__OSLaunchMenu` auf den Rückkehr-Stub bei `0x80001800` um, newlauncher startet mit `--from-game`, hebt die
+  d2x-Reload-Sperre auf und lädt IOS 58. Cover lädt newlauncher nach dem Scan bei verbundenem WLAN selbst
+  (`[covers] auto = 1`). Abnahme: [acceptance/m21-wii.md](acceptance/m21-wii.md), alles **ungeprüft**. Offene
+  Prüfpunkte: d2x-Entsperrung (Modus 0), AHBPROT nach dem Reload (GC-Start, G5), ob Spiele `0x80001800–0x80003000`
+  unberührt lassen. Grenzen: nicht mit Cheats, nicht für NAND-Kanäle (Start ohne Booter).
 
 **Hinweise für die Arbeit:**
 

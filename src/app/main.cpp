@@ -1279,8 +1279,9 @@ int main(int argc, char** argv) {
     char coverToast[48] = "";
     u32 coverToastDone = ~0u;
     int coverToastFrames = 0;
-    auto fetchCovers = [&]() {
-        nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
+    // silent (M21, [covers] auto): automatischer Lauf nach dem Start, ohne Dialog „Keine fehlenden Cover“.
+    auto fetchCovers = [&](bool silent) {
+        if (!silent) nl::log::line("NL_CMD %s", nl::ui::appCommandName(nl::ui::AppCommand::FetchCovers));
         if (net.running()) return;  // Emulator-Aufträge warten in derselben Warteschlange (NetService)
         // Je Gerät: Cover landen dort, wo das Spiel liegt (oder in dessen Cache unter <data>).
         const std::vector<std::string> roots = coverRootsOf(store.devices());
@@ -1295,7 +1296,9 @@ int main(int argc, char** argv) {
                                               roots[d]);
             for (nl::CoverJob& j : part) jobs.push_back(std::move(j));
         }
+        if (silent) nl::log::line("NL_COVER_AUTO jobs=%u", static_cast<unsigned>(jobs.size()));
         nl::log::line("NL_COVER_DL_START jobs=%u", static_cast<unsigned>(jobs.size()));
+        if (jobs.empty() && silent) return;
         if (jobs.empty()) {
             dialog.open(nl::ui::tr(nl::ui::Str::NoMissingCovers), nl::ui::tr(nl::ui::Str::NoMissingCoversText));
             scenes.push(&dialog);
@@ -1681,6 +1684,7 @@ int main(int argc, char** argv) {
     bool readyReported = false;
     bool coversReported = false;
 #ifndef NL_SELFTEST
+    bool coverAutoRan = false;  // M21: automatischer Cover-Lauf in dieser Sitzung gestartet
     bool wifiProbeStarted = false;
     u64 nextWifiProbeMs = 0;
 #endif
@@ -2108,7 +2112,7 @@ int main(int argc, char** argv) {
                 if (req.game != nullptr) requestLaunch(*req.game);
                 break;
             case nl::ui::AppCommand::FetchCovers:
-                fetchCovers();
+                fetchCovers(false);
                 break;
             case nl::ui::AppCommand::OpenEmulators:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
@@ -2247,7 +2251,7 @@ int main(int argc, char** argv) {
                 emuDebugPending.clear();  // Thread startet nicht: nichts zu warten
                 runPendingAutostart();
             }
-            if (config.debugFetchCovers) fetchCovers();  // nur für Tests
+            if (config.debugFetchCovers) fetchCovers(false);  // nur für Tests
             if (config.debugSelfUpdate && emuJob == EmuJob::None) startSelfUpdate();  // nur für Tests (M20)
             if (!config.debugCheatFetch.empty() && !startCheatFetch(config.debugCheatFetch, false))  // nur für Tests (M15)
                 nl::log::line("NL_CHEAT_FETCH nosource");
@@ -2344,6 +2348,13 @@ int main(int argc, char** argv) {
                 netService.startWifiProbe();
                 nextWifiProbeMs = nowMs + (ctx.wifi == nl::WifiStatus::Connected ? 5000u : 15000u);
             }
+        }
+        // M21: fehlende Cover einmal pro Sitzung still laden, sobald Scan fertig und WLAN verbunden ist.
+        // Läuft gerade ein Netz-Auftrag, versucht es der nächste Frame erneut.
+        if (nl::shouldAutoFetchCovers({config.coverAuto, readyReported && ctx.wifi == nl::WifiStatus::Connected,
+                                       worker.running(), net.running() || emu.running(), coverAutoRan})) {
+            coverAutoRan = true;
+            fetchCovers(true);
         }
 #endif
 #ifdef NL_SELFTEST

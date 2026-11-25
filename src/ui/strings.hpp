@@ -169,6 +169,7 @@
     X(DeviceSd, "SD", "SD") \
     X(TakesEffectAfterRestart, "nach Neustart", "after restart") \
     X(CoverRegion, "Cover-Region", "Cover region") \
+    X(CoverAuto, "Cover automatisch laden", "Download covers automatically") \
     X(Rescan, "Bibliothek neu scannen", "Rescan library") \
     X(SettingsHelp, "◀▶ Ändern · A Auswählen · B Zurück", "◀▶ Change · A Select · B Back") \
     X(Rescanning, "Bibliothek wird neu durchsucht …", "Rescanning library …") \

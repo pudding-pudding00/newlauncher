@@ -17,7 +17,7 @@ constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kTitleH = 24.0f, kRowH = 16.0f
 
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo, Str::ThemePack,  Str::Music,       Str::Volume,
-    Str::Sounds,   Str::Banners, Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::Rescan, Str::FetchCovers, Str::VcMapTitle,
+    Str::Sounds,   Str::Banners, Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::CoverAuto, Str::Rescan, Str::FetchCovers, Str::VcMapTitle,
     Str::Emulators, Str::WiiGames, Str::GcGames, Str::Parental, Str::Setup, Str::SysInfo, Str::About, Str::SelfUpdate, Str::RestartSelf,
 };
 
@@ -70,6 +70,7 @@ std::string valueText(const Config& c, SettingRow r) {
         }
         case SettingRow::Sounds: return tr(c.sounds ? Str::On : Str::Off);
         case SettingRow::Banners: return tr(c.banners ? Str::On : Str::Off);
+        case SettingRow::CoverAuto: return tr(c.coverAuto ? Str::On : Str::Off);
         case SettingRow::Library:
             switch (sourceChoice(c.libraryRules.sources)) {
                 case SourceChoice::Auto: return std::string(tr(Str::LangAuto));

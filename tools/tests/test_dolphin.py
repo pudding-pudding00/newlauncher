@@ -208,6 +208,21 @@ class DolphinToolsTest(unittest.TestCase):
         self.assertEqual(seen["count"], 2)
         text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
         self.assertTrue(text.endswith("[debug]\ncover_url = http://127.0.0.1:12345\nfetch_covers = 1\n"))
+        self.assertIn("[covers]\nregion = auto\nauto = 0\n", text)  # M21: Smokes laden nicht von selbst
+
+    def test_smoke_cover_auto_turns_on_auto_without_fetch_covers(self):
+        self._fake_dolphin("raise SystemExit(0)\n")
+        with mock.patch("dolphin_smoke.start_cover_server", return_value=(mock.Mock(), 12345)):
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--timeout", "2", "--cover-server", "--cover-auto"])
+        text = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertIn("[covers]\nregion = auto\nauto = 1\n", text)
+        self.assertTrue(text.endswith("[debug]\ncover_url = http://127.0.0.1:12345\n"))
+
+    def test_smoke_cover_auto_needs_cover_server(self):
+        with self.assertRaises(SystemExit):
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--cover-auto"])
 
     def test_smoke_cheat_server_serves_generated_codes_or_html(self):
         self._fake_dolphin("raise SystemExit(0)\n")
@@ -260,7 +275,8 @@ class DolphinToolsTest(unittest.TestCase):
         self.assertEqual(rc, 1)  # NL_WIZARD done fehlt
         data = self.user / "SDSync/newlauncher"
         self.assertFalse((data / "config.ini").exists())
-        self.assertEqual((data / "debug.ini").read_text(encoding="utf-8"), "[debug]\nwizard = accept\nperf = 1\n")
+        self.assertEqual((data / "debug.ini").read_text(encoding="utf-8"), "[debug]\nwizard = accept\nperf = 1\n"
+                         "cover_url = http://127.0.0.1:9\n")  # M21: Cover-Autostart nicht ins Internet
 
     def test_smoke_without_fresh_data_removes_stale_debug_ini(self):
         self._fake_dolphin("raise SystemExit(0)\n")

@@ -959,3 +959,26 @@ TEST_CASE_FIXTURE(Fixture, "Fokus-Kachel ragt höchstens um ihren Vergrößerung
     CHECK(cover->clip.y >= s.grid().viewTop() - tile.h * 0.08f);     // … aber nur um den Rand
     CHECK(cover->clip.y + cover->clip.h <= s.grid().viewTop() + s.grid().viewHeight() + tile.h * 0.08f);
 }
+
+TEST_CASE_FIXTURE(Fixture, "Untere Taskbar überlagert Spielauswahl bei Zeiger, Fokus-Cover bleibt über der Leiste") {
+    const ManyGames many(20);
+    MainScene s(many.library());
+    DetailsScene details;
+    s.setDetails(&details, nullptr);
+    step(s, InputFrame{});
+    const float viewBottom = s.grid().viewTop() + s.grid().viewHeight();
+    // Zeiger knapp über der Taskbar auf einer Kachel der unteren Reihe → Kachel fokussiert
+    const gfx::Rect r = s.grid().tileRect(6, 0.0f);
+    const float tileY = r.y + r.h < viewBottom ? r.y + r.h - 2.0f : viewBottom - 2.0f;
+    step(s, pointer(r.x + r.w / 2, tileY));
+    CHECK(s.focusIndex() == 6);
+    // Zeiger wandert in die untere Taskbar (leere Fläche) → Kachel wird abgewählt, Confirm öffnet kein Spiel
+    step(s, pointer(ctx.width / 2, viewBottom + 4.0f));
+    CHECK(s.focusIndex() == -1);
+    CHECK(step(s, pointerAction(ctx.width / 2, viewBottom + 4.0f, Action::Confirm)).push == nullptr);
+    // Zahnrad in der Taskbar lässt sich direkt treffen
+    const gfx::Rect gear = s.gearRect(ctx);
+    step(s, pointer(gear.x + gear.w / 2, gear.y + gear.h / 2));
+    CHECK(step(s, pointerAction(gear.x + gear.w / 2, gear.y + gear.h / 2, Action::Confirm)).command ==
+          AppCommand::CycleTheme);
+}

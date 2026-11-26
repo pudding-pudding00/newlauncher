@@ -99,7 +99,7 @@ public:
     void drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, gfx::Rect r, bool focused) const;
 
 private:
-    enum class Hover : u8 { None, Home, Gear, Bar, Wifi };
+    enum class Hover : u8 { None, Home, Gear, Bar, Wifi, InfoBar };
 
     void selectBar(int index, float width, float height);
     void applyCurrentFilter(std::string_view keepKey);

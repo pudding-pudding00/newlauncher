@@ -1,67 +1,67 @@
-# Hinweise für KI-Agenten (alle Harnesses)
+# Agent Guidelines (All Harnesses)
 
-Diese Datei gilt für jedes Agenten-Werkzeug (Claude Code, Codex, Cursor, …). Den aktuellen Projektstand und
-die offenen Aufgaben findest du in [docs/STATUS.md](docs/STATUS.md). Lies sie zuerst.
+This file applies to every AI agent harness (Claude Code, Codex, Cursor, Antigravity, etc.). For current project status and open tasks, see [docs/STATUS.md](docs/STATUS.md). Read it first.
 
-## Kommunikation
+## Language & Public Repository Rules
 
-- Antworte auf Deutsch.
-- UI-Texte gibt es immer auf Deutsch **und** Englisch.
+- **GitHub & Repository Language:** All GitHub-facing artifacts — commit messages, PR titles and descriptions, documentation, issues, and new code comments — must be in **English**.
+- **Public Repository Hygiene:** This is a **public** repository. Never commit personal data, local LAN IPs, MAC addresses, local machine/user paths, OAuth client IDs/secrets, tokens, or private configuration files. Use generic placeholders (e.g. `<wii-ip>`, `<repo-root>`) in docs.
+- **In-App UI:** User-facing UI strings in the launcher itself must still support both German **and** English (`src/ui/strings.hpp`).
 
-## Arbeitsweise
+## Workflow
 
-- Spec → Plan → Umsetzung. Die Specs liegen unter `docs/superpowers/specs/`, die Pläne unter `docs/superpowers/plans/`. Die Spec ist bindend.
-- Jeder Meilenstein liefert drei Dinge: Host-Tests für alles in `core/`, Dolphin-Smokes (wo Dolphin das Verhalten zeigt) und eine Hardware-Liste unter `docs/acceptance/mNN-wii.md`.
-- TDD: erst einen Test schreiben, der fehlschlägt, dann den Code.
-- Arbeite selbstständig weiter. Nach einem fertigen Schritt nicht auf Bestätigung warten.
-- PRs selbst mergen, sobald die CI grün ist und die Prüfung gemacht ist: `gh pr merge N --merge`. Kein Auto-Merge, kein Force-Push. Arbeit läuft auf einem Feature-Branch, nie direkt auf `main`.
-- Die CI nicht in Schleifen abfragen. Einmal blockierend warten mit `gh run watch <id> --exit-status`.
+- **Spec → Plan → Implementation.** Specs live under `docs/superpowers/specs/`, plans under `docs/superpowers/plans/`. The spec is binding.
+- Every milestone delivers three things: host unit tests for everything in `core/`, Dolphin smokes (where Dolphin exercises the behavior), and a hardware acceptance checklist under `docs/acceptance/mNN-wii.md`.
+- **TDD:** Write a failing test first, then implement the code.
+- Work autonomously and continue after completed steps without waiting for confirmation unless a destructive/hardware-write rule applies.
+- Merge PRs once CI is green and review is complete: `gh pr merge N --merge`. No auto-merge, no force-push. Always work on a feature branch, never directly on `main`.
+- Do not poll CI in a loop. Wait once, blockingly, with `gh run watch <id> --exit-status`.
 
-## Harte Regeln
+## Hard Rules
 
-- **Spieldateien:**
-  - Niemals ROMs, ISOs oder WADs einchecken.
-  - Keine fremden Banner-Dateien ins Repo.
-  - Kein Common Key im Quellcode.
+- **Game files:**
+  - Never commit ROMs, ISOs, or WADs.
+  - Do not commit third-party banner files.
+  - No Common Key in source code.
 - **Dolphin:**
-  - Nur mit `-u` und dem Dev-User `../wii_tools/dolphin-user`.
-  - Die private Dolphin-Konfiguration nie anfassen.
-  - Keine breiten Prozess-Kills.
-- **Echte Wii:**
-  - Vor jedem Kopieren auf die SD-Karte den Nutzer fragen.
-  - Kein Softmod ohne bekannte System-Menü-Version und MAC-Adresse.
-- **Privatsphäre:**
-  - Die E-Mail-Adresse des Nutzers bleibt privat.
-  - Die PIN der Kindersicherung wird nie geloggt.
-  - Der Launcher schreibt nie in SYSCONF.
+  - Only invoke with `-u` and the dev user directory `../wii_tools/dolphin-user`.
+  - Never touch the user's private Dolphin configuration.
+  - No broad process kills.
+- **Real Wii Hardware:**
+  - Always ask the user before copying/writing anything to the Wii SD card.
+  - Always ask the user before the first write to real Wii NAND (and recommend a BootMii NAND backup).
+  - No softmodding without known System Menu version and MAC address.
+- **Privacy:**
+  - Never log user email addresses, OAuth tokens/codes, or parental control PINs.
+  - The launcher never writes to SYSCONF.
 - **wii_tls** (`third_party/wii_tls`):
-  - `wtls_*`-Aufrufe laufen nur im NetService-Thread.
-  - Kein Rückfall von HTTPS auf HTTP.
-  - Kein Schalter, der die Zertifikatsprüfung abschaltet.
-  - Keine privaten Schlüssel im Repo.
-  - Aktualisieren nur über `python tools/vendor_wii_tls.py <checkout> --rev <tag>`.
+  - `wtls_*` calls run only on the `NetService` thread.
+  - Never fall back from HTTPS to HTTP.
+  - Never add a switch that disables certificate verification.
+  - Never commit private keys.
+  - Update only via `python tools/vendor_wii_tls.py <checkout> --rev <tag>`.
 - **Code:**
-  - `src/core/` bindet kein `<ogc/...>` ein, damit es auf dem Host testbar bleibt.
-  - Kein `throw` (keine Exceptions), kein RTTI.
-  - Der Wii-Build muss mit **0 Warnungen** durchlaufen, mit TLS (`python tools/build_wii.py`) und ohne TLS (`--no-tls`).
-- **Fremdmaterial:**
-  - Fremde Quellen (Spikes, Referenz-Code) bleiben außerhalb des Repos.
-  - Heruntergeladene Dateien bekommen einen eigenen Ordner. Python-Skripte darauf laufen mit `python -I`.
+  - `src/core/` must not include `<ogc/...>` so it stays host-testable.
+  - No `throw` (exceptions disabled), no RTTI.
+  - Wii builds must compile with **0 warnings**, both with TLS (`python tools/build_wii.py`) and without TLS (`--no-tls`).
+- **Third-party material:**
+  - External references/spikes stay outside the repository.
+  - Downloaded files get their own folder. Python scripts on them run with `python -I`.
 
-## Commits und PRs
+## Commits & PRs
 
-- Commit-Nachrichten im Stil `feat: …`, `fix: …`, `docs: …`, `chore: …`, deutsch.
-- Der Nutzer arbeitet hauptsächlich mit Claude Code, das seine eigene Zuschreibung (`Co-Authored-By`) anhängt. Andere Harnesses nutzen ihre eigene.
+- Conventional commit style in English: `feat: …`, `fix: …`, `docs: …`, `chore: …`.
+- Each harness appends its own `Co-Authored-By` trailer if applicable.
 
-## Wichtige Befehle
+## Key Commands
 
 ```bash
-cmake --preset host && cmake --build --preset host && ctest --preset host   # Host-Tests (core/)
-python -m unittest discover -s tools/tests                                  # Tool-Tests
-python tools/build_wii.py            # Wii-Build mit TLS  → build/wii/newlauncher.dol
-python tools/build_wii.py --no-tls   # Wii-Build ohne TLS → build/wii-notls/
+cmake --preset host && cmake --build --preset host && ctest --preset host   # Host tests (core/ & ui/)
+python -m unittest discover -s tools/tests                                  # Python tool tests
+python tools/build_wii.py            # Wii build with TLS    -> build/wii/newlauncher.dol
+python tools/build_wii.py --no-tls   # Wii build without TLS -> build/wii-notls/
 python tools/check_licenses.py build/wii
-python tools/dolphin_smoke.py --marker NL_… [--debug key=value …]           # Smoke in Dolphin
-python tools/wii_deploy.py E: [--perf on|off] [--remote on|off]             # SD-Karte bespielen (vorher fragen!)
-python tools/wii_deploy.py --wiiload <IP>                                   # DOL per wiiload in den RAM der Wii
+python tools/dolphin_smoke.py --marker NL_… [--debug key=value …]           # Smoke test in Dolphin
+python tools/wii_deploy.py E: [--perf on|off] [--remote on|off]             # Deploy to SD card (ask first!)
+python tools/wii_deploy.py --wiiload <wii-ip>                               # Load DOL into Wii RAM via wiiload
 ```

@@ -1,5 +1,5 @@
 # Claude Code
 
-Alle Regeln für Agenten stehen in AGENTS.md, der Projektstand in docs/STATUS.md.
+All agent guidelines are in [AGENTS.md](AGENTS.md), and the current project status is in [docs/STATUS.md](docs/STATUS.md).
 
 @AGENTS.md

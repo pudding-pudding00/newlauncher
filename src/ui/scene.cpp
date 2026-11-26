@@ -23,6 +23,7 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::OpenAbout: return "open_about";
         case AppCommand::OpenSysInfo: return "open_sysinfo";
         case AppCommand::SaveSysInfo: return "save_sysinfo";
+        case AppCommand::WifiReconnect: return "wifi_reconnect";
         case AppCommand::OpenSetup: return "open_setup";
         case AppCommand::SetupNetTest: return "setup_net_test";
         case AppCommand::FinishSetup: return "finish_setup";

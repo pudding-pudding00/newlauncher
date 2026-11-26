@@ -30,6 +30,7 @@ public:
     void update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) override;
     void draw(const UiContext& ctx, gfx::DrawList& dl) override;
     void setHomeMenu(Scene* home) { home_ = home; }
+    void setWifiScene(Scene* wifi) { wifi_ = wifi; }  // M25: Klick aufs WLAN-Symbol öffnet sie
     // Neue Bibliothek (z. B. nach dem Hintergrund-Scan): Leisten-Eintrag und Fokus bleiben per
     // Art/Konsole bzw. Spiel-Schlüssel erhalten, wenn möglich. focusKey muss VOR der Änderung am
     // LibraryStore mit focusedKey() geholt werden: danach zeigen die alten Game-Zeiger ins Leere,
@@ -97,7 +98,7 @@ public:
     void drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, gfx::Rect r, bool focused) const;
 
 private:
-    enum class Hover : u8 { None, Home, Gear, Bar };
+    enum class Hover : u8 { None, Home, Gear, Bar, Wifi };
 
     void selectBar(int index, float width, float height);
     void applyCurrentFilter(std::string_view keepKey);
@@ -138,6 +139,8 @@ private:
     int hoverBar_ = -1;
     bool pointerOnTile_ = false;
     Scene* home_ = nullptr;
+    Scene* wifi_ = nullptr;
+    float wifiAnimMs_ = 0.0f;  // Lauflicht beim Verbinden
     const LibraryStore* store_ = nullptr;
     Scene* jumpBar_ = nullptr;
     Scene* keyboard_ = nullptr;

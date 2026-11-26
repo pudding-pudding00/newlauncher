@@ -275,6 +275,40 @@
     X(EmuHelp, "A Installieren/Aktualisieren · B Zurück", "A Install/Update · B Back") \
     X(EmuBusyHelp, "B Abbrechen", "B Cancel") \
     X(Wifi, "WLAN", "Wi-Fi") \
+    X(WifiConnected, "Verbunden", "Connected") \
+    X(WifiLimited, "Eingeschränkt: Router antwortet nicht", "Limited: router not responding") \
+    X(WifiConnecting, "Verbinde …", "Connecting …") \
+    X(WifiDisconnected, "Nicht verbunden", "Not connected") \
+    X(WifiLineState, "Zustand: %s", "Status: %s") \
+    X(WifiLineIp, "IP-Adresse: %s", "IP address: %s") \
+    X(WifiLineMask, "Netzmaske: %s", "Netmask: %s") \
+    X(WifiLineGateway, "Router: %s", "Router: %s") \
+    X(WifiLineRouterMs, "Router-Antwort: %d ms", "Router reply: %d ms") \
+    X(WifiLineRouterNone, "Router-Antwort: keine", "Router reply: none") \
+    X(WifiLineMac, "MAC-Adresse: %s", "MAC address: %s") \
+    X(WifiLineCode, "Letzter Fehlercode: %d", "Last error code: %d") \
+    X(WifiLineFails, "Fehlschläge in Folge: %u", "Failures in a row: %u") \
+    X(WifiLineSince, "Verbunden seit: %s", "Connected for: %s") \
+    X(WifiLineChecked, "Letzte Prüfung: vor %u s", "Last check: %u s ago") \
+    X(WifiLineNotChecked, "Letzte Prüfung: noch keine", "Last check: none yet") \
+    X(WifiLineReconnects, "Neuaufbauten: %u", "Reconnects: %u") \
+    X(WifiTips, "Tipps:", "Tips:") \
+    X(WifiTip1, " · Router: WPA2-AES statt WPA3 oder WPA2/WPA3-Mischbetrieb", \
+      " · Router: WPA2-AES instead of WPA3 or WPA2/WPA3 mixed mode") \
+    X(WifiTip2, " · Eigenes 2,4 GHz-Netz mit eigenem Namen (kein Band-Steering)", \
+      " · Separate 2.4 GHz network with its own name (no band steering)") \
+    X(WifiTip3, " · PMF / 802.11w aus oder optional", " · PMF / 802.11w off or optional") \
+    X(WifiTip4, " · Fester Kanal 1, 6 oder 11", " · Fixed channel 1, 6 or 11") \
+    X(WifiTip5, " · Feste IP in den Wii-Einstellungen", " · Static IP in the Wii settings") \
+    X(WifiTip6, " · Wii ganz vom Strom trennen, Standby/WiiConnect24 aus", \
+      " · Unplug the Wii fully, turn off standby/WiiConnect24") \
+    X(WifiHelp, "▲▼ Blättern · A Neu verbinden · B Zurück", "▲▼ Scroll · A Reconnect · B Back") \
+    X(WifiBusyHelp, "Verbinde neu … · B Zurück", "Reconnecting … · B Back") \
+    X(WifiToastFailed, "WLAN: keine Verbindung (Code %d), neuer Versuch folgt", \
+      "Wi-Fi: no connection (code %d), retrying") \
+    X(WifiToastLost, "WLAN-Verbindung verloren, neuer Versuch folgt", "Wi-Fi connection lost, retrying") \
+    X(WifiToastRestored, "WLAN verbunden", "Wi-Fi connected") \
+    X(WifiToastLimited, "WLAN eingeschränkt: Router antwortet nicht", "Wi-Fi limited: router not responding") \
     X(About, "Über", "About") \
     X(SelfUpdate, "Update installieren", "Install update") \
     X(RestartSelf, "newlauncher neu starten", "Restart newlauncher") \

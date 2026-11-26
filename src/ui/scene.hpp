@@ -27,7 +27,7 @@ struct UiContext {
     int minuteOfDay = 0;  // 0..1439
     int day = 1, month = 1, year = 2026, weekday = 0;  // weekday 0 = Montag
     std::array<s8, 4> battery{-1, -1, -1, -1};         // Wiimote P1..P4: -1 = nicht verbunden, sonst 0..4 Balken
-    WifiStatus wifi = WifiStatus::Disconnected;        // aktueller WLAN-Stand für die untere Leiste
+    WifiStatus wifi = WifiStatus::Connecting;          // aktueller WLAN-Stand für die untere Leiste
 };
 
 enum class AppCommand : u8 {
@@ -48,6 +48,7 @@ enum class AppCommand : u8 {
     OpenAbout,        // Seite „Über“ öffnen (M11, Spec v2 3.4)
     OpenSysInfo,      // Systeminfo öffnen (M13, Spec v2 6.1)
     SaveSysInfo,      // <data>/sysinfo.txt schreiben
+    WifiReconnect,    // M25: WLAN neu aufbauen (Info-Fenster, A)
     OpenSetup,        // Einrichtungs-Assistent öffnen (M13, Spec v2 6.4)
     SetupNetTest,     // Assistent: Verbindungstest (mit Zeitabgleich bei TLS) im NetService
     FinishSetup,      // Assistent: config.ini (und emulators.ini) schreiben, Szene schließen

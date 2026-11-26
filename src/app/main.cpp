@@ -92,6 +92,7 @@
 #include "ui/pin_scene.hpp"
 #include "ui/setup_scene.hpp"
 #include "ui/sysinfo_scene.hpp"
+#include "ui/wifi_scene.hpp"
 #include "core/sysinfo.hpp"
 #include "ui/home_menu.hpp"
 #include "ui/jump_bar.hpp"
@@ -818,6 +819,12 @@ int main(int argc, char** argv) {
     scenes.push(&mainScene);
     // Systeminfo (M13, Spec v2 6.1): beim Öffnen frisch gesammelt; MAC und IP kommen nie hinein.
     nl::ui::SysInfoScene sysInfoScene;
+    // M25: WLAN-Info hinter dem Symbol der Infoleiste. IP und MAC stehen nur auf dem Bildschirm, nie im Log.
+    nl::ui::WifiScene wifiScene;
+    mainScene.setWifiScene(&wifiScene);
+    nl::WifiWatch wifiWatch;
+    bool wifiOkLogged = false;
+    u64 wifiSceneRefreshMs = 0;
     auto buildSysInfo = [&]() {
         nl::SystemInfo s;
         s.sysMenuVersion = nl::platform::sysMenuVersion();
@@ -1741,7 +1748,6 @@ int main(int argc, char** argv) {
 #ifndef NL_SELFTEST
     bool coverAutoRan = false;  // M21: automatischer Cover-Lauf in dieser Sitzung gestartet
     bool wifiProbeStarted = false;
-    u64 nextWifiProbeMs = 0;
 #endif
     bool running = true;
 
@@ -1937,6 +1943,38 @@ int main(int argc, char** argv) {
         }
         ctx.battery = input.battery();
         ctx.wifi = netService.wifiStatus();
+        // M25: Zustandswechsel als Hinweis in der Infoleiste und als Log-Marker (ohne IP und MAC).
+        if (const nl::WifiEvent ev = wifiWatch.update(ctx.wifi); ev != nl::WifiEvent::None) {
+            const nl::WifiSnapshot ws = netService.snapshot();
+            char wifiToast[96];
+            switch (ev) {
+                case nl::WifiEvent::Failed:
+                    nl::log::line("NL_WIFI fail code=%d", static_cast<int>(ws.lastInitCode));
+                    std::snprintf(wifiToast, sizeof wifiToast, nl::ui::tr(nl::ui::Str::WifiToastFailed),
+                                  static_cast<int>(ws.lastInitCode));
+                    break;
+                case nl::WifiEvent::Lost:
+                    nl::log::line("NL_WIFI lost code=%d", static_cast<int>(ws.lastInitCode));
+                    std::snprintf(wifiToast, sizeof wifiToast, "%s", nl::ui::tr(nl::ui::Str::WifiToastLost));
+                    break;
+                case nl::WifiEvent::Limited:
+                    nl::log::line("NL_WIFI limited gw_fails=%u", static_cast<unsigned>(ws.gatewayFails));
+                    std::snprintf(wifiToast, sizeof wifiToast, "%s", nl::ui::tr(nl::ui::Str::WifiToastLimited));
+                    break;
+                case nl::WifiEvent::Restored:
+                case nl::WifiEvent::None:  // nicht erreichbar (oben ausgeschlossen)
+                    nl::log::line("NL_WIFI restored gw_ms=%d", static_cast<int>(ws.gatewayMs));
+                    std::snprintf(wifiToast, sizeof wifiToast, "%s", nl::ui::tr(nl::ui::Str::WifiToastRestored));
+                    break;
+            }
+            mainScene.showToast(wifiToast);
+        }
+        if (!wifiOkLogged && (ctx.wifi == nl::WifiStatus::Connected || ctx.wifi == nl::WifiStatus::Limited)) {
+            wifiOkLogged = true;
+            const nl::WifiSnapshot ws = netService.snapshot();
+            nl::log::line("NL_WIFI ok gw=%s gw_ms=%d reconnects=%u", ws.gateway != 0 ? "yes" : "no",
+                          static_cast<int>(ws.gatewayMs), static_cast<unsigned>(ws.reconnects));
+        }
         // Ergebnis des Hintergrund-Scans übernehmen (Spec 6.1 Schritt 6)
         if (auto result = worker.take()) {
             if (result->isOk()) {
@@ -1978,6 +2016,7 @@ int main(int argc, char** argv) {
             if (config.debugLogSounds && config.sounds) nl::log::line("NL_SOUND %s", nl::uiSoundName(req.sound));
         }
         if (req.push == &details) refreshDetailsN64();  // MainScene hat die Details gerade geöffnet
+        if (req.push == &wifiScene) wifiSceneRefreshMs = 0;  // sofort frische Werte
         if (req.push == &homeMenu)
             nl::log::line("NL_BATTERY p1=%d p2=%d p3=%d p4=%d", ctx.battery[0], ctx.battery[1], ctx.battery[2],
                           ctx.battery[3]);
@@ -2259,6 +2298,11 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 saveSysInfo();
                 break;
+            case nl::ui::AppCommand::WifiReconnect:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                netService.requestReconnect();
+                wifiSceneRefreshMs = 0;
+                break;
             case nl::ui::AppCommand::OpenSetup:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 if (parental.enabled) {  // Spec v2 10.5: Einrichtung nur mit PIN
@@ -2459,14 +2503,26 @@ int main(int argc, char** argv) {
             coversReported = true;
         }
 #ifndef NL_SELFTEST
-        if (readyReported && !netService.busy()) {
-            const u64 nowMs = msSince(bootTicks);
-            if (!wifiProbeStarted || nowMs >= nextWifiProbeMs) {
+        // M25: Abstand des Hintergrund-Checks nach dem letzten Ergebnis (verbunden 5 s, getrennt 5 bis 30 s).
+        if (readyReported && !netService.busy() && !netService.probePending()) {
+            const nl::WifiSnapshot ws = netService.snapshot();
+            const u64 nowMs = nl::platform::NetService::clockMs();
+            const bool due = ws.checked && ws.status != nl::WifiStatus::Connecting &&
+                             nowMs >= ws.lastCheckMs + nl::wifiProbeIntervalMs(ws.status, ws.failedProbes);
+            if (!wifiProbeStarted || due) {
                 wifiProbeStarted = true;
                 netService.startWifiProbe();
-                nextWifiProbeMs = nowMs + (ctx.wifi == nl::WifiStatus::Connected ? 5000u : 15000u);
             }
         }
+#endif
+        if (scenes.top() == &wifiScene) {  // Werte im offenen Fenster zweimal je Sekunde auffrischen
+            const u64 nowMs = nl::platform::NetService::clockMs();
+            if (wifiSceneRefreshMs == 0 || nowMs >= wifiSceneRefreshMs + 500) {
+                wifiScene.setSnapshot(netService.snapshot(), nowMs);
+                wifiSceneRefreshMs = nowMs;
+            }
+        }
+#ifndef NL_SELFTEST
         // M21: fehlende Cover einmal pro Sitzung still laden, sobald Scan fertig und WLAN verbunden ist.
         // Läuft gerade ein Netz-Auftrag, versucht es der nächste Frame erneut.
         if (nl::shouldAutoFetchCovers({config.coverAuto, readyReported && ctx.wifi == nl::WifiStatus::Connected,

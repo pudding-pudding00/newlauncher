@@ -208,6 +208,32 @@ TEST_CASE_FIXTURE(Fixture, "Home fordert push des HOME-Menüs an") {
     CHECK(step(s, pointerAction(h.x + h.w / 2, h.y + h.h / 2, Action::Confirm)).push == &home);
 }
 
+TEST_CASE_FIXTURE(Fixture, "M25: Zeiger auf dem WLAN-Symbol + Confirm öffnet die WLAN-Info") {
+    const Library lib = testLibrary();
+    MainScene s(lib);
+    DummyScene wifi;
+    step(s, InputFrame{});
+    const gfx::Rect w = s.wifiRect(ctx);
+    // ohne gesetzte Szene: kein Hover, A wirkt aufs Raster
+    CHECK(step(s, pointerAction(w.x + w.w / 2, w.y + w.h / 2, Action::Confirm)).push != &wifi);
+    s.setWifiScene(&wifi);
+    step(s, pointer(w.x + w.w / 2, w.y + w.h / 2));
+    CHECK(step(s, pointerAction(w.x + w.w / 2, w.y + w.h / 2, Action::Confirm)).push == &wifi);
+}
+
+TEST_CASE_FIXTURE(Fixture, "M25: WLAN-Symbol zeichnet alle Zustände") {
+    const Library lib = testLibrary();
+    MainScene s(lib);
+    for (WifiStatus st : {WifiStatus::Connecting, WifiStatus::Connected, WifiStatus::Limited,
+                          WifiStatus::Disconnected}) {
+        ctx.wifi = st;
+        for (int i = 0; i < 20; ++i) step(s, InputFrame{}, 100);
+        gfx::DrawList dl{65536, 16};
+        s.draw(ctx, dl);
+        CHECK(dl.quadCount() > 0);
+    }
+}
+
 TEST_CASE_FIXTURE(Fixture, "Zeiger über einem Leisten-Eintrag + Confirm wählt ihn aus") {
     const Library lib = testLibrary();
     MainScene s(lib);

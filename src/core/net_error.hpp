@@ -7,7 +7,7 @@
 
 namespace nl {
 
-enum class WifiStatus : u8 { Disconnected, Connecting, Connected };
+enum class WifiStatus : u8 { Disconnected, Connecting, Connected, Limited };  // Limited: IP, aber Router stumm (M25)
 
 enum class NetError : u8 { None, Dns, Connect, Timeout, Cert, Clock, Handshake, NoMem, TlsMissing, Http, Other };
 

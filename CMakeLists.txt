@@ -33,6 +33,7 @@ add_library(nl_core STATIC
     src/core/ini.cpp
     src/core/config.cpp
     src/core/net_error.cpp
+    src/core/wifi_state.cpp
     src/core/job_queue.cpp
     src/core/settings_model.cpp
     src/core/ui_sound.cpp
@@ -129,6 +130,7 @@ add_library(nl_core STATIC
     src/ui/emulators_scene.cpp
     src/ui/about_scene.cpp
     src/ui/sysinfo_scene.cpp
+    src/ui/wifi_scene.cpp
     src/ui/setup_scene.cpp
     src/ui/debug_overlay.cpp
     src/ui/pointer_cursor.cpp

@@ -79,6 +79,7 @@ add_library(nl_core STATIC
     src/core/save_archive.cpp
     src/core/save_locator.cpp
     src/core/save_query.cpp
+    src/core/save_backup.cpp
     src/core/zip_reader.cpp
     src/core/emu_catalog.cpp
     src/core/emu_install.cpp

@@ -101,21 +101,44 @@ TEST_CASE("drive: Ordner-ID wird zwischengespeichert") {
     CHECK(r.http.done());
 }
 
-TEST_CASE("drive: stat liest version, Größe und appProperties; höchste Version gewinnt") {
+TEST_CASE("drive: stat liest version, Größe und appProperties; rev = id:version") {
     Rig r;
     r.http.expect(HttpMethod::Get, kFolderQuery, jsonResponse(200, kFolderJson));
-    r.http.expect(
-        HttpMethod::Get, kFolderQuery,
-        jsonResponse(200, R"({"files":[{"id":"Z0","version":"3","size":"9"},)"
-                          R"({"id":"Z1","version":"7","size":"1234","appProperties":{"hash":"abc","saved":"1700000000","device":"Wohnzimmer"}}]})"));
+    r.http.expect(HttpMethod::Get, kFolderQuery, jsonResponse(200, kStatJson));
     CloudEntry e;
     REQUIRE(r.drive.stat("wii-RMCP", e, r.cancel) == CloudStatus::Ok);
     CHECK(e.id == "Z1");
-    CHECK(e.rev == "7");
+    CHECK(e.rev == "Z1:7");
     CHECK(e.size == 1234);
     CHECK(e.hash == "abc");
     CHECK(e.saved == 1'700'000'000);
     CHECK(e.device == "Wohnzimmer");
+}
+
+TEST_CASE("drive: doppelte Dateien → auf jedem Gerät die zuerst angelegte, rev unterscheidet sie") {
+    // Zwei Geräte haben gleichzeitig angelegt: beide Dateien haben version 1. Versionen zählen je Datei und sagen
+    // zwischen zwei Dateien nichts; alle Geräte müssen dieselbe wählen (orderBy=createdTime, die erste).
+    Rig r;
+    r.http.expect(HttpMethod::Get, kFolderQuery, jsonResponse(200, kFolderJson));
+    r.http.expect(HttpMethod::Get, kFolderQuery,
+                  jsonResponse(200, R"({"files":[{"id":"ZA","version":"1","size":"9"},)"
+                                    R"({"id":"ZB","version":"4","size":"9"}]})"));
+    CloudEntry e;
+    REQUIRE(r.drive.stat("wii-RMCP", e, r.cancel) == CloudStatus::Ok);
+    CHECK(e.id == "ZA");
+    CHECK(e.rev == "ZA:1");
+    CHECK(r.http.seen.at(0).url.find("&orderBy=createdTime") != std::string::npos);  // Ordner ebenso
+    CHECK(r.http.seen.at(1).url.find("&orderBy=createdTime") != std::string::npos);
+}
+
+TEST_CASE("drive: Upload auf eine andere Datei mit gleicher Version → RevMismatch") {
+    Rig r;
+    r.http.expect(HttpMethod::Get, kFolderQuery, jsonResponse(200, kFolderJson));
+    r.http.expect(HttpMethod::Get, kFolderQuery, jsonResponse(200, kStatJson));  // Z1, version 7
+    const std::vector<u8> zip = {1};
+    CloudEntry out;
+    CHECK(r.drive.upload("wii-RMCP", zip, meta(), "Z0:7", out, r.cancel) == CloudStatus::RevMismatch);
+    CHECK(r.http.seen.size() == 2);
 }
 
 TEST_CASE("drive: unsichere Einheiten-ID wird nie gesendet") {
@@ -135,7 +158,7 @@ TEST_CASE("drive: neue Datei = multipart POST mit parents und appProperties") {
     CloudEntry out;
     REQUIRE(r.drive.upload("wii-RMCP", zip, meta(), "", out, r.cancel) == CloudStatus::Ok);
     CHECK(out.id == "Z9");
-    CHECK(out.rev == "1");
+    CHECK(out.rev == "Z9:1");
     CHECK(out.hash == meta().hash);
     const HttpRequest& up = r.http.seen.at(2);
     CHECK(header(up, "Authorization") == "Bearer old-access");
@@ -157,13 +180,13 @@ TEST_CASE("drive: vorhandene Datei mit passender Revision = PATCH ohne parents")
                   jsonResponse(200, R"({"id":"Z1","version":"8","size":"3"})"));
     const std::vector<u8> zip = {1, 2, 3};
     CloudEntry out;
-    REQUIRE(r.drive.upload("wii-RMCP", zip, meta(), "7", out, r.cancel) == CloudStatus::Ok);
-    CHECK(out.rev == "8");
+    REQUIRE(r.drive.upload("wii-RMCP", zip, meta(), "Z1:7", out, r.cancel) == CloudStatus::Ok);
+    CHECK(out.rev == "Z1:8");
     CHECK(bodyText(r.http.seen.at(2)).find("parents") == std::string::npos);
 }
 
 TEST_CASE("drive: abweichende Revision → RevMismatch ohne Upload") {
-    for (const char* expect : {"6", ""}) {
+    for (const char* expect : {"Z1:6", "7", ""}) {
         Rig r;
         r.http.expect(HttpMethod::Get, kFolderQuery, jsonResponse(200, kFolderJson));
         r.http.expect(HttpMethod::Get, kFolderQuery, jsonResponse(200, kStatJson));
@@ -178,7 +201,7 @@ TEST_CASE("drive: abweichende Revision → RevMismatch ohne Upload") {
     r.http.expect(HttpMethod::Get, kFolderQuery, jsonResponse(200, R"({"files":[]})"));
     const std::vector<u8> zip = {1};
     CloudEntry out;
-    CHECK(r.drive.upload("wii-RMCP", zip, meta(), "7", out, r.cancel) == CloudStatus::RevMismatch);
+    CHECK(r.drive.upload("wii-RMCP", zip, meta(), "Z1:7", out, r.cancel) == CloudStatus::RevMismatch);
     CHECK(r.http.seen.size() == 2);
 }
 

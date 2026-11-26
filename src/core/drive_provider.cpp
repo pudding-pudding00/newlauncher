@@ -58,7 +58,8 @@ bool takeFile(const JsonValue& f, CloudEntry& out) {
     out.id = std::string(f.string("id"));
     const auto version = f.integer("version");
     if (!safeDriveId(out.id) || !version) return false;
-    out.rev = std::to_string(*version);
+    // Versionen zählen je Datei: erst mit der ID unterscheidet die Revision zwei gleichzeitig angelegte Dateien.
+    out.rev = out.id + ":" + std::to_string(*version);
     out.size = static_cast<u64>(std::max<s64>(0, f.integer("size").value_or(0)));
     return true;
 }
@@ -148,7 +149,9 @@ CloudStatus DriveProvider::folder(std::string& id, const volatile bool& cancel) 
     std::string q = "name='" + std::string(kFolderName) + "' and mimeType='" + std::string(kFolderMime) +
                     "' and 'root' in parents and trashed=false";
     HttpResponse r =
-        call(request(HttpMethod::Get, api_ + "/drive/v3/files?q=" + percentEncode(q) + "&fields=files(id)"), cancel);
+        call(request(HttpMethod::Get,
+                     api_ + "/drive/v3/files?q=" + percentEncode(q) + "&orderBy=createdTime&fields=files(id)"),
+             cancel);
     CloudStatus s = statusOf(r, authFail_);
     if (s != CloudStatus::Ok) return s == CloudStatus::NotFound ? CloudStatus::Failed : s;
     auto j = json(r);
@@ -189,6 +192,7 @@ CloudStatus DriveProvider::stat(std::string_view unit, CloudEntry& out, const vo
 
     const std::string q = "name='" + std::string(unit) + ".zip' and '" + dir + "' in parents and trashed=false";
     const HttpResponse r = call(request(HttpMethod::Get, api_ + "/drive/v3/files?q=" + percentEncode(q) +
+                                                             "&orderBy=createdTime" +
                                                              "&fields=files(id,version,size,appProperties)"),
                                 cancel);
     const CloudStatus s = statusOf(r, authFail_);
@@ -197,17 +201,10 @@ CloudStatus DriveProvider::stat(std::string_view unit, CloudEntry& out, const vo
     const JsonValue* files = j ? j->get("files") : nullptr;
     if (!files || files->type != JsonType::Array) return CloudStatus::Failed;
 
-    // Doppelte Dateien (zwei Geräte haben gleichzeitig angelegt): die mit der höchsten Version gilt.
-    const JsonValue* best = nullptr;
-    s64 bestVersion = -1;
-    for (const JsonValue& f : files->items) {
-        const auto v = f.integer("version");
-        if (v && *v > bestVersion) {
-            bestVersion = *v;
-            best = &f;
-        }
-    }
-    if (!best) return CloudStatus::NotFound;
+    // Doppelte Dateien (zwei Geräte haben gleichzeitig angelegt): Jedes Gerät nimmt die zuerst angelegte. Ein Gerät,
+    // dessen Basis auf die andere zeigt, sieht eine fremde Revision und entscheidet neu (Download oder Konflikt).
+    if (files->items.empty()) return CloudStatus::NotFound;
+    const JsonValue* best = &files->items.front();
 
     CloudEntry e;
     if (!takeFile(*best, e)) return CloudStatus::Failed;

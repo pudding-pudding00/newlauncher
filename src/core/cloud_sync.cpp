@@ -24,7 +24,8 @@ SyncAction decideSync(const SyncInput& in) {
     if (!in.base) return lh == c.hash ? SyncAction::SetBase : SyncAction::Conflict;
 
     const bool localNew = lh != in.base->hash;
-    const bool cloudNew = c.rev != in.base->rev;
+    // Ein anderer Cloud-Hash zählt auch bei gleicher rev als neu (ohne Hash zählt nur die rev).
+    const bool cloudNew = c.rev != in.base->rev || (!c.hash.empty() && c.hash != in.base->hash);
     if (!localNew && !cloudNew) return SyncAction::Nothing;
     if (!localNew) return c.hash == lh ? SyncAction::SetBase : SyncAction::Download;
     if (!cloudNew) return SyncAction::Upload;

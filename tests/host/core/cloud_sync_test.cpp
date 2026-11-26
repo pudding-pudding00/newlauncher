@@ -34,6 +34,13 @@ TEST_CASE("decideSync: Tabelle mit Basis") {
     CHECK(decideSync(in("H1", kBase, cloud("6", "H2"))) == SyncAction::Conflict);
 }
 
+TEST_CASE("decideSync: gleiche rev, aber anderer Cloud-Hash = Cloud neu") {
+    // Absicherung, falls ein Anbieter gleiche Revisionen für verschiedene Stände liefert.
+    CHECK(decideSync(in("H0", kBase, cloud("5", "H1"))) == SyncAction::Download);
+    CHECK(decideSync(in("H2", kBase, cloud("5", "H1"))) == SyncAction::Conflict);
+    CHECK(decideSync(in("H2", kBase, cloud("5", ""))) == SyncAction::Upload);  // ohne Hash zählt nur die rev
+}
+
 TEST_CASE("decideSync: ohne Basis") {
     CHECK(decideSync(in("H1", std::nullopt, std::nullopt)) == SyncAction::Upload);
     CHECK(decideSync(in(std::nullopt, std::nullopt, cloud("1", "H1"))) == SyncAction::Download);

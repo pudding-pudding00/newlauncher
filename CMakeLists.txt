@@ -38,6 +38,7 @@ add_library(nl_core STATIC
     src/core/cloud_sync.cpp
     src/core/cloud_state.cpp
     src/core/cloud_outbox.cpp
+    src/core/cloud_plan.cpp
     src/core/parental.cpp
     src/core/rgb5a3.cpp
     src/core/console.cpp

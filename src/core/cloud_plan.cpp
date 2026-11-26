@@ -174,12 +174,14 @@ PreLaunchResult preLaunchSync(CloudCtx& ctx, const SaveUnit& unit, std::string_v
 }
 
 PreLaunchResult resolveConflict(CloudCtx& ctx, const SaveUnit& unit, std::string_view title, ConflictChoice choice,
-                                const volatile bool& cancel) {
+                                std::string_view seenRev, const volatile bool& cancel) {
     CloudState state = loadState(ctx);
     std::optional<CloudEntry> cloud;
     if (const CloudStatus s = statCloud(ctx, unit, cloud, cancel); s != CloudStatus::Ok) {
         return skipped(ctx, unit.id, skipReason(s));
     }
+    // Während der Dialog offen war, kam ein anderer Stand hoch: neu fragen statt ihn zu überschreiben.
+    if (cloud && cloud->rev != seenRev) return conflict(ctx, unit, *cloud, state);
     if (choice == ConflictChoice::TakeCloud) {
         if (!cloud) return skipped(ctx, unit.id, "error");
         return pull(ctx, unit, title, *cloud, state, cancel);

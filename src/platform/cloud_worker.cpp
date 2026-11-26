@@ -268,13 +268,14 @@ bool CloudWorker::startPreLaunch(SaveUnit unit, std::string title) {
     });
 }
 
-bool CloudWorker::startResolve(SaveUnit unit, std::string title, ConflictChoice choice) {
-    return submit(true, [this, unit = std::move(unit), title = std::move(title), choice](const volatile bool& cancel) {
+bool CloudWorker::startResolve(SaveUnit unit, std::string title, ConflictChoice choice, std::string seenRev) {
+    return submit(true, [this, unit = std::move(unit), title = std::move(title), choice,
+                         seenRev = std::move(seenRev)](const volatile bool& cancel) {
         PreLaunchResult r;
         if (!service_.networkUp()) {
             r = skippedResult("offline");
         } else if (!withProvider(
-                                 [&](CloudCtx& ctx) { r = resolveConflict(ctx, unit, title, choice, cancel); })) {
+                                 [&](CloudCtx& ctx) { r = resolveConflict(ctx, unit, title, choice, seenRev, cancel); })) {
             r = skippedResult("unlinked");
         }
         LWP_MutexLock(mutex_);

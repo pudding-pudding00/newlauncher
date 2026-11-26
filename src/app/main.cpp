@@ -1131,6 +1131,7 @@ int main(int argc, char** argv) {
     struct CloudGate {
         std::string key, title;
         nl::SaveUnit unit;
+        std::string conflictRev;  // Cloud-Revision, die der Konfliktdialog zeigt
         u32 startMs = 0;
         bool submitted = false, asking = false, syncOnly = false;
     };
@@ -1776,7 +1777,8 @@ int main(int argc, char** argv) {
         cloudSyncScene.setPhase(nl::ui::CloudPhase::Resolving);
         static_cast<void>(cloud.takePreLaunch());
         if (!cloud.startResolve(cloudGate->unit, cloudGate->title,
-                                pick == 0 ? nl::ConflictChoice::KeepWii : nl::ConflictChoice::TakeCloud)) {
+                                pick == 0 ? nl::ConflictChoice::KeepWii : nl::ConflictChoice::TakeCloud,
+                                cloudGate->conflictRev)) {
             nl::log::line("NL_CLOUD_SKIP error %s", cloudGate->key.c_str());
             finishCloudGate(true);
         }
@@ -1788,6 +1790,7 @@ int main(int argc, char** argv) {
             return;
         }
         cloudGate->asking = true;
+        cloudGate->conflictRev = r.cloud.rev;
         nl::log::line("NL_CLOUD_CONFLICT %s", cloudGate->unit.id.c_str());
         if (!config.debugCloudConflict.empty()) {  // nur für Tests: Knopf ohne Dialog wählen
             answerCloudConflict(config.debugCloudConflict == "wii" ? 0 : config.debugCloudConflict == "cloud" ? 1 : 2);

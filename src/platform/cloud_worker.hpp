@@ -51,7 +51,7 @@ public:
     std::optional<DeviceCode> deviceCode() const;  // solange ShowCode
 
     bool startPreLaunch(SaveUnit unit, std::string title);
-    bool startResolve(SaveUnit unit, std::string title, ConflictChoice choice);
+    bool startResolve(SaveUnit unit, std::string title, ConflictChoice choice, std::string seenRev);
     std::optional<PreLaunchResult> takePreLaunch();
 
     bool startUploads(std::vector<CloudUpload> items);

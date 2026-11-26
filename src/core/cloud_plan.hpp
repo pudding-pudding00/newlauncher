@@ -37,9 +37,10 @@ PreLaunchResult preLaunchSync(CloudCtx& ctx, const SaveUnit& unit, std::string_v
 
 enum class ConflictChoice : u8 { KeepWii, TakeCloud };
 
-// Ändert sich die Cloud zwischen Dialog und Auflösung erneut, kommt wieder Conflict.
+// seenRev = Cloud-Revision, die der Dialog gezeigt hat. Ist die Cloud inzwischen eine andere, kommt wieder Conflict
+// (mit der neuen Cloud-Seite), und nichts wird übertragen.
 PreLaunchResult resolveConflict(CloudCtx& ctx, const SaveUnit& unit, std::string_view title, ConflictChoice choice,
-                                const volatile bool& cancel);
+                                std::string_view seenRev, const volatile bool& cancel);
 
 // Ok auch, wenn nichts zu tun war. RevMismatch = Konflikt; der Eintrag bleibt in pending.ini, das Start-Tor fragt.
 CloudStatus uploadIfChanged(CloudCtx& ctx, const SaveUnit& unit, std::string_view title, const volatile bool& cancel);

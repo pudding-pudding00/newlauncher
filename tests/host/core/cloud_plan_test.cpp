@@ -124,7 +124,8 @@ TEST_CASE("resolveConflict: KeepWii lädt mit erwarteter Revision hoch, TakeClou
         Rig r;
         r.fs.addFile(kDir + "/a.bin", bytes("wii-stand"));
         remote(r.cloud, "pc-stand");
-        const auto res = resolveConflict(r.ctx, unit(), "Galaxy", ConflictChoice::KeepWii, r.cancel);
+        const std::string seen = r.cloud.files["wii-RMGP"].entry.rev;
+        const auto res = resolveConflict(r.ctx, unit(), "Galaxy", ConflictChoice::KeepWii, seen, r.cancel);
         CHECK(res.kind == PreLaunch::Pushed);
         CHECK(r.cloud.files["wii-RMGP"].entry.hash == localHash("wii-stand"));
         CHECK(r.state().base(kAcct, "wii-RMGP")->hash == localHash("wii-stand"));
@@ -133,10 +134,27 @@ TEST_CASE("resolveConflict: KeepWii lädt mit erwarteter Revision hoch, TakeClou
         Rig r;
         r.fs.addFile(kDir + "/a.bin", bytes("wii-stand"));
         remote(r.cloud, "pc-stand");
-        const auto res = resolveConflict(r.ctx, unit(), "Galaxy", ConflictChoice::TakeCloud, r.cancel);
+        const std::string seen = r.cloud.files["wii-RMGP"].entry.rev;
+        const auto res = resolveConflict(r.ctx, unit(), "Galaxy", ConflictChoice::TakeCloud, seen, r.cancel);
         CHECK(res.kind == PreLaunch::Pulled);
         CHECK(r.text(kDir + "/a.bin") == "pc-stand");
         CHECK(r.state().base(kAcct, "wii-RMGP")->hash == localHash("pc-stand"));
+    }
+}
+
+TEST_CASE("resolveConflict: Cloud hat sich seit dem Dialog geändert → wieder Conflict, nichts übertragen") {
+    for (const ConflictChoice choice : {ConflictChoice::KeepWii, ConflictChoice::TakeCloud}) {
+        Rig r;
+        r.fs.addFile(kDir + "/a.bin", bytes("wii-stand"));
+        remote(r.cloud, "pc-stand");
+        const std::string seen = r.cloud.files["wii-RMGP"].entry.rev;  // das zeigte der Dialog
+        remote(r.cloud, "zweite-wii", "wii-RMGP", "Wii Kinderzimmer");  // kam hoch, während der Dialog offen war
+        REQUIRE(r.cloud.files["wii-RMGP"].entry.rev != seen);
+        const auto res = resolveConflict(r.ctx, unit(), "Galaxy", choice, seen, r.cancel);
+        CHECK(res.kind == PreLaunch::Conflict);
+        CHECK(res.cloud.device == "Wii Kinderzimmer");
+        CHECK(r.cloud.files["wii-RMGP"].entry.hash == localHash("zweite-wii"));
+        CHECK(r.text(kDir + "/a.bin") == "wii-stand");
     }
 }
 

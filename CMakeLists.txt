@@ -34,11 +34,14 @@ add_library(nl_core STATIC
     src/core/oauth_device.cpp
     src/core/token_store.cpp
     src/core/cloud_provider.cpp
+    src/core/oauth_client.cpp
     src/core/drive_provider.cpp
+    src/core/onedrive_provider.cpp
     src/core/cloud_sync.cpp
     src/core/cloud_state.cpp
     src/core/cloud_outbox.cpp
     src/core/cloud_plan.cpp
+    src/core/cloud_sync_all.cpp
     src/core/parental.cpp
     src/core/rgb5a3.cpp
     src/core/console.cpp

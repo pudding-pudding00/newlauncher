@@ -300,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="M26: backup sichert und prüft das ZIP, restore spielt es zurück, recover rollt ein "
                              "Journal zurück (restore/recover brauchen einen backup-Lauf davor)")
     parser.add_argument("--cloud-fake", choices=cloud_smoke.PROVIDERS,
-                        help="M27: Cloud-Fake über HTTPS (schließt --tls ein), Anmeldung per Gerätecode")
+                        help="M27/M28: Cloud-Fake (drive|onedrive) über HTTPS (schließt --tls ein), Anmeldung per Gerätecode")
     parser.add_argument("--cloud-step", choices=cloud_smoke.STEPS, default="link",
                         help="Cloud-Schritt (siehe tools/cloud_smoke.py)")
     args = parser.parse_args(argv)
@@ -419,7 +419,7 @@ def main(argv: list[str] | None = None) -> int:
         markers = markers + ["NL_CHEAT_FETCH " + ("ok" if args.cheat_server == "ok" else "nocodes")]
     args.cloud_fake_drive = None
     if args.cloud_fake:
-        args.cloud_fake_drive = cloud_smoke.make_fake(args.cloud_step)
+        args.cloud_fake_drive = cloud_smoke.make_fake(args.cloud_step, args.cloud_fake)
         server, port = cloud_fake_start(args.cloud_fake_drive, ssl_context)
         servers.append(server)
         debug_lines.append(f"cloud_base = {scheme_host}:{port}")

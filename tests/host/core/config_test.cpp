@@ -506,5 +506,55 @@ TEST_CASE("M27: provider wird geschrieben, Client-ID und Secret bleiben unangeta
     CHECK(back.driveClientId == "abc");
     CHECK(back.driveClientSecret == "s3cr3t");
     CHECK(text.find("anders") == std::string::npos);
-    CHECK(configToIniText(Config{}, "").find("provider = off") != std::string::npos);
+    CHECK(configToIniText(Config{}, "").find("provider = none") != std::string::npos);
+}
+
+TEST_CASE("M28: provider onedrive|none|off|drive, onedrive_client_id nur gelesen") {
+    auto prov = [](std::string_view v) {
+        return configFromIni(IniDoc::parse("[cloud]\nprovider = " + std::string(v) + "\n")).cloudProvider;
+    };
+    CHECK(prov("onedrive") == CloudProviderId::OneDrive);
+    CHECK(prov("drive") == CloudProviderId::Drive);
+    CHECK(prov("none") == CloudProviderId::None);
+    CHECK(prov("off") == CloudProviderId::None);
+    CHECK(providerName(CloudProviderId::None) == "none");
+    CHECK(providerName(CloudProviderId::Drive) == "drive");
+    CHECK(providerName(CloudProviderId::OneDrive) == "onedrive");
+
+    const std::string prev = "[cloud]\nprovider = off\nonedrive_client_id = 1234-abcd\n";
+    Config c = configFromIni(IniDoc::parse(prev));
+    CHECK(c.onedriveClientId == "1234-abcd");
+    c.cloudProvider = CloudProviderId::OneDrive;
+    c.onedriveClientId = "anders";
+    const std::string text = configToIniText(c, prev);
+    CHECK(text.find("provider = onedrive") != std::string::npos);
+    CHECK(text.find("anders") == std::string::npos);
+    CHECK(configFromIni(IniDoc::parse(text)).onedriveClientId == "1234-abcd");
+    c.cloudProvider = CloudProviderId::None;
+    CHECK(configToIniText(c, prev).find("provider = none") != std::string::npos);
+}
+
+TEST_CASE("M28: cloudClientId gehört zum aktiven Anbieter") {
+    Config c;
+    c.driveClientId = "g-id";
+    c.onedriveClientId = "ms-id";
+    CHECK(cloudClientId(c).empty());
+    c.cloudProvider = CloudProviderId::Drive;
+    CHECK(cloudClientId(c) == "g-id");
+    c.cloudProvider = CloudProviderId::OneDrive;
+    CHECK(cloudClientId(c) == "ms-id");
+}
+
+TEST_CASE("M28: Debug cloud_sync_all, cloud_switch, cloud_unlink") {
+    const Config c = configFromIni(
+        IniDoc::parse("[debug]\ncloud_sync_all = 1\ncloud_switch = cloud\ncloud_unlink = 1\n"));
+    CHECK(c.debugCloudSyncAll);
+    CHECK(c.debugCloudSwitch == "cloud");
+    CHECK(c.debugCloudUnlink);
+    const Config d = configFromIni(IniDoc::parse("[debug]\ncloud_switch = egal\n"));
+    CHECK_FALSE(d.debugCloudSyncAll);
+    CHECK(d.debugCloudSwitch.empty());
+    CHECK_FALSE(d.debugCloudUnlink);
+    for (const char* v : {"wii", "cloud", "ask"})
+        CHECK(configFromIni(IniDoc::parse(std::string("[debug]\ncloud_switch = ") + v + "\n")).debugCloudSwitch == v);
 }

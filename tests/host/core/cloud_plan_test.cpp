@@ -329,3 +329,79 @@ TEST_CASE("cloud_plan: kein Token im Log") {
         CHECK(l.find("wii-RMGP") != std::string::npos);
     }
 }
+
+// M28: OneDrive verliert die Meta, wenn nur der PATCH nach dem Upload scheitert; fremde Dateien haben nie eine.
+TEST_CASE("preLaunchSync: Cloud-Eintrag ohne Hash und gleicher Inhalt → Ready, Basis gesetzt, ein Download") {
+    Rig r;
+    r.fs.addFile(kDir + "/a.bin", bytes("gleich"));
+    remote(r.cloud, "gleich");
+    r.cloud.files["wii-RMGP"].entry.hash.clear();
+    const auto res = preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel);
+    CHECK(res.kind == PreLaunch::Ready);
+    CHECK(r.cloud.downloads == 1);
+    CHECK(r.cloud.uploads == 0);
+    const auto base = r.state().base(kAcct, "wii-RMGP");
+    REQUIRE(base.has_value());
+    CHECK(base->hash == localHash("gleich"));
+    CHECK(base->rev == r.cloud.files["wii-RMGP"].entry.rev);
+}
+
+TEST_CASE("preLaunchSync: Cloud-Eintrag ohne Hash, lokal leer → Pulled mit nur einem Download") {
+    Rig r;
+    remote(r.cloud, "aus der Cloud");
+    r.cloud.files["wii-RMGP"].entry.hash.clear();
+    const auto res = preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel);
+    CHECK(res.kind == PreLaunch::Pulled);
+    CHECK(r.cloud.downloads == 1);
+    CHECK(r.text(kDir + "/a.bin") == "aus der Cloud");
+    const auto base = r.state().base(kAcct, "wii-RMGP");
+    REQUIRE(base.has_value());
+    CHECK(base->hash == localHash("aus der Cloud"));
+}
+
+TEST_CASE("preLaunchSync: Cloud-Eintrag ohne Hash und kaputtes Paket → Skipped error, nichts geschrieben") {
+    Rig r;
+    r.fs.addFile(kDir + "/a.bin", bytes("lokal"));
+    r.cloud.put("wii-RMGP", bytes("kein zip"), "", "PC", kNow);
+    const auto res = preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel);
+    CHECK(res.kind == PreLaunch::Skipped);
+    CHECK(res.reason == "error");
+    CHECK(r.text(kDir + "/a.bin") == "lokal");
+}
+
+TEST_CASE("resolveConflict: TakeCloud bei Eintrag ohne Hash spielt das Paket zurück") {
+    Rig r;
+    r.fs.addFile(kDir + "/a.bin", bytes("lokal"));
+    remote(r.cloud, "cloud-stand");
+    r.cloud.files["wii-RMGP"].entry.hash.clear();
+    const std::string rev = r.cloud.files["wii-RMGP"].entry.rev;
+    const auto res = resolveConflict(r.ctx, unit(), "Galaxy", ConflictChoice::TakeCloud, rev, r.cancel);
+    CHECK(res.kind == PreLaunch::Pulled);
+    CHECK(r.text(kDir + "/a.bin") == "cloud-stand");
+}
+
+TEST_CASE("preLaunchSync: Eintrag ohne Hash, Rev seit der Basis gleich → kein erneuter Download") {
+    Rig r;
+    r.fs.addFile(kDir + "/a.bin", bytes("gleich"));
+    remote(r.cloud, "gleich");
+    r.cloud.files["wii-RMGP"].entry.hash.clear();
+    REQUIRE(preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel).kind == PreLaunch::Ready);
+    REQUIRE(r.cloud.downloads == 1);
+    // Zweiter und dritter Start: cTag unverändert → Inhalt unverändert, der Hash der Basis gilt.
+    CHECK(preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel).kind == PreLaunch::Ready);
+    CHECK(preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel).kind == PreLaunch::Ready);
+    CHECK(r.cloud.downloads == 1);
+}
+
+TEST_CASE("preLaunchSync: Konflikt bei Eintrag ohne Meta zeigt Gerät und Zeit aus dem Paket") {
+    Rig r;
+    r.fs.addFile(kDir + "/a.bin", bytes("lokal"));
+    remote(r.cloud, "anders", "wii-RMGP", "Dolphin-PC", kNow - 100);
+    r.cloud.files["wii-RMGP"].entry.hash.clear();
+    r.cloud.files["wii-RMGP"].entry.device.clear();
+    r.cloud.files["wii-RMGP"].entry.saved = 0;
+    const auto res = preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel);
+    REQUIRE(res.kind == PreLaunch::Conflict);
+    CHECK(res.cloud.device == "Dolphin-PC");
+    CHECK(res.cloud.saved == kNow - 100);
+}

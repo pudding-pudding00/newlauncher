@@ -1,13 +1,18 @@
-"""Cloud-Smokes gegen den Drive-Fake (M27): --cloud-fake drive --cloud-step <schritt>.
+"""Cloud-Smokes gegen die Fakes (M27 Drive, M28 OneDrive): --cloud-fake drive|onedrive --cloud-step <schritt>.
 
 Jeder Schritt meldet sich zuerst per Gerätecode an ([debug] cloud_device_auto = 1, der Fake genehmigt sofort),
-denn die Tokens auf der SD sind an das Gerät gebunden und lassen sich nicht vorab hinlegen. Danach:
-  link     – nur anmelden: NL_CLOUD_LINKED drive
-  push     – session.ini liegt da (Spiel lief), GB-Spielstand A → Hintergrund-Upload, Fake hat A
+denn die Tokens auf der SD sind an das Gerät gebunden und lassen sich nicht vorab hinlegen. Ohne cloud_sync folgt
+auf die Anmeldung der Wechsel-Abgleich über alle Spiele (M28). Danach:
+  link     – nur anmelden: NL_CLOUD_LINKED <anbieter>
+  push     – session.ini liegt da (Spiel lief), GB-Spielstand A → Abgleich nach der Anmeldung lädt hoch, Fake hat A
   pull     – Cloud hat B, lokal nichts → cloud_sync holt B auf die SD
   conflict – lokal A, Cloud B, keine Basis → Konflikt, cloud_conflict = cloud → B auf der SD
   refresh  – erste Datei-Anfrage bekommt 401 → Refresh → Upload klappt: NL_CLOUD_REFRESH ok
   offline  – nach der Anmeldung schließt der Fake den Listener (Verbindung abgewiesen) → NL_CLOUD <einheit> skip offline
+  syncall  – GB nur lokal (A), Galaxy-NAND nur in der Cloud (B) → NL_CLOUD_SYNCALL pulled=1 pushed=1
+  switch   – GB lokal A, Cloud B → Wechsel-Dialog, cloud_switch = wii → NL_CLOUD_SWITCH uploaded=1 conflict=0
+  unlink   – anmelden, dann cloud_unlink = 1 → Drive: NL_CLOUD_UNLINKED revoke=ok, OneDrive: revoke=none
+Der Galaxy-NAND-Spielstand (save_smoke „nand“) wird vor jedem Lauf geleert, damit er die Zählung nicht verfälscht.
 Nach jedem Lauf: Kein Token, kein Gerätecode und kein Client-Secret im Log.
 """
 
@@ -25,10 +30,12 @@ import cloud_fake
 import save_smoke
 from dolphin import sd_sync_dir
 
-STEPS = ("link", "push", "pull", "conflict", "refresh", "offline")
-PROVIDERS = ("drive",)
+STEPS = ("link", "push", "pull", "conflict", "refresh", "offline", "syncall", "switch", "unlink")
+PROVIDERS = ("drive", "onedrive")
 
 CLIENT_ID = "fake-client.apps.googleusercontent.com"
+OD_CLIENT_ID = "00000000-0000-0000-0000-00000fake0d1"
+NAND_UNIT = "wii-RMGP"
 CLIENT_SECRET = "GOCSPX-fake-secret-not-real"
 CLOUD_REL = "newlauncher/cloud"
 SESSION_STARTED = 1700000000
@@ -66,11 +73,27 @@ def save_zip(unit: str, files: dict[str, bytes], device: str = "Dolphin-PC", sav
     return buf.getvalue()
 
 
-def make_fake(step: str) -> cloud_fake.FakeDrive:
+def make_fake(step: str, provider: str = "drive") -> cloud_fake.FakeDrive:
     if step not in STEPS:
         raise ValueError(f"unbekannter Cloud-Schritt: {step}")
-    return cloud_fake.FakeDrive(approve="auto", expire_access_once=step == "refresh",
-                                offline_after_link=step == "offline")
+    if provider not in PROVIDERS:
+        raise ValueError(f"unbekannter Cloud-Anbieter: {provider}")
+    cls = cloud_fake.FakeOneDrive if provider == "onedrive" else cloud_fake.FakeDrive
+    return cls(approve="auto", expire_access_once=step == "refresh", offline_after_link=step == "offline")
+
+
+def provider_of(fake: cloud_fake.FakeDrive) -> str:
+    return "onedrive" if isinstance(fake, cloud_fake.FakeOneDrive) else "drive"
+
+
+def cloud_hash(fake: cloud_fake.FakeDrive, name: str) -> tuple[str | None, str | None]:
+    """(hash, unit) der Meta im Fake: Drive aus appProperties, OneDrive aus der description (ohne Einheit)."""
+    entry = fake.state_dump()["files"].get(name, {})
+    if isinstance(fake, cloud_fake.FakeOneDrive):
+        meta = cloud_fake.parse_onedrive_description(entry.get("description", ""))
+        return meta.get("hash"), name.removesuffix(".zip")
+    props = entry.get("appProperties", {})
+    return props.get("hash"), props.get("unit")
 
 
 @dataclass
@@ -88,11 +111,19 @@ def prepare(step: str, fake: cloud_fake.FakeDrive, user_dir: Path) -> CloudPlan:
     sd = sd_sync_dir(user_dir)
     shutil.rmtree(sd / CLOUD_REL, ignore_errors=True)  # Tokens und Basis eines früheren Laufs
     plan = CloudPlan(step, fake)
-    plan.config_append = (f"[cloud]\nprovider = drive\ndrive_client_id = {CLIENT_ID}\n"
-                          f"drive_client_secret = {CLIENT_SECRET}\n")
+    provider = provider_of(fake)
+    # Beide IDs stehen drin (wie bei einem Nutzer, der beide eingerichtet hat); aktiv ist nur provider.
+    plan.config_append = (f"[cloud]\nprovider = {provider}\ndrive_client_id = {CLIENT_ID}\n"
+                          f"drive_client_secret = {CLIENT_SECRET}\nonedrive_client_id = {OD_CLIENT_ID}\n")
     plan.debug_lines.append("cloud_device_auto = 1")
-    plan.markers.append("NL_CLOUD_LINKED drive")
+    plan.markers.append(f"NL_CLOUD_LINKED {provider}")
+    nand = save_smoke.fixture("nand", user_dir)
+    (nand.host_dir / nand.file_name).unlink(missing_ok=True)
     if step == "link":
+        return plan
+    if step == "unlink":
+        plan.debug_lines.append("cloud_unlink = 1")
+        plan.markers.append("NL_CLOUD_UNLINKED revoke=" + ("none" if provider == "onedrive" else "ok"))
         return plan
 
     fx = save_smoke.fixture("gb", user_dir)
@@ -103,9 +134,20 @@ def prepare(step: str, fake: cloud_fake.FakeDrive, user_dir: Path) -> CloudPlan:
     local.unlink(missing_ok=True)
     if step != "pull":
         local.write_bytes(save_smoke.BYTES_A)
-    if step in ("pull", "conflict"):
+    if step == "syncall":
+        fake.seed(NAND_UNIT, save_zip(NAND_UNIT, {nand.file_name: save_smoke.BYTES_B}), device="Dolphin-PC",
+                  saved=CLOUD_SAVED)
+        plan.markers += [f"NL_CLOUD {NAND_UNIT} pull ok", f"NL_CLOUD {plan.unit} push ok",
+                         "NL_CLOUD_SYNCALL pulled=1 pushed=1", "NL_CLOUD_SWITCH uploaded=1 conflict=0"]
+        return plan
+    if step in ("pull", "conflict", "switch"):
         fake.seed(plan.unit, save_zip(plan.unit, {fx.file_name: save_smoke.BYTES_B}), device="Dolphin-PC",
                   saved=CLOUD_SAVED)
+    if step == "switch":
+        plan.debug_lines.append("cloud_switch = wii")
+        plan.markers += [f"NL_CLOUD {plan.unit} conflict", "NL_CLOUD_SWITCH_CHOICE wii",
+                         "NL_CLOUD_SWITCH uploaded=1 conflict=0"]
+        return plan
 
     if step == "push":
         (sd / CLOUD_REL).mkdir(parents=True, exist_ok=True)
@@ -138,6 +180,15 @@ def leaked_secrets(log: str, fake: cloud_fake.FakeDrive) -> list[str]:
 def post_check(plan: CloudPlan, user_dir: Path, log: str, read_sd: Callable[[str], bytes]) -> list[str]:
     problems = leaked_secrets(log, plan.fake)
     dump = plan.fake.state_dump()
+    onedrive = isinstance(plan.fake, cloud_fake.FakeOneDrive)
+    if plan.step == "unlink":
+        # Drive widerruft genau einmal (danach ist der Fake abgemeldet), OneDrive hat keinen Widerruf.
+        want_revokes = 0 if onedrive else 1
+        if dump["revokes"] != want_revokes:
+            problems.append(f"Fake: {dump['revokes']} Widerrufe statt {want_revokes}")
+        elif not onedrive and dump["linked"]:
+            problems.append("Fake: nach dem Widerruf noch angemeldet")
+        return problems
     if not dump["linked"]:
         problems.append("Fake: keine Anmeldung")
     # Frische Tokens bleiben je Sitzung im Speicher: Refresh nur nach einem 401 (refresh-Schritt).
@@ -148,7 +199,7 @@ def post_check(plan: CloudPlan, user_dir: Path, log: str, read_sd: Callable[[str
         return problems
 
     fx = save_smoke.fixture("gb", user_dir)
-    if plan.step in ("push", "refresh"):
+    if plan.step in ("push", "refresh", "syncall", "switch"):
         data = plan.fake.file_bytes(plan.unit)
         if data is None:
             return problems + [f"Fake: {plan.unit}.zip fehlt"]
@@ -156,9 +207,14 @@ def post_check(plan: CloudPlan, user_dir: Path, log: str, read_sd: Callable[[str
         want = cloud_fake.content_hash({fx.file_name: save_smoke.BYTES_A})
         if meta.get("unit") != plan.unit or meta.get("hash") != want:
             problems.append(f"Fake: {plan.unit}.zip hat unit/hash {meta.get('unit')}/{meta.get('hash')}")
-        props = dump["files"][plan.unit + ".zip"]["appProperties"]
-        if props.get("hash") != want or props.get("unit") != plan.unit:
-            problems.append(f"Fake: appProperties passen nicht: {props}")
+        got_hash, got_unit = cloud_hash(plan.fake, plan.unit + ".zip")
+        if got_hash != want or got_unit != plan.unit:
+            problems.append(f"Fake: Meta passt nicht: {got_hash}/{got_unit}")
+        if plan.step == "syncall":
+            nand = save_smoke.fixture("nand", user_dir)
+            p = nand.host_dir / nand.file_name
+            if not p.is_file() or p.read_bytes() != save_smoke.BYTES_B:
+                problems.append(f"{nand.launcher_dir}/{nand.file_name} hat nicht die Cloud-Bytes")
     elif plan.step in ("pull", "conflict"):
         try:
             got = read_sd(f"{fx.sd_rel}/{fx.file_name}")
@@ -176,3 +232,5 @@ def cleanup(user_dir: Path) -> None:
     shutil.rmtree(sd / CLOUD_REL, ignore_errors=True)
     shutil.rmtree(sd / "saves_smoke", ignore_errors=True)
     shutil.rmtree(sd / save_smoke.SAVES_REL, ignore_errors=True)  # Sicherungen vor dem Pull
+    nand = save_smoke.fixture("nand", user_dir)
+    (nand.host_dir / nand.file_name).unlink(missing_ok=True)

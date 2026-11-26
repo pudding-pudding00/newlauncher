@@ -88,6 +88,10 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     const std::string_view conflict = trim(ini.get("debug", "cloud_conflict"));
     if (conflict == "wii" || conflict == "cloud" || conflict == "cancel") c.debugCloudConflict = std::string(conflict);
     c.debugCloudSync = std::string(trim(ini.get("debug", "cloud_sync")));
+    c.debugCloudSyncAll = parseIntIn(ini.get("debug", "cloud_sync_all"), 0, 1, 0) == 1;
+    const std::string_view sw = trim(ini.get("debug", "cloud_switch"));
+    if (sw == "wii" || sw == "cloud" || sw == "ask") c.debugCloudSwitch = std::string(sw);
+    c.debugCloudUnlink = parseIntIn(ini.get("debug", "cloud_unlink"), 0, 1, 0) == 1;
 }
 
 Config configFromIni(const IniDoc& ini, bool tls) {
@@ -133,7 +137,10 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     c.cheatSource = std::string(cheatSourceOk ? cheatSource : defaultCheatSource(tls));
     c.parental = parentalFromIni(ini);
     c.emuNandPath = std::string(trim(ini.get("emunand", "path")));
-    if (trim(ini.get("cloud", "provider")) == "drive") c.cloudProvider = CloudProviderId::Drive;
+    const std::string_view provider = trim(ini.get("cloud", "provider"));
+    if (provider == "drive") c.cloudProvider = CloudProviderId::Drive;
+    if (provider == "onedrive") c.cloudProvider = CloudProviderId::OneDrive;
+    c.onedriveClientId = std::string(trim(ini.get("cloud", "onedrive_client_id")));
     c.driveClientId = std::string(trim(ini.get("cloud", "drive_client_id")));
     c.driveClientSecret = std::string(trim(ini.get("cloud", "drive_client_secret")));
     // Gerätename landet in newlauncher-save.ini: keine Steuerzeichen, kein '=' / '[' / ']', höchstens 32 Zeichen.
@@ -201,11 +208,29 @@ std::vector<IniValue> configValues(const Config& c) {
     };
     for (auto& [key, value] : parentalIniValues(c.parental)) v.push_back({"parental", std::move(key), std::move(value)});
     if (!c.emuNandPath.empty()) v.push_back({"emunand", "path", c.emuNandPath});
-    v.push_back({"cloud", "provider", c.cloudProvider == CloudProviderId::Drive ? "drive" : "off"});
+    v.push_back({"cloud", "provider", std::string(providerName(c.cloudProvider))});
     return v;
 }
 
 }  // namespace
+
+std::string_view providerName(CloudProviderId id) {
+    switch (id) {
+        case CloudProviderId::Drive: return "drive";
+        case CloudProviderId::OneDrive: return "onedrive";
+        case CloudProviderId::None: break;
+    }
+    return "none";
+}
+
+std::string_view cloudClientId(const Config& c) {
+    switch (c.cloudProvider) {
+        case CloudProviderId::Drive: return c.driveClientId;
+        case CloudProviderId::OneDrive: return c.onedriveClientId;
+        case CloudProviderId::None: break;
+    }
+    return {};
+}
 
 std::string configToIniText(const Config& c, std::string_view previousText) {
     const char* eol = previousText.find("\r\n") != std::string_view::npos ? "\r\n" : "\n";

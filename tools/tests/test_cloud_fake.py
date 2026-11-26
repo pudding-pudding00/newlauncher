@@ -271,6 +271,157 @@ class FakeDriveTest(unittest.TestCase):
         self.assertIn(tok["refresh_token"], self.fake.secrets())
 
 
+class FakeDriveRevokeTest(unittest.TestCase):
+    def test_revoke_counts_and_unlinks(self):
+        fake = cloud_fake.FakeDrive()
+        server, port = cloud_fake.start(fake)
+        try:
+            base = f"http://127.0.0.1:{port}"
+
+            def post(path, **fields):
+                req = urllib.request.Request(base + path, data=urllib.parse.urlencode(fields).encode(), method="POST")
+                try:
+                    with urllib.request.urlopen(req, timeout=5) as r:
+                        return r.status, json.loads(r.read())
+                except urllib.error.HTTPError as e:
+                    return e.code, json.loads(e.read())
+
+            _, dc = post("/device/code", client_id="x")
+            _, tok = post("/token", client_id="x", device_code=dc["device_code"], grant_type=cloud_fake.DEVICE_GRANT)
+            self.assertEqual(post("/revoke", token="falsch")[0], 400)
+            self.assertEqual(post("/revoke", token=tok["refresh_token"])[0], 200)
+            dump = fake.state_dump()
+            self.assertEqual(dump["revokes"], 1)
+            self.assertFalse(dump["linked"])
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+class FakeOneDriveTest(unittest.TestCase):
+    API = "/v1.0/me/drive"
+
+    def setUp(self):
+        self.fake = cloud_fake.FakeOneDrive()
+        self.server, port = cloud_fake.start(self.fake)
+        self.base = f"http://127.0.0.1:{port}"
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def call(self, method, path, body=None, headers=None, token=None):
+        url = path if path.startswith("http") else self.base + path
+        req = urllib.request.Request(url, data=body, method=method, headers=dict(headers or {}))
+        if token is not None:
+            req.add_header("Authorization", "Bearer " + token)
+        opener = urllib.request.build_opener(_NoRedirect())
+        try:
+            with opener.open(req, timeout=5) as r:
+                return r.status, dict(r.headers), r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers), e.read()
+
+    def form(self, path, **fields):
+        status, _, body = self.call("POST", path, urllib.parse.urlencode(fields).encode(),
+                                    {"Content-Type": "application/x-www-form-urlencoded"})
+        return status, json.loads(body)
+
+    def link(self) -> str:
+        status, dc = self.form("/consumers/oauth2/v2.0/devicecode", client_id="cid", scope=cloud_fake.MS_SCOPE)
+        self.assertEqual(status, 200)
+        self.assertIn("verification_uri", dc)
+        status, tok = self.form("/consumers/oauth2/v2.0/token", client_id="cid", device_code=dc["device_code"],
+                                grant_type=cloud_fake.DEVICE_GRANT)
+        self.assertEqual(status, 200)
+        self.assertIn("refresh_token", tok)
+        return tok["access_token"]
+
+    def item_path(self, unit):
+        return f"{self.API}/special/approot:/{unit}.zip"
+
+    def test_pending_is_400_authorization_pending(self):
+        fake = cloud_fake.FakeOneDrive(approve="manual")
+        _, dc = fake.device_code({"client_id": "cid"})
+        status, obj = fake.token({"client_id": "cid", "device_code": dc["device_code"],
+                                  "grant_type": cloud_fake.DEVICE_GRANT})
+        self.assertEqual((status, obj["error"]), (400, "authorization_pending"))
+
+    def test_roundtrip_put_stat_patch_download(self):
+        tok = self.link()
+        status, _, body = self.call("GET", self.API + "?$select=id", token=tok)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["id"], cloud_fake.OD_DRIVE_ID)
+        self.assertEqual(self.call("GET", self.item_path("gb-x-1") + "?$select=id,cTag", token=tok)[0], 404)
+        data, h = save_zip("gb-x-1", {"a.sav": b"A"})
+        status, _, body = self.call("PUT", self.item_path("gb-x-1") + ":/content?@microsoft.graph.conflictBehavior=fail",
+                                    data, {"Content-Type": "application/zip"}, token=tok)
+        self.assertEqual(status, 201)
+        item = json.loads(body)
+        self.assertTrue(item["cTag"].startswith('"c:'))
+        desc = f"nl1 hash={h} saved=1700000000 device=PC"
+        status, _, _ = self.call("PATCH", f"{self.API}/items/{item['id']}", json.dumps({"description": desc}).encode(),
+                                 {"Content-Type": "application/json"}, token=tok)
+        self.assertEqual(status, 200)
+        status, _, body = self.call("GET", self.item_path("gb-x-1") + "?$select=id,cTag,size,description", token=tok)
+        self.assertEqual(json.loads(body)["description"], desc)
+        status, headers, _ = self.call("GET", f"{self.API}/items/{item['id']}/content", token=tok)
+        self.assertEqual(status, 302)
+        self.assertEqual(self.call("GET", headers["Location"])[2], data)
+        self.assertEqual(self.fake.state_dump()["files"]["gb-x-1.zip"]["description"], desc)
+
+    def test_wrong_if_match_is_412_and_existing_fail_is_409(self):
+        tok = self.link()
+        data, _ = save_zip("u", {"a": b"1"})
+        _, _, body = self.call("PUT", self.item_path("u") + ":/content", data, token=tok)
+        ctag = json.loads(body)["cTag"]
+        self.assertEqual(self.call("PUT", self.item_path("u") + ":/content", data, {"If-Match": '"c:{x},9"'},
+                                   token=tok)[0], 412)
+        self.assertEqual(self.call("PUT", self.item_path("u") + ":/content?@microsoft.graph.conflictBehavior=fail",
+                                   data, token=tok)[0], 409)
+        status, _, body = self.call("PUT", self.item_path("u") + ":/content", data, {"If-Match": ctag}, token=tok)
+        self.assertEqual(status, 200)
+        self.assertNotEqual(json.loads(body)["cTag"], ctag)
+
+    def test_redirect_target_rejects_bearer(self):
+        tok = self.link()
+        data, _ = save_zip("u", {"a": b"1"})
+        _, _, body = self.call("PUT", self.item_path("u") + ":/content", data, token=tok)
+        _, headers, _ = self.call("GET", f"{self.API}/items/{json.loads(body)['id']}/content", token=tok)
+        self.assertEqual(self.call("GET", headers["Location"], token=tok)[0], 400)
+
+    def test_upload_session_put_without_bearer(self):
+        tok = self.link()
+        data, _ = save_zip("big", {"a": b"x" * 1000})
+        status, _, body = self.call("POST", self.item_path("big") + ":/createUploadSession",
+                                    json.dumps({"item": {"@microsoft.graph.conflictBehavior": "fail"}}).encode(),
+                                    {"Content-Type": "application/json"}, token=tok)
+        self.assertEqual(status, 200)
+        url = json.loads(body)["uploadUrl"]
+        rng = {"Content-Range": f"bytes 0-{len(data) - 1}/{len(data)}"}
+        self.assertEqual(self.call("PUT", url, data, rng, token=tok)[0], 400)
+        status, _, body = self.call("PUT", url, data, rng)
+        self.assertEqual(status, 201)
+        self.assertEqual(self.fake.file_bytes("big"), data)
+
+    def test_api_needs_bearer_and_dump_has_no_tokens(self):
+        self.assertEqual(self.call("GET", self.API)[0], 401)
+        tok = self.link()
+        self.assertNotIn(tok, json.dumps(self.fake.state_dump()))
+        self.assertIn(tok, self.fake.secrets())
+
+    def test_seed_writes_description(self):
+        data, h = save_zip("wii-RMGP", {"smoke.sav": b"B"})
+        self.fake.seed("wii-RMGP", data, device="Dolphin PC", saved=5)
+        desc = self.fake.state_dump()["files"]["wii-RMGP.zip"]["description"]
+        self.assertEqual(desc, f"nl1 hash={h} saved=5 device=Dolphin%20PC")
+
+
 class CliTest(unittest.TestCase):
     def test_parse_seed(self):
         self.assertEqual(cloud_fake.parse_seed("gb-x-1=C:/a/b.zip"), ("gb-x-1", Path("C:/a/b.zip")))

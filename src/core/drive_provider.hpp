@@ -11,6 +11,7 @@
 
 #include "core/cloud_provider.hpp"
 #include "core/http_types.hpp"
+#include "core/oauth_client.hpp"
 #include "core/oauth_device.hpp"
 
 namespace nl {
@@ -26,34 +27,19 @@ public:
     CloudStatus upload(std::string_view unit, std::span<const u8> zip, const SaveMeta& meta,
                        std::string_view expectRev, CloudEntry& out, const volatile bool& cancel) override;
 
-    bool tokensChanged() const { return tokensChanged_; }  // nach einem Refresh neu versiegeln
-    bool refreshed() const { return refreshed_; }          // für NL_CLOUD_REFRESH
+    bool tokensChanged() const override { return oauth_.tokensChanged(); }  // nach einem Refresh neu versiegeln
+    bool refreshed() const override { return oauth_.refreshed(); }          // für NL_CLOUD_REFRESH
 
     static constexpr std::size_t kMultipartMax = 5 * 1024 * 1024;
 
 private:
-    // Leitet weiter und merkt sich die letzte Antwort, damit ein Refresh offline von abgelehnt trennbar ist.
-    struct Tap final : HttpTransport {
-        explicit Tap(HttpTransport& inner) : inner(inner) {}
-        HttpResponse send(const HttpRequest& req, const volatile bool& cancel) override;
-        HttpTransport& inner;
-        u16 lastStatus = 0;
-        NetError lastError = NetError::None;
-    };
-
-    HttpResponse call(HttpRequest req, const volatile bool& cancel);
-    CloudStatus refresh(const volatile bool& cancel);
+    HttpResponse call(HttpRequest req, const volatile bool& cancel) { return oauth_.call(std::move(req), cancel); }
+    CloudStatus statusOf(const HttpResponse& r) const { return OAuthClient::classify(r, oauth_.authFail()); }
     CloudStatus folder(std::string& id, const volatile bool& cancel);
 
-    Tap http_;
-    OAuthEndpoints ep_;
-    TokenSet& tokens_;
-    std::function<u64()> nowMs_;
+    OAuthClient oauth_;
     std::string api_;
     std::string folderId_;
-    CloudStatus authFail_ = CloudStatus::Ok;  // Ergebnis eines gescheiterten Refresh in call()
-    bool tokensChanged_ = false;
-    bool refreshed_ = false;
 };
 
 }  // namespace nl

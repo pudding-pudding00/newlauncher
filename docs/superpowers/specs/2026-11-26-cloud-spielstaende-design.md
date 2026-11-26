@@ -1,4 +1,4 @@
-# M26–M30: Spielstände und Cloud-Abgleich wie bei Steam
+# M26–M29: Spielstände und Cloud-Abgleich wie bei Steam
 
 Stand: 2026-11-26. Vorarbeit: `docs/superpowers/spikes/m26-cloud-spielstaende.md`.
 
@@ -7,7 +7,8 @@ Stand: 2026-11-26. Vorarbeit: `docs/superpowers/spikes/m26-cloud-spielstaende.md
 1. Ein **eingebauter Save-Manager**: Spielstände sichern und wiederherstellen.
 2. **Cloud-Spielstände wie bei Steam:** vor dem Spielstart den neueren Stand aus der Cloud holen, nach dem Spielen
    Änderungen hochladen, bei Konflikt fragen.
-3. Anbieter **Google Drive, OneDrive, Dropbox, MEGA**. iCloud ist gestrichen (keine API für Nicht-Apple-Geräte).
+3. Anbieter **Google Drive, OneDrive, Dropbox**. iCloud ist gestrichen (keine API für Nicht-Apple-Geräte).
+   MEGA hat der Nutzer am 2026-11-26 gestrichen.
 4. „Setze alles um was nötig ist.“
 
 Entscheidungen des Nutzers (bindend):
@@ -15,7 +16,7 @@ Entscheidungen des Nutzers (bindend):
 - **NAND:** Wiederherstellen darf in den echten NAND schreiben, aber **nur** in `/title/<hi>/<lo>/data`, über einen
   ISFS-Rechte-Patch im Speicher und **immer mit lokaler Sicherung vorher**.
 - **Genau ein Anbieter aktiv.** Beim Wechsel wird alles zum neuen hochgeladen.
-- **Eingabe** von Dropbox-Code und MEGA-Zugang über eine **Kopplungsseite auf dem Handy** (QR-Code am TV) und als
+- **Eingabe** des Dropbox-Codes über eine **Kopplungsseite auf dem Handy** (QR-Code am TV) und als
   Ausweichweg über die **erweiterte Bildschirmtastatur**.
 
 ## Änderung früherer Nicht-Ziele
@@ -116,16 +117,14 @@ NAND gesperrt (z. B. nach einem Wii-Spiel) → Eintrag bleibt bis zum nächsten 
 - Lehnt der Anbieter einen Upload wegen veralteter Revision ab, wird neu entschieden.
 - Zeiten im Konfliktdialog: Wii-Seite aus der letzten Spielsitzung, Cloud-Seite aus dem Paket (`saved`, `device`).
 
-### 6. Anbieter (M27–M30)
+### 6. Anbieter (M27–M29)
 
 - **Google Drive (M27):** Gerätecode-Flow, Scope `drive.file`, Ordner „newlauncher“ im Drive des Nutzers.
 - **OneDrive (M28):** Gerätecode-Flow über `consumers`, Scope `Files.ReadWrite.AppFolder offline_access`,
   App-Ordner. Upload mit `If-Match`.
 - **Dropbox (M29):** PKCE ohne Umleitung; der Nutzer gibt den angezeigten Code auf der Kopplungsseite oder per
   Tastatur ein. Zugriffsart „App folder“.
-- **MEGA (M30):** Anmeldung mit E-Mail und Passwort (v1 und v2, 2FA), Ordner „newlauncher“, Dateien wie bei MEGA
-  üblich verschlüsselt. Gespeichert wird nur die Sitzung, nie das Passwort.
-- Genau ein Anbieter ist aktiv (`config.ini [cloud] provider = none|drive|onedrive|dropbox|mega`).
+- Genau ein Anbieter ist aktiv (`config.ini [cloud] provider = none|drive|onedrive|dropbox`).
 - **Anbieterwechsel (M28):** Hat der neue Anbieter schon Pakete, einmal fragen: „Wii überschreibt alles / Cloud
   behalten / einzeln fragen“. Danach alle Einheiten abgleichen. Der Abgleich-Zustand gilt je `<anbieter>:<konto>`.
 - **Alle abgleichen** (Cloud-Menü, M28): alle Einheiten der Bibliothek, abbrechbar, mit Zähler.
@@ -137,8 +136,6 @@ NAND gesperrt (z. B. nach einem Wii-Spiel) → Eintrag bleibt bis zum nächsten 
   zeigt einen QR-Code mit `http://<wii-ip>:4301/<token>`. Token: 128 Bit CSPRNG, eine Übermittlung, 5 Minuten.
   Seite auf Deutsch und Englisch.
 - Dropbox-Code geht im Klartext (ohne den PKCE-Verifier, der die Wii nie verlässt, wertlos).
-- **MEGA (M30):** Das Formular verschlüsselt E-Mail und Passwort im Handy-Browser (AES-CTR + HMAC-SHA256, Schlüssel
-  im URL-Fragment `#k=…` des QR-Codes, das der Browser nie sendet).
 - **Tastatur:** Kleinbuchstaben, Ziffern, Symbole, bis 128 Zeichen, Maskierung für Passwörter.
 
 ### 8. Sicherheit und Privatsphäre
@@ -146,7 +143,6 @@ NAND gesperrt (z. B. nach einem Wii-Spiel) → Eintrag bleibt bis zum nächsten 
 - Tokens liegen verschlüsselt in `<data>/cloud/tokens.bin` (AES-CBC + HMAC-SHA256, Schlüssel aus Geräte-ID und
   Salt). **Das ist nur Verschleierung:** Wer SD-Karte und Wii hat, kommt an die Tokens. Echten Schutz geben die
   engen Scopes (Drive nur eigene Dateien, OneDrive und Dropbox nur der App-Ordner) und Abmelden mit Widerruf.
-- MEGA-Sitzungen haben **Vollzugriff** auf das Konto. Die Oberfläche warnt und empfiehlt ein eigenes Konto.
 - Tokens, Codes, E-Mail-Adressen und Passwörter erscheinen nie im Log (`redactSecret`, Host-Test, Smoke-Prüfung).
 - Client-IDs und das Google-Client-Secret stehen nur in `config.ini [cloud]` (`drive_client_id`,
   `drive_client_secret`, `onedrive_client_id`, `dropbox_app_key`), nie im Repo oder im Build. Ohne Eintrag ist der
@@ -158,6 +154,7 @@ NAND gesperrt (z. B. nach einem Wii-Spiel) → Eintrag bleibt bis zum nächsten 
 
 - Kein Teilen von Spielständen, keine Links, kein Verlauf in der Cloud über die letzte Version hinaus.
 - Keine Savestates, keine echte GC-Speicherkarte, keine Wii-`data.bin`-Erzeugung.
+- Kein MEGA (vom Nutzer gestrichen).
 - Kein Abgleich während ein Spiel läuft. Kein Löschen in der Cloud aufgrund lokaler Löschung.
 - Kein Schreiben außerhalb von `title/<hi>/<lo>/data`.
 
@@ -167,7 +164,7 @@ NAND gesperrt (z. B. nach einem Wii-Spiel) → Eintrag bleibt bis zum nächsten 
   `HttpTransport`).
 - Kein `throw`, kein RTTI, 0 Warnungen mit und ohne TLS.
 - `wtls_*` nur im Netz-Thread.
-- Eigenbau statt fremder Bibliotheken für Deflate, JSON, QR und die MEGA-Krypto (wie `sha256`/`aes128`).
+- Eigenbau statt fremder Bibliotheken für Deflate, JSON und QR (wie `sha256`/`aes128`).
 - Uhr für Token-Abläufe: monotone Zeit (`gettime`), nicht die RTC.
 
 ## Meilensteine
@@ -178,7 +175,6 @@ NAND gesperrt (z. B. nach einem Wii-Spiel) → Eintrag bleibt bis zum nächsten 
 | M27 | Ziel 5 + Google Drive: HTTP-Methoden, JSON, Tokens, Gerätecode, Abgleich vor dem Start, Upload danach, Fake-Server |
 | M28 | OneDrive, Anbieterwechsel, Alle abgleichen, Abmelden |
 | M29 | Dropbox, Kopplungsseite, QR-Code, erweiterte Tastatur |
-| M30 | MEGA |
 
 ## Für den Umsetzer offen
 

@@ -64,7 +64,17 @@ OAuthEndpoints googleEndpoints(std::string_view base, std::string_view clientId,
     ep.clientId = std::string(clientId);
     ep.clientSecret = std::string(clientSecret);
     ep.scope = std::string(kDriveScope);
+    ep.revokeUrl = b + "/revoke";
     return ep;
+}
+
+RevokeResult revokeToken(HttpTransport& http, const OAuthEndpoints& ep, std::string_view token,
+                         const volatile bool& cancel) {
+    if (ep.revokeUrl.empty()) return RevokeResult::Unsupported;
+    if (token.empty()) return RevokeResult::Failed;
+    const Pair form[] = {{"token", token}};
+    const HttpResponse r = postForm(http, ep.revokeUrl, form, cancel);
+    return r.status == 200 ? RevokeResult::Ok : RevokeResult::Failed;
 }
 
 Result<DeviceCode> requestDeviceCode(HttpTransport& http, const OAuthEndpoints& ep, const volatile bool& cancel) {

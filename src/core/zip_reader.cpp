@@ -41,14 +41,18 @@ bool isSafeZipPath(std::string_view name) {
     }
 }
 
-Result<std::vector<ZipEntry>> readZipDirectory(FileSystem& fs, std::string_view zip, u64 zipSize) {
+namespace {
+
+// Gemeinsamer Kern: read(offset, out) liefert true nur bei genau out.size() Bytes.
+template <class Read>
+Result<std::vector<ZipEntry>> readDirectory(Read&& read, std::string_view zip, u64 zipSize) {
     using R = Result<std::vector<ZipEntry>>;
     if (zipSize < kEndSize) return R::err(bad("kein ZIP-Verzeichnisende"));
 
     // Verzeichnisende rückwärts suchen; der Kommentar dahinter muss genau bis zum Dateiende reichen.
     const std::size_t tailLen = static_cast<std::size_t>(std::min<u64>(zipSize, kEndSize + kMaxComment));
     std::vector<u8> tail(tailLen);
-    if (!readExact(fs, zip, zipSize - tailLen, tail)) return R::err(Error{ErrorCode::IoError, std::string(zip)});
+    if (!read(zipSize - tailLen, std::span<u8>(tail))) return R::err(Error{ErrorCode::IoError, std::string(zip)});
     std::size_t end = std::string_view::npos;
     for (std::size_t i = tailLen - kEndSize + 1; i-- > 0;) {
         if (le32(&tail[i]) == kSigEnd && i + kEndSize + le16(&tail[i + 20]) == tailLen) {
@@ -69,7 +73,7 @@ Result<std::vector<ZipEntry>> readZipDirectory(FileSystem& fs, std::string_view 
         return R::err(bad("ZIP-Verzeichnis ungültig"));
 
     std::vector<u8> cd(cdSize);
-    if (!readExact(fs, zip, cdOffset, cd)) return R::err(bad("ZIP-Verzeichnis unvollständig"));
+    if (!read(cdOffset, std::span<u8>(cd))) return R::err(bad("ZIP-Verzeichnis unvollständig"));
     std::vector<ZipEntry> out;
     out.reserve(count);
     std::size_t p = 0;
@@ -103,13 +107,14 @@ Result<std::vector<ZipEntry>> readZipDirectory(FileSystem& fs, std::string_view 
     return R::ok(std::move(out));
 }
 
-Result<std::vector<u8>> extractZipEntry(FileSystem& fs, std::string_view zip, const ZipEntry& e) {
+template <class Read>
+Result<std::vector<u8>> extractEntry(Read&& read, const ZipEntry& e) {
     using R = Result<std::vector<u8>>;
     u8 local[kLocalSize];
-    if (!readExact(fs, zip, e.localOffset, local) || le32(local) != kSigLocal) return R::err(bad("lokaler Kopf: " + e.name));
+    if (!read(e.localOffset, std::span<u8>(local)) || le32(local) != kSigLocal) return R::err(bad("lokaler Kopf: " + e.name));
     const u64 dataPos = static_cast<u64>(e.localOffset) + kLocalSize + le16(local + 26) + le16(local + 28);
     std::vector<u8> packed(e.compSize);
-    if (!readExact(fs, zip, dataPos, packed)) return R::err(bad("Daten unvollständig: " + e.name));
+    if (!read(dataPos, std::span<u8>(packed))) return R::err(bad("Daten unvollständig: " + e.name));
 
     std::vector<u8> data;
     if (e.method == 8) {
@@ -121,6 +126,32 @@ Result<std::vector<u8>> extractZipEntry(FileSystem& fs, std::string_view zip, co
     }
     if (data.size() != e.size || crc32(data) != e.crc) return R::err(bad("Prüfsumme: " + e.name));
     return R::ok(std::move(data));
+}
+
+}  // namespace
+
+Result<std::vector<ZipEntry>> readZipDirectory(FileSystem& fs, std::string_view zip, u64 zipSize) {
+    return readDirectory([&](u64 off, std::span<u8> out) { return readExact(fs, zip, off, out); }, zip, zipSize);
+}
+
+Result<std::vector<u8>> extractZipEntry(FileSystem& fs, std::string_view zip, const ZipEntry& e) {
+    return extractEntry([&](u64 off, std::span<u8> out) { return readExact(fs, zip, off, out); }, e);
+}
+
+namespace {
+bool readSpan(std::span<const u8> zip, u64 off, std::span<u8> out) {
+    if (off > zip.size() || out.size() > zip.size() - off) return false;
+    std::copy_n(zip.begin() + static_cast<std::ptrdiff_t>(off), out.size(), out.begin());
+    return true;
+}
+}  // namespace
+
+Result<std::vector<ZipEntry>> readZipDirectory(std::span<const u8> zip) {
+    return readDirectory([&](u64 off, std::span<u8> out) { return readSpan(zip, off, out); }, "(Speicher)", zip.size());
+}
+
+Result<std::vector<u8>> extractZipEntry(std::span<const u8> zip, const ZipEntry& e) {
+    return extractEntry([&](u64 off, std::span<u8> out) { return readSpan(zip, off, out); }, e);
 }
 
 }  // namespace nl

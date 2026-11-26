@@ -12,9 +12,11 @@ using namespace nl::ui;
 namespace {
 const gfx::AtlasShapes kShapes{gfx::UvRect{0, 0, 0.01f, 0.01f}, gfx::UvRect{0.5f, 0.5f, 0.6f, 0.6f}};
 
-struct SpySearch final : SearchTarget {
+struct SpySearch final : TextTarget {
     std::vector<std::string> queries;
-    void setQuery(std::string_view q) override { queries.emplace_back(q); }
+    std::vector<std::string> submitted;
+    void setText(std::string_view q) override { queries.emplace_back(q); }
+    void submitText(std::string_view q) override { submitted.emplace_back(q); }
 };
 
 struct SpyFilter final : FilterSource {
@@ -306,4 +308,129 @@ TEST_CASE_FIXTURE(Fixture, "Keyboard: Klänge – A auf Taste Confirm, Fertig Co
     CHECK(step(k, action(Action::Right)).sound == UiSound::Move);
     CHECK(tap(k, k.keyRect(ctx, k.keyIndex(Keyboard::kDone))).sound == UiSound::Confirm);
     CHECK(step(k, action(Action::Back)).sound == UiSound::Back);
+}
+
+namespace {
+// Tippt eine Folge von Tasten (Zeichen der aktuellen Ebene oder Sondertasten) per Zeiger an.
+template <typename F>
+void typeKeys(F& fx, Keyboard& k, std::string_view keys) {
+    for (char c : keys) {
+        const int i = k.keyIndex(c);
+        REQUIRE_MESSAGE(i >= 0, "Taste fehlt: ", static_cast<int>(c));
+        fx.tap(k, k.keyRect(fx.ctx, i));
+    }
+}
+KeyboardMode codeMode() {
+    KeyboardMode m;
+    m.maxLen = 128;
+    m.layers = true;
+    m.hint = "Code";
+    return m;
+}
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: Suche ohne Ebenen bleibt QWERTZ groß mit drei Sondertasten") {
+    SpySearch t;
+    Keyboard k(t);
+    k.onEnter();
+    CHECK(k.keyIndex('Q') >= 0);
+    CHECK(k.keyIndex('q') < 0);
+    CHECK(k.keyIndex(Keyboard::kLayer) < 0);
+    CHECK(k.keyCount() == 10 + 10 + 9 + 7 + 3);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: Ebenen-Taste schaltet abc → ABC → 123 → # → abc") {
+    SpySearch t;
+    Keyboard k(t);
+    k.setMode(codeMode());
+    k.onEnter();
+    CHECK(k.layerName() == std::string_view("abc"));
+    typeKeys(*this, k, "ab");
+    typeKeys(*this, k, std::string_view("\x04", 1));
+    CHECK(k.layerName() == std::string_view("ABC"));
+    CHECK(k.focusedKey() == k.keyIndex(Keyboard::kLayer));  // Fokus bleibt auf der Ebenen-Taste
+    typeKeys(*this, k, "XY");
+    typeKeys(*this, k, std::string_view("\x04", 1));
+    CHECK(k.layerName() == std::string_view("123"));
+    typeKeys(*this, k, "7-_.@");
+    typeKeys(*this, k, std::string_view("\x04", 1));
+    CHECK(k.layerName() == std::string_view("#"));
+    typeKeys(*this, k, "!?#$%&*+=/:;,()'\"");
+    typeKeys(*this, k, std::string_view("\x04", 1));
+    CHECK(k.layerName() == std::string_view("abc"));
+    CHECK(k.text() == "abXY7-_.@!?#$%&*+=/:;,()'\"");
+    CHECK(t.queries.back() == k.text());
+}
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: Ebenen in 640 und 854 vollständig im Bild, ohne verworfene Quads") {
+    SpySearch t;
+    Keyboard k(t);
+    k.setMode(codeMode());
+    k.onEnter();
+    for (float w : {640.0f, 854.0f}) {
+        ctx.width = w;
+        ctx.height = 480;
+        for (int layer = 0; layer < 4; ++layer) {
+            for (int i = 0; i < k.keyCount(); ++i) {
+                const gfx::Rect r = k.keyRect(ctx, i);
+                CHECK(r.x >= 0);
+                CHECK(r.x + r.w <= w);
+            }
+            dl.clear();
+            k.draw(ctx, dl);
+            CHECK(dl.droppedQuads() == 0);
+            typeKeys(*this, k, std::string_view("\x04", 1));
+        }
+    }
+}
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: Längengrenze aus dem Modus (128)") {
+    SpySearch t;
+    Keyboard k(t);
+    k.setMode(codeMode());
+    k.onEnter();
+    for (int i = 0; i < 130; ++i) typeKeys(*this, k, "a");
+    CHECK(k.text().size() == 128);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: Maskierung zeigt keine Zeichen") {
+    SpySearch t;
+    Keyboard k(t);
+    KeyboardMode m = codeMode();
+    m.mask = true;
+    k.setMode(m);
+    k.onEnter();
+    CHECK(k.shownText() == "Code");  // leer → Hinweis
+    typeKeys(*this, k, "abc");
+    CHECK(k.text() == "abc");
+    CHECK(k.shownText() == "\xE2\x80\xA2\xE2\x80\xA2\xE2\x80\xA2");
+    CHECK(k.shownText().find('a') == std::string::npos);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: Fertig ruft submitText genau einmal und schließt") {
+    SpySearch t;
+    Keyboard k(t);
+    k.setMode(codeMode());
+    k.onEnter();
+    typeKeys(*this, k, "ok");
+    const SceneRequests r = tap(k, k.keyRect(ctx, k.keyIndex(Keyboard::kDone)));
+    CHECK(r.pop);
+    REQUIRE(t.submitted.size() == 1);
+    CHECK(t.submitted[0] == "ok");
+    step(k, action(Action::Back));
+    CHECK(t.submitted.size() == 1);  // B schließt ohne Einsenden
+}
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: setTarget leitet um, onEnter setzt Ebene zurück") {
+    SpySearch a, b;
+    Keyboard k(a);
+    k.setMode(codeMode());
+    k.setTarget(b);
+    k.onEnter();
+    typeKeys(*this, k, std::string_view("\x04", 1));
+    k.onEnter();
+    CHECK(k.layerName() == std::string_view("abc"));
+    typeKeys(*this, k, "z");
+    CHECK(a.queries.empty());
+    CHECK(b.queries.size() == 1);
 }

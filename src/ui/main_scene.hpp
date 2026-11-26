@@ -23,7 +23,7 @@ namespace nl::ui {
 // M24: Deckkraft der Plakette oben links: die Konsolen-Plakette blendet mit dem Cover aus, „Disc“ bleibt.
 float tagAlpha(bool disc, float coverAlpha);
 
-class MainScene final : public Scene, public JumpTarget, public SearchTarget {
+class MainScene final : public Scene, public JumpTarget, public TextTarget {
 public:
     explicit MainScene(const Library& lib);
 
@@ -78,9 +78,10 @@ public:
     }
     bool isGameLocked(const Game& g) const;
 
-    // SearchTarget: nicht leere Anfrage → Such-Eintrag vorn in der Leiste mit Treffern aus allen Konsolen;
+    // Suche (TextTarget der Tastatur): nicht leere Anfrage → Such-Eintrag vorn in der Leiste mit Treffern aus allen Konsolen;
     // leere Anfrage → Suchmodus aus, vorheriger Eintrag wieder aktiv.
-    void setQuery(std::string_view query) override;
+    void setQuery(std::string_view query);
+    void setText(std::string_view text) override { setQuery(text); }
     bool searchActive() const { return searchActive_; }
     const char* barLabelText(int index) const;
     void setFocusForTest(int index) { grid_.setFocus(index); }

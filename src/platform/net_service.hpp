@@ -22,9 +22,11 @@ public:
     NetService(const NetService&) = delete;
     NetService& operator=(const NetService&) = delete;
 
-    // Reiht einen Auftrag ein und startet den Thread beim ersten Aufruf (64 KiB Stack). 0 = nicht angenommen
+    // Reiht einen Auftrag ein und startet den Thread beim ersten Aufruf (128 KiB Stack). 0 = nicht angenommen
     // (nach shutdown oder wenn der Thread nicht startet).
     u32 submit(NetJobFn job);
+    // M27: wie submit, aber vor alle wartenden Aufträge (Cloud-Abgleich vor dem Spielstart).
+    u32 submitFront(NetJobFn job);
     // Startet bei Bedarf einen WLAN-Statuscheck im Netz-Thread ohne Heap-Allokation und ohne wtls_init().
     void startWifiProbe();
     // M25: Netz abbauen und neu aufbauen (Info-Fenster, A); läuft als nächster Statuscheck.

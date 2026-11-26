@@ -21,6 +21,7 @@ struct NetJob {
 class JobQueue {
 public:
     u32 push(NetJobFn run);         // neue ID, nie 0, streng steigend
+    u32 pushFront(NetJobFn run);    // wie push, aber vor alle wartenden (Cloud-Abgleich vor dem Start)
     std::optional<NetJob> take();   // nächster wartender Auftrag (FIFO) wird der laufende; nullopt = leer
     void finish();                  // der laufende Auftrag ist fertig
     void cancel(u32 id);            // wartend → entfernt; laufend → Abbruch-Flag gesetzt

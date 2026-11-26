@@ -31,7 +31,7 @@ static_assert(nl::kX509BadCertFuture == MBEDTLS_X509_BADCERT_FUTURE);
 namespace nl::platform {
 
 namespace {
-constexpr u32 kStackBytes = 64 * 1024;
+constexpr u32 kStackBytes = 128 * 1024;  // M27: Cloud-Abgleich packt/entpackt im Netz-Thread, dazu TLS
 constexpr u8 kPriority = 40;  // wie Scan und Cover-Thread: unter dem Haupt-Thread
 
 // M25: Router-Check (Spec 2026-11-26-m25-wlan-design.md 2).
@@ -101,6 +101,18 @@ u32 NetService::submit(NetJobFn job) {
         return 0;
     }
     const u32 id = queue_.push(std::move(job));
+    LWP_CondBroadcast(cond_);
+    LWP_MutexUnlock(mutex_);
+    return id;
+}
+
+u32 NetService::submitFront(NetJobFn job) {
+    LWP_MutexLock(mutex_);
+    if (stopped_ || !ensureThreadLocked()) {
+        LWP_MutexUnlock(mutex_);
+        return 0;
+    }
+    const u32 id = queue_.pushFront(std::move(job));
     LWP_CondBroadcast(cond_);
     LWP_MutexUnlock(mutex_);
     return id;

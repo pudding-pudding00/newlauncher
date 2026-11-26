@@ -12,6 +12,13 @@ u32 JobQueue::push(NetJobFn run) {
     return id;
 }
 
+u32 JobQueue::pushFront(NetJobFn run) {
+    if (nextId_ == 0) nextId_ = 1;
+    const u32 id = nextId_++;
+    queue_.push_front(NetJob{id, std::move(run)});
+    return id;
+}
+
 std::optional<NetJob> JobQueue::take() {
     if (queue_.empty()) return std::nullopt;
     NetJob job = std::move(queue_.front());

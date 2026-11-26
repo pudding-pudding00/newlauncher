@@ -108,3 +108,24 @@ TEST_CASE("JobQueue: cancel unbekannter oder fertiger IDs ist harmlos") {
     CHECK(next->id == b);
     CHECK_FALSE(q.cancelFlag());
 }
+
+TEST_CASE("JobQueue: pushFront überholt wartende, nicht den laufenden; IDs steigen weiter") {
+    JobQueue q;
+    const u32 a = q.push(noop());
+    const u32 b = q.push(noop());
+    const u32 c = q.push(noop());
+    auto running = q.take();
+    REQUIRE(running.has_value());
+    CHECK(running->id == a);
+    const u32 f = q.pushFront(noop());
+    CHECK(f > c);
+    CHECK(q.current() == a);
+    q.finish();
+    auto next = q.take();
+    REQUIRE(next.has_value());
+    CHECK(next->id == f);
+    q.finish();
+    next = q.take();
+    REQUIRE(next.has_value());
+    CHECK(next->id == b);
+}

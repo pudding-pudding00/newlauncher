@@ -957,7 +957,7 @@ TEST_CASE_FIXTURE(Fixture, "Fokus-Kachel ragt höchstens um ihren Vergrößerung
     const auto tile = s.grid().tileRect(0, 0.0f);
     CHECK(cover->clip.y < s.grid().viewTop());                       // darf in die Konsolenleiste ragen …
     CHECK(cover->clip.y >= s.grid().viewTop() - tile.h * 0.08f);     // … aber nur um den Rand
-    CHECK(cover->clip.y + cover->clip.h <= s.grid().viewTop() + s.grid().viewHeight() + tile.h * 0.08f);
+    CHECK(cover->clip.y + cover->clip.h <= doctest::Approx(s.grid().viewTop() + s.grid().viewHeight()));
 }
 
 TEST_CASE_FIXTURE(Fixture, "Untere Taskbar überlagert Spielauswahl bei Zeiger, Fokus-Cover bleibt über der Leiste") {

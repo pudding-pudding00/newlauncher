@@ -80,6 +80,7 @@ add_library(nl_core STATIC
     src/core/save_locator.cpp
     src/core/save_query.cpp
     src/core/save_backup.cpp
+    src/core/nand_path.cpp
     src/core/zip_reader.cpp
     src/core/emu_catalog.cpp
     src/core/emu_install.cpp
@@ -350,6 +351,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/disc_drive.cpp
         src/platform/fs_extents.cpp
         src/platform/nand_emu.cpp
+        src/platform/ios_patch.cpp
+        src/platform/isfs_fs.cpp
         src/app/cover_service.cpp
         src/app/banner_service.cpp
         src/gfx/renderer.cpp

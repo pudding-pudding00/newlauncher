@@ -1103,7 +1103,14 @@ int main(int argc, char** argv) {
         if (const auto profile = overrides.emulatorProfile(game.key)) {
             if (const auto r = nl::resolveEmulator(game.console, emulatorIni, foundApps, *profile)) {
                 if (r->badProfile) nl::log::line("NL_OPT_BAD emulator %s", game.key);
-                gameEmus.set(nl::consoleInfo(game.console).key, nl::EmulatorEntry{r->dol, r->args, r->fromIni, r->profile, r->fsMask});
+                const nl::EmulatorEntry* base = gameEmus.forConsole(game.console);
+                nl::EmulatorEntry entry = base != nullptr ? *base : nl::EmulatorEntry{};  // save_dir/save_ext bleiben
+                entry.dol = r->dol;
+                entry.args = r->args;
+                entry.fromFile = r->fromIni;
+                entry.profile = r->profile;
+                entry.fsMask = r->fsMask;
+                gameEmus.set(nl::consoleInfo(game.console).key, std::move(entry));
             }
         }
         // Spieloptionen (Spec v2 7) bei jedem Start frisch lesen: die Options-Szene ändert games.ini/config.ini.

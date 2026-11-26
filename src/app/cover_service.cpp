@@ -60,28 +60,42 @@ const void* CoverService::texels(gfx::TextureId id) const {
 void CoverService::pump() {
     takeResult();
     if (worker_.running()) return;
-    if (auto stem = cache_.nextRequest()) {
+    constexpr int kCoverBatchSize = 6;
+    std::vector<platform::CoverRequest> batch;
+    batch.reserve(kCoverBatchSize);
+    for (int i = 0; i < kCoverBatchSize; ++i) {
+        auto stem = cache_.nextRequest();
+        if (!stem) break;
         const auto dev = deviceOfStem_.find(*stem);
         const u8 d = dev != deviceOfStem_.end() ? dev->second : 0;
-        if (d >= roots_.size() || !worker_.start(fs_, roots_[d], *stem, mem_)) cache_.fail(*stem);
+        if (d >= roots_.size()) {
+            cache_.fail(*stem);
+            continue;
+        }
+        batch.push_back(platform::CoverRequest{roots_[d], std::move(*stem)});
+    }
+    if (batch.empty()) return;
+    if (!worker_.start(fs_, batch, mem_)) {
+        for (const auto& req : batch) cache_.fail(req.stem);
     }
 }
 
 void CoverService::takeResult() {
-    if (auto r = worker_.take()) {
-        lastConverted_ = r->converted;
-        if (r->texels != nullptr) {
-            if (r->converted) log::line("NL_COVER_CONVERTED %s", r->stem.c_str());
-            // Latenz nur für gelesene .tex: eine Umwandlung ist einmalig und hat ihr eigenes Budget.
-            if (perf_ != nullptr && !r->converted) {
-                if (const auto at = cache_.requestedAtMs(r->stem)) perf_->coverLoaded(cache_.nowMs() - *at);
+    if (auto batch = worker_.take()) {
+        for (const std::string& stem : batch->requeue) cache_.requeue(stem);
+        for (auto& r : batch->results) {
+            lastConverted_ = r.converted;
+            if (r.texels != nullptr) {
+                if (r.converted) log::line("NL_COVER_CONVERTED %s", r.stem.c_str());
+                // Latenz nur für gelesene .tex: eine Umwandlung ist einmalig und hat ihr eigenes Budget.
+                if (perf_ != nullptr && !r.converted) {
+                    if (const auto at = cache_.requestedAtMs(r.stem)) perf_->coverLoaded(cache_.nowMs() - *at);
+                }
+                cache_.complete(r.stem, r.texels, r.bytes, r.box);
+            } else {
+                if (!r.error.empty()) log::line("NL_COVER_FAIL %s %s", r.stem.c_str(), r.error.c_str());
+                cache_.fail(r.stem);
             }
-            // M23: Inhalt ohne transparenten Rand (eingepasstes Querformat), auch aus alten .tex-Dateien.
-            const auto box = cmprOpaqueBox(std::span<const u8>(static_cast<const u8*>(r->texels), r->bytes), kCoverW, kCoverH);
-            cache_.complete(r->stem, r->texels, r->bytes, box);
-        } else {
-            if (!r->error.empty()) log::line("NL_COVER_FAIL %s %s", r->stem.c_str(), r->error.c_str());
-            cache_.fail(r->stem);
         }
     }
 }

@@ -23,9 +23,21 @@ TEST_CASE("want legt Pending an, nextRequest liefert Visible vor Prefetch") {
     CHECK(c.want("nes/C", CoverPriority::Prefetch) == CoverState::Pending);
     CHECK_FALSE(c.idle());
     CHECK(c.nextRequest() == std::optional<std::string>("nes/B"));
-    CHECK(c.nextRequest() == std::optional<std::string>("nes/C"));  // bei Gleichstand der zuletzt gewünschte
-    CHECK(c.nextRequest() == std::optional<std::string>("nes/A"));
+    CHECK(c.nextRequest() == std::optional<std::string>("nes/A"));  // bei Gleichstand von oben nach unten (FIFO)
+    CHECK(c.nextRequest() == std::optional<std::string>("nes/C"));
     CHECK_FALSE(c.nextRequest().has_value());
+}
+
+TEST_CASE("requeue gibt inFlight-Eintrag für den nächsten Abruf frei") {
+    FakeMemory mem;
+    CoverCache c(3 * kBytes, mem);
+    c.beginFrame(1, 0);
+    c.want("nes/A", CoverPriority::Visible);
+    c.want("nes/B", CoverPriority::Visible);
+    CHECK(c.nextRequest() == std::optional<std::string>("nes/A"));
+    CHECK(c.nextRequest() == std::optional<std::string>("nes/B"));
+    c.requeue("nes/B");
+    CHECK(c.nextRequest() == std::optional<std::string>("nes/B"));
 }
 
 TEST_CASE("complete → Ready, texels/slotOf gesetzt, Einblendung über 150 ms") {

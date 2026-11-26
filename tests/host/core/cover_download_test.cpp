@@ -349,6 +349,26 @@ TEST_CASE("orderCoverJobs: Generation absteigend, innerhalb einer Konsole stabil
     CHECK(coverJobRank(Console::Gb) < coverJobRank(Console::Nes));
 }
 
+TEST_CASE("orderCoverJobs: Favoriten und Zuletzt noch vor Konsolengenerationen") {
+    std::vector<CoverJob> jobs;
+    auto add = [&](Console c, const char* stem, bool fav, u32 played) {
+        CoverJob j{"", stem};
+        j.console = c;
+        j.favorite = fav;
+        j.lastPlayed = played;
+        jobs.push_back(j);
+    };
+    add(Console::Wii, "wii1", false, 0);
+    add(Console::Nes, "nes-fav1", true, 0);
+    add(Console::Snes, "snes-old", false, 100);
+    add(Console::Gb, "gb-new", false, 500);
+    add(Console::Gc, "gc-fav2", true, 900);
+    orderCoverJobs(jobs);
+    std::string order;
+    for (const CoverJob& j : jobs) order += j.stem + ",";
+    CHECK(order == "nes-fav1,gc-fav2,gb-new,snes-old,wii1,");
+}
+
 TEST_CASE("coverDownloadJobs setzt die Konsole des Auftrags (M24)") {
     Game g{};
     g.console = Console::Snes;
@@ -356,9 +376,13 @@ TEST_CASE("coverDownloadJobs setzt die Konsole des Auftrags (M24)") {
     g.title = "F-Zero";
     g.path = "usb:/roms/snes/F-Zero (Europe).sfc";
     const Game* gs[] = {&g};
-    const auto jobs = coverDownloadJobs(gs, [](const std::string&) { return false; }, "usb:", "https://x");
+    const auto jobs = coverDownloadJobs(
+        gs, [](const std::string&) { return false; }, "usb:", "https://x", nullptr,
+        [](const Game&) { return CoverOrderMeta{true, 42}; });
     REQUIRE(jobs.size() == 1);
     CHECK(jobs[0].console == Console::Snes);
+    CHECK(jobs[0].favorite);
+    CHECK(jobs[0].lastPlayed == 42);
 }
 
 namespace {

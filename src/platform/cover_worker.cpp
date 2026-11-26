@@ -30,13 +30,12 @@ CoverWorker::~CoverWorker() {
     LWP_MutexDestroy(mutex_);
 }
 
-bool CoverWorker::start(FileSystem& fs, std::string libRoot, std::string stem, CoverMemory& mem) {
-    if (running_) return false;
+bool CoverWorker::start(FileSystem& fs, std::vector<CoverRequest> requests, CoverMemory& mem) {
+    if (running_ || requests.empty()) return false;
     join();
     fs_ = &fs;
     mem_ = &mem;
-    root_ = std::move(libRoot);
-    stem_ = std::move(stem);
+    requests_ = std::move(requests);
     running_ = true;
     if (LWP_CreateThread(&thread_, &CoverWorker::entry, this, nullptr, kStackBytes, kPriority) != 0) {
         running_ = false;
@@ -55,7 +54,7 @@ void CoverWorker::join() {
 
 void* CoverWorker::entry(void* arg) {
     auto* self = static_cast<CoverWorker*>(arg);
-    CoverResult r = self->run();
+    CoverBatchResult r = self->run();
     LWP_MutexLock(self->mutex_);
     self->result_.emplace(std::move(r));
     self->running_ = false;
@@ -63,9 +62,10 @@ void* CoverWorker::entry(void* arg) {
     return nullptr;
 }
 
-CoverResult CoverWorker::run() {
+CoverResult CoverWorker::loadOne(const CoverRequest& req, bool allowConvert, bool& skippedConvert) {
+    skippedConvert = false;
     CoverResult out;
-    out.stem = stem_;
+    out.stem = req.stem;
     FileSystem& fs = *fs_;
     auto deliver = [&](std::span<const u8> cmpr) {
         void* p = mem_->alloc(kCoverTexBytes);
@@ -77,10 +77,11 @@ CoverResult CoverWorker::run() {
         DCFlushRange(p, kCoverTexBytes);  // GX liest am Cache vorbei
         out.texels = p;
         out.bytes = kCoverTexBytes;
+        out.box = cmprOpaqueBox(cmpr, kCoverW, kCoverH);
     };
 
     // 1. Fertige .tex aus dem Cache
-    const std::string texPath = coverTexPath(root_, stem_);
+    const std::string texPath = coverTexPath(req.root, req.stem);
     if (auto file = fs.readAll(texPath, kTexHeaderBytes + kCoverTexBytes); file.isOk()) {
         auto tex = parseTex(file.value());
         if (tex.isOk() && tex.value().width == kCoverW && tex.value().height == kCoverH) {
@@ -88,9 +89,13 @@ CoverResult CoverWorker::run() {
             return out;
         }
     }
+    if (!allowConvert) {
+        skippedConvert = true;
+        return out;
+    }
 
     // 2. PNG-Quelle umwandeln
-    auto png = fs.readAll(coverSrcPath(root_, stem_), kMaxPngBytes);
+    auto png = fs.readAll(coverSrcPath(req.root, req.stem), kMaxPngBytes);
     if (!png.isOk()) return out;  // keine Quelle: Platzhalter
     u32 w = 0, h = 0;
     auto rgba = decodePng(png.value(), w, h);
@@ -115,10 +120,30 @@ CoverResult CoverWorker::run() {
     return out;
 }
 
-std::optional<CoverResult> CoverWorker::take() {
+CoverBatchResult CoverWorker::run() {
+    CoverBatchResult batch;
+    for (std::size_t i = 0; i < requests_.size(); ++i) {
+        bool skipped = false;
+        // Wenn schon .tex-Treffer im Stapel liegen, keine langsame PNG-Umwandlung davorhängen.
+        CoverResult r = loadOne(requests_[i], batch.results.empty(), skipped);
+        if (skipped) {
+            for (std::size_t j = i; j < requests_.size(); ++j) batch.requeue.push_back(requests_[j].stem);
+            break;
+        }
+        const bool stopAfter = r.converted;
+        batch.results.push_back(std::move(r));
+        if (stopAfter) {
+            for (std::size_t j = i + 1; j < requests_.size(); ++j) batch.requeue.push_back(requests_[j].stem);
+            break;
+        }
+    }
+    return batch;
+}
+
+std::optional<CoverBatchResult> CoverWorker::take() {
     if (running_) return std::nullopt;
     LWP_MutexLock(mutex_);
-    std::optional<CoverResult> out = std::move(result_);
+    std::optional<CoverBatchResult> out = std::move(result_);
     result_.reset();
     LWP_MutexUnlock(mutex_);
     if (out) join();

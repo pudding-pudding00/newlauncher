@@ -29,6 +29,8 @@ add_library(nl_core STATIC
     src/core/url_encode.cpp
     src/core/hmac.cpp
     src/core/json.cpp
+    src/core/multipart.cpp
+    src/core/http_types.cpp
     src/core/parental.cpp
     src/core/rgb5a3.cpp
     src/core/console.cpp

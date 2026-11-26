@@ -3,10 +3,13 @@
 // ohne NL_TLS Klartext-Sockets mit core/http. Nur im Netz-Thread (NetService) aufrufen; dort laufen net_init und
 // wtls_init, und nur dort dürfen wtls_*-Aufrufe stehen.
 
+#include <functional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/http.hpp"
+#include "core/http_types.hpp"
 #include "core/net_error.hpp"
 #include "core/types.hpp"
 
@@ -53,5 +56,20 @@ HttpResult httpGet(const Url& url, u32 maxBody, std::vector<u8>& body, const vol
 // Body-Bytes mit (für die Fortschrittsanzeige). Bei jedem Ergebnis außer Ok wird destFile gelöscht.
 HttpResult httpDownload(const Url& url, const std::string& destFile, u32 maxBody, const volatile bool* cancel,
                         volatile u32* received, const HttpLog& log = {});
+
+// M27: beliebige Methode mit eigenen Headern und Body, nur https:// (Test-CA, SNTP-Versuch und Timeouts wie
+// httpGet). Folgt keiner Umleitung und liefert jeden Status unverändert mit Antwort-Headern und Body (höchstens
+// request.maxBody Bytes). status 0 = keine vollständige Antwort; ohne NL_TLS immer {0, TlsMissing}.
+HttpResponse httpSend(const HttpRequest& request, const volatile bool* cancel, const HttpLog& log = {});
+
+// HttpTransport für core/ (Cloud-Anbieter); nur im Netz-Thread benutzen.
+class WtlsTransport final : public HttpTransport {
+public:
+    explicit WtlsTransport(HttpLog log = {}) : log_(std::move(log)) {}
+    HttpResponse send(const HttpRequest& req, const volatile bool& cancel) override;
+
+private:
+    HttpLog log_;
+};
 
 }  // namespace nl::platform

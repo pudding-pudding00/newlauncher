@@ -106,8 +106,12 @@ void drainSmallBody(wtls_http_response* res, const volatile bool* cancel) {
     }
 }
 
+// send == nullptr: GET mit festem User-Agent, Umleitungen folgen, nur 200 liest den Body (httpGet/httpDownload).
+// send gesetzt (httpSend, M27): Methode, Header und Body daraus, keine Umleitung, jeder Status liest den Body, die
+// Antwort-Header landen in respHeaders.
 HttpResult wtlsRequest(const Url& url, u32 maxBody, const volatile bool* cancel, const HttpLog& log,
-                       const std::function<bool(std::span<const u8>)>& sink) {
+                       const std::function<bool(std::span<const u8>)>& sink, const HttpRequest* send = nullptr,
+                       HttpHeaders* respHeaders = nullptr) {
     loadTestCa(log);
     if (isCancelled(cancel)) return {HttpOutcome::Failed, NetError::Other, 0};
 
@@ -122,11 +126,22 @@ HttpResult wtlsRequest(const Url& url, u32 maxBody, const volatile bool* cancel,
         tlsOpt.abort_ctx = const_cast<bool*>(cancel);  // nur gelesen (tlsAbort)
     }
 
+    std::vector<wtls_http_header> sendHeaders;
     wtls_http_request req{};
     req.url = urlStr.c_str();
     req.headers = kHeaders;
     req.n_headers = 1;
     req.max_redirects = kMaxRedirects;
+    if (send != nullptr) {
+        sendHeaders.push_back(kHeaders[0]);
+        for (const auto& [k, v] : send->headers) sendHeaders.push_back({k.c_str(), v.c_str()});
+        req.method = httpMethodName(send->method);
+        req.headers = sendHeaders.data();
+        req.n_headers = sendHeaders.size();
+        req.body = send->body.empty() ? nullptr : send->body.data();
+        req.body_len = send->body.size();
+        req.max_redirects = -1;  // Spike S5: 308/302 kommen als Status an, der Anbieter entscheidet
+    }
     req.header_timeout_ms = kTlsIoMs;
     req.tls = &tlsOpt;
 
@@ -174,7 +189,12 @@ HttpResult wtlsRequest(const Url& url, u32 maxBody, const volatile bool* cancel,
 
     const int rawStatus = wtls_http_status(res);
     const u16 status = static_cast<u16>(rawStatus > 0 ? rawStatus : 0);
-    if (status != 200) {
+    if (respHeaders != nullptr) {
+        const char* hn = nullptr;
+        const char* hv = nullptr;
+        for (std::size_t i = 0; wtls_http_header_at(res, i, &hn, &hv); ++i) respHeaders->emplace_back(hn, hv);
+    }
+    if (status != 200 && send == nullptr) {
         drainSmallBody(res, cancel);
         wtls_http_close(res);
         return {status == 404 ? HttpOutcome::NotFound : HttpOutcome::Failed, NetError::Http, status};
@@ -461,6 +481,43 @@ bool syncClockOnce(const HttpLog& log) {
     (void)log;
     return false;
 #endif
+}
+
+HttpResponse httpSend(const HttpRequest& request, const volatile bool* cancel, const HttpLog& log) {
+    HttpResponse out;
+#ifdef NL_TLS
+    const auto url = parseUrl(request.url);
+    if (!url || !url->tls) {  // nur HTTPS, kein Rückfall auf HTTP
+        out.error = NetError::Other;
+        return out;
+    }
+    const HttpResult r = wtlsRequest(
+        *url, request.maxBody, cancel, log,
+        [&](std::span<const u8> data) {
+            out.body.insert(out.body.end(), data.begin(), data.end());
+            return true;
+        },
+        &request, &out.headers);
+    if (r.outcome == HttpOutcome::Ok || (r.status != 0 && r.error == NetError::Http)) {
+        out.status = r.status;
+        out.error = NetError::None;
+    } else {
+        out.status = 0;
+        out.error = r.error;
+        out.headers.clear();
+        out.body.clear();
+    }
+#else
+    (void)request;
+    (void)cancel;
+    (void)log;
+    out.error = NetError::TlsMissing;
+#endif
+    return out;
+}
+
+HttpResponse WtlsTransport::send(const HttpRequest& req, const volatile bool& cancel) {
+    return httpSend(req, &cancel, log_);
 }
 
 }  // namespace nl::platform

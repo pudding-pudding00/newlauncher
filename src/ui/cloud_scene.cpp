@@ -66,14 +66,15 @@ bool CloudScene::rowEnabled(int row) const {
 
 bool CloudScene::cycleProvider(int dir) {
     static constexpr CloudProviderId kOrder[] = {CloudProviderId::None, CloudProviderId::Drive,
-                                                 CloudProviderId::OneDrive};
-    constexpr int n = 3;
+                                                 CloudProviderId::OneDrive, CloudProviderId::Dropbox};
+    constexpr int n = 4;
     int i = 0;
     while (i < n && kOrder[i] != view_.provider) ++i;
     for (int k = 1; k < n; ++k) {
         const CloudProviderId p = kOrder[((i + dir * k) % n + n) % n];
         const bool ready = p == CloudProviderId::None || (p == CloudProviderId::Drive && view_.driveReady) ||
-                           (p == CloudProviderId::OneDrive && view_.onedriveReady);
+                           (p == CloudProviderId::OneDrive && view_.onedriveReady) ||
+                           (p == CloudProviderId::Dropbox && view_.dropboxReady);
         if (!ready) continue;
         view_.provider = p;
         return true;
@@ -181,6 +182,7 @@ void CloudScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         if (r == kRowProvider) {
             const char* v = tr(view_.provider == CloudProviderId::Drive      ? Str::CloudDrive
                                : view_.provider == CloudProviderId::OneDrive ? Str::CloudProviderOneDrive
+                               : view_.provider == CloudProviderId::Dropbox  ? Str::CloudProviderDropbox
                                                                              : Str::CloudOff);
             const float vw = gfx::measureText(value, v);
             gfx::drawText(dl, value, row.x + row.w - 8 - vw, base, v, enabled ? t.text : t.textMuted);

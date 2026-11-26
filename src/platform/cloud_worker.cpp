@@ -8,7 +8,9 @@
 
 #include "core/cloud_state.hpp"
 #include "core/drive_provider.hpp"
+#include "core/dropbox_provider.hpp"
 #include "core/onedrive_provider.hpp"
+#include "core/pkce.hpp"
 #include "core/token_store.hpp"
 #include "platform/device_key.hpp"
 #include "platform/http_client.hpp"
@@ -57,6 +59,10 @@ bool sleepMs(u32 ms, const volatile bool& cancel) {
 
 // Ohne RTTI und ohne std::variant: der Anbieter kommt als Zeiger auf die Basisklasse.
 std::unique_ptr<CloudProvider> makeProvider(const CloudSettings& cfg, HttpTransport& http, TokenSet& tokens) {
+    if (cfg.provider == "dropbox") {
+        return std::make_unique<DropboxProvider>(http, cfg.endpoints, tokens, NetService::clockMs, cfg.apiBase,
+                                                 cfg.contentBase);
+    }
     if (cfg.provider == "onedrive") {
         return std::make_unique<OneDriveProvider>(http, cfg.endpoints, tokens, NetService::clockMs, cfg.apiBase);
     }
@@ -174,23 +180,30 @@ bool CloudWorker::startLink() {
     return true;
 }
 
+void CloudWorker::finishLink(LinkState s) {
+    LWP_MutexLock(mutex_);
+    code_.reset();
+    auth_.reset();
+    submitted_.reset();
+    LWP_MutexUnlock(mutex_);
+    link_ = static_cast<u8>(s);
+}
+
 void CloudWorker::runLink(const volatile bool& cancel) {
-    auto finish = [this](LinkState s) {
-        LWP_MutexLock(mutex_);
-        code_.reset();
-        LWP_MutexUnlock(mutex_);
-        link_ = static_cast<u8>(s);
-    };
     if (!service_.networkUp()) {
         log("NL_CLOUD_LINK offline");
-        finish(LinkState::Offline);
+        finishLink(LinkState::Offline);
+        return;
+    }
+    if (cfg_.provider == "dropbox") {
+        runPkceLink(cancel);
         return;
     }
     WtlsTransport http;  // ohne URL-Log: Gerätecode und Tokens stehen in Formularen und Antworten
     auto dc = requestDeviceCode(http, cfg_.endpoints, cancel);
     if (!dc.isOk()) {
         log("NL_CLOUD_LINK failed");
-        finish(cancel ? LinkState::Idle : LinkState::Failed);
+        finishLink(cancel ? LinkState::Idle : LinkState::Failed);
         return;
     }
     const DeviceCode code = dc.value();
@@ -205,12 +218,12 @@ void CloudWorker::runLink(const volatile bool& cancel) {
     TokenSet tokens;
     for (;;) {
         if (!sleepMs(intervalS * 1000, cancel)) {
-            finish(LinkState::Idle);
+            finishLink(LinkState::Idle);
             return;
         }
         if (NetService::clockMs() >= deadline) {
             log("NL_CLOUD_LINK expired");
-            finish(LinkState::Expired);
+            finishLink(LinkState::Expired);
             return;
         }
         const PollState p = pollToken(http, cfg_.endpoints, code.deviceCode, NetService::clockMs(), tokens, cancel);
@@ -221,24 +234,94 @@ void CloudWorker::runLink(const volatile bool& cancel) {
         }
         if (p == PollState::Denied || p == PollState::Expired) {
             log(p == PollState::Denied ? "NL_CLOUD_LINK denied" : "NL_CLOUD_LINK expired");
-            finish(p == PollState::Denied ? LinkState::Denied : LinkState::Expired);
+            finishLink(p == PollState::Denied ? LinkState::Denied : LinkState::Expired);
             return;
         }
         if (p == PollState::Failed) {
             if (cancel) {
-                finish(LinkState::Idle);
+                finishLink(LinkState::Idle);
                 return;
             }
             continue;  // einzelner Netzfehler: bis zum Ablauf weiter fragen
         }
         break;  // Ok
     }
+    completeLink(http, tokens, cancel);
+}
 
+// Dropbox (M29): PKCE ohne Umleitung. Die Wii zeigt die Freigabeseite (QR), der Nutzer bringt den angezeigten Code
+// über die Kopplungsseite oder die Tastatur zurück; der Verifier verlässt die Wii nie.
+void CloudWorker::runPkceLink(const volatile bool& cancel) {
+    std::array<u8, 32> rnd{};
+    std::array<u8, 16> tok{};
+    if (!secureRandom(rnd) || (cfg_.pairToken.empty() && !secureRandom(tok))) {
+        log("NL_CLOUD_LINK failed random");
+        finishLink(LinkState::Failed);
+        return;
+    }
+    const Pkce pkce = makePkce(rnd);
+    AuthLink link;
+    link.authorizeUrl = dropboxAuthorizeUrl(cfg_.endpoints, pkce.challenge, cfg_.authorizeBase);
+    if (cfg_.pairToken.empty()) {
+        static constexpr char kHex[] = "0123456789abcdef";
+        for (const u8 b : tok) {
+            link.pairToken.push_back(kHex[b >> 4]);
+            link.pairToken.push_back(kHex[b & 15]);
+        }
+    } else {
+        link.pairToken = cfg_.pairToken;
+    }
+    link.expiresInS = kAuthCodeWaitS;
+    LWP_MutexLock(mutex_);
+    auth_ = link;
+    submitted_.reset();
+    LWP_MutexUnlock(mutex_);
+    link_ = static_cast<u8>(LinkState::ShowCode);
+    log("NL_CLOUD_LINK code");
+
+    WtlsTransport http;
+    const u64 deadline = NetService::clockMs() + static_cast<u64>(kAuthCodeWaitS) * 1000;
+    TokenSet tokens;
+    for (;;) {
+        if (!sleepMs(100, cancel)) {
+            finishLink(LinkState::Idle);
+            return;
+        }
+        if (NetService::clockMs() >= deadline) {
+            log("NL_CLOUD_LINK expired");
+            finishLink(LinkState::Expired);
+            return;
+        }
+        LWP_MutexLock(mutex_);
+        std::optional<std::string> code = std::move(submitted_);
+        submitted_.reset();
+        LWP_MutexUnlock(mutex_);
+        if (!code) continue;
+        const PollState p =
+            exchangeAuthCode(http, cfg_.endpoints, *code, pkce.verifier, NetService::clockMs(), tokens, cancel);
+        if (p == PollState::Ok) break;
+        if (cancel) {
+            finishLink(LinkState::Idle);
+            return;
+        }
+        if (p == PollState::Denied) {
+            log("NL_CLOUD_LINK badcode");  // ohne den Code
+            link_ = static_cast<u8>(LinkState::BadCode);
+            continue;
+        }
+        log("NL_CLOUD_LINK failed");
+        finishLink(LinkState::Failed);
+        return;
+    }
+    completeLink(http, tokens, cancel);
+}
+
+void CloudWorker::completeLink(HttpTransport& http, TokenSet& tokens, const volatile bool& cancel) {
     const std::unique_ptr<CloudProvider> provider = makeProvider(cfg_, http, tokens);
     std::string id;
     if (provider->account(id, cancel) != CloudStatus::Ok || id.empty()) {
         log("NL_CLOUD_LINK failed");
-        finish(LinkState::Failed);
+        finishLink(cancel ? LinkState::Idle : LinkState::Failed);
         return;
     }
     // Wechsel des Anbieters: das alte Token best effort widerrufen, bevor tokens.bin überschrieben wird.
@@ -247,7 +330,22 @@ void CloudWorker::runLink(const volatile bool& cancel) {
     }
     storeTokens(cfg_.provider + ":" + id, tokens);
     log("NL_CLOUD_LINKED " + cfg_.provider);
-    finish(LinkState::Linked);
+    finishLink(LinkState::Linked);
+}
+
+std::optional<AuthLink> CloudWorker::authLink() const {
+    LWP_MutexLock(mutex_);
+    std::optional<AuthLink> a = auth_;
+    LWP_MutexUnlock(mutex_);
+    return a;
+}
+
+// Haupt-Thread. Der Auftrag nimmt den Code beim nächsten 100-ms-Takt; BadCode gilt bis dahin als erledigt.
+void CloudWorker::submitCode(std::string code) {
+    LWP_MutexLock(mutex_);
+    if (auth_) submitted_ = std::move(code);
+    LWP_MutexUnlock(mutex_);
+    if (link_ == static_cast<u8>(LinkState::BadCode)) link_ = static_cast<u8>(LinkState::ShowCode);
 }
 
 // ---- Aufträge mit angemeldetem Anbieter ---------------------------------------------------------------------
@@ -395,6 +493,14 @@ std::string CloudWorker::revokeUrlFor(const std::string& provider) const {
 }
 
 RevokeResult CloudWorker::revoke(HttpTransport& http, const StoredTokens& t, const volatile bool& cancel) {
+    if (t.provider == "dropbox") {  // Bearer-Widerruf; ein abgelaufenes Access-Token erneuert der Provider vorher
+        if (!service_.networkUp()) return RevokeResult::Failed;
+        const bool active = cfg_.provider == "dropbox";
+        TokenSet tokens = t.tokens;
+        DropboxProvider p(http, active ? cfg_.endpoints : cfg_.dropboxEndpoints, tokens, NetService::clockMs,
+                          active ? cfg_.apiBase : cfg_.dropboxApiBase);
+        return p.revoke(cancel);
+    }
     OAuthEndpoints ep;
     ep.revokeUrl = revokeUrlFor(t.provider);
     if (ep.revokeUrl.empty()) return RevokeResult::Unsupported;

@@ -148,7 +148,7 @@ public:
     bool contains(const Scene* s) const;  // auf dem Stapel oder nach dem Ausblenden angefordert
 
 private:
-    static constexpr int kMaxDepth = 4;
+    static constexpr int kMaxDepth = 6;  // M29: Kopplung + Tastatur über Einstellungen → Cloud
     struct Entry {
         Scene* scene = nullptr;
         Tween alpha;

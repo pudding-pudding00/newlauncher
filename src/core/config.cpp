@@ -84,6 +84,12 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     c.debugSaveBackup = std::string(trim(ini.get("debug", "save_backup")));
     c.debugSaveRestore = std::string(trim(ini.get("debug", "save_restore")));
     c.debugCloudBase = std::string(trim(ini.get("debug", "cloud_base")));
+    {
+        const std::string_view tok = trim(ini.get("debug", "cloud_pair_token"));
+        bool hex = tok.size() == 32;
+        for (const char ch : tok) hex = hex && ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'));
+        if (hex) c.debugCloudPairToken = std::string(tok);
+    }
     c.debugCloudDeviceAuto = parseIntIn(ini.get("debug", "cloud_device_auto"), 0, 1, 0) == 1;
     const std::string_view conflict = trim(ini.get("debug", "cloud_conflict"));
     if (conflict == "wii" || conflict == "cloud" || conflict == "cancel") c.debugCloudConflict = std::string(conflict);
@@ -140,6 +146,8 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     const std::string_view provider = trim(ini.get("cloud", "provider"));
     if (provider == "drive") c.cloudProvider = CloudProviderId::Drive;
     if (provider == "onedrive") c.cloudProvider = CloudProviderId::OneDrive;
+    if (provider == "dropbox") c.cloudProvider = CloudProviderId::Dropbox;
+    c.dropboxAppKey = std::string(trim(ini.get("cloud", "dropbox_app_key")));
     c.onedriveClientId = std::string(trim(ini.get("cloud", "onedrive_client_id")));
     c.driveClientId = std::string(trim(ini.get("cloud", "drive_client_id")));
     c.driveClientSecret = std::string(trim(ini.get("cloud", "drive_client_secret")));
@@ -218,6 +226,7 @@ std::string_view providerName(CloudProviderId id) {
     switch (id) {
         case CloudProviderId::Drive: return "drive";
         case CloudProviderId::OneDrive: return "onedrive";
+        case CloudProviderId::Dropbox: return "dropbox";
         case CloudProviderId::None: break;
     }
     return "none";
@@ -227,6 +236,7 @@ std::string_view cloudClientId(const Config& c) {
     switch (c.cloudProvider) {
         case CloudProviderId::Drive: return c.driveClientId;
         case CloudProviderId::OneDrive: return c.onedriveClientId;
+        case CloudProviderId::Dropbox: return c.dropboxAppKey;
         case CloudProviderId::None: break;
     }
     return {};

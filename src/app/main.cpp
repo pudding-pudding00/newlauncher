@@ -39,6 +39,7 @@
 #include "core/cloud_gate.hpp"
 #include "core/cloud_outbox.hpp"
 #include "core/oauth_device.hpp"
+#include "core/dropbox_provider.hpp"
 #include "core/onedrive_provider.hpp"
 #include "core/playlist.hpp"
 #include "core/library_store.hpp"
@@ -78,6 +79,7 @@
 #include "platform/net_service.hpp"
 #include "platform/cover_clear_worker.hpp"
 #include "platform/net_worker.hpp"
+#include "platform/pairing_server.hpp"
 #include "platform/remote_server.hpp"
 #include "platform/nand_titles.hpp"
 #include "platform/scan_worker.hpp"
@@ -107,6 +109,7 @@
 #include "ui/cloud_scene.hpp"
 #include "ui/cloud_sync_scene.hpp"
 #include "ui/device_code_scene.hpp"
+#include "ui/pairing_scene.hpp"
 #include "ui/options_scene.hpp"
 #include "ui/parental_scene.hpp"
 #include "ui/pin_scene.hpp"
@@ -346,6 +349,7 @@ int main(int argc, char** argv) {
     video.init();
     // M20: Fernsteuerung nur auf ausdrücklichen Wunsch (wiiload … --remote oder [debug] remote = 1).
     nl::platform::RemoteServer remote;
+    nl::platform::PairingServer pairing;  // M29: Kopplungsseite, nur solange die Kopplungsszene offen ist
     if (nl::hasRemoteFlag(argc, argv) || config.debugRemote) {
         nl::log::line("NL_REMOTE %s", remote.start() ? "start" : "fail");
     }
@@ -839,6 +843,14 @@ int main(int argc, char** argv) {
     nl::platform::CloudWorker cloud(netService, saveFs);
     nl::ui::CloudScene cloudScene;
     nl::ui::DeviceCodeScene deviceCodeScene;
+    // M29 Dropbox: Kopplungsszene mit QR; A öffnet eine eigene Tastatur (bis 128 Zeichen, Ebenen) für den Code.
+    nl::ui::PairingScene pairingScene;
+    struct CodeTarget final : nl::ui::TextTarget {
+        std::optional<std::string> submitted;
+        void setText(std::string_view) override {}
+        void submitText(std::string_view t) override { submitted = std::string(t); }
+    } codeTarget;
+    nl::ui::Keyboard codeKeyboard(codeTarget);
     nl::ui::CloudSyncScene cloudSyncScene;
     const bool cloudBuilt = nl::platform::CloudWorker::available();
     bool cloudLinked = false, cloudRelink = false;  // Stand von tokens.bin, gelesen nur ohne laufenden Auftrag
@@ -849,10 +861,19 @@ int main(int argc, char** argv) {
             s.provider = "onedrive";
             s.endpoints = nl::microsoftEndpoints(config.debugCloudBase, config.onedriveClientId);
             s.apiBase = "https://graph.microsoft.com";
+        } else if (config.cloudProvider == nl::CloudProviderId::Dropbox) {
+            s.provider = "dropbox";
+            s.endpoints = nl::dropboxEndpoints(config.debugCloudBase, config.dropboxAppKey);
+            s.apiBase = "https://api.dropboxapi.com";
+            if (!config.debugCloudBase.empty()) s.contentBase = config.debugCloudBase;
+            s.authorizeBase = config.debugCloudBase;
         } else {
             s.endpoints = nl::googleEndpoints(config.debugCloudBase, config.driveClientId, config.driveClientSecret);
         }
         s.driveRevokeUrl = nl::googleEndpoints(config.debugCloudBase, "", "").revokeUrl;
+        s.dropboxEndpoints = nl::dropboxEndpoints(config.debugCloudBase, config.dropboxAppKey);
+        if (!config.debugCloudBase.empty()) s.dropboxApiBase = config.debugCloudBase;
+        s.pairToken = config.debugCloudPairToken;
         if (!config.debugCloudBase.empty()) s.apiBase = config.debugCloudBase;
         s.device = config.deviceName;
         cloud.configure(std::move(s));
@@ -1359,6 +1380,7 @@ int main(int argc, char** argv) {
         cloud.join();
         const bool keepRemote = remote.running();
         remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
+        pairing.stop();
         for (const std::string& line : remote.takeLogLines()) nl::log::line("%s", line.c_str());
         netService.shutdown();  // wtls_shutdown im Netz-Thread, dann Thread beendet
         covers.shutdown();
@@ -1780,6 +1802,7 @@ int main(int argc, char** argv) {
         v.syncing = syncAllMode != SyncAllMode::Idle;
         v.driveReady = !config.driveClientId.empty();
         v.onedriveReady = !config.onedriveClientId.empty();
+        v.dropboxReady = !config.dropboxAppKey.empty();
         if (!cloudBuilt) v.status = Status::NoTls;
         else if (config.cloudProvider != nl::CloudProviderId::None && nl::cloudClientId(config).empty())
             v.status = Status::NoClientId;
@@ -1944,7 +1967,7 @@ int main(int argc, char** argv) {
                           2);  // Standard: beim Spielstart fragen, damit ein schnelles A nichts überschreibt
         scenes.push(&choiceDialog);
     };
-    bool cloudLinkWatch = false, cloudCodeShown = false;
+    bool cloudLinkWatch = false, cloudCodeShown = false, cloudBadCodeShown = false;
     bool cloudAfterLink = false;  // cloud_device_auto: danach cloud_sync statt Uploads
     std::function<void()> runDebugCloudSync;
     auto onCloudLinkDone = [&](nl::platform::LinkState st) {
@@ -1960,9 +1983,12 @@ int main(int argc, char** argv) {
             case nl::platform::LinkState::Offline: msg = nl::ui::tr(nl::ui::Str::CloudLinkOffline); break;
             case nl::platform::LinkState::Idle:
             case nl::platform::LinkState::Requesting:
-            case nl::platform::LinkState::ShowCode: break;
+            case nl::platform::LinkState::ShowCode:
+            case nl::platform::LinkState::BadCode: break;
         }
         if (scenes.contains(&deviceCodeScene)) deviceCodeScene.requestClose();
+        if (scenes.contains(&pairingScene)) pairingScene.requestClose();
+        pairing.stop();
         cloudScene.setView(cloudViewNow());
         cloudScene.setStatus(msg);
         // Neu angemeldet (auch nach einem Anbieterwechsel): alles einmal abgleichen, danach die Outbox. Mit cloud_sync
@@ -1986,6 +2012,8 @@ int main(int argc, char** argv) {
         if (!cloud.startLink()) return false;
         cloudLinkWatch = true;
         cloudCodeShown = false;
+        cloudBadCodeShown = false;
+        codeTarget.submitted.reset();
         return true;
     };
     // Haupt-Thread, jeden Frame: Logzeilen, bestätigte Uploads, Anmeldestand und Start-Tor übernehmen.
@@ -2017,14 +2045,42 @@ int main(int argc, char** argv) {
             debugUnlinkPending = false;  // nur für Tests: zum Schluss abmelden
             if (!cloud.startUnlink()) nl::log::line("NL_CLOUD_UNLINKED fail");
         }
+        for (const std::string& line : pairing.takeLogLines()) nl::log::line("%s", line.c_str());
         if (cloudLinkWatch) {
+            // Dropbox-Code von der Kopplungsseite oder der Tastatur (nie ins Log).
+            std::optional<std::string> code = pairing.takeCode();
+            if (codeTarget.submitted) {
+                if (!codeTarget.submitted->empty()) code = std::move(codeTarget.submitted);
+                codeTarget.submitted.reset();
+            }
+            if (code) {
+                cloud.submitCode(std::move(*code));
+                pairingScene.setStatus("");
+            }
             const nl::platform::LinkState st = cloud.linkState();
-            if (st == nl::platform::LinkState::ShowCode) {
+            if (st == nl::platform::LinkState::ShowCode || st == nl::platform::LinkState::BadCode) {
                 if (!cloudCodeShown) {
-                    if (const auto c = cloud.deviceCode()) {
+                    if (config.cloudProvider == nl::CloudProviderId::Dropbox) {
+                        if (const auto a = cloud.authLink()) {
+                            std::string pairUrl = nl::platform::pairingUrl(a->pairToken);
+                            if (!pairUrl.empty() &&
+                                !pairing.start(a->pairToken, a->authorizeUrl, config.language != nl::Config::Language::De)) {
+                                pairUrl.clear();  // ohne Server nur der direkte QR
+                            }
+                            pairingScene.setLink(std::move(pairUrl), a->authorizeUrl, a->expiresInS);
+                            cloudCodeShown = true;
+                        }
+                    } else if (const auto c = cloud.deviceCode()) {
                         deviceCodeScene.setCode(c->verifyUrl, c->userCode, c->expiresInS);
                         cloudCodeShown = true;
                     }
+                }
+                if (st == nl::platform::LinkState::BadCode && !cloudBadCodeShown) {
+                    pairingScene.setStatus(nl::ui::tr(nl::ui::Str::PairCodeRejected));
+                    pairing.rearm();  // gleiche Seite, neue Einsendung
+                    cloudBadCodeShown = true;
+                } else if (st == nl::platform::LinkState::ShowCode) {
+                    cloudBadCodeShown = false;
                 }
             } else if (st != nl::platform::LinkState::Requesting && !cloud.running()) {
                 onCloudLinkDone(st);
@@ -2446,6 +2502,7 @@ int main(int argc, char** argv) {
         saveWorker.join();
         cloud.join();
         remote.stop();
+        pairing.stop();
         pumpRemoteLog();
         netService.shutdown();
         covers.shutdown();
@@ -2880,6 +2937,7 @@ int main(int argc, char** argv) {
                 saveWorker.join();
                 cloud.join();
                 remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
+                pairing.stop();
                 pumpRemoteLog();
                 netService.shutdown();
                 covers.shutdown();
@@ -3048,8 +3106,13 @@ int main(int argc, char** argv) {
             case nl::ui::AppCommand::CloudLink:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 if (cloudActive() && startCloudLink()) {
-                    deviceCodeScene.open();
-                    scenes.push(&deviceCodeScene);
+                    if (config.cloudProvider == nl::CloudProviderId::Dropbox) {
+                        pairingScene.open();
+                        scenes.push(&pairingScene);
+                    } else {
+                        deviceCodeScene.open();
+                        scenes.push(&deviceCodeScene);
+                    }
                     cloudScene.setView(cloudViewNow());
                     cloudScene.setStatus("");
                 } else {
@@ -3071,6 +3134,15 @@ int main(int argc, char** argv) {
             case nl::ui::AppCommand::CloudSwitch:
                 nl::log::line("NL_CMD %s %d", nl::ui::appCommandName(cmd), choiceDialog.picked());
                 answerCloudSwitch(choiceDialog.picked());
+                break;
+            case nl::ui::AppCommand::CloudEnterCode:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (!cloudLinkWatch) break;
+                codeKeyboard.setMode(nl::ui::KeyboardMode{.maxLen = nl::kPairMaxCode,
+                                                          .layers = true,
+                                                          .mask = false,
+                                                          .hint = nl::ui::tr(nl::ui::Str::PairCodeHint)});
+                scenes.push(&codeKeyboard);
                 break;
             case nl::ui::AppCommand::CloudCancelLink:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
@@ -3358,6 +3430,7 @@ int main(int argc, char** argv) {
     saveWorker.join();
     cloud.join();
     remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
+    pairing.stop();
     pumpRemoteLog();
     netService.shutdown();
     covers.shutdown();

@@ -173,6 +173,7 @@ TEST_CASE_FIXTURE(Fixture, "requestClose schließt Abgleich- und Code-Szene ohne
 TEST_CASE_FIXTURE(Fixture, "CloudScene M28: Anbieter-Zyklus Aus → Drive → OneDrive, ohne Client-ID übersprungen") {
     CloudScene s;
     CloudView v = view(CloudProviderId::None, CloudView::Status::NotLinked);
+    v.dropboxReady = false;
     s.open(v);
     step(s, action(Action::Right));
     CHECK(s.provider() == CloudProviderId::Drive);
@@ -337,4 +338,23 @@ TEST_CASE("M29: Kopplungs-Strings in beiden Sprachen") {
     CHECK(std::string(tr(Str::PairTitle)) == "Connect Dropbox");
     setLanguage(Lang::De);
     CHECK(std::string(tr(Str::PairTitle)) == "Dropbox verbinden");
+}
+
+TEST_CASE_FIXTURE(Fixture, "CloudScene M29: Zyklus Aus → Drive → OneDrive → Dropbox, ohne App-Key übersprungen") {
+    CloudScene s;
+    CloudView v = view(CloudProviderId::None, CloudView::Status::NotLinked);
+    s.open(v);
+    step(s, action(Action::Right));
+    step(s, action(Action::Right));
+    step(s, action(Action::Right));
+    CHECK(s.provider() == CloudProviderId::Dropbox);
+    s.draw(ctx, dl);
+    step(s, action(Action::Right));
+    CHECK(s.provider() == CloudProviderId::None);
+    step(s, action(Action::Left));
+    CHECK(s.provider() == CloudProviderId::Dropbox);
+    v.dropboxReady = false;
+    s.open(v);
+    step(s, action(Action::Left));
+    CHECK(s.provider() == CloudProviderId::OneDrive);
 }

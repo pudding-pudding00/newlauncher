@@ -34,6 +34,16 @@ std::string formatBytes(u64 bytes) {
     return buf;
 }
 
+std::string backupLabel(std::string_view n) {
+    if (n.size() != 19 || n[8] != '-' || n.substr(15) != ".zip") return std::string(n);
+    for (std::size_t i = 0; i < 15; ++i)
+        if (i != 8 && (n[i] < '0' || n[i] > '9')) return std::string(n);
+    const std::string_view y = n.substr(0, 4), mo = n.substr(4, 2), d = n.substr(6, 2);
+    std::string time = std::string(n.substr(9, 2)) + ":" + std::string(n.substr(11, 2)) + ":" + std::string(n.substr(13, 2));
+    if (language() == Lang::De) return std::string(d) + "." + std::string(mo) + "." + std::string(y) + " " + time;
+    return std::string(y) + "-" + std::string(mo) + "-" + std::string(d) + " " + time;
+}
+
 void SavesScene::open(const Game& g, SavesView v) {
     key_ = g.key != nullptr ? g.key : "";
     title_ = g.title != nullptr ? g.title : "";

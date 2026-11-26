@@ -81,6 +81,8 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     c.debugFilter = std::string(trim(ini.get("debug", "filter")));
     c.debugPinInput = std::string(trim(ini.get("debug", "pin_input")));
     c.debugFakeDisc = std::string(trim(ini.get("debug", "fake_disc")));
+    c.debugSaveBackup = std::string(trim(ini.get("debug", "save_backup")));
+    c.debugSaveRestore = std::string(trim(ini.get("debug", "save_restore")));
 }
 
 Config configFromIni(const IniDoc& ini, bool tls) {
@@ -126,6 +128,20 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     c.cheatSource = std::string(cheatSourceOk ? cheatSource : defaultCheatSource(tls));
     c.parental = parentalFromIni(ini);
     c.emuNandPath = std::string(trim(ini.get("emunand", "path")));
+    // Gerätename landet in newlauncher-save.ini: keine Steuerzeichen, kein '=' / '[' / ']', höchstens 32 Zeichen.
+    for (const char ch : trim(ini.get("general", "device_name"))) {
+        const auto u = static_cast<unsigned char>(ch);
+        if (u < 0x20 || u == 0x7f || ch == '=' || ch == '[' || ch == ']') continue;
+        if (c.deviceName.size() == 32) break;
+        c.deviceName += ch;
+    }
+    if (!c.deviceName.empty()) {  // beim Kürzen kein halbes UTF-8-Zeichen stehen lassen
+        std::size_t i = c.deviceName.size() - 1;
+        while (i > 0 && (static_cast<unsigned char>(c.deviceName[i]) & 0xC0) == 0x80) --i;
+        const auto lead = static_cast<unsigned char>(c.deviceName[i]);
+        const std::size_t need = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+        if (c.deviceName.size() - i < need) c.deviceName.resize(i);
+    }
     const std::string_view ios = ini.get("wii", "ios");
     c.wiiIos = parseIosValue(ios);
     if (isBadIosValue(ios)) c.badKeys.emplace_back("wii.ios");

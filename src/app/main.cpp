@@ -1,6 +1,7 @@
 // Hauptprogramm (M2): Konfiguration → Video → Bibliotheksgerät → Index/Scan → Hauptschleife.
 
 #include <gccore.h>
+#include <ogc/isfs.h>
 #include <ogc/lwp_watchdog.h>
 
 #include <cstdio>
@@ -30,6 +31,9 @@
 #include "core/launch_layout.hpp"
 #include "core/return_stub.hpp"
 #include "core/launch_plan.hpp"
+#include "core/save_backup.hpp"
+#include "core/save_locator.hpp"
+#include "core/save_query.hpp"
 #include "core/playlist.hpp"
 #include "core/library_store.hpp"
 #include "core/meta_db.hpp"
@@ -54,6 +58,10 @@
 #include "launch/wii_boot.hpp"
 #include "platform/crash.hpp"
 #include "platform/cheat_worker.hpp"
+#include "platform/ios_patch.hpp"
+#include "platform/isfs_fs.hpp"
+#include "platform/routing_fs.hpp"
+#include "platform/save_worker.hpp"
 #include "platform/disc_drive.hpp"
 #include "platform/emu_worker.hpp"
 #include "platform/audio.hpp"
@@ -87,6 +95,8 @@
 #include "ui/emulators_scene.hpp"
 #include "ui/about_scene.hpp"
 #include "ui/cheats_scene.hpp"
+#include "ui/choice_dialog.hpp"
+#include "ui/saves_scene.hpp"
 #include "ui/options_scene.hpp"
 #include "ui/parental_scene.hpp"
 #include "ui/pin_scene.hpp"
@@ -808,6 +818,13 @@ int main(int argc, char** argv) {
     nl::ui::OptionsScene optionsScene;
     nl::ui::CheatsScene cheatsScene;
     nl::Console cheatsConsole = nl::Console::Wii;  // Konsole des Spiels in der Cheat-Szene
+    // M26: Spielstände. Der echte NAND läuft über ISFS ("nand:"), alles andere über die Karten.
+    nl::platform::IsfsFileSystem nandFs(false);  // schreibbar erst nach dem Rechte-Patch (ensureNand)
+    nl::platform::RoutingFileSystem saveFs(nandFs, fs);
+    nl::platform::SaveWorker saveWorker(saveFs, data.dir, config.deviceName);
+    nl::ui::SavesScene savesScene;
+    nl::ui::ChoiceDialog choiceDialog;
+    std::string savesRestoreName;  // Sicherung, die nach der Rückfrage zurückgespielt wird
 #if defined(NL_TLS) && NL_TLS  // ab M11 Task 4 vom CMake-Schalter gesetzt
     aboutScene.setBuildInfo(NL_VERSION, true);
 #else
@@ -1082,6 +1099,24 @@ int main(int argc, char** argv) {
             nl::log::line("NL_WARN stats.ini nicht gespeichert");
     };
 
+    // games.ini [emulator] <schlüssel> = <profil> gilt nur für dieses Spiel (Spec v2 6.3).
+    auto gameEmulatorsFor = [&](const nl::Game& game) {
+        nl::EmulatorTable gameEmus = emulators;
+        if (const auto profile = overrides.emulatorProfile(game.key)) {
+            if (const auto r = nl::resolveEmulator(game.console, emulatorIni, foundApps, *profile)) {
+                if (r->badProfile) nl::log::line("NL_OPT_BAD emulator %s", game.key);
+                const nl::EmulatorEntry* base = gameEmus.forConsole(game.console);
+                nl::EmulatorEntry entry = base != nullptr ? *base : nl::EmulatorEntry{};  // save_dir/save_ext bleiben
+                entry.dol = r->dol;
+                entry.args = r->args;
+                entry.fromFile = r->fromIni;
+                entry.profile = r->profile;
+                entry.fsMask = r->fsMask;
+                gameEmus.set(nl::consoleInfo(game.console).key, std::move(entry));
+            }
+        }
+        return gameEmus;
+    };
     auto launchGame = [&](const nl::Game& game) {
         const std::string key = game.key;  // game kann auf Bibliotheksdaten zeigen
         auto showError = [&](const nl::LaunchError& e) {
@@ -1098,21 +1133,7 @@ int main(int argc, char** argv) {
 #else
         const bool hwAccess = ahbprotOff || config.debugIgnoreAhbprot;
 #endif
-        // games.ini [emulator] <schlüssel> = <profil> gilt nur für dieses Spiel (Spec v2 6.3).
-        nl::EmulatorTable gameEmus = emulators;
-        if (const auto profile = overrides.emulatorProfile(game.key)) {
-            if (const auto r = nl::resolveEmulator(game.console, emulatorIni, foundApps, *profile)) {
-                if (r->badProfile) nl::log::line("NL_OPT_BAD emulator %s", game.key);
-                const nl::EmulatorEntry* base = gameEmus.forConsole(game.console);
-                nl::EmulatorEntry entry = base != nullptr ? *base : nl::EmulatorEntry{};  // save_dir/save_ext bleiben
-                entry.dol = r->dol;
-                entry.args = r->args;
-                entry.fromFile = r->fromIni;
-                entry.profile = r->profile;
-                entry.fsMask = r->fsMask;
-                gameEmus.set(nl::consoleInfo(game.console).key, std::move(entry));
-            }
-        }
+        const nl::EmulatorTable gameEmus = gameEmulatorsFor(game);
         // Spieloptionen (Spec v2 7) bei jedem Start frisch lesen: die Options-Szene ändert games.ini/config.ini.
         const nl::IniDoc configDoc = data.readable ? readIni(fs, configPath.c_str()) : nl::IniDoc{};
         const nl::IniDoc gamesDoc = data.readable ? readIni(fs, gamesPath.c_str()) : nl::IniDoc{};
@@ -1239,6 +1260,7 @@ int main(int argc, char** argv) {
         coverClearWorker.join();
         emu.join();
         cheatWorker.join();
+        saveWorker.join();
         const bool keepRemote = remote.running();
         remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
         for (const std::string& line : remote.takeLogLines()) nl::log::line("%s", line.c_str());
@@ -1427,6 +1449,147 @@ int main(int argc, char** argv) {
             }
         }
     };
+    // M26: Spielstand eines Spiels ohne Start bestimmen. Wie launchGame, aber ohne cIOS-Wahl und Fragmente:
+    // ein Wii-Spiel bekommt nur den EmuNAND-Teil seines Plans (save = emu), ein EmuNAND-Kanal den Dry-Run-Plan.
+    auto saveQueryForGame = [&](const nl::Game& game) -> std::optional<nl::SaveQuery> {
+        const nl::N64Inputs inputs = n64Inputs(game);
+        const nl::EmulatorTable gameEmus = gameEmulatorsFor(game);
+        const nl::IniDoc configDoc = data.readable ? readIni(fs, configPath.c_str()) : nl::IniDoc{};
+        const nl::IniDoc gamesDoc = data.readable ? readIni(fs, gamesPath.c_str()) : nl::IniDoc{};
+        const nl::Platform currentPlatform =
+            nl::platformForSysMenu(nl::platform::sysMenuVersion(), nl::platform::latteDetected());
+        const nl::GameOptionInputs optionInputs{configDoc, gamesDoc, currentPlatform != nl::Platform::VWii, {},
+                                                currentPlatform};
+        const nl::platform::Device* gameDev = nl::platform::deviceTable().byName(rootOf(game));
+        const nl::FsKind gameFs = gameDev != nullptr ? gameDev->slot.kind : nl::FsKind::Fat;
+        auto target = nl::preflightGame(fs, game, rootOf(game), gameEmus, &inputs, true, &optionInputs, gameFs);
+        if (!target.isOk()) return std::nullopt;
+        nl::LaunchTarget& t = target.value();
+        const std::string id6 = game.key != nullptr ? std::string(game.key).substr(0, 6) : std::string();
+        if (t.kind == nl::LaunchTarget::Kind::EmuChannel) {
+            if (emuNandInfo.status != nl::EmuNandStatus::Ok) return std::nullopt;
+            const nl::WiiOptions options = nl::resolveWiiOptions(configDoc, gamesDoc, "");
+            auto plan = nl::preflightEmuChannel(game, nl::CiosStatus{}, emuNandInfo, true, options);
+            if (!plan.isOk()) return std::nullopt;
+            nl::applyEmuChannelPlan(t, std::move(plan.value()));
+        } else if (t.kind == nl::LaunchTarget::Kind::Wii && !t.channelPlanned) {
+            nl::WiiBootPlan p;
+            if (nl::resolveWiiOptions(configDoc, gamesDoc, id6).saveEmu && emuNandInfo.status == nl::EmuNandStatus::Ok)
+                p.emuNand = emuNandInfo;
+            t.wii = std::move(p);
+        }
+        return nl::saveQueryFor(game, t, rootOf(game), gameEmus);
+    };
+    auto refreshDetailsSave = [&]() {
+        const nl::Game* g = details.game();
+        if (g != nullptr) details.setHasSave(saveQueryForGame(*g).has_value());
+    };
+    auto refreshDetailsAll = [&]() {
+        refreshDetailsN64();
+        refreshDetailsSave();
+    };
+    // Einmal je Sitzung: ISFS öffnen und den Rechte-Patch versuchen; ohne Patch bleibt der echte NAND gesperrt.
+    bool nandTried = false, nandOk = false;
+    auto ensureNand = [&]() {
+        if (nandTried) return nandOk;
+        nandTried = true;
+        ISFS_Initialize();  // idempotent; nand_titles hält ISFS ohnehin offen
+        const nl::platform::IosPatchResult r = nl::platform::applyIsfsPermissionPatch();
+        nl::log::line("NL_IOSPATCH %s", nl::platform::iosPatchName(r));
+        nandOk = nl::platform::nandWritable(r);
+        nandFs.setWritable(nandOk);
+        return nandOk;
+    };
+    // Spielstand-Szene: Einheit und Sicherungs-Dateinamen gehören zum gerade gezeigten Spiel.
+    std::optional<nl::SaveUnit> savesUnit;
+    std::vector<std::string> savesBackups;  // Dateinamen, Index wie SavesView::backups
+    auto savesViewFor = [&](const nl::Game& game) {
+        nl::ui::SavesView v;
+        savesUnit.reset();
+        savesBackups.clear();
+        v.busy = saveWorker.running();
+        const auto q = saveQueryForGame(game);
+        if (!q) return v;  // Unknown
+        v.unitId = nl::saveUnitId(*q);
+        savesBackups = nl::listBackups(fs, data.dir, v.unitId);
+        for (const std::string& n : savesBackups) v.backups.push_back(nl::ui::backupLabel(n));
+        if (q->root == "nand:" && !ensureNand()) {
+            v.state = nl::ui::SavesView::State::NandLocked;
+            return v;
+        }
+        savesUnit = nl::locateSave(saveFs, *q);
+        if (!savesUnit) return v;
+        v.location = savesUnit->dir;
+        const auto files = nl::readUnit(saveFs, *savesUnit);
+        if (!files.isOk()) return v;
+        for (const nl::SaveFile& f : files.value()) v.bytes += f.data.size();
+        v.files = static_cast<u32>(files.value().size());
+        v.state = files.value().empty() ? nl::ui::SavesView::State::Empty : nl::ui::SavesView::State::Ok;
+        return v;
+    };
+    auto openSaves = [&](const nl::Game& g) {
+        savesScene.open(g, savesViewFor(g));
+        if (!scenes.contains(&savesScene)) scenes.push(&savesScene);
+        nl::log::line("NL_SCENE saves %s backups=%u", savesScene.view().unitId.c_str(),
+                      static_cast<unsigned>(savesBackups.size()));
+    };
+    // Aufträge für die Einheit der Szene (auch über die Debug-Schlüssel); false = nichts gestartet.
+    auto startSaveBackup = [&]() {
+        const nl::Game* g = savesScene.game();
+        if (g == nullptr || !savesUnit || saveWorker.running()) return false;
+        return saveWorker.startBackup(*savesUnit, g->title != nullptr ? g->title : "");
+    };
+    auto startSaveRestore = [&](const std::string& fileName) {
+        const nl::Game* g = savesScene.game();
+        if (g == nullptr || !savesUnit || saveWorker.running() || fileName.empty()) return false;
+        return saveWorker.startRestore(*savesUnit, nl::backupDir(data.dir, savesUnit->id) + "/" + fileName,
+                                       g->title != nullptr ? g->title : "");
+    };
+    auto markSavesBusy = [&]() {
+        nl::ui::SavesView v = savesScene.view();
+        v.busy = true;
+        savesScene.setView(std::move(v));
+        savesScene.setStatus("");
+    };
+    bool debugRestoreLatest = config.debugSaveRestore == "latest";  // nur für Tests: nach dem Sichern zurückspielen
+    auto pumpSaves = [&]() {
+        const auto r = saveWorker.poll();
+        if (!r) return;
+        const std::string unit = savesUnit ? savesUnit->id : std::string("?");
+        if (r->kind == nl::platform::SaveJobResult::Kind::Backup)
+            nl::log::line("NL_SAVE_BACKUP %s %s", !r->ok ? "fail" : r->backup.empty ? "empty" : "ok", unit.c_str());
+        else
+            nl::log::line("NL_SAVE_RESTORE %s %s", r->ok ? "ok" : "fail", unit.c_str());
+        if (!r->ok) nl::log::line("NL_WARN Spielstand: %s", r->detail.c_str());
+        const nl::Game* g = savesScene.game();
+        if (g == nullptr) return;
+        savesScene.setView(savesViewFor(*g));  // neue Liste und Größe, busy aus
+        if (r->ok) {
+            savesScene.setStatus(nl::ui::tr(nl::ui::Str::SavesDone));
+        } else {
+            char text[160];
+            std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::SavesFailed), r->detail.c_str());
+            savesScene.setStatus(text);
+        }
+        if (debugRestoreLatest && r->kind == nl::platform::SaveJobResult::Kind::Backup) {
+            debugRestoreLatest = false;
+            if (!savesBackups.empty() && startSaveRestore(savesBackups.front())) markSavesBusy();
+            else nl::log::line("NL_SAVE_RESTORE fail %s", unit.c_str());
+        }
+    };
+    // Liegengebliebenes Journal (Strom weg, Absturz beim Zurückspielen) vor allem anderen zurückrollen.
+    {
+        const char* recovered = "none";
+        if (data.readable && fs.readAll(data.path("saves/restore.ini"), 64 * 1024).isOk()) {
+            ensureNand();  // das Journal kann auf den echten NAND zeigen
+            switch (nl::recoverRestore(saveFs, data.dir)) {
+                case nl::RecoverResult::None: break;
+                case nl::RecoverResult::RolledBack: recovered = "rollback"; break;
+                case nl::RecoverResult::Failed: recovered = "failed"; break;
+            }
+        }
+        nl::log::line("NL_SAVE_RECOVER %s", recovered);
+    }
     // M24: Löschen anstoßen; der Rest läuft Frame für Frame (WaitNet → Deleting → Idle, vor covers.pump).
     auto startCoverClear = [&]() {
         if (coverClear != CoverClear::Idle) return;  // läuft schon
@@ -1440,6 +1603,7 @@ int main(int argc, char** argv) {
     // Fortschritt, Marker und Ergebnis des Netz-Threads übernehmen (Haupt-Thread).
     auto pumpNet = [&]() {
         pumpCheats();
+        pumpSaves();
         for (const std::string& line : net.takeLogLines()) nl::log::line("%s", line.c_str());
         for (const std::string& stem : net.takeFinishedStems()) covers.invalidate(stem);
         if (net.running() && coverClear == CoverClear::Idle) {
@@ -1792,6 +1956,7 @@ int main(int argc, char** argv) {
         coverClearWorker.join();
         emu.join();
         cheatWorker.join();
+        saveWorker.join();
         remote.stop();
         pumpRemoteLog();
         netService.shutdown();
@@ -2022,7 +2187,7 @@ int main(int argc, char** argv) {
             audio.play(req.sound);
             if (config.debugLogSounds && config.sounds) nl::log::line("NL_SOUND %s", nl::uiSoundName(req.sound));
         }
-        if (req.push == &details) refreshDetailsN64();  // MainScene hat die Details gerade geöffnet
+        if (req.push == &details) refreshDetailsAll();  // MainScene hat die Details gerade geöffnet
         if (req.push == &wifiScene) wifiSceneRefreshMs = 0;  // sofort frische Werte
         if (req.push == &homeMenu)
             nl::log::line("NL_BATTERY p1=%d p2=%d p3=%d p4=%d", ctx.battery[0], ctx.battery[1], ctx.battery[2],
@@ -2044,7 +2209,7 @@ int main(int argc, char** argv) {
                     overrides.setN64Method(key, method);  // gilt bis zum Neustart, auch ohne Datei
                     nl::log::line("NL_WARN games.ini nicht gespeichert");
                 }
-                refreshDetailsN64();
+                refreshDetailsAll();
                 break;
             }
             case nl::ui::AppCommand::OpenVcMap: {
@@ -2074,7 +2239,7 @@ int main(int argc, char** argv) {
                     vcMapText = std::move(text);
                     nl::log::line("NL_VCMAP_SAVED n=%u", static_cast<unsigned>(vcMapping.size()));
                 } else nl::log::line("NL_WARN n64_vc.ini nicht gespeichert");
-                refreshDetailsN64();
+                refreshDetailsAll();
                 break;
             }
             case nl::ui::AppCommand::ToggleFavorite: {
@@ -2224,6 +2389,7 @@ int main(int argc, char** argv) {
                 coverClearWorker.join();
                 emu.join();
                 cheatWorker.join();
+                saveWorker.join();
                 remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
                 pumpRemoteLog();
                 netService.shutdown();
@@ -2331,11 +2497,50 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 emu.cancel();
                 break;
-            case nl::ui::AppCommand::OpenSaves:  // M26: Verdrahtung folgt mit SaveWorker (Task 11)
+            case nl::ui::AppCommand::OpenSaves:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (req.game != nullptr) openSaves(*req.game);
+                break;
             case nl::ui::AppCommand::BackupSave:
-            case nl::ui::AppCommand::RestoreSave:
-            case nl::ui::AppCommand::DeleteBackup:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (startSaveBackup()) markSavesBusy();
+                break;
+            case nl::ui::AppCommand::RestoreSave: {
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                const int i = savesScene.selectedBackup();
+                if (i < 0 || static_cast<std::size_t>(i) >= savesBackups.size()) break;
+                savesRestoreName = savesBackups[static_cast<std::size_t>(i)];
+                char title[64];
+                char text[256];
+                std::snprintf(title, sizeof title, nl::ui::tr(nl::ui::Str::SavesTitle),
+                              savesScene.game() != nullptr && savesScene.game()->title != nullptr ? savesScene.game()->title : "");
+                std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::SavesConfirm),
+                              savesScene.view().backups[static_cast<std::size_t>(i)].c_str());
+                const char* const buttons[] = {nl::ui::tr(nl::ui::Str::SavesRestore), nl::ui::tr(nl::ui::Str::SavesCancel)};
+                choiceDialog.open(title, text, buttons, nl::ui::AppCommand::ConfirmRestore, 1);  // Standard: Abbrechen
+                scenes.push(&choiceDialog);
+                break;
+            }
             case nl::ui::AppCommand::ConfirmRestore:
+                nl::log::line("NL_CMD %s %d", nl::ui::appCommandName(cmd), choiceDialog.picked());
+                if (choiceDialog.picked() == 0 && startSaveRestore(savesRestoreName)) markSavesBusy();
+                savesRestoreName.clear();
+                break;
+            case nl::ui::AppCommand::DeleteBackup: {
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                const int i = savesScene.selectedBackup();
+                const nl::Game* g = savesScene.game();
+                if (g == nullptr || !savesUnit || saveWorker.running() || i < 0 ||
+                    static_cast<std::size_t>(i) >= savesBackups.size())
+                    break;
+                const std::string path =
+                    nl::backupDir(data.dir, savesUnit->id) + "/" + savesBackups[static_cast<std::size_t>(i)];
+                const bool ok = fs.removeFile(path).isOk();
+                nl::log::line("NL_SAVE_DELETE %s %s", ok ? "ok" : "fail", savesUnit->id.c_str());
+                savesScene.setView(savesViewFor(*g));
+                savesScene.setStatus(ok ? nl::ui::tr(nl::ui::Str::SavesDone) : "");
+                break;
+            }
             case nl::ui::AppCommand::None:
                 break;
         }
@@ -2451,7 +2656,7 @@ int main(int argc, char** argv) {
                 if (found != nullptr) {
                     details.open(*found, store.isFavorite(found->key), 0);
                     scenes.push(&details);
-                    refreshDetailsN64();
+                    refreshDetailsAll();
                     nl::log::line("NL_SCENE details %s", id.c_str());
                     if (config.debugDetailsBackMs > 0)
                         detailsBackAt = gettime() + millisecs_to_ticks(static_cast<u64>(config.debugDetailsBackMs));
@@ -2492,6 +2697,25 @@ int main(int argc, char** argv) {
                     nl::log::line("NL_OPTION_SET %s=%s %s", k.c_str(), v.c_str(), ok ? "ok" : "fail");
                     optionsScene.requestClose();
                 }
+            }
+            // M26, nur für Tests: Spielstand eines Spiels sichern bzw. die neueste Sicherung zurückspielen.
+            auto debugSavesGame = [&](const std::string& key) -> const nl::Game* {
+                for (const nl::Game& g : store.games())
+                    if (g.key != nullptr && key == g.key) {
+                        openSaves(g);
+                        return &g;
+                    }
+                nl::log::line("NL_WARN Spielstand %s fehlt", key.c_str());
+                return nullptr;
+            };
+            if (!config.debugSaveBackup.empty() && debugSavesGame(config.debugSaveBackup) != nullptr) {
+                if (startSaveBackup()) markSavesBusy();
+                else nl::log::line("NL_SAVE_BACKUP fail %s", savesScene.view().unitId.c_str());
+            }
+            if (!config.debugSaveRestore.empty() && config.debugSaveRestore != "latest" &&
+                debugSavesGame(config.debugSaveRestore) != nullptr) {
+                if (!savesBackups.empty() && startSaveRestore(savesBackups.front())) markSavesBusy();
+                else nl::log::line("NL_SAVE_RESTORE fail %s", savesScene.view().unitId.c_str());
             }
             if (config.debugSysinfoSave) {                          // nur für Tests (M13)
                 sysInfoScene.setInfo(buildSysInfo());
@@ -2555,6 +2779,7 @@ int main(int argc, char** argv) {
     coverClearWorker.join();
     emu.join();
     cheatWorker.join();
+    saveWorker.join();
     remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
     pumpRemoteLog();
     netService.shutdown();

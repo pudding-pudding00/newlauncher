@@ -5,6 +5,7 @@
 // der Ort unbekannt, zeigt sie nur Text; solange ein Auftrag läuft (busy), sind alle Knöpfe gesperrt.
 
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -62,5 +63,7 @@ private:
 
 // "12 KB", "1,5 MB" (DE) bzw. "1.5 MB" (EN); unter 1 KiB "N B".
 std::string formatBytes(u64 bytes);
+// "20261126-101507.zip" → DE "26.11.2026 10:15:07", EN "2026-11-26 10:15:07"; anderes bleibt, wie es ist.
+std::string backupLabel(std::string_view fileName);
 
 }  // namespace nl::ui

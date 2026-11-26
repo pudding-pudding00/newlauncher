@@ -137,3 +137,24 @@ TEST_CASE_FIXTURE(Fixture, "Saves: B schließt; Meldung bleibt bis open(); zeich
     s.open(kGame, okView(0));
     CHECK(s.status().empty());
 }
+
+TEST_CASE("backupLabel: Dateiname der Sicherung je Sprache, Fremdes unverändert") {
+    const Lang saved = language();
+    setLanguage(Lang::De);
+    CHECK(backupLabel("20261126-101507.zip") == "26.11.2026 10:15:07");
+    setLanguage(Lang::En);
+    CHECK(backupLabel("20261126-101507.zip") == "2026-11-26 10:15:07");
+    CHECK(backupLabel("kaputt.zip") == "kaputt.zip");
+    setLanguage(saved);
+}
+
+TEST_CASE("formatBytes: B, KB, MB mit Dezimalzeichen je Sprache") {
+    const Lang saved = language();
+    setLanguage(Lang::De);
+    CHECK(formatBytes(512) == "512 B");
+    CHECK(formatBytes(12345) == "12 KB");
+    CHECK(formatBytes(1572864) == "1,5 MB");
+    setLanguage(Lang::En);
+    CHECK(formatBytes(1572864) == "1.5 MB");
+    setLanguage(saved);
+}

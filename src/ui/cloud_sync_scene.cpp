@@ -20,11 +20,16 @@ void CloudSyncScene::open(std::string title) {
     title_ = std::move(title);
     phase_ = CloudPhase::Checking;
     elapsedMs_ = 0.0f;
+    closeRequested_ = false;
 }
 
 void CloudSyncScene::update(const UiContext&, const InputFrame& in, float dtMs, SceneRequests& out) {
     elapsedMs_ += dtMs;
     if (elapsedMs_ > 3600000.0f) elapsedMs_ = 0.0f;
+    if (closeRequested_) {  // bis open(): eine Szene unter einem Dialog schließt erst als oberste
+        out.pop = true;
+        return;
+    }
     if (in.pressed(Action::Back) || in.pressed(Action::Home)) {
         out.pop = true;
         out.command = AppCommand::CloudSkip;

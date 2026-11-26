@@ -29,6 +29,7 @@ void DeviceCodeScene::open() {
     userCode_.clear();
     status_.clear();
     remainingMs_ = 0.0f;
+    closeRequested_ = false;
 }
 
 void DeviceCodeScene::setCode(std::string verifyUrl, std::string userCode, u32 expiresInS) {
@@ -46,6 +47,10 @@ std::string DeviceCodeScene::remainingText() const {
 
 void DeviceCodeScene::update(const UiContext&, const InputFrame& in, float dtMs, SceneRequests& out) {
     if (!waiting() && remainingMs_ > 0.0f) remainingMs_ -= dtMs;
+    if (closeRequested_) {  // bis open(): eine Szene unter einem Dialog schließt erst als oberste
+        out.pop = true;
+        return;
+    }
     if (in.pressed(Action::Back) || in.pressed(Action::Home)) {
         out.pop = true;
         out.command = AppCommand::CloudCancelLink;

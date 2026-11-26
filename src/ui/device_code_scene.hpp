@@ -15,6 +15,7 @@ public:
     void setCode(std::string verifyUrl, std::string userCode, u32 expiresInS);
     void setStatus(std::string s) { status_ = std::move(s); }
     bool waiting() const { return userCode_.empty(); }
+    void requestClose() { closeRequested_ = true; }  // nächster update schließt ohne CloudCancelLink
     std::string remainingText() const;  // "mm:ss", aufgerundet, nie negativ
 
     void update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) override;
@@ -24,6 +25,7 @@ public:
 private:
     std::string url_, userCode_, status_;
     float remainingMs_ = 0.0f;
+    bool closeRequested_ = false;
 };
 
 }  // namespace nl::ui

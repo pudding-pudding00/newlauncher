@@ -145,3 +145,23 @@ TEST_CASE_FIXTURE(Fixture, "Konflikttext: Wii-Zeit, Cloud-Zeit und Gerät, DE un
           "Wii: 2027-01-15 08:00 · Cloud: 2023-11-14 22:13, Dolphin");
     CHECK(std::string(tr(Str::CloudKeepWii)) == "Keep Wii save");
 }
+
+TEST_CASE_FIXTURE(Fixture, "requestClose schließt Abgleich- und Code-Szene ohne Befehl (M27)") {
+    CloudSyncScene sync;
+    sync.open("Zelda");
+    sync.requestClose();
+    SceneRequests r = step(sync, InputFrame{});
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::None);
+    CHECK(step(sync, InputFrame{}).pop);  // bleibt stehen: unter einem Dialog zählt die Anforderung erst als oberste
+    sync.requestClose();
+    sync.open("Zelda");  // open setzt die Anforderung zurück
+    CHECK_FALSE(step(sync, InputFrame{}).pop);
+
+    DeviceCodeScene code;
+    code.open();
+    code.requestClose();
+    r = step(code, InputFrame{});
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::None);
+}

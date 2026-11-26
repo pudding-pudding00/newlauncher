@@ -15,6 +15,7 @@ public:
     void open(std::string title);  // Phase Checking
     void setPhase(CloudPhase p) { phase_ = p; }
     CloudPhase phase() const { return phase_; }
+    void requestClose() { closeRequested_ = true; }  // nächster update schließt ohne CloudSkip (Ergebnis da)
 
     void update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) override;
     void draw(const UiContext& ctx, gfx::DrawList& dl) override;
@@ -24,6 +25,7 @@ private:
     std::string title_;
     CloudPhase phase_ = CloudPhase::Checking;
     float elapsedMs_ = 0.0f;
+    bool closeRequested_ = false;
 };
 
 }  // namespace nl::ui

@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <array>
 #include <ctime>
+#include <functional>
 #include <malloc.h>
 #include <unistd.h>
 #include <memory>
@@ -34,6 +35,8 @@
 #include "core/save_backup.hpp"
 #include "core/save_locator.hpp"
 #include "core/save_query.hpp"
+#include "core/cloud_outbox.hpp"
+#include "core/oauth_device.hpp"
 #include "core/playlist.hpp"
 #include "core/library_store.hpp"
 #include "core/meta_db.hpp"
@@ -62,6 +65,7 @@
 #include "platform/isfs_fs.hpp"
 #include "platform/routing_fs.hpp"
 #include "platform/save_worker.hpp"
+#include "platform/cloud_worker.hpp"
 #include "platform/disc_drive.hpp"
 #include "platform/emu_worker.hpp"
 #include "platform/audio.hpp"
@@ -97,6 +101,9 @@
 #include "ui/cheats_scene.hpp"
 #include "ui/choice_dialog.hpp"
 #include "ui/saves_scene.hpp"
+#include "ui/cloud_scene.hpp"
+#include "ui/cloud_sync_scene.hpp"
+#include "ui/device_code_scene.hpp"
 #include "ui/options_scene.hpp"
 #include "ui/parental_scene.hpp"
 #include "ui/pin_scene.hpp"
@@ -825,6 +832,26 @@ int main(int argc, char** argv) {
     nl::ui::SavesScene savesScene;
     nl::ui::ChoiceDialog choiceDialog;
     std::string savesRestoreName;  // Sicherung, die nach der Rückfrage zurückgespielt wird
+    // M27: Cloud-Spielstände (nur mit TLS). Einheiten liest der Worker über saveFs, Tokens/Zustand unter <data>/cloud.
+    nl::platform::CloudWorker cloud(netService, saveFs);
+    nl::ui::CloudScene cloudScene;
+    nl::ui::DeviceCodeScene deviceCodeScene;
+    nl::ui::CloudSyncScene cloudSyncScene;
+    const bool cloudBuilt = nl::platform::CloudWorker::available();
+    bool cloudLinked = false, cloudRelink = false;  // Stand von tokens.bin, gelesen nur ohne laufenden Auftrag
+    auto configureCloud = [&]() {
+        nl::platform::CloudSettings s;
+        s.dataDir = data.writable ? data.dir : std::string();
+        s.endpoints = nl::googleEndpoints(config.debugCloudBase, config.driveClientId, config.driveClientSecret);
+        if (!config.debugCloudBase.empty()) s.apiBase = config.debugCloudBase;
+        s.device = config.deviceName;
+        cloud.configure(std::move(s));
+        cloudLinked = cloudBuilt && cloud.linked();
+    };
+    auto cloudActive = [&]() {
+        return cloudBuilt && data.writable && config.cloudProvider == nl::CloudProviderId::Drive &&
+               !config.driveClientId.empty();
+    };
 #if defined(NL_TLS) && NL_TLS  // ab M11 Task 4 vom CMake-Schalter gesetzt
     aboutScene.setBuildInfo(NL_VERSION, true);
 #else
@@ -1087,6 +1114,52 @@ int main(int argc, char** argv) {
         return plan;
     };
 
+    // Einmal je Sitzung: ISFS öffnen und den Rechte-Patch versuchen; ohne Patch bleibt der echte NAND gesperrt.
+    bool nandTried = false, nandOk = false;
+    auto ensureNand = [&]() {
+        if (nandTried) return nandOk;
+        nandTried = true;
+        ISFS_Initialize();  // idempotent; nand_titles hält ISFS ohnehin offen
+        const nl::platform::IosPatchResult r = nl::platform::applyIsfsPermissionPatch();
+        nl::log::line("NL_IOSPATCH %s", nl::platform::iosPatchName(r));
+        nandOk = nl::platform::nandWritable(r);
+        nandFs.setWritable(nandOk);
+        return nandOk;
+    };
+    // M27 Start-Tor (Spec Ziel 5): wie warnedLaunch merkt cloudCleared das Spiel, dessen Abgleich erledigt ist; der
+    // nächste Durchlauf von launchGame startet dann. Der Auftrag läuft vorne in der Netz-Warteschlange.
+    struct CloudGate {
+        std::string key, title;
+        nl::SaveUnit unit;
+        u32 startMs = 0;
+        bool submitted = false, asking = false, syncOnly = false;
+    };
+    std::optional<CloudGate> cloudGate;
+    std::string cloudCleared, cloudLaunchKey;  // cloudLaunchKey startet, sobald die Abgleich-Szene ausgeblendet ist
+    // true = Tor offen (launchGame kehrt zurück, pumpCloud übernimmt); false = ohne Abgleich weiter.
+    auto startCloudGate = [&](const nl::Game& game, const std::optional<nl::SaveQuery>& q, bool syncOnly) {
+        if (!cloudActive() || !cloudLinked || !q || cloudGate) return false;
+        const std::string key = game.key != nullptr ? game.key : "";
+        if (q->root == "nand:" && !ensureNand()) {
+            nl::log::line("NL_CLOUD_SKIP nand %s", key.c_str());
+            return false;
+        }
+        const std::optional<nl::SaveUnit> unit = nl::locateSave(saveFs, *q);
+        if (!unit) return false;
+        if (cloud.running()) cloud.cancel();  // Hintergrund-Upload weicht; sein Eintrag bleibt in pending.ini
+        CloudGate g;
+        g.key = key;
+        g.title = game.title != nullptr ? game.title : key;
+        g.unit = *unit;
+        g.startMs = msSince(bootTicks);
+        g.syncOnly = syncOnly;
+        cloudGate = std::move(g);
+        cloudSyncScene.open(cloudGate->title);
+        scenes.push(&cloudSyncScene);
+        nl::log::line("NL_CLOUD_GATE %s %s", unit->id.c_str(), key.c_str());
+        return true;
+    };
+
     std::string warnedLaunch;  // Spec 7.3: Spiel, dessen Preflight-Hinweis schon gezeigt wurde; nächstes A startet
     // M17: vor jedem Start (auch im Wii-Dry-Run) zählen und sofort schreiben: nach dem Start kommt der Launcher
     // nicht mehr zurück.
@@ -1236,6 +1309,9 @@ int main(int argc, char** argv) {
             nl::log::line("NL_PREFLIGHT_HOLD %s", key.c_str());
             return;
         }
+        const std::optional<nl::SaveQuery> saveQ = nl::saveQueryFor(game, target.value(), rootOf(game), gameEmus);
+        if (cloudCleared != key && startCloudGate(game, saveQ, false)) return;  // Wiedereintritt über cloudLaunchKey
+        cloudCleared.clear();
         warnedLaunch.clear();
         if (const std::string& gctPath = target.value().gctPath; !gctPath.empty()) {
             // Nintendont liest CheatPath auf dem Spielgerät. Schlägt das Schreiben fehl, darf keine alte Auswahl
@@ -1252,6 +1328,14 @@ int main(int argc, char** argv) {
         store.recordPlayed(key, static_cast<u32>(std::time(nullptr)));
         if (data.writable && writeText(fs, historyPath.c_str(), store.historyIni().serialize())) nl::log::line("NL_HISTORY_SAVED");
         else nl::log::line("NL_WARN history.ini nicht gespeichert");
+        if (saveQ && data.writable) {  // M27 Outbox: beim nächsten Launcher-Start wandert der Schlüssel nach pending.ini
+            const nl::SessionEntry se{key, nl::saveUnitId(*saveQ), static_cast<u64>(std::time(nullptr))};
+            if (fs.makeDirs(data.dir + "/cloud").isOk() &&
+                writeText(fs, data.path("cloud/session.ini").c_str(), nl::serializeSession(se)))
+                nl::log::line("NL_CLOUD_SESSION %s", se.unit.c_str());
+            else
+                nl::log::line("NL_WARN session.ini nicht gespeichert");
+        }
         nl::log::line("NL_LAUNCH %s", key.c_str());
         worker.cancelAndJoin();  // der Scan liest sonst parallel von der Karte
         discDrive.shutdown();
@@ -1261,6 +1345,7 @@ int main(int argc, char** argv) {
         emu.join();
         cheatWorker.join();
         saveWorker.join();
+        cloud.join();
         const bool keepRemote = remote.running();
         remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
         for (const std::string& line : remote.takeLogLines()) nl::log::line("%s", line.c_str());
@@ -1488,18 +1573,6 @@ int main(int argc, char** argv) {
         refreshDetailsN64();
         refreshDetailsSave();
     };
-    // Einmal je Sitzung: ISFS öffnen und den Rechte-Patch versuchen; ohne Patch bleibt der echte NAND gesperrt.
-    bool nandTried = false, nandOk = false;
-    auto ensureNand = [&]() {
-        if (nandTried) return nandOk;
-        nandTried = true;
-        ISFS_Initialize();  // idempotent; nand_titles hält ISFS ohnehin offen
-        const nl::platform::IosPatchResult r = nl::platform::applyIsfsPermissionPatch();
-        nl::log::line("NL_IOSPATCH %s", nl::platform::iosPatchName(r));
-        nandOk = nl::platform::nandWritable(r);
-        nandFs.setWritable(nandOk);
-        return nandOk;
-    };
     // Spielstand-Szene: Einheit und Sicherungs-Dateinamen gehören zum gerade gezeigten Spiel.
     std::optional<nl::SaveUnit> savesUnit;
     std::vector<std::string> savesBackups;  // Dateinamen, Index wie SavesView::backups
@@ -1591,6 +1664,234 @@ int main(int argc, char** argv) {
         }
         nl::log::line("NL_SAVE_RECOVER %s", recovered);
     }
+    // M27 Outbox: eine liegengebliebene Sitzung (Rückkehr, DOL-Ende, Kaltstart) wandert nach pending.ini; ein Eintrag
+    // fällt erst nach bestätigtem Upload heraus. Ohne TLS wird die Outbox nur fortgeschrieben.
+    std::vector<std::string> cloudPending;
+    std::string cloudSessionKey;
+    u64 cloudSessionStarted = 0;
+    auto writePending = [&]() {
+        return data.writable && fs.makeDirs(data.dir + "/cloud").isOk() &&
+               writeText(fs, data.path("cloud/pending.ini").c_str(), nl::serializePending(cloudPending));
+    };
+    if (data.readable) {
+        if (auto r = fs.readAll(data.path("cloud/pending.ini"), kMaxIniBytes); r.isOk())
+            cloudPending = nl::parsePending(
+                std::string_view(reinterpret_cast<const char*>(r.value().data()), r.value().size()));
+        if (auto r = fs.readAll(data.path("cloud/session.ini"), kMaxIniBytes); r.isOk()) {
+            if (const auto se = nl::parseSession(
+                    std::string_view(reinterpret_cast<const char*>(r.value().data()), r.value().size()))) {
+                cloudSessionKey = se->gameKey;
+                cloudSessionStarted = se->started;
+                nl::addPending(cloudPending, se->gameKey);
+            }
+            if (writePending()) static_cast<void>(fs.removeFile(data.path("cloud/session.ini")));  // erst danach weg
+        }
+    }
+    nl::log::line("NL_CLOUD_OUTBOX pending=%u session=%s", static_cast<unsigned>(cloudPending.size()),
+                  cloudSessionKey.empty() ? "none" : cloudSessionKey.c_str());
+    if (!cloudBuilt) nl::log::line("NL_CLOUD off notls");
+    configureCloud();
+    auto findGame = [&](const std::string& key) -> const nl::Game* {
+        for (const nl::Game& g : store.games())
+            if (g.key != nullptr && key == g.key) return &g;
+        return nullptr;
+    };
+    // Hintergrund-Upload aller ausstehenden Spiele mit erreichbarer Einheit (gesperrter NAND → bleibt liegen).
+    auto startCloudUploads = [&]() {
+        if (!cloudActive() || !cloudLinked || cloudPending.empty() || cloud.running() || cloudGate) return;
+        std::vector<nl::platform::CloudUpload> items;
+        bool dropped = false;
+        for (auto it = cloudPending.begin(); it != cloudPending.end();) {
+            const nl::Game* g = findGame(*it);
+            const auto q = g != nullptr ? saveQueryForGame(*g) : std::nullopt;
+            if (g != nullptr && !q) {  // keine Einheit möglich: kann nie hochgeladen werden
+                nl::log::line("NL_CLOUD_UPLOAD drop %s", it->c_str());
+                it = cloudPending.erase(it);
+                dropped = true;
+                continue;
+            }
+            if (g == nullptr) {  // Gerät fehlt gerade: bleibt liegen
+                ++it;
+                continue;
+            }
+            if (q->root == "nand:" && !ensureNand()) {
+                nl::log::line("NL_CLOUD_UPLOAD %s nand", nl::saveUnitId(*q).c_str());
+                ++it;
+                continue;
+            }
+            if (std::optional<nl::SaveUnit> unit = nl::locateSave(saveFs, *q)) {
+                nl::platform::CloudUpload up;
+                up.key = *it;
+                up.unit = std::move(*unit);
+                up.title = g->title != nullptr ? g->title : *it;
+                up.played = *it == cloudSessionKey ? cloudSessionStarted : 0;
+                items.push_back(std::move(up));
+            }
+            ++it;
+        }
+        if (dropped && !writePending()) nl::log::line("NL_WARN pending.ini nicht gespeichert");
+        const unsigned n = static_cast<unsigned>(items.size());
+        if (n > 0 && cloud.startUploads(std::move(items))) nl::log::line("NL_CLOUD_UPLOAD start n=%u", n);
+    };
+    auto cloudViewNow = [&]() {
+        using Status = nl::ui::CloudView::Status;
+        nl::ui::CloudView v;
+        v.provider = config.cloudProvider;
+        v.busy = cloud.running();
+        if (!cloudBuilt) v.status = Status::NoTls;
+        else if (config.cloudProvider == nl::CloudProviderId::Drive && config.driveClientId.empty())
+            v.status = Status::NoClientId;
+        else if (cloudLinked) v.status = cloudRelink ? Status::Relink : Status::Linked;
+        else v.status = Status::NotLinked;
+        return v;
+    };
+    // Tor schließen: launch = danach starten (über cloudLaunchKey), sonst kein Start.
+    auto finishCloudGate = [&](bool launch) {
+        if (!cloudGate) return;
+        const std::string key = cloudGate->key;
+        const bool syncOnly = cloudGate->syncOnly;
+        cloudGate.reset();
+        if (scenes.contains(&cloudSyncScene)) cloudSyncScene.requestClose();
+        if (syncOnly) {
+            nl::log::line("NL_CLOUD_SYNC_DONE %s", key.c_str());
+            startCloudUploads();
+        } else if (launch) {
+            cloudCleared = key;
+            cloudLaunchKey = key;
+        } else {
+            nl::log::line("NL_CLOUD_GATE cancel %s", key.c_str());
+        }
+    };
+    // Antwort auf den Konfliktdialog: 0 = Wii-Stand behalten, 1 = Cloud-Stand nehmen, sonst Abbrechen (kein Start).
+    auto answerCloudConflict = [&](int pick) {
+        if (!cloudGate || !cloudGate->asking) return;
+        cloudGate->asking = false;
+        nl::log::line("NL_CLOUD_CHOICE %s %s", cloudGate->unit.id.c_str(),
+                      pick == 0 ? "wii" : pick == 1 ? "cloud" : "cancel");
+        if (pick != 0 && pick != 1) {
+            finishCloudGate(false);
+            return;
+        }
+        cloudGate->startMs = msSince(bootTicks);
+        cloudSyncScene.setPhase(nl::ui::CloudPhase::Resolving);
+        static_cast<void>(cloud.takePreLaunch());
+        if (!cloud.startResolve(cloudGate->unit, cloudGate->title,
+                                pick == 0 ? nl::ConflictChoice::KeepWii : nl::ConflictChoice::TakeCloud)) {
+            nl::log::line("NL_CLOUD_SKIP error %s", cloudGate->key.c_str());
+            finishCloudGate(true);
+        }
+    };
+    auto onCloudPreLaunch = [&](const nl::PreLaunchResult& r) {
+        if (r.kind != nl::PreLaunch::Conflict) {
+            if (r.kind == nl::PreLaunch::Skipped && r.reason == "auth") cloudRelink = true;
+            finishCloudGate(true);
+            return;
+        }
+        cloudGate->asking = true;
+        nl::log::line("NL_CLOUD_CONFLICT %s", cloudGate->unit.id.c_str());
+        if (!config.debugCloudConflict.empty()) {  // nur für Tests: Knopf ohne Dialog wählen
+            answerCloudConflict(config.debugCloudConflict == "wii" ? 0 : config.debugCloudConflict == "cloud" ? 1 : 2);
+            return;
+        }
+        const std::string sides = nl::ui::conflictText(r.localPlayed, r.cloud.saved, r.cloud.device);
+        char text[320];
+        std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::CloudConflictText), sides.c_str());
+        const char* const buttons[] = {nl::ui::tr(nl::ui::Str::CloudKeepWii), nl::ui::tr(nl::ui::Str::CloudTakeCloud),
+                                       nl::ui::tr(nl::ui::Str::SavesCancel)};
+        choiceDialog.open(nl::ui::tr(nl::ui::Str::CloudConflictTitle), text, buttons, nl::ui::AppCommand::CloudConflict,
+                          2);  // Standard: Abbrechen, damit ein schnelles A nichts überschreibt
+        scenes.push(&choiceDialog);
+    };
+    bool cloudLinkWatch = false, cloudCodeShown = false;
+    bool cloudAfterLink = false;  // cloud_device_auto: danach cloud_sync statt Uploads
+    std::function<void()> runDebugCloudSync;
+    auto onCloudLinkDone = [&](nl::platform::LinkState st) {
+        cloudLinkWatch = false;
+        cloudLinked = cloudBuilt && cloud.linked();
+        if (st == nl::platform::LinkState::Linked) cloudRelink = false;
+        const char* msg = "";
+        switch (st) {
+            case nl::platform::LinkState::Linked: msg = nl::ui::tr(nl::ui::Str::CloudLinkedMsg); break;
+            case nl::platform::LinkState::Denied: msg = nl::ui::tr(nl::ui::Str::CloudLinkDenied); break;
+            case nl::platform::LinkState::Expired: msg = nl::ui::tr(nl::ui::Str::CloudLinkExpired); break;
+            case nl::platform::LinkState::Failed: msg = nl::ui::tr(nl::ui::Str::CloudLinkFailed); break;
+            case nl::platform::LinkState::Offline: msg = nl::ui::tr(nl::ui::Str::CloudLinkOffline); break;
+            case nl::platform::LinkState::Idle:
+            case nl::platform::LinkState::Requesting:
+            case nl::platform::LinkState::ShowCode: break;
+        }
+        if (scenes.contains(&deviceCodeScene)) deviceCodeScene.requestClose();
+        cloudScene.setView(cloudViewNow());
+        cloudScene.setStatus(msg);
+        if (cloudAfterLink) {
+            cloudAfterLink = false;
+            runDebugCloudSync();
+        } else {
+            startCloudUploads();
+        }
+    };
+    auto startCloudLink = [&]() {
+        if (!cloud.startLink()) return false;
+        cloudLinkWatch = true;
+        cloudCodeShown = false;
+        return true;
+    };
+    // Haupt-Thread, jeden Frame: Logzeilen, bestätigte Uploads, Anmeldestand und Start-Tor übernehmen.
+    auto pumpCloud = [&]() {
+        for (const std::string& line : cloud.takeLogLines()) nl::log::line("%s", line.c_str());
+        if (const std::vector<std::string> done = cloud.takeUploaded(); !done.empty()) {
+            for (const std::string& k : done) nl::removePending(cloudPending, k);
+            if (!writePending()) nl::log::line("NL_WARN pending.ini nicht gespeichert");
+        }
+        if (cloudLinkWatch) {
+            const nl::platform::LinkState st = cloud.linkState();
+            if (st == nl::platform::LinkState::ShowCode) {
+                if (!cloudCodeShown) {
+                    if (const auto c = cloud.deviceCode()) {
+                        deviceCodeScene.setCode(c->verifyUrl, c->userCode, c->expiresInS);
+                        cloudCodeShown = true;
+                    }
+                }
+            } else if (st != nl::platform::LinkState::Requesting && !cloud.running()) {
+                onCloudLinkDone(st);
+            }
+        }
+        if (!cloudGate) return;
+        if (!cloudGate->submitted) {
+            if (cloud.running()) return;  // wartet auf den abgebrochenen Upload (Zeitlimit unten gilt trotzdem)
+            static_cast<void>(cloud.takePreLaunch());  // veraltetes Ergebnis nach B oder Zeitlimit
+            cloudGate->submitted = cloud.startPreLaunch(cloudGate->unit, cloudGate->title);
+            if (!cloudGate->submitted) {
+                nl::log::line("NL_CLOUD_SKIP error %s", cloudGate->key.c_str());
+                finishCloudGate(true);
+                return;
+            }
+        } else if (const std::optional<nl::PreLaunchResult> r = cloud.takePreLaunch()) {
+            onCloudPreLaunch(*r);
+            if (!cloudGate) return;
+        }
+        if (!cloudGate->asking && msSince(bootTicks) - cloudGate->startMs > 20000) {
+            cloud.cancel();
+            nl::log::line("NL_CLOUD_SKIP timeout %s", cloudGate->key.c_str());
+            finishCloudGate(true);
+        }
+    };
+    // Nur für Tests (cloud_sync = <schlüssel>): Start-Tor ohne Start; sonst gleich die Outbox hochladen.
+    runDebugCloudSync = [&]() {
+        if (config.debugCloudSync.empty()) {
+            startCloudUploads();
+            return;
+        }
+        const nl::Game* g = findGame(config.debugCloudSync);
+        if (g == nullptr) {
+            nl::log::line("NL_WARN cloud_sync %s fehlt", config.debugCloudSync.c_str());
+        } else if (!startCloudGate(*g, saveQueryForGame(*g), true)) {
+            nl::log::line("NL_CLOUD_SYNC_DONE %s skip", config.debugCloudSync.c_str());
+        } else {
+            return;  // finishCloudGate meldet NL_CLOUD_SYNC_DONE und lädt danach hoch
+        }
+        startCloudUploads();
+    };
     // M24: Löschen anstoßen; der Rest läuft Frame für Frame (WaitNet → Deleting → Idle, vor covers.pump).
     auto startCoverClear = [&]() {
         if (coverClear != CoverClear::Idle) return;  // läuft schon
@@ -1958,6 +2259,7 @@ int main(int argc, char** argv) {
         emu.join();
         cheatWorker.join();
         saveWorker.join();
+        cloud.join();
         remote.stop();
         pumpRemoteLog();
         netService.shutdown();
@@ -2391,6 +2693,7 @@ int main(int argc, char** argv) {
                 emu.join();
                 cheatWorker.join();
                 saveWorker.join();
+                cloud.join();
                 remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
                 pumpRemoteLog();
                 netService.shutdown();
@@ -2542,13 +2845,58 @@ int main(int argc, char** argv) {
                 savesScene.setStatus(ok ? nl::ui::tr(nl::ui::Str::SavesDone) : "");
                 break;
             }
-            case nl::ui::AppCommand::OpenCloud:  // M27: Einbau folgt mit dem Start-Tor (Task 11)
+            case nl::ui::AppCommand::OpenCloud:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (!cloud.running()) cloudLinked = cloudBuilt && cloud.linked();
+                cloudScene.open(cloudViewNow());
+                if (!scenes.contains(&cloudScene)) scenes.push(&cloudScene);
+                break;
             case nl::ui::AppCommand::CloudSetProvider:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (cloud.running()) break;  // die Szene sperrt die Zeile, solange etwas läuft
+                config.cloudProvider = cloudScene.provider();
+                saveConfig();
+                configureCloud();
+                nl::log::line("NL_CLOUD_PROVIDER %s", config.cloudProvider == nl::CloudProviderId::Drive ? "drive" : "off");
+                cloudScene.setView(cloudViewNow());
+                break;
             case nl::ui::AppCommand::CloudLink:
-            case nl::ui::AppCommand::CloudUnlink:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (cloudActive() && startCloudLink()) {
+                    deviceCodeScene.open();
+                    scenes.push(&deviceCodeScene);
+                    cloudScene.setView(cloudViewNow());
+                    cloudScene.setStatus("");
+                } else {
+                    cloudScene.setStatus(nl::ui::tr(nl::ui::Str::CloudLinkFailed));
+                }
+                break;
             case nl::ui::AppCommand::CloudCancelLink:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (cloudLinkWatch) cloud.cancel();  // pumpCloud meldet das Ende (Idle) und frischt das Menü auf
+                break;
+            case nl::ui::AppCommand::CloudUnlink:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (cloud.running()) break;
+                cloud.unlink();
+                cloudLinked = false;
+                cloudRelink = false;
+                nl::log::line("NL_CLOUD_UNLINKED");
+                cloudScene.setView(cloudViewNow());
+                cloudScene.setStatus("");
+                break;
             case nl::ui::AppCommand::CloudSkip:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (cloudGate) {
+                    cloud.cancel();
+                    nl::log::line("NL_CLOUD_SKIP user %s", cloudGate->key.c_str());
+                    finishCloudGate(true);
+                }
+                break;
             case nl::ui::AppCommand::CloudConflict:
+                nl::log::line("NL_CMD %s %d", nl::ui::appCommandName(cmd), choiceDialog.picked());
+                answerCloudConflict(choiceDialog.picked());
+                break;
             case nl::ui::AppCommand::None:
                 break;
         }
@@ -2558,7 +2906,13 @@ int main(int argc, char** argv) {
             pendingLaunchKey.clear();
             launchByKey(key);
         }
+        if (!cloudLaunchKey.empty() && !scenes.contains(&cloudSyncScene)) {  // Abgleich fertig, Szene ausgeblendet
+            const std::string key = std::move(cloudLaunchKey);
+            cloudLaunchKey.clear();
+            launchByKey(key);
+        }
         pumpNet();
+        pumpCloud();
         pumpEmu(runPendingAutostart);
         pumpMusic();
         if (coverClear == CoverClear::WaitNet && !net.active()) {
@@ -2725,6 +3079,16 @@ int main(int argc, char** argv) {
                 if (!savesBackups.empty() && startSaveRestore(savesBackups.front())) markSavesBusy();
                 else nl::log::line("NL_SAVE_RESTORE fail %s", savesScene.view().unitId.c_str());
             }
+            // M27: Anmeldung ohne Szene (nur Tests), danach cloud_sync; sonst Abgleich-Test bzw. Outbox hochladen.
+            if (config.debugCloudDeviceAuto && cloudActive()) {
+                cloudAfterLink = true;
+                if (!startCloudLink()) {
+                    cloudAfterLink = false;
+                    nl::log::line("NL_CLOUD_LINK failed");
+                }
+            } else {
+                runDebugCloudSync();
+            }
             if (config.debugSysinfoSave) {                          // nur für Tests (M13)
                 sysInfoScene.setInfo(buildSysInfo());
                 saveSysInfo();
@@ -2788,6 +3152,7 @@ int main(int argc, char** argv) {
     emu.join();
     cheatWorker.join();
     saveWorker.join();
+    cloud.join();
     remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
     pumpRemoteLog();
     netService.shutdown();

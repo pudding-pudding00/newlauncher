@@ -105,6 +105,58 @@ bitte nicht von Hand ändern.
 **Abmelden** löscht die Tokens auf der SD. Microsoft bietet keinen Widerruf einzelner Refresh-Tokens an; den Zugriff
 ganz entziehen kann man unter <https://account.live.com/consent/Manage>.
 
+## Dropbox
+
+### 1. App in der Dropbox App Console anlegen
+
+1. <https://www.dropbox.com/developers/apps> mit dem Dropbox-Konto öffnen → **Create app**.
+2. **Scoped access**, Zugriff **App folder** (newlauncher sieht dann nur seinen eigenen Ordner, nicht den Rest der
+   Dropbox). Name frei wählbar, z. B. „newlauncher-<deinname>“ (der Name muss bei Dropbox eindeutig sein).
+3. Reiter **Permissions:** `files.content.read`, `files.content.write` und `account_info.read` anhaken und unten
+   **Submit** drücken. Rechte, die erst nach einer Anmeldung dazukommen, gelten erst nach einer neuen Anmeldung.
+4. Reiter **Settings → OAuth 2 → Allow public clients (Implicit Grant & PKCE)** auf **Allow** lassen bzw. stellen.
+   newlauncher meldet sich mit PKCE an und braucht **kein** App-Secret. Redirect-URIs bleiben leer.
+5. Den **App key** kopieren (nicht das App secret).
+
+Eine neue App steht bei Dropbox im Status „Development“ und darf so bis zu 500 Konten verbinden; das reicht für den
+eigenen Gebrauch, eine Freigabe („Apply for production“) ist nicht nötig.
+
+### 2. config.ini
+
+```ini
+[cloud]
+provider = dropbox
+dropbox_app_key = abcdefghijklmno
+```
+
+### 3. Auf der Wii koppeln
+
+1. **Einstellungen → Cloud-Spielstände → Anbieter: Dropbox → Anmelden.** Die Kopplungsszene zeigt einen QR-Code
+   und darunter die Adresse `http://<wii-ip>:4301/<token>`.
+2. Den QR-Code mit dem Handy scannen (Handy im **selben WLAN** wie die Wii). Die Kopplungsseite öffnet sich; dort
+   auf **Bei Dropbox zulassen** tippen, anmelden und zustimmen. Dropbox zeigt danach einen Code.
+3. Den Code kopieren, auf der Kopplungsseite einfügen und **Code senden**. Die Wii meldet „Angemeldet“.
+
+Die Kopplungsseite lebt nur, solange die Szene offen ist (höchstens 5 Minuten), und nimmt genau **eine** Einsendung
+an; danach meldet sie „Diese Seite ist nicht mehr aktiv“. Lehnt Dropbox einen Code ab, zeigt die Szene „Code abgelehnt“ und die
+Seite nimmt einen neuen an.
+
+**Ohne Handy im WLAN:** **Y** (bzw. **1**) schaltet auf den direkten QR-Code der Dropbox-Freigabe (geht mit jedem Gerät mit
+Internet, auch über Mobilfunk). Den Code, den Dropbox danach zeigt, gibt man mit **A** über die Bildschirmtastatur
+ein (Ebenen abc / ABC / 123 / # über die Ebenen-Taste, bis 128 Zeichen).
+
+Der Code allein ist wertlos: Er passt nur zu dem geheimen PKCE-Schlüssel, der die Wii nie verlässt. Die Seite läuft
+deshalb über einfaches `http://` im Heimnetz; Tokens gehen nie über die Kopplungsseite.
+
+### Was in der Cloud liegt
+
+In der Dropbox unter **Apps → <App-Name>** liegt je Spielstand eine Datei `<einheit>.zip`. Dropbox kennt kein
+Beschreibungsfeld; Gerät, Zeit und Inhalts-Hash stehen nur in `newlauncher-save.ini` im ZIP. Als Revision dient die
+Dropbox-`rev`; ein Upload überschreibt nur, wenn die Datei seit dem letzten Abgleich unverändert ist (sonst
+entscheidet newlauncher neu bzw. fragt).
+
+**Abmelden** widerruft das Token bei Dropbox (Log `NL_CLOUD_UNLINKED revoke=ok`) und löscht es auf der SD.
+
 ## Anbieter wechseln und „Alle abgleichen“
 
 - **Anbieter wechseln:** Anbieter umstellen (◀▶ in der Zeile „Anbieter“), dann **Anmelden**. Der alte Anbieter wird
@@ -121,17 +173,23 @@ ganz entziehen kann man unter <https://account.live.com/consent/Manage>.
 
 | Anzeige / Log | Ursache |
 |---|---|
-| Anbieter ausgegraut bzw. beim Umschalten übersprungen, „Keine Client-ID in config.ini“ | `drive_client_id` bzw. `onedrive_client_id` fehlt oder ist leer |
+| Anbieter ausgegraut bzw. beim Umschalten übersprungen, „Keine Client-ID in config.ini“ | `drive_client_id`, `onedrive_client_id` bzw. `dropbox_app_key` fehlt oder ist leer |
 | „Dieser Build hat kein HTTPS“, Log `NL_CLOUD off notls` | Build ohne TLS |
 | „Anmeldung abgelaufen – bitte neu anmelden“, Log `NL_CLOUD <einheit> skip auth` | Refresh-Token ungültig (App noch im Status „Testen“, Zugriff entzogen) |
 | Log `NL_CLOUD <einheit> skip offline` | kein Netz; das Spiel startet ohne Abgleich, der Upload folgt später |
-| Log `NL_CLOUD_LINK failed` | Google: Client-ID/Secret falsch oder Typ nicht „Fernseher und Geräte mit begrenzter Eingabe“; Microsoft: „Öffentliche Clientflows zulassen“ aus oder Kontotyp nicht „persönliche Microsoft-Konten“ |
+| Log `NL_CLOUD_LINK failed` | Google: Client-ID/Secret falsch oder Typ nicht „Fernseher und Geräte mit begrenzter Eingabe“; Microsoft: „Öffentliche Clientflows zulassen“ aus oder Kontotyp nicht „persönliche Microsoft-Konten“; Dropbox: App key falsch, „Allow public clients“ aus oder Kopplung abgelaufen (5 Minuten) |
 | „Abgemeldet, Widerruf nicht bestätigt“, Log `NL_CLOUD_UNLINKED revoke=fail` | Tokens auf der SD sind gelöscht, Google hat den Widerruf aber nicht bestätigt (offline); Zugriff bei Bedarf in den Kontoeinstellungen entziehen |
+| Szene „Code abgelehnt“, Log `NL_CLOUD_LINK badcode` | Dropbox-Code falsch abgetippt, schon benutzt oder abgelaufen; neuen Code über den Link holen |
+| Handy erreicht die Kopplungsseite nicht, Log nur `NL_PAIR listen 4301` | Handy nicht im selben WLAN, Gast-WLAN mit Client-Isolation oder Mobilfunk; **Y** (direkter QR) und **A** (Tastatur) nehmen |
+| Kopplungsseite „nicht mehr aktiv“, Log `NL_PAIR reject` | zweite Einsendung oder Szene schon geschlossen; Anmelden neu starten |
 | Log `NL_CLOUD_SYNCALL offline` | „Alle abgleichen“ ohne Netz; nichts wurde verändert |
 
 ## Tests ohne echtes Konto
 
-`python tools/dolphin_smoke.py --cloud-fake drive|onedrive --cloud-step
-link|push|pull|conflict|refresh|offline|syncall|switch|unlink` startet einen Drive- bzw. Graph-Fake
+`python tools/dolphin_smoke.py --cloud-fake drive|onedrive|dropbox --cloud-step
+link|push|pull|conflict|refresh|offline|syncall|switch|unlink` startet einen Drive-, Graph- bzw. Dropbox-Fake
 (`tools/cloud_fake.py`) über HTTPS mit der Test-CA und prüft den Ablauf in Dolphin. Die Fake-IDs und das Fake-Secret
-stehen nur im Werkzeug.
+stehen nur im Werkzeug. Bei Dropbox spielt `tools/cloud_smoke.py` das Handy: Es öffnet die Kopplungsseite über
+`127.0.0.1:4301` (Dolphin reicht die Wii-Sockets an den PC durch), folgt dem Link zur Fake-Freigabe und sendet den
+Code. Nur mit Dropbox: `--cloud-step badcode` (erst ein falscher Code, dann der richtige) und `pairtwice` (zweite
+Einsendung → 410).

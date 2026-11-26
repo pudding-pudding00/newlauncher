@@ -1,7 +1,10 @@
-"""Cloud-Smokes gegen die Fakes (M27 Drive, M28 OneDrive): --cloud-fake drive|onedrive --cloud-step <schritt>.
+"""Cloud-Smokes gegen die Fakes (M27 Drive, M28 OneDrive, M29 Dropbox):
+--cloud-fake drive|onedrive|dropbox --cloud-step <schritt>.
 
-Jeder Schritt meldet sich zuerst per Gerätecode an ([debug] cloud_device_auto = 1, der Fake genehmigt sofort),
-denn die Tokens auf der SD sind an das Gerät gebunden und lassen sich nicht vorab hinlegen. Ohne cloud_sync folgt
+Jeder Schritt meldet sich zuerst an ([debug] cloud_device_auto = 1): Drive und OneDrive per Gerätecode (der Fake
+genehmigt sofort), Dropbox über die Kopplungsseite (Pairer: Seite über 127.0.0.1:4301 holen, dem Link zum Fake
+folgen, den Code zurück posten – wie ein Handy). Die Tokens auf der SD sind an das Gerät gebunden
+und lassen sich nicht vorab hinlegen. Ohne cloud_sync folgt
 auf die Anmeldung der Wechsel-Abgleich über alle Spiele (M28). Danach:
   link     – nur anmelden: NL_CLOUD_LINKED <anbieter>
   push     – session.ini liegt da (Spiel lief), GB-Spielstand A → Abgleich nach der Anmeldung lädt hoch, Fake hat A
@@ -11,15 +14,24 @@ auf die Anmeldung der Wechsel-Abgleich über alle Spiele (M28). Danach:
   offline  – nach der Anmeldung schließt der Fake den Listener (Verbindung abgewiesen) → NL_CLOUD <einheit> skip offline
   syncall  – GB nur lokal (A), Galaxy-NAND nur in der Cloud (B) → NL_CLOUD_SYNCALL pulled=1 pushed=1
   switch   – GB lokal A, Cloud B → Wechsel-Dialog, cloud_switch = wii → NL_CLOUD_SWITCH uploaded=1 conflict=0
-  unlink   – anmelden, dann cloud_unlink = 1 → Drive: NL_CLOUD_UNLINKED revoke=ok, OneDrive: revoke=none
+  unlink   – anmelden, dann cloud_unlink = 1 → Drive/Dropbox: NL_CLOUD_UNLINKED revoke=ok, OneDrive: revoke=none
+  badcode  – nur Dropbox: erst ein falscher Code → NL_CLOUD_LINK badcode, dann der richtige
+  pairtwice – nur Dropbox: zweiter POST auf die Kopplungsseite → 410, NL_PAIR reject
 Der Galaxy-NAND-Spielstand (save_smoke „nand“) wird vor jedem Lauf geleert, damit er die Zählung nicht verfälscht.
 Nach jedem Lauf: Kein Token, kein Gerätecode und kein Client-Secret im Log.
 """
 
 from __future__ import annotations
 
+import html
 import io
+import re
 import shutil
+import ssl
+import threading
+import time
+import urllib.error
+import urllib.request
 import zipfile
 import zlib
 from dataclasses import dataclass, field
@@ -30,13 +42,20 @@ import cloud_fake
 import save_smoke
 from dolphin import sd_sync_dir
 
-STEPS = ("link", "push", "pull", "conflict", "refresh", "offline", "syncall", "switch", "unlink")
-PROVIDERS = ("drive", "onedrive")
+STEPS = ("link", "push", "pull", "conflict", "refresh", "offline", "syncall", "switch", "unlink", "badcode",
+         "pairtwice")
+PROVIDERS = ("drive", "onedrive", "dropbox")
+DROPBOX_ONLY = ("badcode", "pairtwice")
 
 CLIENT_ID = "fake-client.apps.googleusercontent.com"
 OD_CLIENT_ID = "00000000-0000-0000-0000-00000fake0d1"
 NAND_UNIT = "wii-RMGP"
 CLIENT_SECRET = "GOCSPX-fake-secret-not-real"
+DBX_APP_KEY = "fakeappkey0dbx1"
+PAIR_TOKEN = "5e0c1a2b3d4f60718293a4b5c6d7e8f9"  # [debug] cloud_pair_token: feste URL für den Smoke
+PAIR_PORT = 4301
+WRONG_CODE = "WRONG-code_0"
+PAIRTWICE_DELAY_S = 3.0  # Code-Tausch verzögert: die Seite lebt beim zweiten POST noch
 CLOUD_REL = "newlauncher/cloud"
 SESSION_STARTED = 1700000000
 CLOUD_SAVED = 1700000500
@@ -78,16 +97,30 @@ def make_fake(step: str, provider: str = "drive") -> cloud_fake.FakeDrive:
         raise ValueError(f"unbekannter Cloud-Schritt: {step}")
     if provider not in PROVIDERS:
         raise ValueError(f"unbekannter Cloud-Anbieter: {provider}")
+    if step in DROPBOX_ONLY and provider != "dropbox":
+        raise ValueError(f"Cloud-Schritt {step} gibt es nur mit dropbox")
+    kwargs = dict(approve="auto", expire_access_once=step == "refresh", offline_after_link=step == "offline")
+    if provider == "dropbox":
+        return cloud_fake.FakeDropbox(token_delay_s=PAIRTWICE_DELAY_S if step == "pairtwice" else 0.0, **kwargs)
     cls = cloud_fake.FakeOneDrive if provider == "onedrive" else cloud_fake.FakeDrive
-    return cls(approve="auto", expire_access_once=step == "refresh", offline_after_link=step == "offline")
+    return cls(**kwargs)
 
 
 def provider_of(fake: cloud_fake.FakeDrive) -> str:
+    if isinstance(fake, cloud_fake.FakeDropbox):
+        return "dropbox"
     return "onedrive" if isinstance(fake, cloud_fake.FakeOneDrive) else "drive"
 
 
 def cloud_hash(fake: cloud_fake.FakeDrive, name: str) -> tuple[str | None, str | None]:
-    """(hash, unit) der Meta im Fake: Drive aus appProperties, OneDrive aus der description (ohne Einheit)."""
+    """(hash, unit) der Meta im Fake: Drive aus appProperties, OneDrive aus der description (ohne Einheit),
+    Dropbox (ohne Metadaten-Feld) aus newlauncher-save.ini im ZIP."""
+    if isinstance(fake, cloud_fake.FakeDropbox):
+        data = fake.file_bytes(name.removesuffix(".zip"))
+        if data is None:
+            return None, None
+        meta = cloud_fake.zip_meta(data)
+        return meta.get("hash"), meta.get("unit")
     entry = fake.state_dump()["files"].get(name, {})
     if isinstance(fake, cloud_fake.FakeOneDrive):
         meta = cloud_fake.parse_onedrive_description(entry.get("description", ""))
@@ -104,6 +137,8 @@ class CloudPlan:
     debug_lines: list[str] = field(default_factory=list)
     markers: list[str] = field(default_factory=list)
     config_append: str = ""
+    pair: bool = False                                     # Dropbox: Pairer spielt das Handy
+    pair_problems: list[str] = field(default_factory=list)  # vom Pairer, post_check meldet sie
 
 
 def prepare(step: str, fake: cloud_fake.FakeDrive, user_dir: Path) -> CloudPlan:
@@ -114,12 +149,18 @@ def prepare(step: str, fake: cloud_fake.FakeDrive, user_dir: Path) -> CloudPlan:
     provider = provider_of(fake)
     # Beide IDs stehen drin (wie bei einem Nutzer, der beide eingerichtet hat); aktiv ist nur provider.
     plan.config_append = (f"[cloud]\nprovider = {provider}\ndrive_client_id = {CLIENT_ID}\n"
-                          f"drive_client_secret = {CLIENT_SECRET}\nonedrive_client_id = {OD_CLIENT_ID}\n")
+                          f"drive_client_secret = {CLIENT_SECRET}\nonedrive_client_id = {OD_CLIENT_ID}\n"
+                          f"dropbox_app_key = {DBX_APP_KEY}\n")
     plan.debug_lines.append("cloud_device_auto = 1")
     plan.markers.append(f"NL_CLOUD_LINKED {provider}")
+    if provider == "dropbox":
+        plan.pair = True
+        plan.debug_lines.append(f"cloud_pair_token = {PAIR_TOKEN}")
+        plan.markers += [f"NL_PAIR listen {PAIR_PORT}", "NL_PAIR ok"]
     nand = save_smoke.fixture("nand", user_dir)
     (nand.host_dir / nand.file_name).unlink(missing_ok=True)
-    if step == "link":
+    if step in ("link", "badcode", "pairtwice"):
+        plan.markers += {"badcode": ["NL_CLOUD_LINK badcode"], "pairtwice": ["NL_PAIR reject"]}.get(step, [])
         return plan
     if step == "unlink":
         plan.debug_lines.append("cloud_unlink = 1")
@@ -178,7 +219,7 @@ def leaked_secrets(log: str, fake: cloud_fake.FakeDrive) -> list[str]:
 
 
 def post_check(plan: CloudPlan, user_dir: Path, log: str, read_sd: Callable[[str], bytes]) -> list[str]:
-    problems = leaked_secrets(log, plan.fake)
+    problems = leaked_secrets(log, plan.fake) + list(plan.pair_problems)
     dump = plan.fake.state_dump()
     onedrive = isinstance(plan.fake, cloud_fake.FakeOneDrive)
     if plan.step == "unlink":
@@ -195,7 +236,7 @@ def post_check(plan: CloudPlan, user_dir: Path, log: str, read_sd: Callable[[str
     want_refreshes = 1 if plan.step == "refresh" else 0
     if dump["refreshes"] != want_refreshes:
         problems.append(f"Fake: {dump['refreshes']} Refreshes statt {want_refreshes}")
-    if plan.step == "link":
+    if plan.step in ("link", "badcode", "pairtwice"):
         return problems
 
     fx = save_smoke.fixture("gb", user_dir)
@@ -225,6 +266,99 @@ def post_check(plan: CloudPlan, user_dir: Path, log: str, read_sd: Callable[[str
     elif plan.step == "offline" and dump["uploads"] != 0:
         problems.append("Fake: Upload trotz offline")
     return problems
+
+
+_HREF = re.compile(r'<a class="b" href="([^"]+)"')
+
+
+def authorize_link(page: str) -> str:
+    """Der Freigabe-Link auf der Kopplungsseite (core/pairing_http, HTML-maskiert)."""
+    m = _HREF.search(page)
+    if m is None:
+        raise ValueError("kein Freigabe-Link auf der Kopplungsseite")
+    return html.unescape(m.group(1))
+
+
+class Pairer(threading.Thread):
+    """Spielt das Handy (M29): wartet auf NL_PAIR listen, holt die Kopplungsseite, folgt dem Link zum Fake, liest den
+    Code ab und postet ihn zurück. badcode postet erst WRONG_CODE und wartet auf NL_CLOUD_LINK badcode, pairtwice
+    postet den Code zweimal (zweiter POST → 410). Fehler landen in plan.pair_problems (post_check meldet sie)."""
+
+    def __init__(self, plan: CloudPlan, log: Path, cafile: Path | None, host: str = "127.0.0.1",
+                 port: int = PAIR_PORT, timeout_s: float = 120.0):
+        super().__init__(daemon=True)
+        self.plan, self.log, self.cafile = plan, log, cafile
+        self.base = f"http://{host}:{port}/{PAIR_TOKEN}"
+        self.deadline = time.monotonic() + timeout_s
+
+    def run(self) -> None:
+        try:
+            self._pair()
+        except Exception as e:  # noqa: BLE001 - jeder Fehler ist ein Smoke-Befund
+            self.plan.pair_problems.append(f"Kopplung: {e}")
+
+    def _wait_log(self, marker: str, count: int = 1) -> None:
+        while time.monotonic() < self.deadline:
+            try:
+                if self.log.read_text(encoding="utf-8", errors="replace").count(marker) >= count:
+                    return
+            except OSError:
+                pass
+            time.sleep(0.1)
+        raise TimeoutError(f"{marker} nicht im Log")
+
+    def _request(self, url: str, data: bytes | None = None, context: ssl.SSLContext | None = None) -> tuple[int, str]:
+        req = urllib.request.Request(url, data=data, method="POST" if data is not None else "GET")
+        if data is not None:
+            req.add_header("Content-Type", "application/x-www-form-urlencoded")
+        last: Exception | None = None
+        for _ in range(20):  # Dolphin nimmt die erste Verbindung manchmal erst im zweiten Anlauf an
+            try:
+                with urllib.request.urlopen(req, timeout=10, context=context) as r:
+                    return r.status, r.read().decode("utf-8", "replace")
+            except urllib.error.HTTPError as e:
+                return e.code, e.read().decode("utf-8", "replace")
+            except (urllib.error.URLError, ConnectionError, TimeoutError) as e:
+                last = e
+                if time.monotonic() >= self.deadline:
+                    break
+                time.sleep(0.5)
+        raise ConnectionError(f"{url.split('?')[0]}: {last}")
+
+    def _post(self, code: str) -> int:
+        return self._request(self.base, ("code=" + code).encode())[0]
+
+    def _post_expect(self, code: str, want: int) -> None:
+        status = self._post(code)
+        if status == 410 and want == 200:  # nach badcode: rearm() kommt mit dem nächsten Bild auf der Wii
+            for _ in range(20):
+                time.sleep(0.25)
+                status = self._post(code)
+                if status != 410:
+                    break
+        if status != want:
+            raise RuntimeError(f"POST auf die Kopplungsseite: {status} statt {want}")
+
+    def _pair(self) -> None:
+        try:
+            self._wait_log(f"NL_PAIR listen {PAIR_PORT}")
+        except TimeoutError as e:
+            raise RuntimeError(str(e)) from None
+        status, page = self._request(self.base)
+        if status != 200:
+            raise RuntimeError(f"Kopplungsseite: {status}")
+        link = authorize_link(page)
+        ctx = ssl.create_default_context(cafile=str(self.cafile)) if link.startswith("https:") else None
+        status, page = self._request(link, context=ctx)
+        if status != 200:
+            raise RuntimeError(f"Freigabeseite des Fakes: {status}")
+        code = cloud_fake.dropbox_code_from_page(page)
+        if self.plan.step == "badcode":
+            self._post_expect(WRONG_CODE, 200)
+            self._wait_log("NL_CLOUD_LINK badcode")
+        self._post_expect(code, 200)
+        if self.plan.step == "pairtwice":
+            self._post_expect(code, 410)
 
 
 def cleanup(user_dir: Path) -> None:

@@ -422,6 +422,186 @@ class FakeOneDriveTest(unittest.TestCase):
         self.assertEqual(desc, f"nl1 hash={h} saved=5 device=Dolphin%20PC")
 
 
+class FakeDropboxTest(unittest.TestCase):
+    """M29: Dropbox-Fake mit PKCE-Freigabeseite, RPC- und Content-Endpunkten, 409 mit error_summary."""
+
+    VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"   # RFC 7636 Anhang B
+    CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+
+    def setUp(self):
+        self.fake = cloud_fake.FakeDropbox()
+        self.server, port = cloud_fake.start(self.fake)
+        self.base = f"http://127.0.0.1:{port}"
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def call(self, method, path, body=None, headers=None, token=None):
+        req = urllib.request.Request(self.base + path, data=body, method=method, headers=dict(headers or {}))
+        if token is not None:
+            req.add_header("Authorization", "Bearer " + token)
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, dict(r.headers), r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers), e.read()
+
+    def form(self, **fields):
+        status, _, body = self.call("POST", "/oauth2/token", urllib.parse.urlencode(fields).encode(),
+                                    {"Content-Type": "application/x-www-form-urlencoded"})
+        return status, json.loads(body)
+
+    def authorize(self, client_id="appkey", challenge=CHALLENGE, method="S256"):
+        q = urllib.parse.urlencode({"client_id": client_id, "response_type": "code", "code_challenge": challenge,
+                                    "code_challenge_method": method, "token_access_type": "offline"})
+        status, _, body = self.call("GET", "/oauth2/authorize?" + q)
+        return status, body.decode()
+
+    def link(self) -> dict:
+        status, page = self.authorize()
+        self.assertEqual(status, 200)
+        code = cloud_fake.dropbox_code_from_page(page)
+        status, tok = self.form(client_id="appkey", code=code, code_verifier=self.VERIFIER,
+                                grant_type="authorization_code")
+        self.assertEqual(status, 200)
+        return tok
+
+    def rpc(self, path, arg, token):
+        return self.call("POST", path, json.dumps(arg).encode() if arg is not None else b"null",
+                         {"Content-Type": "application/json"}, token=token)
+
+    def upload(self, token, unit, data, mode):
+        arg = {"path": f"/{unit}.zip", "mode": mode, "autorename": False, "strict_conflict": True, "mute": True}
+        return self.call("POST", "/2/files/upload", data,
+                         {"Content-Type": "application/octet-stream", "Dropbox-API-Arg": json.dumps(arg)}, token=token)
+
+    # --- Anmeldung ---
+    def test_authorize_needs_client_id_and_s256(self):
+        self.assertEqual(self.authorize(client_id="")[0], 400)
+        self.assertEqual(self.authorize(method="plain")[0], 400)
+        self.assertEqual(self.authorize(challenge="")[0], 400)
+
+    def test_code_exchange_checks_verifier_and_is_single_use(self):
+        _, page = self.authorize()
+        code = cloud_fake.dropbox_code_from_page(page)
+        self.assertRegex(code, r"^[A-Za-z0-9_-]+$")  # die Kopplungsseite nimmt nur diese Zeichen an
+        status, err = self.form(client_id="appkey", code=code, code_verifier="falsch" * 8,
+                                grant_type="authorization_code")
+        self.assertEqual((status, err["error"]), (400, "invalid_grant"))
+        status, tok = self.form(client_id="appkey", code=code, code_verifier=self.VERIFIER,
+                                grant_type="authorization_code")
+        self.assertEqual(status, 200)
+        self.assertEqual(tok["token_type"], "bearer")
+        self.assertIn("refresh_token", tok)
+        self.assertIn("account_id", tok)
+        status, err = self.form(client_id="appkey", code=code, code_verifier=self.VERIFIER,
+                                grant_type="authorization_code")
+        self.assertEqual((status, err["error"]), (400, "invalid_grant"))
+
+    def test_unknown_code_is_invalid_grant(self):
+        status, err = self.form(client_id="appkey", code="WRONG-code_1", code_verifier=self.VERIFIER,
+                                grant_type="authorization_code")
+        self.assertEqual((status, err["error"]), (400, "invalid_grant"))
+
+    def test_refresh_token(self):
+        tok = self.link()
+        status, new = self.form(client_id="appkey", refresh_token=tok["refresh_token"], grant_type="refresh_token")
+        self.assertEqual(status, 200)
+        self.assertNotIn("refresh_token", new)
+        self.assertEqual(self.fake.refreshes, 1)
+
+    # --- API ---
+    def test_api_needs_bearer(self):
+        status, _, body = self.rpc("/2/users/get_current_account", None, token=None)
+        self.assertEqual(status, 401)
+        self.assertIn("error_summary", json.loads(body))
+
+    def test_account_id_is_dbid(self):
+        tok = self.link()
+        status, _, body = self.rpc("/2/users/get_current_account", None, tok["access_token"])
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)["account_id"].startswith("dbid:"))
+
+    def test_metadata_of_missing_file_is_409_not_found(self):
+        tok = self.link()
+        status, _, body = self.rpc("/2/files/get_metadata", {"path": "/gb-x.zip"}, tok["access_token"])
+        self.assertEqual(status, 409)
+        self.assertTrue(json.loads(body)["error_summary"].startswith("path/not_found"))
+
+    def test_upload_add_update_and_conflicts(self):
+        access = self.link()["access_token"]
+        data, _ = save_zip("gb-x", {"a.sav": b"A"})
+        status, _, body = self.upload(access, "gb-x", data, "add")
+        self.assertEqual(status, 200)
+        first = json.loads(body)
+        self.assertRegex(first["rev"], r"^[0-9a-f]{9,}$")
+        self.assertTrue(first["id"].startswith("id:"))
+        self.assertNotIn(".tag", first)  # Upload-Antwort ohne .tag, get_metadata mit
+        status, _, body = self.upload(access, "gb-x", data, "add")
+        self.assertEqual(status, 409)
+        self.assertTrue(json.loads(body)["error_summary"].startswith("path/conflict/file"))
+        status, _, body = self.upload(access, "gb-x", data, {".tag": "update", "update": "0123456789"})
+        self.assertEqual(status, 409)
+        self.assertTrue(json.loads(body)["error_summary"].startswith("path/conflict/file"))
+        data2, _ = save_zip("gb-x", {"a.sav": b"B"})
+        status, _, body = self.upload(access, "gb-x", data2, {".tag": "update", "update": first["rev"]})
+        self.assertEqual(status, 200)
+        second = json.loads(body)
+        self.assertNotEqual(second["rev"], first["rev"])
+        self.assertEqual(second["id"], first["id"])
+        status, _, body = self.rpc("/2/files/get_metadata", {"path": "/gb-x.zip"}, access)
+        meta = json.loads(body)
+        self.assertEqual((meta[".tag"], meta["rev"], meta["size"]), ("file", second["rev"], len(data2)))
+        status, headers, got = self.call("POST", "/2/files/download", b"",
+                                         {"Dropbox-API-Arg": json.dumps({"path": "rev:" + second["rev"]})},
+                                         token=access)
+        self.assertEqual((status, got), (200, data2))
+        self.assertEqual(json.loads(headers["Dropbox-API-Result"])["rev"], second["rev"])
+        status, _, body = self.call("POST", "/2/files/download", b"",
+                                    {"Dropbox-API-Arg": json.dumps({"path": "rev:" + first["rev"]})}, token=access)
+        self.assertEqual(status, 409)  # alte Revision: nur die aktuelle zählt im Fake
+        self.assertEqual(self.fake.state_dump()["uploads"], 2)
+
+    def test_upload_needs_octet_stream(self):
+        access = self.link()["access_token"]
+        status, _, _ = self.call("POST", "/2/files/upload", b"x",
+                                 {"Content-Type": "application/json",
+                                  "Dropbox-API-Arg": json.dumps({"path": "/u.zip", "mode": "add"})}, token=access)
+        self.assertEqual(status, 400)
+
+    def test_revoke_with_bearer_unlinks(self):
+        tok = self.link()
+        status, _, _ = self.call("POST", "/2/auth/token/revoke", None, token=tok["access_token"])
+        self.assertEqual(status, 200)
+        dump = self.fake.state_dump()
+        self.assertEqual((dump["revokes"], dump["linked"]), (1, False))
+        status, _ = self.form(client_id="appkey", refresh_token=tok["refresh_token"], grant_type="refresh_token")
+        self.assertEqual(status, 400)
+
+    def test_seed_dump_and_secrets(self):
+        data, _ = save_zip("gb-x", {"a.sav": b"A"})
+        self.fake.seed("gb-x", data)
+        self.assertEqual(self.fake.file_bytes("gb-x"), data)
+        tok = self.link()
+        text = json.dumps(self.fake.state_dump())
+        self.assertIn("gb-x.zip", text)
+        for secret in self.fake.secrets():
+            self.assertNotIn(secret, text)
+        self.assertIn(tok["access_token"], self.fake.secrets())
+        self.assertEqual(len(self.fake.secrets()), 3)  # Code, Access- und Refresh-Token
+
+    def test_expire_access_once_then_refresh(self):
+        fake = cloud_fake.FakeDropbox(expire_access_once=True)
+        _, page = fake.authorize({"client_id": "k", "response_type": "code", "code_challenge": self.CHALLENGE,
+                                  "code_challenge_method": "S256"})
+        _, tok = fake.token({"client_id": "k", "code": cloud_fake.dropbox_code_from_page(page),
+                             "code_verifier": self.VERIFIER, "grant_type": "authorization_code"})
+        bearer = "Bearer " + tok["access_token"]
+        self.assertTrue(fake.authorized(bearer, "/2/users/get_current_account"))
+        self.assertFalse(fake.authorized(bearer, "/2/files/get_metadata"))
+
+
 class CliTest(unittest.TestCase):
     def test_parse_seed(self):
         self.assertEqual(cloud_fake.parse_seed("gb-x-1=C:/a/b.zip"), ("gb-x-1", Path("C:/a/b.zip")))

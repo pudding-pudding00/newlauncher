@@ -300,7 +300,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="M26: backup sichert und prüft das ZIP, restore spielt es zurück, recover rollt ein "
                              "Journal zurück (restore/recover brauchen einen backup-Lauf davor)")
     parser.add_argument("--cloud-fake", choices=cloud_smoke.PROVIDERS,
-                        help="M27/M28: Cloud-Fake (drive|onedrive) über HTTPS (schließt --tls ein), Anmeldung per Gerätecode")
+                        help="M27–M29: Cloud-Fake (drive|onedrive|dropbox) über HTTPS (schließt --tls ein); Anmeldung per "
+                             "Gerätecode, bei dropbox über die Kopplungsseite (127.0.0.1:4301)")
     parser.add_argument("--cloud-step", choices=cloud_smoke.STEPS, default="link",
                         help="Cloud-Schritt (siehe tools/cloud_smoke.py)")
     args = parser.parse_args(argv)
@@ -309,6 +310,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--cloud-step braucht --cloud-fake")
     if args.cloud_fake and (args.save_fixture or args.tls_wrong_ca):
         parser.error("--cloud-fake verträgt sich nicht mit --save-fixture oder --tls-wrong-ca")
+    if args.cloud_step in cloud_smoke.DROPBOX_ONLY and args.cloud_fake != "dropbox":
+        parser.error(f"--cloud-step {args.cloud_step} gibt es nur mit --cloud-fake dropbox")
     if args.cloud_fake:
         args.tls = True
     if "--save-step" in (argv if argv is not None else sys.argv[1:]) and not args.save_fixture:
@@ -661,6 +664,11 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
     except OSError as e:
         print(f"SMOKE FEHLER: Dolphin startet nicht: {e}")
         return 2
+    plan = getattr(args, "cloud_plan", None)
+    pairer = None
+    if plan is not None and plan.pair:  # M29: das Handy an der Kopplungsseite spielen
+        pairer = cloud_smoke.Pairer(plan, log_path(user_dir), args.sd_ca, timeout_s=args.timeout)
+        pairer.start()
     try:
         missing = wait_for_markers(log_path(user_dir), markers, args.timeout,
                                    is_alive=lambda: proc.poll() is None)
@@ -679,6 +687,8 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
+        if pairer is not None:
+            pairer.join(timeout=15)
 
     if not missing and args.expect_frag:
         missing = _check_frag(user_dir, args.expect_frag)

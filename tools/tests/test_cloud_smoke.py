@@ -52,6 +52,8 @@ class CloudSmokeTest(unittest.TestCase):
 
     def test_every_step_links_first(self):
         for step in cloud_smoke.STEPS:
+            if step in cloud_smoke.DROPBOX_ONLY:
+                continue
             plan = cloud_smoke.prepare(step, cloud_smoke.make_fake(step), self.user)
             self.assertEqual(plan.markers[0], "NL_CLOUD_LINKED drive", step)
             self.assertIn("cloud_device_auto = 1", plan.debug_lines, step)
@@ -111,7 +113,7 @@ class CloudSmokeTest(unittest.TestCase):
         self.assertEqual(plan.markers[0], "NL_CLOUD_LINKED onedrive")
         self.assertIn("provider = onedrive", plan.config_append)
         self.assertIn("onedrive_client_id = ", plan.config_append)
-        self.assertEqual(cloud_smoke.PROVIDERS, ("drive", "onedrive"))
+        self.assertEqual(cloud_smoke.PROVIDERS[:2], ("drive", "onedrive"))
         for step in ("syncall", "switch", "unlink"):
             self.assertIn(step, cloud_smoke.STEPS)
 
@@ -145,6 +147,137 @@ class CloudSmokeTest(unittest.TestCase):
         fake.refresh.add("x")
         fake.seed(plan.unit, cloud_smoke.save_zip(plan.unit, {"Tetris (World) (Rev 1).sav": save_smoke.BYTES_A}))
         self.assertEqual(cloud_smoke.post_check(plan, self.user, "", lambda rel: b""), [])
+
+
+    # --- M29: Dropbox mit Kopplungsseite ---
+    def test_m29_dropbox_plan_pairs_with_fixed_token(self):
+        fake = cloud_smoke.make_fake("link", "dropbox")
+        self.assertIsInstance(fake, cloud_fake.FakeDropbox)
+        plan = cloud_smoke.prepare("link", fake, self.user)
+        self.assertEqual(plan.markers[0], "NL_CLOUD_LINKED dropbox")
+        self.assertIn("provider = dropbox", plan.config_append)
+        self.assertIn(f"dropbox_app_key = {cloud_smoke.DBX_APP_KEY}", plan.config_append)
+        self.assertIn(f"cloud_pair_token = {cloud_smoke.PAIR_TOKEN}", plan.debug_lines)
+        self.assertRegex(cloud_smoke.PAIR_TOKEN, r"^[0-9a-f]{32}$")
+        self.assertIn("NL_PAIR listen 4301", plan.markers)
+        self.assertIn("NL_PAIR ok", plan.markers)
+        self.assertTrue(plan.pair)
+        self.assertFalse(cloud_smoke.prepare("link", cloud_smoke.make_fake("link"), self.user).pair)
+
+    def test_m29_badcode_and_pairtwice_only_for_dropbox(self):
+        for step in ("badcode", "pairtwice"):
+            self.assertIn(step, cloud_smoke.STEPS)
+            with self.assertRaises(ValueError):
+                cloud_smoke.make_fake(step, "drive")
+        self.assertGreater(cloud_smoke.make_fake("pairtwice", "dropbox").token_delay_s, 0)
+        plan = cloud_smoke.prepare("badcode", cloud_smoke.make_fake("badcode", "dropbox"), self.user)
+        self.assertIn("NL_CLOUD_LINK badcode", plan.markers)
+        plan = cloud_smoke.prepare("pairtwice", cloud_smoke.make_fake("pairtwice", "dropbox"), self.user)
+        self.assertIn("NL_PAIR reject", plan.markers)
+        plan = cloud_smoke.prepare("unlink", cloud_smoke.make_fake("unlink", "dropbox"), self.user)
+        self.assertIn("NL_CLOUD_UNLINKED revoke=ok", plan.markers)
+
+    def test_m29_authorize_link_unescapes_href(self):
+        page = ('<p>x</p><a class="b" href="https://localhost:1/oauth2/authorize?client_id=k&amp;response_type=code"'
+                ' target="_blank">Dropbox</a><form method="post" action="/t">')
+        self.assertEqual(cloud_smoke.authorize_link(page),
+                         "https://localhost:1/oauth2/authorize?client_id=k&response_type=code")
+        with self.assertRaises(ValueError):
+            cloud_smoke.authorize_link("<p>kein Link</p>")
+
+    def test_m29_post_check_dropbox_reads_hash_from_zip(self):
+        import save_smoke
+        fake = cloud_smoke.make_fake("push", "dropbox")
+        plan = cloud_smoke.prepare("push", fake, self.user)
+        fake.refresh.add("x")
+        fake.seed(plan.unit, cloud_smoke.save_zip(plan.unit, {"Tetris (World) (Rev 1).sav": save_smoke.BYTES_A}))
+        self.assertEqual(cloud_smoke.post_check(plan, self.user, "", lambda rel: b""), [])
+        plan.pair_problems.append("Kopplung: kaputt")
+        self.assertIn("Kopplung: kaputt", cloud_smoke.post_check(plan, self.user, "", lambda rel: b""))
+
+    def test_m29_pairer_runs_the_phone_flow(self):
+        """Gegen eine Nachbildung der Kopplungsseite (core/pairing_http) und den echten Dropbox-Fake."""
+        import http.server
+        import threading
+        fake = cloud_fake.FakeDropbox()
+        server, port = cloud_fake.start(fake)
+        posts = []
+
+        class Pairing(http.server.BaseHTTPRequestHandler):
+            consumed = False
+
+            def log_message(self, *_):
+                pass
+
+            def _reply(self, status, text):
+                body = text.encode()
+                self.send_response(status)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_GET(self):  # noqa: N802
+                href = (f"http://127.0.0.1:{port}/oauth2/authorize?client_id=k&amp;response_type=code&amp;"
+                        f"code_challenge={FakeDropboxChallenge}&amp;code_challenge_method=S256")
+                self._reply(200 if self.path == "/" + cloud_smoke.PAIR_TOKEN else 404,
+                            f'<a class="b" href="{href}">x</a>')
+
+            def do_POST(self):  # noqa: N802
+                n = int(self.headers.get("Content-Length") or 0)
+                posts.append(self.rfile.read(n).decode())
+                if Pairing.consumed:
+                    self._reply(410, "gone")
+                else:
+                    Pairing.consumed = True
+                    self._reply(200, "ok")
+
+        pairing = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Pairing)
+        threading.Thread(target=pairing.serve_forever, daemon=True).start()
+        log = self.user / "dolphin.log"
+        log.write_text("NL_PAIR listen 4301\n", encoding="utf-8")
+        try:
+            for step in ("link", "pairtwice"):
+                posts.clear()
+                Pairing.consumed = False
+                plan = cloud_smoke.prepare(step, cloud_smoke.make_fake(step, "dropbox"), self.user)
+                pairer = cloud_smoke.Pairer(plan, log, None, port=pairing.server_address[1], timeout_s=10)
+                pairer.run()
+                self.assertEqual(plan.pair_problems, [], step)
+                self.assertEqual(len(posts), 1 if step == "link" else 2, step)
+                self.assertTrue(posts[0].startswith("code=" + cloud_fake.FakeDropbox.CODE_PREFIX), step)
+            # badcode: falscher Code zuerst, nach „badcode“ im Log (und rearm) der richtige
+            posts.clear()
+            Pairing.consumed = False
+            log.write_text("NL_PAIR listen 4301\nNL_CLOUD_LINK badcode\n", encoding="utf-8")
+            plan = cloud_smoke.prepare("badcode", cloud_smoke.make_fake("badcode", "dropbox"), self.user)
+            pairer = cloud_smoke.Pairer(plan, log, None, port=pairing.server_address[1], timeout_s=10)
+            orig = pairer._post
+
+            def post_and_rearm(code):
+                out = orig(code)
+                Pairing.consumed = False  # wie rearm() nach BadCode
+                return out
+            pairer._post = post_and_rearm
+            pairer.run()
+            self.assertEqual(plan.pair_problems, [])
+            self.assertEqual(posts[0], "code=" + cloud_smoke.WRONG_CODE)
+            self.assertTrue(posts[1].startswith("code=" + cloud_fake.FakeDropbox.CODE_PREFIX))
+        finally:
+            pairing.shutdown()
+            pairing.server_close()
+            server.shutdown()
+            server.server_close()
+
+    def test_m29_pairer_reports_missing_listen(self):
+        log = self.user / "dolphin.log"
+        log.write_text("", encoding="utf-8")
+        plan = cloud_smoke.prepare("link", cloud_smoke.make_fake("link", "dropbox"), self.user)
+        cloud_smoke.Pairer(plan, log, None, port=9, timeout_s=0.3).run()
+        self.assertEqual(len(plan.pair_problems), 1)
+        self.assertIn("NL_PAIR listen", plan.pair_problems[0])
+
+
+FakeDropboxChallenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
 
 
 if __name__ == "__main__":

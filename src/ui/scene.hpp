@@ -66,6 +66,11 @@ enum class AppCommand : u8 {
     SelfUpdate,       // Einstellungen (M20): Update aus dem GitHub-Release suchen und installieren
     RestartSelf,      // Einstellungen (M20): newlauncher von der SD neu laden
     ToggleSort,       // A–Z-Leiste (M24): Sortierung Titel ↔ Jahr umschalten und speichern
+    OpenSaves,        // Details (M26): Spielstand-Szene öffnen, game gesetzt
+    BackupSave,       // Saves-Szene: jetzigen Spielstand sichern
+    RestoreSave,      // Saves-Szene: SavesScene::selectedBackup() zurückspielen (main fragt vorher nach)
+    DeleteBackup,     // Saves-Szene: SavesScene::selectedBackup() löschen
+    ConfirmRestore,   // ChoiceDialog der Rückfrage geschlossen: picked() == 0 heißt zurückspielen
 };
 const char* appCommandName(AppCommand c);
 

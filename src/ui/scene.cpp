@@ -16,6 +16,11 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::FetchCovers: return "fetch_covers";
         case AppCommand::ClearCovers: return "clear_covers";
         case AppCommand::ToggleSort: return "toggle_sort";
+        case AppCommand::OpenSaves: return "open_saves";
+        case AppCommand::BackupSave: return "backup_save";
+        case AppCommand::RestoreSave: return "restore_save";
+        case AppCommand::DeleteBackup: return "delete_backup";
+        case AppCommand::ConfirmRestore: return "confirm_restore";
         case AppCommand::SettingsChanged: return "settings_changed";
         case AppCommand::SaveSettings: return "save_settings";
         case AppCommand::Rescan: return "rescan";

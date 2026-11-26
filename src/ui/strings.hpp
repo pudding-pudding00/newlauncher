@@ -215,7 +215,7 @@
     X(OptCheats, "Cheats", "Cheats") \
     X(OptHook, "Cheat-Hook", "Cheat hook") \
     X(CheatsTitle, "Cheats – %s", "Cheats – %s") \
-    X(DetailsCheats, "Cheats …", "Cheats …") \
+    X(DetailsCheats, "Cheats …", "Cheats …")     X(DetailsSave, "Spielstand …", "Save data …")     X(SavesTitle, "Spielstand – %s", "Save data – %s")     X(SavesBackup, "Sichern", "Back up")     X(SavesRestore, "Wiederherstellen", "Restore")     X(SavesDelete, "Sicherung löschen", "Delete backup")     X(SavesEmpty, "Noch kein Spielstand", "No save data yet")     X(SavesNandLocked, "NAND gesperrt – Neustart über den Homebrew Channel",       "NAND locked – restart from the Homebrew Channel")     X(SavesUnknown, "Speicherort unbekannt (emulators.ini: save_dir)", "Save location unknown (emulators.ini: save_dir)")     X(SavesConfirm, "Sicherung vom %s zurückspielen? Der jetzige Stand wird vorher gesichert.",       "Restore the backup from %s? The current save is backed up first.")     X(SavesDone, "Fertig", "Done")     X(SavesFailed, "Fehlgeschlagen: %s", "Failed: %s")     X(SavesNoBackup, "Keine Sicherungen", "No backups")     X(SavesSize, "%s · %u Dateien", "%s · %u files") \
     X(CheatsNoFile, "Keine Codeliste. +/R lädt Codes.", "No code list. +/R loads codes.") \
     X(CheatsLoading, "Lade Codes …", "Loading codes …") \
     X(CheatsNoCodes, "Keine Codes für dieses Spiel gefunden", "No codes found for this game") \

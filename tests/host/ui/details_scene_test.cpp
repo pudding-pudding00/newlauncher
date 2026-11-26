@@ -312,6 +312,52 @@ TEST_CASE_FIXTURE(Fixture, "Details: Hoch fokussiert „Cheats“ bei Wii und GC
     CHECK(std::string(appCommandName(AppCommand::OpenCheats)) == "open_cheats");
 }
 
+// --- M26: Zeile „Spielstand …“ rechts neben „Cheats“ ---
+TEST_CASE_FIXTURE(Fixture, "Details: Spielstand-Zeile nur mit setHasSave, Rechts von Cheats, A öffnet die Saves (M26)") {
+    DetailsScene d;
+    const Game wii{Console::Wii, "RMGP01", "Super Mario Galaxy", 2007, 1};
+    d.open(wii, false, 0);
+    step(d, action(Action::Up));
+    step(d, action(Action::Right));
+    CHECK(d.focusedButton() == DetailsScene::kFocusCheats);  // ohne Spielstand keine Zeile
+    d.setHasSave(true);
+    step(d, action(Action::Right));
+    CHECK(d.focusedButton() == DetailsScene::kFocusSave);
+    SceneRequests r = step(d, action(Action::Confirm));
+    CHECK(r.command == AppCommand::OpenSaves);
+    REQUIRE(r.game != nullptr);
+    CHECK(std::string(r.game->key) == "RMGP01");
+    step(d, action(Action::Left));
+    CHECK(d.focusedButton() == DetailsScene::kFocusCheats);
+    step(d, action(Action::Right));
+    step(d, action(Action::Down));
+    CHECK(d.focusedButton() == 0);
+    d.open(wii, false, 0);  // open() setzt zurück
+    step(d, action(Action::Up));
+    step(d, action(Action::Right));
+    CHECK(d.focusedButton() == DetailsScene::kFocusCheats);
+    CHECK(std::string(appCommandName(AppCommand::OpenSaves)) == "open_saves");
+}
+
+TEST_CASE_FIXTURE(Fixture, "Details: Spielstand-Zeile ohne Cheats ist die obere Zeile; Zeiger trifft sie (M26)") {
+    DetailsScene d;
+    const Game gb{Console::Gb, "gb/a.gb", "A", 0, 0};
+    d.open(gb, false, 0);
+    d.setHasSave(true);
+    step(d, action(Action::Up));
+    CHECK(d.focusedButton() == DetailsScene::kFocusSave);
+    InputFrame f;
+    f.pointerValid = true;
+    f.pointerMoved = true;
+    const gfx::Rect r = d.saveRect(ctx);
+    f.pointerX = r.x + r.w / 2;
+    f.pointerY = r.y + r.h / 2;
+    f.actions = 1u << static_cast<u32>(Action::Confirm);
+    d.onEnter();
+    CHECK(step(d, f).command == AppCommand::OpenSaves);
+    d.draw(ctx, dl);  // zeichnet ohne Absturz
+}
+
 // --- M17: Zeile „Kategorien“ (Häkchenliste) ---
 TEST_CASE_FIXTURE(Fixture, "Details: Kategorien – Hoch wählt die Zeile, Links/Rechts blättern, A schaltet um") {
     DetailsScene d;

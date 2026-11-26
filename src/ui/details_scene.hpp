@@ -32,6 +32,9 @@ public:
     static constexpr int kFocusMethod = 2;
     static constexpr int kFocusCheats = 3;  // Zeile „Cheats“ über den Knöpfen (Wii, GC; M15)
     static constexpr int kFocusCategories = 4;  // Zeile „Kategorien“ direkt über den Knöpfen (M17)
+    static constexpr int kFocusSave = 5;  // Zeile „Spielstand“ rechts neben „Cheats“ bzw. der Startmethode (M26)
+    // Spielstand-Zeile fürs geöffnete Spiel ein/aus (main kennt den Speicherort); open() setzt sie zurück.
+    void setHasSave(bool hasSave);
     // Kategorien mit Häkchen fürs geöffnete Spiel; leer = keine Zeile. Die Auswahl bleibt, solange sie gültig ist.
     void setCategories(std::vector<std::string> names, std::vector<bool> checked);
     int categoryIndex() const { return catIndex_; }
@@ -48,6 +51,7 @@ public:
     void onEnter() override { focus_ = 0; }
 
     gfx::Rect buttonRect(const UiContext& ctx, int index) const;
+    gfx::Rect saveRect(const UiContext& ctx) const;
 
 private:
     std::string key_, title_, description_, path_, device_;
@@ -65,6 +69,7 @@ private:
     int clockMinute_ = -1;
     bool hasN64_ = false;
     bool hasCheats_ = false;  // Wii/GC
+    bool hasSave_ = false;    // M26
     N64Decision n64_{};
     int choice_ = 0;
     char method_[96] = "";
@@ -77,7 +82,7 @@ private:
     gfx::Rect cheatsRect(const UiContext& ctx) const;  // auch Zeile der N64-Startmethode
     gfx::Rect categoriesRect(const UiContext& ctx) const;
     bool hasCategories() const { return !catNames_.empty(); }
-    int upperRowFocus() const;  // Cheats bzw. Startmethode, sonst -1
+    int upperRowFocus() const;  // Cheats bzw. Startmethode bzw. Spielstand, sonst -1
     void refreshN64Text();
 };
 

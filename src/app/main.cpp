@@ -2331,6 +2331,11 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 emu.cancel();
                 break;
+            case nl::ui::AppCommand::OpenSaves:  // M26: Verdrahtung folgt mit SaveWorker (Task 11)
+            case nl::ui::AppCommand::BackupSave:
+            case nl::ui::AppCommand::RestoreSave:
+            case nl::ui::AppCommand::DeleteBackup:
+            case nl::ui::AppCommand::ConfirmRestore:
             case nl::ui::AppCommand::None:
                 break;
         }

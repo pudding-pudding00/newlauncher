@@ -1,11 +1,14 @@
-"""Google-Drive-Fake für die Cloud-Smokes (M27): Gerätecode, Tokens und Dateien im Speicher, optional über TLS.
+"""Cloud-Fakes für die Smokes (M27 Google Drive, M28 OneDrive): Gerätecode, Tokens und Dateien im Speicher, optional
+über TLS.
 
 Bildet genau die Anfragen nach, die src/core/oauth_device.cpp und src/core/drive_provider.cpp senden:
   POST /device/code, POST /token (device_code, refresh_token)
   GET  /drive/v3/about, GET/POST /drive/v3/files, GET /drive/v3/files/<id>?alt=media
   POST /upload/drive/v3/files, PATCH /upload/drive/v3/files/<id> (multipart oder resumable + PUT)
+  POST /revoke (token=…)
+--provider onedrive bildet src/core/onedrive_provider.cpp nach (siehe FakeOneDrive).
 
-Aufruf: python tools/cloud_fake.py [--port N] [--cert server.pem --key server.key] [--approve auto|manual|deny]
+Aufruf: python tools/cloud_fake.py [--provider drive|onedrive] [--port N] [--cert server.pem --key server.key] [--approve auto|manual|deny]
         [--expire-access-once] [--offline-api] [--offline-after-link] [--seed <einheit>=<zip>] [--state-dump datei.json]
 
 Tokens sind Fantasiewerte (ya29.fake…, 1//fake…); der Zustands-Dump enthält keine Tokens.
@@ -85,6 +88,12 @@ class DriveFile:
 class FakeDrive:
     """Zustand des Fakes; alle Methoden sind threadsicher (ThreadingHTTPServer)."""
 
+    DEVICE_PATH, TOKEN_PATH, REVOKE_PATH = "/device/code", "/token", "/revoke"
+    ACCOUNT_PATH = "/drive/v3/about"  # gehört zur Anmeldung: expire_access_once lässt sie durch
+    PENDING_STATUS = 428
+    SCOPE = SCOPE
+    ACCESS_PREFIX, REFRESH_PREFIX, DEVICE_PREFIX = "ya29.fake", "1//fake", "AH-fakedev"
+
     def __init__(self, approve: str = "auto", expire_access_once: bool = False, offline_api: bool = False,
                  offline_after_link: bool = False):
         self.approve = approve
@@ -100,6 +109,7 @@ class FakeDrive:
         self.issued: list[str] = []             # alle je ausgegebenen Tokens und Codes (für den Log-grep)
         self.sessions: dict[str, tuple[str | None, dict]] = {}  # resumable: id → (Datei-ID oder None, Metadaten)
         self.refreshes = 0
+        self.revokes = 0
         self.uploads = 0
         self.requests: list[str] = []           # "METHODE pfad" ohne Abfrage
         self._expired_once = False
@@ -165,21 +175,23 @@ class FakeDrive:
             files[f.name] = {"version": f.version, "size": len(f.data), "sha256": sha256_hex(f.data),
                              "appProperties": dict(f.props)}
         return {"account": ACCOUNT, "files": files, "uploads": self.uploads, "refreshes": self.refreshes,
-                "linked": bool(self.refresh)}
+                "linked": bool(self.refresh), "revokes": self.revokes}
 
     def secrets(self) -> list[str]:
         with self.lock:
             return list(self.issued)
 
     # --- OAuth ---
+    def _verify(self) -> dict:
+        return {"verification_url": "https://www.google.com/device"}
+
     def device_code(self, form: dict) -> tuple[int, dict]:
         if not form.get("client_id"):
             return 401, {"error": "invalid_client"}
         with self.lock:
-            code = self._issue("AH-fakedev")
+            code = self._issue(self.DEVICE_PREFIX)
             self.devices[code] = {"auto": "approved", "deny": "denied"}.get(self.approve, "pending")
-        return 200, {"device_code": code, "user_code": "FAKE-CODE", "verification_url": "https://www.google.com/device",
-                     "expires_in": 1800, "interval": 1}
+        return 200, {"device_code": code, "user_code": "FAKE-CODE", **self._verify(), "expires_in": 1800, "interval": 1}
 
     def token(self, form: dict) -> tuple[int, dict]:
         if not form.get("client_id"):
@@ -191,24 +203,35 @@ class FakeDrive:
                 if state is None or state == "used":
                     return 400, {"error": "invalid_grant"}
                 if state == "pending":
-                    return 428, {"error": "authorization_pending"}
+                    return self.PENDING_STATUS, {"error": "authorization_pending"}
                 if state == "denied":
                     return 403, {"error": "access_denied"}
                 self.devices[form["device_code"]] = "used"
-                access, refresh = self._issue("ya29.fake"), self._issue("1//fake")
+                access, refresh = self._issue(self.ACCESS_PREFIX), self._issue(self.REFRESH_PREFIX)
                 self.access.add(access)
                 self.refresh.add(refresh)
                 return 200, {"access_token": access, "refresh_token": refresh, "expires_in": 3599,
-                             "scope": SCOPE, "token_type": "Bearer"}
+                             "scope": self.SCOPE, "token_type": "Bearer"}
             if grant == "refresh_token":
                 if form.get("refresh_token") not in self.refresh:
                     return 400, {"error": "invalid_grant"}
-                access = self._issue("ya29.fake")
+                access = self._issue(self.ACCESS_PREFIX)
                 self.access.add(access)
                 self.refreshes += 1
                 self._dump()
-                return 200, {"access_token": access, "expires_in": 3599, "scope": SCOPE, "token_type": "Bearer"}
+                return 200, {"access_token": access, "expires_in": 3599, "scope": self.SCOPE, "token_type": "Bearer"}
         return 400, {"error": "unsupported_grant_type"}
+
+    def revoke(self, form: dict) -> tuple[int, dict]:
+        """Wie Googles /revoke: Refresh-Token ungültig, mit ihm alle Zugriffs-Tokens."""
+        with self.lock:
+            if form.get("token") not in self.refresh:
+                return 400, {"error": "invalid_token"}
+            self.refresh.discard(form["token"])
+            self.access.clear()
+            self.revokes += 1
+            self._dump()
+            return 200, {}
 
     def authorized(self, header: str | None, path: str = "") -> bool:
         if not header or not header.startswith("Bearer "):
@@ -218,7 +241,7 @@ class FakeDrive:
             if tok not in self.access:
                 return False
             # about gehört zur Anmeldung; abgelaufen wird erst der Token für Datei-Anfragen
-            if self.expire_access_once and not self._expired_once and path != "/drive/v3/about":
+            if self.expire_access_once and not self._expired_once and path != self.ACCOUNT_PATH:
                 self._expired_once = True
                 self.access.discard(tok)  # wie ein abgelaufener Token: ab jetzt immer 401
                 return False
@@ -338,6 +361,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         scheme = "https" if isinstance(self.connection, ssl.SSLSocket) else "http"
         return f"{scheme}://{self.headers.get('Host')}"
 
+    def _oauth(self, method: str, path: str, body: bytes) -> bool:
+        fake = self.fake
+        handlers = {fake.DEVICE_PATH: fake.device_code, fake.TOKEN_PATH: fake.token}
+        if not isinstance(fake, FakeOneDrive):
+            handlers[fake.REVOKE_PATH] = fake.revoke  # Microsoft hat keinen Widerruf
+        if method != "POST" or path not in handlers:
+            return False
+        form = dict(urllib.parse.parse_qsl(body.decode("utf-8", "replace")))
+        self._json(*handlers[path](form))
+        return True
+
     def _route(self, method: str) -> None:
         url = urllib.parse.urlsplit(self.path)
         query = dict(urllib.parse.parse_qsl(url.query, keep_blank_values=True))
@@ -351,10 +385,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json(413, {"error": "too_large"})
             return
 
-        if method == "POST" and path in ("/device/code", "/token"):
-            form = dict(urllib.parse.parse_qsl(body.decode("utf-8", "replace")))
-            status, obj = (fake.device_code if path == "/device/code" else fake.token)(form)
-            self._json(status, obj)
+        if self._oauth(method, path, body):
             return
 
         if not (path.startswith("/drive/") or path.startswith("/upload/")):
@@ -432,10 +463,259 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._route("PUT")
 
 
+# --- OneDrive (M28) ---------------------------------------------------------------------------------------------------
+
+MS_SCOPE = "Files.ReadWrite.AppFolder offline_access"
+OD_DRIVE_ID = "fakeod0001"
+OD_API = "/v1.0/me/drive"
+OD_APPROOT = OD_API + "/special/approot:/"
+_OD_GUID = "{8E2B4C1A-0F3D-4A7B-9C5E-1D2F3A4B5C6D}"
+
+
+@dataclass
+class OneDriveItem:
+    id: str
+    name: str
+    data: bytes = b""
+    ctr: int = 1
+    description: str = ""
+
+    def ctag(self) -> str:
+        return f'"c:{_OD_GUID},{self.ctr}"'
+
+    def resource(self) -> dict:
+        out = {"id": self.id, "name": self.name, "cTag": self.ctag(), "eTag": f'"{_OD_GUID},{self.ctr}"',
+               "size": len(self.data)}
+        if self.description:
+            out["description"] = self.description
+        return out
+
+
+def onedrive_description(h: str, saved: int, device: str) -> str:
+    """Wie oneDriveDescription in core/onedrive_provider: nl1 hash=… saved=… device=<prozentkodiert>."""
+    return f"nl1 hash={h} saved={saved} device={urllib.parse.quote(device, safe='')}"
+
+
+def parse_onedrive_description(text: str) -> dict[str, str]:
+    if not text.startswith("nl1 "):
+        return {}
+    out = dict(part.split("=", 1) for part in text[4:].split(" ") if "=" in part)
+    if "device" in out:
+        out["device"] = urllib.parse.unquote(out["device"])
+    return out
+
+
+class FakeOneDrive(FakeDrive):
+    """Microsoft-Graph-Fake: Gerätecode unter /consumers, App-Ordner approot, cTag-Zähler, 412/409, 302-Download auf
+    /dl/<id> (lehnt einen Bearer-Header ab wie eine vorab signierte URL) und Upload-Sitzungen ohne Bearer."""
+
+    DEVICE_PATH = "/consumers/oauth2/v2.0/devicecode"
+    TOKEN_PATH = "/consumers/oauth2/v2.0/token"
+    ACCOUNT_PATH = OD_API
+    PENDING_STATUS = 400
+    SCOPE = MS_SCOPE
+    ACCESS_PREFIX, REFRESH_PREFIX, DEVICE_PREFIX = "EwB-fake", "M.C5-fake", "DAQAB-fakedev"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.items: dict[str, OneDriveItem] = {}
+        self.od_sessions: dict[str, tuple[str, str | None, str]] = {}  # id → (Name, If-Match, conflictBehavior)
+
+    def _verify(self) -> dict:
+        return {"verification_uri": "https://www.microsoft.com/link", "message": "fake"}
+
+    def _item(self, name: str) -> OneDriveItem | None:
+        return next((i for i in self.items.values() if i.name == name), None)
+
+    def seed(self, unit: str, data: bytes, device: str = "Dolphin", saved: int | None = None) -> OneDriveItem:
+        meta = zip_meta(data)
+        with self.lock:
+            item = OneDriveItem(self._id("FAKE!"), unit + ".zip", data)
+            item.description = onedrive_description(meta["hash"], saved if saved is not None
+                                                    else int(meta.get("saved", "0")), device)
+            self.items[item.id] = item
+            self._dump()
+            return item
+
+    def file_bytes(self, unit: str) -> bytes | None:
+        with self.lock:
+            item = self._item(unit + ".zip")
+            return item.data if item else None
+
+    def state_dump(self) -> dict:
+        files = {i.name: {"cTag": i.ctag(), "size": len(i.data), "sha256": sha256_hex(i.data),
+                          "description": i.description} for i in self.items.values()}
+        return {"account": OD_DRIVE_ID, "files": files, "uploads": self.uploads, "refreshes": self.refreshes,
+                "linked": bool(self.refresh), "revokes": self.revokes}
+
+    def stat(self, name: str) -> tuple[int, dict]:
+        with self.lock:
+            item = self._item(name)
+            if item is None:
+                return 404, {"error": {"code": "itemNotFound", "message": "Item does not exist"}}
+            return 200, item.resource()
+
+    def _precondition(self, item: OneDriveItem | None, if_match: str | None, behavior: str) -> tuple[int, dict] | None:
+        if if_match is not None and (item is None or if_match != item.ctag()):
+            return 412, {"error": {"code": "preconditionFailed", "message": "ETag does not match"}}
+        if behavior == "fail" and item is not None:
+            return 409, {"error": {"code": "nameAlreadyExists", "message": "Name already exists"}}
+        return None
+
+    def put_content(self, name: str, data: bytes, if_match: str | None, behavior: str) -> tuple[int, dict]:
+        with self.lock:
+            item = self._item(name)
+            bad = self._precondition(item, if_match, behavior)
+            if bad is not None:
+                return bad
+            created = item is None
+            if created:
+                item = OneDriveItem(self._id("FAKE!"), name, data)
+                self.items[item.id] = item
+            else:
+                item.data = data
+                item.ctr += 1
+            self.uploads += 1
+            self._dump()
+            return (201 if created else 200), item.resource()
+
+    def set_description(self, item_id: str, description: str) -> tuple[int, dict]:
+        with self.lock:
+            item = self.items.get(item_id)
+            if item is None:
+                return 404, {"error": {"code": "itemNotFound", "message": "Item does not exist"}}
+            item.description = description
+            self._dump()
+            return 200, item.resource()
+
+    def content(self, item_id: str) -> bytes | None:
+        with self.lock:
+            item = self.items.get(item_id)
+            return item.data if item is not None else None
+
+    def start_upload(self, name: str, if_match: str | None, behavior: str) -> tuple[int, dict] | str:
+        with self.lock:
+            bad = self._precondition(self._item(name), if_match, behavior)
+            if bad is not None:
+                return bad
+            sid = self._id("ups")
+            self.od_sessions[sid] = (name, if_match, behavior)
+            return sid
+
+    def finish_upload(self, sid: str, data: bytes) -> tuple[int, dict]:
+        with self.lock:
+            entry = self.od_sessions.pop(sid, None)
+        if entry is None:
+            return 404, {"error": {"code": "itemNotFound", "message": "Sitzung unbekannt"}}
+        return self.put_content(entry[0], data, entry[1], entry[2])
+
+
+class OneDriveHandler(Handler):
+    fake: FakeOneDrive
+
+    def _graph_error(self, status: int, code: str) -> None:
+        self._json(status, {"error": {"code": code, "message": code}})
+
+    def _route(self, method: str) -> None:
+        url = urllib.parse.urlsplit(self.path)
+        query = dict(urllib.parse.parse_qsl(url.query, keep_blank_values=True))
+        path = url.path
+        fake = self.fake
+        with fake.lock:
+            fake.requests.append(f"{method} {path}")
+        try:
+            body = self._body()
+        except ValueError:
+            self._json(413, {"error": "too_large"})
+            return
+        if self._oauth(method, path, body):
+            return
+
+        bearer = self.headers.get("Authorization")
+        # Vorab signierte URLs (Download-Umleitung, Upload-Sitzung): ein mitgeschickter Bearer ist ein Fehler.
+        if method == "GET" and path.startswith("/dl/"):
+            data = fake.content(path[len("/dl/"):])
+            if bearer:
+                self._graph_error(400, "invalidRequest")
+            elif data is None:
+                self._graph_error(404, "itemNotFound")
+            else:
+                self._send(200, data, "application/zip")
+            return
+        if method == "PUT" and path.startswith("/up/"):
+            want = f"bytes 0-{len(body) - 1}/{len(body)}"
+            if bearer or not body or self.headers.get("Content-Range") != want:
+                self._graph_error(400, "invalidRequest")
+            else:
+                self._json(*fake.finish_upload(path[len("/up/"):], body))
+            return
+
+        if not path.startswith("/v1.0/"):
+            self._json(404, {"error": "not_found"})
+            return
+        if fake.offline_api:
+            self.close_connection = True
+            self.connection.close()
+            return
+        if not fake.authorized(bearer, path):
+            self._graph_error(401, "InvalidAuthenticationToken")
+            return
+
+        if_match = self.headers.get("If-Match")
+        if method == "GET" and path == OD_API:
+            if fake.offline_after_link and fake.on_offline is not None:
+                fake.offline_after_link = False
+                fake.on_offline()
+                self.close_connection = True
+            self._json(200, {"id": OD_DRIVE_ID})
+        elif path.startswith(OD_APPROOT):
+            rest = path[len(OD_APPROOT):]
+            if method == "PUT" and rest.endswith(":/content"):
+                name = rest[:-len(":/content")]
+                behavior = query.get("@microsoft.graph.conflictBehavior", "replace")
+                self._json(*fake.put_content(name, body, if_match, behavior))
+            elif method == "POST" and rest.endswith(":/createUploadSession"):
+                try:
+                    item = json.loads(body or b"{}").get("item", {})
+                except (ValueError, AttributeError):
+                    self._graph_error(400, "invalidRequest")
+                    return
+                res = fake.start_upload(rest[:-len(":/createUploadSession")], if_match,
+                                        item.get("@microsoft.graph.conflictBehavior", "replace"))
+                if isinstance(res, str):
+                    self._json(200, {"uploadUrl": f"{self._base()}/up/{res}", "expirationDateTime": "2099-01-01T00:00:00Z"})
+                else:
+                    self._json(*res)
+            elif method == "GET" and ":" not in rest:
+                self._json(*fake.stat(rest))
+            else:
+                self._graph_error(400, "invalidRequest")
+        elif path.startswith(OD_API + "/items/"):
+            rest = path[len(OD_API + "/items/"):]
+            if method == "GET" and rest.endswith("/content"):
+                item_id = rest[:-len("/content")]
+                if fake.content(item_id) is None:
+                    self._graph_error(404, "itemNotFound")
+                else:
+                    self._send(302, b"", "text/plain", {"Location": f"{self._base()}/dl/{item_id}"})
+            elif method == "PATCH" and "/" not in rest:
+                try:
+                    desc = json.loads(body)["description"]
+                except (ValueError, KeyError, TypeError):
+                    self._graph_error(400, "invalidRequest")
+                    return
+                self._json(*fake.set_description(rest, str(desc)))
+            else:
+                self._graph_error(400, "invalidRequest")
+        else:
+            self._json(404, {"error": "not_found"})
+
+
 def start(fake: FakeDrive, ssl_context: ssl.SSLContext | None = None, port: int = 0,
           host: str = "127.0.0.1") -> tuple[http.server.ThreadingHTTPServer, int]:
     """Startet den Fake in einem Thread; liefert Server und Port."""
-    handler = type("BoundHandler", (Handler,), {"fake": fake})
+    base = OneDriveHandler if isinstance(fake, FakeOneDrive) else Handler
+    handler = type("BoundHandler", (base,), {"fake": fake})
     server = http.server.ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
     if ssl_context is not None:
@@ -452,6 +732,7 @@ def start(fake: FakeDrive, ssl_context: ssl.SSLContext | None = None, port: int 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    p.add_argument("--provider", choices=["drive", "onedrive"], default="drive")
     p.add_argument("--port", type=int, default=0)
     p.add_argument("--cert", type=Path)
     p.add_argument("--key", type=Path)
@@ -464,7 +745,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     if (args.cert is None) != (args.key is None):
         p.error("--cert und --key nur zusammen")
-    fake = FakeDrive(args.approve, args.expire_access_once, args.offline_api, args.offline_after_link)
+    fake = (FakeOneDrive if args.provider == "onedrive" else FakeDrive)(args.approve, args.expire_access_once, args.offline_api, args.offline_after_link)
     fake.dump_path = args.state_dump
     try:
         for spec in args.seed:

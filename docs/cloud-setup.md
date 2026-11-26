@@ -65,18 +65,73 @@ Im Drive-Ordner `newlauncher` liegt je Spielstand eine Datei `<einheit>.zip`, z.
 (Gerät, Zeit, Inhalts-Hash) und lässt sich am PC öffnen. Lokal merkt sich newlauncher den letzten gemeinsamen
 Stand in `sd:/newlauncher/cloud/state.ini`.
 
+## OneDrive
+
+### 1. App in Microsoft Entra registrieren
+
+1. <https://entra.microsoft.com/> (oder <https://portal.azure.com/>) mit einem Microsoft-Konto öffnen.
+   **Identität → Anwendungen → App-Registrierungen → Neue Registrierung.**
+2. Name frei wählbar, z. B. „newlauncher“. Unterstützte Kontotypen: **„Nur persönliche Microsoft-Konten“**
+   (newlauncher meldet sich am Endpunkt `consumers` an, Geschäfts- und Schulkonten gehen damit nicht).
+   Umleitungs-URI leer lassen.
+3. **Authentifizierung → Erweiterte Einstellungen → „Öffentliche Clientflows zulassen“** („Allow public client
+   flows“) auf **Ja** stellen und speichern. Ohne diesen Schalter lehnt Microsoft den Gerätecode ab.
+4. **API-Berechtigungen → Berechtigung hinzufügen → Microsoft Graph → Delegierte Berechtigungen:**
+   `Files.ReadWrite.AppFolder` und `offline_access`. Mit `Files.ReadWrite.AppFolder` sieht newlauncher nur seinen
+   eigenen App-Ordner, nicht den Rest des OneDrive. Ein Client-Secret braucht man **nicht**.
+5. **Übersicht:** die **Anwendungs-ID (Client-ID)** kopieren (Form `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
+
+### 2. config.ini
+
+```ini
+[cloud]
+provider = onedrive
+onedrive_client_id = xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+Beide Anbieter dürfen eingetragen sein; aktiv ist immer nur der unter `provider`.
+
+### 3. Auf der Wii anmelden
+
+1. **Einstellungen → Cloud-Spielstände → Anbieter: OneDrive → Anmelden.**
+2. Am Handy oder PC `microsoft.com/link` öffnen, den Code eingeben, mit dem Microsoft-Konto anmelden und zustimmen.
+
+### Was in der Cloud liegt
+
+Im OneDrive unter **Apps → <App-Name>** liegt je Spielstand eine Datei `<einheit>.zip` wie bei Google Drive. Gerät,
+Zeit und Inhalts-Hash stehen zusätzlich in der Beschreibung der Datei (`nl1 hash=… saved=… device=…`); diese Zeile
+bitte nicht von Hand ändern.
+
+**Abmelden** löscht die Tokens auf der SD. Microsoft bietet keinen Widerruf einzelner Refresh-Tokens an; den Zugriff
+ganz entziehen kann man unter <https://account.live.com/consent/Manage>.
+
+## Anbieter wechseln und „Alle abgleichen“
+
+- **Anbieter wechseln:** Anbieter umstellen (◀▶ in der Zeile „Anbieter“), dann **Anmelden**. Der alte Anbieter wird
+  dabei abgemeldet (Google: Token widerrufen). Direkt nach der Anmeldung gleicht newlauncher **alle** Spielstände der
+  Bibliothek mit dem neuen Anbieter ab: Was nur auf der Wii liegt, wird hochgeladen; was nur in der Cloud liegt, wird
+  geholt (mit Sicherung vorher). Gibt es Spielstände auf beiden Seiten mit verschiedenem Inhalt, fragt ein Dialog
+  einmal für alle: **Wii-Stände nehmen**, **Cloud-Stände nehmen** oder **Beim Spielstart fragen** (Standard; dann
+  fragt das Start-Tor je Spiel).
+- **Alle abgleichen** (Zeile im Cloud-Menü) macht denselben Abgleich jederzeit von Hand. Während er läuft, heißt die
+  Zeile „Abgleich abbrechen“; der Status zeigt „Abgleich 3/12 …“ und am Ende, wie viele Stände geholt und
+  hochgeladen wurden.
+
 ## Fehlersuche
 
 | Anzeige / Log | Ursache |
 |---|---|
-| Anbieter ausgegraut, „Keine Client-ID in config.ini“ | `drive_client_id` fehlt oder ist leer |
+| Anbieter ausgegraut bzw. beim Umschalten übersprungen, „Keine Client-ID in config.ini“ | `drive_client_id` bzw. `onedrive_client_id` fehlt oder ist leer |
 | „Dieser Build hat kein HTTPS“, Log `NL_CLOUD off notls` | Build ohne TLS |
 | „Anmeldung abgelaufen – bitte neu anmelden“, Log `NL_CLOUD <einheit> skip auth` | Refresh-Token ungültig (App noch im Status „Testen“, Zugriff entzogen) |
 | Log `NL_CLOUD <einheit> skip offline` | kein Netz; das Spiel startet ohne Abgleich, der Upload folgt später |
-| Log `NL_CLOUD_LINK failed` | Client-ID/Secret falsch oder Typ nicht „Fernseher und Geräte mit begrenzter Eingabe“ |
+| Log `NL_CLOUD_LINK failed` | Google: Client-ID/Secret falsch oder Typ nicht „Fernseher und Geräte mit begrenzter Eingabe“; Microsoft: „Öffentliche Clientflows zulassen“ aus oder Kontotyp nicht „persönliche Microsoft-Konten“ |
+| „Abgemeldet, Widerruf nicht bestätigt“, Log `NL_CLOUD_UNLINKED revoke=fail` | Tokens auf der SD sind gelöscht, Google hat den Widerruf aber nicht bestätigt (offline); Zugriff bei Bedarf in den Kontoeinstellungen entziehen |
+| Log `NL_CLOUD_SYNCALL offline` | „Alle abgleichen“ ohne Netz; nichts wurde verändert |
 
 ## Tests ohne echtes Konto
 
-`python tools/dolphin_smoke.py --cloud-fake drive --cloud-step link|push|pull|conflict|refresh|offline` startet
-einen Drive-Fake (`tools/cloud_fake.py`) über HTTPS mit der Test-CA und prüft den Ablauf in Dolphin. Die Fake-ID
-und das Fake-Secret stehen nur im Werkzeug.
+`python tools/dolphin_smoke.py --cloud-fake drive|onedrive --cloud-step
+link|push|pull|conflict|refresh|offline|syncall|switch|unlink` startet einen Drive- bzw. Graph-Fake
+(`tools/cloud_fake.py`) über HTTPS mit der Test-CA und prüft den Ablauf in Dolphin. Die Fake-IDs und das Fake-Secret
+stehen nur im Werkzeug.

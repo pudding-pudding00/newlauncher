@@ -10,6 +10,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import cloud_fake  # noqa: E402
 from deploy_dolphin import FIXTURES_DIR, deploy  # noqa: E402
 from deploy_dolphin import main as deploy_main  # noqa: E402
 from dolphin import (dolphin_command, log_path, reset_log, sd_sync_dir, wait_for_markers,  # noqa: E402
@@ -604,7 +605,7 @@ class DolphinToolsTest(unittest.TestCase):
             self._save_run("--save-step", "backup")
 
     # --- M27: --cloud-fake drive startet den Drive-Fake über HTTPS und schreibt [cloud] + [debug] ---
-    def _cloud_run(self, step: str, seen: dict) -> int:
+    def _cloud_run(self, step: str, seen: dict, provider: str = "drive") -> int:
         self._fake_dolphin("raise SystemExit(0)\n")
 
         def fake_start(fake, ssl_context=None):
@@ -625,7 +626,7 @@ class DolphinToolsTest(unittest.TestCase):
                 mock.patch("dolphin_smoke.ssl_server_context", return_value="CTX"), \
                 mock.patch("dolphin_smoke.subprocess.Popen", side_effect=fake_popen):
             return smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
-                               "--timeout", "2", "--cloud-fake", "drive", "--cloud-step", step])
+                               "--timeout", "2", "--cloud-fake", provider, "--cloud-step", step])
 
     def test_smoke_cloud_fake_implies_tls_and_wires_config(self):
         seen = {}
@@ -638,6 +639,13 @@ class DolphinToolsTest(unittest.TestCase):
         self.assertIn("cloud_device_auto = 1\n", debug)
         self.assertIn("tls_ca = sd:/newlauncher/test_ca.pem\n", debug)
         self.assertNotIn("cloud_sync", debug)
+
+    def test_smoke_cloud_fake_onedrive_starts_graph_fake(self):
+        seen = {}
+        self.assertEqual(self._cloud_run("link", seen, "onedrive"), 2)
+        self.assertIsInstance(seen["fake"], cloud_fake.FakeOneDrive)
+        self.assertIn("[cloud]\nprovider = onedrive\n", seen["config"])
+        self.assertIn("onedrive_client_id = ", seen["config"])
 
     def test_smoke_cloud_push_writes_session_and_cleans_up(self):
         seen = {}

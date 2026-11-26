@@ -104,6 +104,48 @@ class CloudSmokeTest(unittest.TestCase):
         self.assertEqual(cloud_smoke.post_check(plan, self.user, "", lambda rel: save_smoke.BYTES_B), [])
         self.assertEqual(len(cloud_smoke.post_check(plan, self.user, "", lambda rel: save_smoke.BYTES_A)), 1)
 
+    def test_m28_onedrive_plan_and_new_steps(self):
+        fake = cloud_smoke.make_fake("link", "onedrive")
+        self.assertIsInstance(fake, cloud_fake.FakeOneDrive)
+        plan = cloud_smoke.prepare("link", fake, self.user)
+        self.assertEqual(plan.markers[0], "NL_CLOUD_LINKED onedrive")
+        self.assertIn("provider = onedrive", plan.config_append)
+        self.assertIn("onedrive_client_id = ", plan.config_append)
+        self.assertEqual(cloud_smoke.PROVIDERS, ("drive", "onedrive"))
+        for step in ("syncall", "switch", "unlink"):
+            self.assertIn(step, cloud_smoke.STEPS)
+
+    def test_m28_syncall_switch_unlink_markers(self):
+        plan = cloud_smoke.prepare("syncall", cloud_smoke.make_fake("syncall"), self.user)
+        self.assertIn("NL_CLOUD_SYNCALL pulled=1 pushed=1", " ".join(plan.markers))
+        self.assertIsNotNone(plan.fake.file_bytes(cloud_smoke.NAND_UNIT))  # nur in der Cloud
+        cloud_smoke.cleanup(self.user)
+        plan = cloud_smoke.prepare("switch", cloud_smoke.make_fake("switch", "onedrive"), self.user)
+        self.assertIn("cloud_switch = wii", plan.debug_lines)
+        self.assertIn("NL_CLOUD_SWITCH uploaded=1 conflict=0", plan.markers)
+        cloud_smoke.cleanup(self.user)
+        plan = cloud_smoke.prepare("unlink", cloud_smoke.make_fake("unlink"), self.user)
+        self.assertIn("cloud_unlink = 1", plan.debug_lines)
+        self.assertIn("NL_CLOUD_UNLINKED revoke=ok", plan.markers)
+        cloud_smoke.cleanup(self.user)
+        plan = cloud_smoke.prepare("unlink", cloud_smoke.make_fake("unlink", "onedrive"), self.user)
+        self.assertIn("NL_CLOUD_UNLINKED revoke=none", plan.markers)
+
+    def test_m28_post_check_unlink_counts_revoke(self):
+        fake = cloud_smoke.make_fake("unlink")
+        plan = cloud_smoke.prepare("unlink", fake, self.user)
+        self.assertIn("Fake: 0 Widerrufe statt 1", cloud_smoke.post_check(plan, self.user, "", lambda rel: b""))
+        fake.revokes = 1
+        self.assertEqual(cloud_smoke.post_check(plan, self.user, "", lambda rel: b""), [])
+
+    def test_m28_post_check_onedrive_push_reads_description(self):
+        import save_smoke
+        fake = cloud_smoke.make_fake("push", "onedrive")
+        plan = cloud_smoke.prepare("push", fake, self.user)
+        fake.refresh.add("x")
+        fake.seed(plan.unit, cloud_smoke.save_zip(plan.unit, {"Tetris (World) (Rev 1).sav": save_smoke.BYTES_A}))
+        self.assertEqual(cloud_smoke.post_check(plan, self.user, "", lambda rel: b""), [])
+
 
 if __name__ == "__main__":
     unittest.main()

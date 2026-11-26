@@ -142,6 +142,11 @@ std::string OneDriveProvider::itemPath(std::string_view unit) const {
     return api_ + "/v1.0/me/drive/special/approot:/" + std::string(unit) + ".zip";
 }
 
+CloudStatus OneDriveProvider::foreignStatus(const HttpResponse& r) {
+    if (r.status == 401 || r.status == 403) return CloudStatus::Failed;
+    return OAuthClient::classify(r, CloudStatus::Ok);
+}
+
 CloudStatus OneDriveProvider::account(std::string& id, const volatile bool& cancel) {
     const HttpResponse r = oauth_.call(request(HttpMethod::Get, api_ + "/v1.0/me/drive?$select=id"), cancel);
     const CloudStatus s = statusOf(r);
@@ -179,6 +184,8 @@ CloudStatus OneDriveProvider::download(const CloudEntry& entry, std::vector<u8>&
         dl.maxBody = static_cast<u32>(kMaxCloudPackageBytes);
         r = oauth_.plain(std::move(dl), cancel);
         if (r.status >= 300 && r.status < 400) return CloudStatus::Failed;
+        const CloudStatus fs = foreignStatus(r);
+        if (fs != CloudStatus::Ok) return fs == CloudStatus::NotFound ? CloudStatus::Failed : fs;
     }
     const CloudStatus s = statusOf(r);
     if (s != CloudStatus::Ok) return s == CloudStatus::NotFound ? CloudStatus::Failed : s;
@@ -221,6 +228,8 @@ CloudStatus OneDriveProvider::upload(std::string_view unit, std::span<const u8> 
                                                       std::to_string(zip.size()));
         put.bodyView = zip;
         r = oauth_.plain(std::move(put), cancel);
+        const CloudStatus fs = foreignStatus(r);
+        if (fs != CloudStatus::Ok) return fs == CloudStatus::NotFound ? CloudStatus::RevMismatch : fs;
     }
     const CloudStatus s = statusOf(r);
     if (s != CloudStatus::Ok) return s == CloudStatus::NotFound ? CloudStatus::RevMismatch : s;

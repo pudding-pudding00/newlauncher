@@ -23,7 +23,15 @@ struct SyncAllResult {
     u32 pulled = 0, pushed = 0, same = 0, skipped = 0;
     std::vector<std::string> conflicts;  // Einheiten-IDs (nur bei Defer)
     bool cancelled = false, stopped = false;
+    bool stoppedAuth = false;  // stopped wegen Abmeldung/abgelaufener Anmeldung (sonst offline)
 };
+
+enum class SyncAllEnd : u8 { Done, Cancelled, Offline, Auth };
+// Wie der Lauf endete; Abbruch gewinnt vor einem Stopp.
+SyncAllEnd syncAllEnd(const SyncAllResult& r);
+// Wechsel-Dialog nur nach einem vollständigen Lauf mit gesammelten Konflikten – sonst liefe die Auflösung gleich wieder
+// offline/abgemeldet ins Leere oder überginge den Abbruch.
+bool askSwitch(const SyncAllResult& r);
 
 SyncAllResult syncAll(CloudCtx& ctx, std::span<const SyncTarget> targets, ConflictPolicy policy,
                       const volatile bool& cancel, const std::function<void(u32 done, u32 total)>& progress);

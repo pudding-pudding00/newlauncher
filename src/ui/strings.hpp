@@ -243,6 +243,9 @@
     X(CloudSyncAllCancel, "Abgleich abbrechen", "Cancel sync") \
     X(CloudSyncProgress, "Abgleich %u/%u …", "Syncing %u/%u …") \
     X(CloudSyncDone, "Abgleich fertig: %u geholt, %u hochgeladen", "Sync done: %u pulled, %u uploaded") \
+    X(CloudSyncCancelled, "Abgleich abgebrochen: %u geholt, %u hochgeladen", "Sync cancelled: %u pulled, %u uploaded") \
+    X(CloudSyncOffline, "Abgleich unterbrochen (offline): %u geholt, %u hochgeladen", \
+      "Sync interrupted (offline): %u pulled, %u uploaded") \
     X(CloudSwitchTitle, "Spielstände unterscheiden sich", "Saves differ") \
     X(CloudSwitchText, "%u Spielstände gibt es auf der Wii und in der Cloud verschieden. Welche gelten?", \
       "%u saves differ between the Wii and the cloud. Which should win?") \

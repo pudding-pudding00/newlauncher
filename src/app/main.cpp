@@ -1882,7 +1882,7 @@ int main(int argc, char** argv) {
         cloudScene.setView(cloudViewNow());
         return true;
     };
-    auto finishSyncAll = [&](std::size_t conflictsLeft) {
+    auto finishSyncAll = [&](std::size_t conflictsLeft, nl::SyncAllEnd end = nl::SyncAllEnd::Done) {
         if (syncAllMode == SyncAllMode::Switch) {
             nl::log::line("NL_CLOUD_SWITCH uploaded=%u conflict=%u", static_cast<unsigned>(syncAllPushed),
                           static_cast<unsigned>(conflictsLeft));
@@ -1891,9 +1891,16 @@ int main(int argc, char** argv) {
         syncAllAsking = syncAllResolving = false;
         syncAllTargets.clear();
         syncAllConflicts.clear();
-        char msg[96];
-        std::snprintf(msg, sizeof msg, nl::ui::tr(nl::ui::Str::CloudSyncDone), static_cast<unsigned>(syncAllPulled),
+        char msg[128];
+        const nl::ui::Str fmt = end == nl::SyncAllEnd::Cancelled ? nl::ui::Str::CloudSyncCancelled
+                                : end == nl::SyncAllEnd::Offline ? nl::ui::Str::CloudSyncOffline
+                                                                 : nl::ui::Str::CloudSyncDone;
+        std::snprintf(msg, sizeof msg, nl::ui::tr(fmt), static_cast<unsigned>(syncAllPulled),
                       static_cast<unsigned>(syncAllPushed));
+        if (end == nl::SyncAllEnd::Auth) {
+            cloudRelink = true;  // wie beim Start-Tor: Neuanmeldung verlangen
+            std::snprintf(msg, sizeof msg, "%s", nl::ui::tr(nl::ui::Str::CloudRelink));
+        }
         cloudScene.setView(cloudViewNow());
         cloudScene.setStatus(msg);
         std::function<void()> next = std::move(afterSyncAll);
@@ -1918,8 +1925,8 @@ int main(int argc, char** argv) {
     auto onSyncAllDone = [&](const nl::SyncAllResult& r) {
         syncAllPushed += r.pushed;
         syncAllPulled += r.pulled;
-        if (syncAllResolving || r.cancelled || r.conflicts.empty()) {
-            finishSyncAll(r.conflicts.size());
+        if (syncAllResolving || !nl::askSwitch(r)) {
+            finishSyncAll(r.conflicts.size(), nl::syncAllEnd(r));
             return;
         }
         syncAllConflicts = r.conflicts;

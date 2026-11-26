@@ -38,11 +38,22 @@ SyncAllResult syncAll(CloudCtx& ctx, std::span<const SyncTarget> targets, Confli
         if (progress) progress(done, total);
         if (r.kind == PreLaunch::Skipped && (r.reason == "offline" || r.reason == "auth")) {
             res.stopped = true;  // jede weitere Einheit scheiterte genauso
+            res.stoppedAuth = r.reason == "auth";
             break;
         }
     }
+    // Abbruch während der letzten Einheit: der Transfer endete als Fehler, die Schleife sah cancel nicht mehr.
+    if (cancel && !res.stopped) res.cancelled = true;
     return res;
 }
+
+SyncAllEnd syncAllEnd(const SyncAllResult& r) {
+    if (r.cancelled) return SyncAllEnd::Cancelled;
+    if (r.stopped) return r.stoppedAuth ? SyncAllEnd::Auth : SyncAllEnd::Offline;
+    return SyncAllEnd::Done;
+}
+
+bool askSwitch(const SyncAllResult& r) { return !r.conflicts.empty() && syncAllEnd(r) == SyncAllEnd::Done; }
 
 std::string syncAllLine(const SyncAllResult& r) {
     return "NL_CLOUD_SYNCALL pulled=" + std::to_string(r.pulled) + " pushed=" + std::to_string(r.pushed) +

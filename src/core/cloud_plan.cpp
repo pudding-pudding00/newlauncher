@@ -93,13 +93,22 @@ CloudStatus fetch(CloudCtx& ctx, const CloudEntry& cloud, std::optional<SavePack
 
 // Eintrag ohne Hash (Meta fehlt, z. B. OneDrive nach gescheitertem PATCH oder fremde Datei): Paket laden, die Einheit
 // prüfen und den Hash aus dem Inhalt nehmen. Das Paket bleibt für einen folgenden Pull (kein zweiter Download).
-CloudStatus fillHash(CloudCtx& ctx, const SaveUnit& unit, CloudEntry& cloud, std::optional<SavePackage>& pkg,
-                     const volatile bool& cancel) {
+// Ist die Revision seit der Basis gleich, ist es auch der Inhalt: dann gilt der Hash der Basis, ohne Download –
+// sonst lüde jeder Start und jedes „Alle abgleichen“ das Paket erneut.
+CloudStatus fillHash(CloudCtx& ctx, const SaveUnit& unit, CloudEntry& cloud, const std::optional<SyncBase>& base,
+                     std::optional<SavePackage>& pkg, const volatile bool& cancel) {
     pkg.reset();
     if (!cloud.hash.empty()) return CloudStatus::Ok;
+    if (base && !base->hash.empty() && !cloud.rev.empty() && base->rev == cloud.rev) {
+        cloud.hash = base->hash;
+        return CloudStatus::Ok;
+    }
     if (const CloudStatus s = fetch(ctx, cloud, pkg, cancel); s != CloudStatus::Ok) return s;
     if (pkg->meta.unit != unit.id) return CloudStatus::Failed;
     cloud.hash = contentHash(pkg->files);
+    // Für den Konfliktdialog: Gerät und Zeit aus dem Paket, wenn die Cloud-Meta fehlt.
+    if (cloud.device.empty()) cloud.device = pkg->meta.device;
+    if (cloud.saved == 0) cloud.saved = pkg->meta.saved;
     log(ctx, unit.id, "hash from package");
     return CloudStatus::Ok;
 }
@@ -181,7 +190,8 @@ PreLaunchResult preLaunchSync(CloudCtx& ctx, const SaveUnit& unit, std::string_v
             return skipped(ctx, unit.id, skipReason(s));
         }
         if (cloud) {
-            if (const CloudStatus s = fillHash(ctx, unit, *cloud, pkg, cancel); s != CloudStatus::Ok) {
+            if (const CloudStatus s = fillHash(ctx, unit, *cloud, state.base(ctx.account, unit.id), pkg, cancel);
+                s != CloudStatus::Ok) {
                 return skipped(ctx, unit.id, skipReason(s));
             }
         }
@@ -200,6 +210,7 @@ PreLaunchResult preLaunchSync(CloudCtx& ctx, const SaveUnit& unit, std::string_v
             case SyncAction::Download: return pull(ctx, unit, title, *cloud, state, pkg, cancel);
             case SyncAction::Conflict: return conflict(ctx, unit, *cloud, state);
             case SyncAction::Upload: {
+                pkg.reset();  // geladenes Cloud-Paket (bis 16 MiB) nicht neben dem eigenen ZIP im Speicher halten
                 CloudEntry out;
                 const CloudStatus s =
                     push(ctx, unit, title, *local, cloud ? std::string_view(cloud->rev) : std::string_view(), state,
@@ -226,7 +237,8 @@ PreLaunchResult resolveConflict(CloudCtx& ctx, const SaveUnit& unit, std::string
     if (choice == ConflictChoice::TakeCloud) {
         if (!cloud) return skipped(ctx, unit.id, "error");
         std::optional<SavePackage> pkg;
-        if (const CloudStatus s = fillHash(ctx, unit, *cloud, pkg, cancel); s != CloudStatus::Ok) {
+        if (const CloudStatus s = fillHash(ctx, unit, *cloud, state.base(ctx.account, unit.id), pkg, cancel);
+            s != CloudStatus::Ok) {
             return skipped(ctx, unit.id, skipReason(s));
         }
         return pull(ctx, unit, title, *cloud, state, pkg, cancel);

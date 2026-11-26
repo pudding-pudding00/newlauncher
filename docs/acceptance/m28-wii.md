@@ -19,13 +19,15 @@ O2–S3 zuerst Emulator- oder Nintendont-Spiele nehmen.
 | O3 | In Dolphin (OneDrive) Spiel A weiterspielen, dann auf der Wii starten | `NL_CLOUD <einheit> pull ok`, Spiel lädt den Dolphin-Stand, Sicherung vorher angelegt | ungeprüft |
 | O4 | Auf Wii und Dolphin unabhängig speichern, auf der Wii starten | Konfliktdialog wie M27 C3, Gerätename aus der Beschreibung | ungeprüft |
 | O5 | Wii > 1 h laufen lassen, Spiel starten | `NL_CLOUD_REFRESH ok`, Abgleich klappt | ungeprüft |
+| O5b | Spielstand > 4 MiB (z. B. Nintendont-Karte) hochladen, in Dolphin ändern, auf der Wii wieder starten | Upload-Session klappt; echtes Graph akzeptiert den cTag in `If-Match` (kein 412 ohne Grund); Pull wie O3 | ungeprüft |
+| O5c | Wii ein paar Stunden aus, dann Spiel starten (Download-Umleitung neu) | Kein „Anmeldung abgelaufen“; bei Fehler am Download-Host nur `skip error`, Anmeldung bleibt | ungeprüft |
 | O6 | Log nach O1–O5 durchsuchen | Kein Token, kein Gerätecode, keine Datei-ID, keine Download-Adresse, keine E-Mail | ungeprüft |
 | S1 | Angemeldet bei Google Drive mit Ständen für A und B; Anbieter auf OneDrive umstellen, Anmelden | Google-Token widerrufen (Log `NL_CLOUD_UNLINKED revoke=ok`); danach Abgleich aller Spiele, Log `NL_CLOUD_SWITCH uploaded=N conflict=0`; im OneDrive liegen A und B | ungeprüft |
 | S2 | Wie S1, aber OneDrive hat für A schon einen anderen Stand | Dialog einmal für alle; „Wii-Stände nehmen“ → A wird hochgeladen (`NL_CLOUD_SWITCH_CHOICE wii`) | ungeprüft |
 | S3 | Wie S2 mit „Beim Spielstart fragen“ | Nichts überschrieben; beim Start von A Konfliktdialog | ungeprüft |
 | Y1 | Cloud-Menü → Alle abgleichen (ein Spiel nur in der Cloud, eins nur lokal) | Status „Abgleich n/m …“, am Ende geholt 1 / hochgeladen 1; Log `NL_CLOUD_SYNCALL pulled=1 pushed=1` | ungeprüft |
-| Y2 | Alle abgleichen, während des Laufs „Abgleich abbrechen“ | Lauf endet nach dem aktuellen Spiel, kein halber Spielstand | ungeprüft |
-| Y3 | WLAN aus, Alle abgleichen | Log `NL_CLOUD_SYNCALL offline`, nichts verändert | ungeprüft |
+| Y2 | Alle abgleichen, während des Laufs „Abgleich abbrechen“ | Lauf endet nach dem aktuellen Spiel, kein halber Spielstand; Status „Abgleich abgebrochen: …“, kein Wechsel-Dialog | ungeprüft |
+| Y3 | WLAN aus, Alle abgleichen | Nichts verändert; Status „Abgleich unterbrochen (offline)“ bzw. Log `NL_CLOUD_SYNCALL offline`; WLAN mitten im Lauf aus → kein Wechsel-Dialog | ungeprüft |
 | U1 | Google Drive: Abmelden | Log `NL_CLOUD_UNLINKED revoke=ok`; App unter myaccount.google.com/permissions verschwunden; `tokens.bin` weg | ungeprüft |
 | U2 | OneDrive: Abmelden | Log `NL_CLOUD_UNLINKED revoke=none`; Tokens weg; Hinweis auf account.live.com/consent/Manage in der Anleitung | ungeprüft |
 | U3 | Abmelden bei WLAN aus (Google) | Tokens trotzdem weg, Meldung „Widerruf nicht bestätigt“, Log `revoke=fail` | ungeprüft |

@@ -271,3 +271,30 @@ TEST_CASE("onedrive: 401 → ein Refresh über consumers, dann Wiederholung") {
 TEST_CASE("microsoftEndpoints: kein Widerruf-Endpunkt") {
     CHECK(microsoftEndpoints("", "cid").revokeUrl.empty());
 }
+
+TEST_CASE("onedrive: 401/403 vom Umleitungsziel → Failed, nicht Unauthorized (Token ist gültig)") {
+    for (const u16 code : {u16(401), u16(403)}) {
+        Rig r;
+        r.http.expect(HttpMethod::Get, "https://graph.test/v1.0/me/drive/items/ABC!12/content",
+                      redirect("https://cdn.test/blob?tempauth=x"));
+        r.http.expect(HttpMethod::Get, "https://cdn.test/blob", raw(code, ""));
+        CloudEntry e;
+        e.id = "ABC!12";
+        std::vector<u8> zip;
+        CHECK(r.drive.download(e, zip, r.cancel) == CloudStatus::Failed);
+        CHECK(r.http.seen.size() == 2);  // kein Refresh-Versuch
+    }
+}
+
+TEST_CASE("onedrive: 401/403 von der Upload-Session-URL → Failed, kein Refresh, kein PATCH") {
+    for (const u16 code : {u16(401), u16(403)}) {
+        Rig r;
+        const std::vector<u8> zip(OneDriveProvider::kSimpleMax + 1, 7);
+        r.http.expect(HttpMethod::Post, std::string(kItem) + ":/createUploadSession",
+                      jsonResponse(200, R"({"uploadUrl":"https://up.test/s/1"})"));
+        r.http.expect(HttpMethod::Put, "https://up.test/s/1", raw(code, ""));
+        CloudEntry out;
+        CHECK(r.drive.upload("wii-RMCP", zip, meta(), "c:{X},2", out, r.cancel) == CloudStatus::Failed);
+        CHECK(r.http.seen.size() == 2);
+    }
+}

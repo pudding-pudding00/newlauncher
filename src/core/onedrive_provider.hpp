@@ -40,6 +40,9 @@ public:
 
 private:
     CloudStatus statusOf(const HttpResponse& r) const { return OAuthClient::classify(r, oauth_.authFail()); }
+    // Antworten vorab signierter URLs (Download-Umleitung, Upload-Session): 401/403 heißt dort „URL abgelaufen“,
+    // nicht „Anmeldung ungültig“ – sonst verlangte der Launcher grundlos eine Neuanmeldung.
+    static CloudStatus foreignStatus(const HttpResponse& r);
     std::string itemPath(std::string_view unit) const;
 
     OAuthClient oauth_;

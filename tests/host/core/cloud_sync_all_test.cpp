@@ -198,3 +198,47 @@ TEST_CASE("Anbieterwechsel: Antwort → Regel, Debug-Text → Antwort, Konflikt-
     CHECK(sub[0].unit.id == "wii-RMCP");
     CHECK(sub[1].unit.id == "ch-0001000148414145");
 }
+
+// Abschluss-Review M28: Ende des Laufs richtig melden, Wechsel-Dialog nur nach einem vollständigen Lauf.
+TEST_CASE("syncAll: Abbruch während der letzten Einheit → cancelled, kein Wechsel-Dialog") {
+    Rig r;
+    const std::vector<SyncTarget> t = {target("wii-RMGP", "524d4750", "Galaxy")};
+    r.fs.addFile(dirOf("524d4750") + "/a.bin", bytes("lokal"));
+    r.remote("wii-RMGP", "anders");
+    const auto res = r.run(t, ConflictPolicy::Defer, [&](u32, u32) { r.cancel = true; });
+    CHECK(res.cancelled);
+    CHECK(res.conflicts.size() == 1);
+    CHECK(syncAllEnd(res) == SyncAllEnd::Cancelled);
+    CHECK_FALSE(askSwitch(res));
+}
+
+TEST_CASE("syncAll: offline nach gesammeltem Konflikt → Offline, kein Wechsel-Dialog") {
+    Rig r;
+    const std::vector<SyncTarget> t = {target("wii-RMGP", "524d4750", "Galaxy"),
+                                       target("wii-SMNP", "534d4e50", "NSMB")};
+    r.fs.addFile(dirOf("524d4750") + "/a.bin", bytes("lokal"));
+    r.remote("wii-RMGP", "anders");
+    r.fs.addFile(dirOf("534d4e50") + "/a.bin", bytes("b"));
+    const auto res = r.run(t, ConflictPolicy::Defer, [&](u32 done, u32) {
+        if (done == 1) r.cloud.fail = CloudStatus::Offline;
+    });
+    CHECK(res.conflicts.size() == 1);
+    CHECK(res.stopped);
+    CHECK(syncAllEnd(res) == SyncAllEnd::Offline);
+    CHECK_FALSE(askSwitch(res));
+}
+
+TEST_CASE("syncAll: abgemeldet → Ende Auth; vollständiger Lauf mit Konflikt → Done und Dialog") {
+    Rig a;
+    const std::vector<SyncTarget> t = {target("wii-RMGP", "524d4750", "Galaxy")};
+    a.cloud.fail = CloudStatus::Unauthorized;
+    CHECK(syncAllEnd(a.run(t, ConflictPolicy::Defer)) == SyncAllEnd::Auth);
+
+    Rig b;
+    b.fs.addFile(dirOf("524d4750") + "/a.bin", bytes("lokal"));
+    b.remote("wii-RMGP", "anders");
+    const auto res = b.run(t, ConflictPolicy::Defer);
+    CHECK(syncAllEnd(res) == SyncAllEnd::Done);
+    CHECK(askSwitch(res));
+    CHECK_FALSE(askSwitch(SyncAllResult{}));  // ohne Konflikt nichts zu fragen
+}

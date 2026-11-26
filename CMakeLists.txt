@@ -33,6 +33,8 @@ add_library(nl_core STATIC
     src/core/http_types.cpp
     src/core/oauth_device.cpp
     src/core/token_store.cpp
+    src/core/cloud_provider.cpp
+    src/core/drive_provider.cpp
     src/core/parental.cpp
     src/core/rgb5a3.cpp
     src/core/console.cpp

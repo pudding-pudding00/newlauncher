@@ -423,6 +423,7 @@ void MainScene::handlePointer(const UiContext& ctx, const InputFrame& in, float 
     // Hover folgt jeden Frame der aktuellen Position (auch nach einem Overlay ohne Bewegung);
     // der Rasterfokus ändert sich dagegen nur bei echter Bewegung.
     const float x = in.pointerX, y = in.pointerY;
+    const float viewBottom = grid_.viewTop() + grid_.viewHeight();
     hover_ = Hover::None;
     hoverBar_ = -1;
     if (contains(homeRect(ctx), x, y)) {
@@ -431,6 +432,8 @@ void MainScene::handlePointer(const UiContext& ctx, const InputFrame& in, float 
         hover_ = Hover::Gear;
     } else if (wifi_ != nullptr && contains(wifiRect(ctx), x, y)) {
         hover_ = Hover::Wifi;
+    } else if (y >= viewBottom) {
+        hover_ = Hover::InfoBar;
     } else if (y < grid_.viewTop()) {
         for (int i = 0; i < barCount_; ++i) {
             if (contains(barRect(i), x, y)) {
@@ -439,9 +442,9 @@ void MainScene::handlePointer(const UiContext& ctx, const InputFrame& in, float 
                 break;
             }
         }
-    } else if (y < grid_.viewTop() + grid_.viewHeight()) {
+    } else {
         // M23: Randstreifen oben/unten scrollen stetig, schneller zum Rand hin (höchstens eine Reihe je 0,25 s).
-        const float top = grid_.viewTop(), bottom = top + grid_.viewHeight();
+        const float top = grid_.viewTop(), bottom = viewBottom;
         float depth = 0.0f;
         if (y < top + kEdgeScrollPx) depth = -(top + kEdgeScrollPx - y) / kEdgeScrollPx;
         else if (y > bottom - kEdgeScrollPx) depth = (y - (bottom - kEdgeScrollPx)) / kEdgeScrollPx;
@@ -461,7 +464,10 @@ void MainScene::handlePointer(const UiContext& ctx, const InputFrame& in, float 
         }
         return;
     }
-    if (in.pointerMoved) pointerOnTile_ = false;
+    if (in.pointerMoved) {
+        if (pointerOnTile_ && y >= viewBottom) grid_.setFocus(-1, false);
+        pointerOnTile_ = false;
+    }
 }
 
 void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) {
@@ -518,6 +524,8 @@ void MainScene::update(const UiContext& ctx, const InputFrame& in, float dtMs, S
         } else if (hover_ == Hover::Bar && hoverBar_ >= 0) {
             selectBar(hoverBar_, ctx.width, ctx.height);
             out.sound = UiSound::Confirm;
+        } else if (hover_ == Hover::InfoBar) {
+            // Klick auf freie Fläche der unteren Leiste öffnet kein Spiel.
         } else if (const Game* g = focusedGame(); g != nullptr && details_ != nullptr) {
             const bool fav = detailsStore_ != nullptr && detailsStore_->isFavorite(g->key);
             const u32 last = detailsStore_ != nullptr ? detailsStore_->lastPlayed(g->key) : 0;

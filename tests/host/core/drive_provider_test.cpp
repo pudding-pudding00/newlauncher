@@ -223,7 +223,10 @@ TEST_CASE("drive: großes Paket → resumable POST, dann ein PUT an Location") {
     CHECK(header(start, "X-Upload-Content-Type") == "application/zip");
     CHECK(bodyText(start).find(R"("parents":["F1"])") != std::string::npos);
     const HttpRequest& put = r.http.seen.at(3);
-    CHECK(put.body.size() == zip.size());
+    // Bis 16 MiB: der PUT leiht sich das Paket, statt es ein zweites Mal in den Speicher zu kopieren.
+    CHECK(put.body.empty());
+    CHECK(put.bodyView.data() == zip.data());
+    CHECK(put.bodyView.size() == zip.size());
     CHECK(header(put, "Content-Type") == "application/zip");
 }
 

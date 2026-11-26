@@ -2,6 +2,7 @@
 // HTTP-Anfragen mit Methode, Headern und Body (M27, Cloud-Anbieter). core/ kennt nur diese Typen und die
 // Schnittstelle HttpTransport; platform/ setzt sie über wii_tls um (WtlsTransport), Host-Tests mit FakeTransport.
 
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -23,6 +24,7 @@ struct HttpRequest {
     std::string url;
     HttpHeaders headers;
     std::vector<u8> body;
+    std::span<const u8> bodyView;  // statt body: geliehen (große Uploads ohne Kopie), muss send() überleben
     u32 maxBody = 1024 * 1024;  // größere Antwort-Bodies → status 0, error Other
 };
 

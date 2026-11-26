@@ -276,6 +276,24 @@ TEST_CASE("preLaunchSync: NAND nicht lesbar → Skipped nand") {
     CHECK(r.cloud.stats == 0);
 }
 
+TEST_CASE("uploadIfChanged: zweiter Versuch nach RevMismatch lädt dasselbe vollständige Paket") {
+    // push() packt einmal und gibt die rohen Dateien frei; der zweite Versuch nutzt das Paket erneut.
+    Rig r;
+    r.fs.addFile(kDir + "/a.bin", bytes("v1"));
+    REQUIRE(preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel).kind == PreLaunch::Pushed);
+    r.fs.addFile(kDir + "/a.bin", bytes("v2"));
+    r.cloud.beforeUpload = [](FakeProvider& c) { c.files.erase("wii-RMGP"); };  // anderswo gelöscht
+    CHECK(uploadIfChanged(r.ctx, unit(), "Galaxy", r.cancel) == CloudStatus::Ok);
+    CHECK(r.cloud.uploads == 3);
+    REQUIRE(r.cloud.files.count("wii-RMGP") == 1);
+    auto pkg = unpackSave(r.cloud.files["wii-RMGP"].zip);
+    REQUIRE(pkg.isOk());
+    REQUIRE(pkg.value().files.size() == 1);
+    CHECK(std::string(pkg.value().files[0].data.begin(), pkg.value().files[0].data.end()) == "v2");
+    CHECK(pkg.value().meta.files == 1);
+    CHECK(contentHash(pkg.value().files) == localHash("v2"));
+}
+
 TEST_CASE("uploadIfChanged: unverändert → Ok ohne Netz; geändert → Upload; Konflikt → RevMismatch") {
     Rig r;
     r.fs.addFile(kDir + "/a.bin", bytes("v1"));

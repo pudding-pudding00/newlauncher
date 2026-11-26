@@ -295,7 +295,7 @@ CloudStatus DriveProvider::upload(std::string_view unit, std::span<const u8> zip
         if (location.rfind(api_ + "/", 0) != 0) return CloudStatus::Failed;
         HttpRequest put = request(HttpMethod::Put, location);
         put.headers.emplace_back("Content-Type", "application/zip");
-        put.body.assign(zip.begin(), zip.end());
+        put.bodyView = zip;  // keine zweite Kopie des Pakets; zip lebt bis nach call()
         r = call(std::move(put), cancel);
     }
     const CloudStatus s = statusOf(r, authFail_);

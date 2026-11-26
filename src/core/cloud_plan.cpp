@@ -48,8 +48,10 @@ PreLaunchResult skipped(CloudCtx& ctx, std::string_view unit, std::string reason
 }
 
 struct Local {
-    std::vector<SaveFile> files;
+    std::vector<SaveFile> files;      // nach dem ersten push() leer (das Paket ersetzt sie)
     std::optional<std::string> hash;  // nullopt = leer
+    std::vector<u8> zip;              // gepackt beim ersten push(), für einen zweiten Versuch wiederverwendet
+    u32 fileCount = 0;
 };
 
 std::optional<Local> readLocal(CloudCtx& ctx, const SaveUnit& unit) {
@@ -57,6 +59,7 @@ std::optional<Local> readLocal(CloudCtx& ctx, const SaveUnit& unit) {
     if (!r.isOk()) return std::nullopt;
     Local l;
     l.files = std::move(r.value());
+    l.fileCount = static_cast<u32>(l.files.size());
     if (!l.files.empty()) l.hash = contentHash(l.files);
     return l;
 }
@@ -82,6 +85,7 @@ PreLaunchResult pull(CloudCtx& ctx, const SaveUnit& unit, std::string_view title
     const CloudStatus s = ctx.provider.download(cloud, zip, cancel);
     if (s != CloudStatus::Ok) return skipped(ctx, unit.id, skipReason(s));
     auto pkg = unpackSave(zip);
+    std::vector<u8>().swap(zip);  // Speicher: Paket und entpackte Dateien nicht gleichzeitig halten
     if (!pkg.isOk()) return skipped(ctx, unit.id, "error");
     if (pkg.value().meta.unit != unit.id || pkg.value().meta.hash != cloud.hash ||
         contentHash(pkg.value().files) != cloud.hash) {
@@ -100,19 +104,23 @@ PreLaunchResult pull(CloudCtx& ctx, const SaveUnit& unit, std::string_view title
 }
 
 // Hochladen mit erwarteter Revision; bei Ok Basis setzen.
-CloudStatus push(CloudCtx& ctx, const SaveUnit& unit, std::string_view title, const Local& local,
+CloudStatus push(CloudCtx& ctx, const SaveUnit& unit, std::string_view title, Local& local,
                  std::string_view expectRev, CloudState& state, CloudEntry& out, const volatile bool& cancel) {
     SaveMeta meta;
     meta.unit = unit.id;
     meta.title = std::string(title);
     meta.device = ctx.device;
     meta.saved = ctx.now;
-    auto zip = packSave(meta, local.files);
-    if (!zip.isOk()) return CloudStatus::Failed;
+    if (local.zip.empty()) {
+        auto zip = packSave(meta, local.files);
+        if (!zip.isOk()) return CloudStatus::Failed;
+        local.zip = std::move(zip.value());
+        std::vector<SaveFile>().swap(local.files);  // Speicher: ab hier zählt nur das Paket
+    }
     meta.hash = *local.hash;
-    meta.files = static_cast<u32>(local.files.size());
+    meta.files = local.fileCount;
     if (ctx.onTransfer) ctx.onTransfer();
-    const CloudStatus s = ctx.provider.upload(unit.id, zip.value(), meta, expectRev, out, cancel);
+    const CloudStatus s = ctx.provider.upload(unit.id, local.zip, meta, expectRev, out, cancel);
     if (s != CloudStatus::Ok) {
         log(ctx, unit.id, std::string("push ") + cloudStatusName(s));
         return s;
@@ -136,7 +144,7 @@ PreLaunchResult conflict(CloudCtx& ctx, const SaveUnit& unit, const CloudEntry& 
 
 PreLaunchResult preLaunchSync(CloudCtx& ctx, const SaveUnit& unit, std::string_view title,
                               const volatile bool& cancel) {
-    const auto local = readLocal(ctx, unit);
+    auto local = readLocal(ctx, unit);
     if (!local) return skipped(ctx, unit.id, "nand");
     CloudState state = loadState(ctx);
 
@@ -188,7 +196,7 @@ PreLaunchResult resolveConflict(CloudCtx& ctx, const SaveUnit& unit, std::string
         if (!cloud) return skipped(ctx, unit.id, "error");
         return pull(ctx, unit, title, *cloud, state, cancel);
     }
-    const auto local = readLocal(ctx, unit);
+    auto local = readLocal(ctx, unit);
     if (!local) return skipped(ctx, unit.id, "nand");
     if (!local->hash) return skipped(ctx, unit.id, "error");  // leer hochladen wäre eine übertragene Löschung
     CloudEntry out;
@@ -205,7 +213,7 @@ PreLaunchResult resolveConflict(CloudCtx& ctx, const SaveUnit& unit, std::string
 
 CloudStatus uploadIfChanged(CloudCtx& ctx, const SaveUnit& unit, std::string_view title,
                             const volatile bool& cancel) {
-    const auto local = readLocal(ctx, unit);
+    auto local = readLocal(ctx, unit);
     if (!local) return CloudStatus::Failed;
     if (!local->hash) return CloudStatus::Ok;  // nichts zu sichern
     CloudState state = loadState(ctx);

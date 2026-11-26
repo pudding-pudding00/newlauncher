@@ -1,5 +1,6 @@
 #include "platform/http_client.hpp"
 
+#include <charconv>
 #include <cstdio>
 #include <functional>
 #include <span>
@@ -138,8 +139,9 @@ HttpResult wtlsRequest(const Url& url, u32 maxBody, const volatile bool* cancel,
         req.method = httpMethodName(send->method);
         req.headers = sendHeaders.data();
         req.n_headers = sendHeaders.size();
-        req.body = send->body.empty() ? nullptr : send->body.data();
-        req.body_len = send->body.size();
+        const std::span<const u8> body = send->bodyView.empty() ? std::span<const u8>(send->body) : send->bodyView;
+        req.body = body.empty() ? nullptr : body.data();
+        req.body_len = body.size();
         req.max_redirects = -1;  // Spike S5: 308/302 kommen als Status an, der Anbieter entscheidet
     }
     req.header_timeout_ms = kTlsIoMs;
@@ -494,6 +496,14 @@ HttpResponse httpSend(const HttpRequest& request, const volatile bool* cancel, c
     const HttpResult r = wtlsRequest(
         *url, request.maxBody, cancel, log,
         [&](std::span<const u8> data) {
+            // Einmal die angekündigte Länge reservieren (höchstens maxBody): ohne das verdoppelt sich der Puffer
+            // beim Wachsen, und ein 16-MiB-Paket bräuchte kurz das Doppelte.
+            if (out.body.empty()) {
+                const std::string_view cl = out.header("Content-Length");
+                u64 n = 0;
+                if (std::from_chars(cl.data(), cl.data() + cl.size(), n).ec == std::errc() && n <= request.maxBody)
+                    out.body.reserve(static_cast<std::size_t>(n));
+            }
             out.body.insert(out.body.end(), data.begin(), data.end());
             return true;
         },

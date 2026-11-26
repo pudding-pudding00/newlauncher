@@ -212,7 +212,8 @@ std::string libretroLinkUrl(std::string_view url, std::string_view target) {
 std::vector<CoverJob> coverDownloadJobs(std::span<const Game* const> games,
                                         const std::function<bool(const std::string&)>& exists,
                                         std::string_view libRoot, std::string_view retroBase,
-                                        const std::unordered_set<std::string>* skip) {
+                                        const std::unordered_set<std::string>* skip,
+                                        const std::function<CoverOrderMeta(const Game&)>& metaOf) {
     std::vector<CoverJob> jobs;
     for (const Game* g : games) {
         if (!g || !g->key || g->console == Console::Channel) continue;
@@ -221,8 +222,10 @@ std::vector<CoverJob> coverDownloadJobs(std::span<const Game* const> games,
         std::string stem = coverStem(*g);
         if (skip != nullptr && skip->count(stem) > 0) continue;
         if (exists(coverSrcPath(libRoot, stem)) || exists(coverTexPath(libRoot, stem))) continue;
+        const CoverOrderMeta meta = metaOf ? metaOf(*g) : CoverOrderMeta{};
         if (disc) {
-            jobs.push_back({std::string(g->key), std::move(stem), std::string(libRoot), {}, g->console});
+            jobs.push_back({std::string(g->key), std::move(stem), std::string(libRoot), {}, g->console, meta.favorite,
+                            meta.lastPlayed});
             continue;
         }
         const std::string_view fileStem = std::string_view(stem).substr(stem.find('/') + 1);
@@ -233,7 +236,7 @@ std::vector<CoverJob> coverDownloadJobs(std::span<const Game* const> games,
             urls.push_back(std::move(url));
         }
         if (urls.empty()) continue;
-        jobs.push_back({stem, stem, std::string(libRoot), std::move(urls), g->console});
+        jobs.push_back({stem, stem, std::string(libRoot), std::move(urls), g->console, meta.favorite, meta.lastPlayed});
     }
     return jobs;
 }
@@ -254,8 +257,12 @@ int coverJobRank(Console c) {
 }
 
 void orderCoverJobs(std::vector<CoverJob>& jobs) {
+    auto keyOf = [](const CoverJob& j) {
+        const int tier = j.favorite ? 0 : (j.lastPlayed > 0 ? 1 : 2 + coverJobRank(j.console));
+        return std::pair<int, u64>{tier, j.favorite ? 0ull : ~static_cast<u64>(j.lastPlayed)};
+    };
     std::stable_sort(jobs.begin(), jobs.end(),
-                     [](const CoverJob& a, const CoverJob& b) { return coverJobRank(a.console) < coverJobRank(b.console); });
+                     [&](const CoverJob& a, const CoverJob& b) { return keyOf(a) < keyOf(b); });
 }
 
 std::string missingListPath(std::string_view libRoot) {

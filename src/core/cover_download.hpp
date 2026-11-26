@@ -58,12 +58,19 @@ struct CoverJob {
     std::string root = {};  // Cover-Wurzel des Geräts (coverRoot), Ziel von coverSrcPath
     std::vector<std::string> urls = {};  // M22/M24: libretro-Kandidaten der Reihe nach; leer = GameTDB über Regionen
     Console console = Console::Wii;  // M24: bestimmt die Reihenfolge (orderCoverJobs)
+    bool favorite = false;
+    u32 lastPlayed = 0;  // 0 = nicht zuletzt gespielt
+};
+
+struct CoverOrderMeta {
+    bool favorite = false;
+    u32 lastPlayed = 0;
 };
 
 // M24: Rang der Download-Reihenfolge, Konsolen von neu nach alt wie die Konsolenleiste:
 // Wii 0, GC 1, GBA 2, N64 3, GBC 4, SNES 5, GB 6, NES 7, Kanäle danach.
 int coverJobRank(Console c);
-// Sortiert stabil nach coverJobRank; innerhalb einer Konsole bleibt die Reihenfolge (Titel der Bibliothek).
+// Sortiert stabil: Favoriten zuerst, dann Zuletzt (neueste zuerst), dann Konsolengenerationen von oben nach unten.
 void orderCoverJobs(std::vector<CoverJob>& jobs);
 
 // Wii/GC (und mit retroBase auch Retro-Konsolen), bei denen weder covers_src-PNG noch .tex existiert. Stämme in
@@ -71,7 +78,8 @@ void orderCoverJobs(std::vector<CoverJob>& jobs);
 std::vector<CoverJob> coverDownloadJobs(std::span<const Game* const> games,
                                         const std::function<bool(const std::string&)>& exists,
                                         std::string_view libRoot, std::string_view retroBase = {},
-                                        const std::unordered_set<std::string>* skip = nullptr);
+                                        const std::unordered_set<std::string>* skip = nullptr,
+                                        const std::function<CoverOrderMeta(const Game&)>& metaOf = {});
 
 // Vorhandene Cover (covers_src/*.png und cache/covers/*.tex) als volle Pfade, mit je einem list() pro Ordner statt
 // einer Abfrage pro Spiel; als exists für coverDownloadJobs. Ohne retro nur die Ordner wii und gc.

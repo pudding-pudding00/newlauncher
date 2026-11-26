@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <ogc/lwp.h>
 #include <ogc/mutex.h>
@@ -13,12 +14,22 @@
 
 namespace nl::platform {
 
+struct CoverRequest {
+    std::string root, stem;
+};
+
 struct CoverResult {
     std::string stem;
     void* texels = nullptr;  // aus CoverMemory, kCoverTexBytes groß; nullptr = kein Cover
     u32 bytes = 0;
+    std::optional<PixelBox> box;
     bool converted = false;  // PNG umgewandelt (statt .tex gelesen)
     std::string error;       // leer und texels == nullptr: keine Quelle vorhanden
+};
+
+struct CoverBatchResult {
+    std::vector<CoverResult> results;
+    std::vector<std::string> requeue;  // nicht gestartete Stämme (vor PNG-Umwandlung abgebrochen)
 };
 
 class CoverWorker {
@@ -28,23 +39,24 @@ public:
     CoverWorker(const CoverWorker&) = delete;
     CoverWorker& operator=(const CoverWorker&) = delete;
 
-    // false, wenn schon ein Auftrag läuft oder der Thread nicht startet.
-    bool start(FileSystem& fs, std::string libRoot, std::string stem, CoverMemory& mem);
+    // false, wenn schon ein Auftrag läuft, die Liste leer ist oder der Thread nicht startet.
+    bool start(FileSystem& fs, std::vector<CoverRequest> requests, CoverMemory& mem);
     bool running() const { return running_; }
-    std::optional<CoverResult> take();
+    std::optional<CoverBatchResult> take();
     void join();  // vor dem Aushängen der Laufwerke
 
 private:
     static void* entry(void* self);
-    CoverResult run();
+    CoverBatchResult run();
+    CoverResult loadOne(const CoverRequest& req, bool allowConvert, bool& skippedConvert);
 
     lwp_t thread_ = LWP_THREAD_NULL;
     mutex_t mutex_ = LWP_MUTEX_NULL;
     FileSystem* fs_ = nullptr;
     CoverMemory* mem_ = nullptr;
-    std::string root_, stem_;
+    std::vector<CoverRequest> requests_;
     volatile bool running_ = false;
-    std::optional<CoverResult> result_;
+    std::optional<CoverBatchResult> result_;
 };
 
 }  // namespace nl::platform

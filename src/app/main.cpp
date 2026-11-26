@@ -1482,11 +1482,12 @@ int main(int argc, char** argv) {
                     skip.insert(std::move(s));
                 skipped += skip.size();
             }
-            auto part = nl::coverDownloadJobs(games, [&](const std::string& path) { return present.count(path) > 0; },
-                                              root, retroBase, &skip);
+            auto part = nl::coverDownloadJobs(
+                games, [&](const std::string& path) { return present.count(path) > 0; }, root, retroBase, &skip,
+                [&](const nl::Game& g) { return nl::CoverOrderMeta{store.isFavorite(g.key), store.lastPlayed(g.key)}; });
             for (nl::CoverJob& j : part) jobs.push_back(std::move(j));
         }
-        nl::orderCoverJobs(jobs);  // M24: Wii → GC → GBA → N64 → GBC → SNES → GB → NES, geräteübergreifend
+        nl::orderCoverJobs(jobs);  // Favoriten → Zuletzt → Konsolengenerationen (jeweils von oben nach unten)
         if (silent)
             nl::log::line("NL_COVER_AUTO jobs=%u skipped=%u", static_cast<unsigned>(jobs.size()),
                           static_cast<unsigned>(skipped));

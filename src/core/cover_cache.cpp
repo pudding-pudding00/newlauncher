@@ -50,12 +50,16 @@ std::optional<std::string> CoverCache::nextRequest() {
     Entry* best = nullptr;
     for (auto& e : entries_) {
         if (e.state != CoverState::Pending || e.inFlight || e.lastWanted != frame_) continue;
-        if (!best || e.priority > best->priority || (e.priority == best->priority && e.wantSeq > best->wantSeq))
+        if (!best || e.priority > best->priority || (e.priority == best->priority && e.wantSeq < best->wantSeq))
             best = &e;
     }
     if (!best) return std::nullopt;
     best->inFlight = true;
     return best->stem;
+}
+
+void CoverCache::requeue(std::string_view stem) {
+    if (Entry* e = find(stem)) e->inFlight = false;
 }
 
 void CoverCache::complete(std::string_view stem, void* texels, u32 bytes, std::optional<PixelBox> box) {

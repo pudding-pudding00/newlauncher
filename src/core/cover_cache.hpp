@@ -37,9 +37,10 @@ public:
     void beginFrame(u32 frame, float nowMs);
     // Allokiert nur beim ersten Wunsch eines Stamms.
     CoverState want(std::string_view stem, CoverPriority priority);
-    // Gewünschter Pending-Eintrag mit höchster Priorität (bei Gleichstand der zuletzt gewünschte);
+    // Gewünschter Pending-Eintrag mit höchster Priorität (bei Gleichstand von oben nach unten / FIFO);
     // er gilt danach als in Arbeit. Verdrängt vorher auf das Budget.
     std::optional<std::string> nextRequest();
+    void requeue(std::string_view stem);  // inFlight zurücksetzen, wenn ein Stapel vorzeitig endete
     // texels aus mem.alloc; box: Inhalt ohne transparenten Rand (M23), nullopt = ganze Textur
     void complete(std::string_view stem, void* texels, u32 bytes, std::optional<PixelBox> box = std::nullopt);
     void fail(std::string_view stem);

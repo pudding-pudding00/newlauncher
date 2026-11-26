@@ -80,3 +80,7 @@ Gemessen am 2026-11-26 mit `tools/dolphin_smoke.py --save-fixture nand` (Dev-Use
 
 Noch offen. S1/S2/S7 brauchen die echte Wii (wiiload, Port 4299), S1-Schreibtests erst nach Rückfrage und
 BootMii-NAND-Backup.
+
+Für S1 offen: Fehlt `/title/<hi>/<lo>/data` im echten NAND (Disc nie gespielt), scheitert Zurückspielen sauber mit
+Rollback, weil der Eigentümer des neuen Ordners unbekannt ist. Auf der Wii prüfen, ob das Spiel den Ordner selbst
+anlegt; bis dahin legt newlauncher dort keinen Ordner an.

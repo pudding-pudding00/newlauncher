@@ -196,3 +196,37 @@ TEST_CASE("restoreFromZip: Sicherung zurückspielen, kaputtes ZIP schreibt nicht
     CHECK(!restoreFromZip(fs, kData, unit(), std::string(kData) + "/fehlt.zip", "", "", kNow).isOk());
     CHECK(fs.writes == before);
 }
+
+TEST_CASE("backupUnit: zurückgestellte Uhr löscht die neue Sicherung nicht") {
+    MemFileSystem fs;
+    seed(fs);
+    for (u64 i = 0; i < 5; ++i) CHECK(backupUnit(fs, kData, unit(), "", "", kNow + i * 60).isOk());
+    constexpr u64 kYear2000 = 946684800;  // RTC-Batterie leer
+    auto b = backupUnit(fs, kData, unit(), "", "", kYear2000);
+    CHECK(b.isOk());
+    if (!b.isOk()) return;
+    CHECK(fs.file(b.value().zipPath) != nullptr);
+    CHECK(listBackups(fs, kData, "wii-RMGP").size() == 5);
+}
+
+TEST_CASE("restoreUnit: zu langer NAND-Name scheitert vor dem ersten Schreiben") {
+    MemFileSystem fs;
+    seed(fs);
+    const int before = fs.writes;
+    SavePackage pkg = package();
+    pkg.files[2].path = "verylongname.dat";  // 16 Zeichen, NAND erlaubt 12
+    pkg.meta.hash = contentHash(pkg.files);
+    CHECK(!restoreUnit(fs, kData, unit(), pkg, "", "", kNow).isOk());
+    CHECK(fs.writes == before);
+}
+
+TEST_CASE("restoreUnit: liest den alten Stand nur einmal") {
+    MemFileSystem mem;
+    seed(mem);
+    FailingFs fs(mem);
+    CHECK(restoreUnit(fs, kData, unit(), package(), "", "", kNow).isOk());
+    int unitReads = 0;
+    for (const std::string& p : fs.readAllPaths)
+        if (p.rfind(kDir + "/", 0) == 0) ++unitReads;
+    CHECK(unitReads == 3 + 4);  // Sicherung liest die 3 alten Dateien, Prüfung danach die 4 neuen
+}

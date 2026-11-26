@@ -6,6 +6,7 @@
 
 #include "core/civil_time.hpp"
 #include "core/ini.hpp"
+#include "core/nand_path.hpp"
 #include "core/zip_reader.hpp"
 
 namespace nl {
@@ -88,11 +89,19 @@ std::vector<std::string> listBackups(FileSystem& fs, std::string_view dataDir, s
     return out;
 }
 
-Result<void> pruneBackups(FileSystem& fs, std::string_view dataDir, std::string_view unitId, std::size_t keep) {
+Result<void> pruneBackups(FileSystem& fs, std::string_view dataDir, std::string_view unitId, std::size_t keep,
+                          std::string_view protect) {
     const std::vector<std::string> list = listBackups(fs, dataDir, unitId);
     const std::string dir = backupDir(dataDir, unitId);
-    for (std::size_t i = keep; i < list.size(); ++i)
-        if (auto r = fs.removeFile(dir + "/" + list[i]); !r.isOk()) return r;
+    std::size_t kept = std::count(list.begin(), list.end(), protect) != 0 ? 1 : 0;
+    for (const std::string& name : list) {
+        if (name == protect) continue;
+        if (kept < keep) {
+            ++kept;
+            continue;
+        }
+        if (auto r = fs.removeFile(dir + "/" + name); !r.isOk()) return r;
+    }
     return Result<void>::ok();
 }
 
@@ -113,6 +122,9 @@ Result<BackupInfo> backupUnit(FileSystem& fs, std::string_view dataDir, const Sa
     meta.saved = now;
     auto zip = packSave(meta, files.value());
     if (!zip.isOk()) return R::err(zip.error());
+    info.hash = contentHash(files.value());
+    for (SaveFile& f : files.value()) info.paths.push_back(std::move(f.path));
+    files.value() = {};  // Rohdaten freigeben, bevor das ZIP geschrieben wird (Speicher bei 16 MiB)
     const std::string dir = backupDir(dataDir, u.id);
     u64 t = now;
     std::string path = dir + "/" + backupFileName(t);
@@ -120,8 +132,8 @@ Result<BackupInfo> backupUnit(FileSystem& fs, std::string_view dataDir, const Sa
     if (exists(fs, path)) return R::err(Error{ErrorCode::IoError, "Sicherung: kein freier Name in " + dir});
     if (auto r = writeFile(fs, path, zip.value()); !r.isOk()) return R::err(r.error());
     info.zipPath = std::move(path);
-    info.hash = contentHash(files.value());
-    if (auto r = pruneBackups(fs, dataDir, u.id); !r.isOk()) return R::err(r.error());
+    const std::string_view name = std::string_view(info.zipPath).substr(dir.size() + 1);
+    if (auto r = pruneBackups(fs, dataDir, u.id, kKeepBackups, name); !r.isOk()) return R::err(r.error());
     return R::ok(std::move(info));
 }
 
@@ -159,17 +171,20 @@ Result<void> restoreUnit(FileSystem& fs, std::string_view dataDir, const SaveUni
     using R = Result<void>;
     if (pkg.meta.unit != u.id)
         return R::err(Error{ErrorCode::InvalidData, "Spielstand gehört zu " + pkg.meta.unit + ", nicht " + u.id});
-    for (const SaveFile& f : pkg.files)
+    for (const SaveFile& f : pkg.files) {
         if (!unitAcceptsPath(u, f.path)) return R::err(Error{ErrorCode::InvalidData, "Pfad nicht erlaubt: " + f.path});
+        if (u.store == SaveStore::RealNand) {  // NAND-Grenzen (12 Zeichen je Name, 64 je Pfad) vor dem ersten Schreiben
+            const auto isfs = isfsPath(u.dir + "/" + f.path);
+            if (!isfs || !isSaveDataPath(*isfs))
+                return R::err(Error{ErrorCode::InvalidData, "Pfad passt nicht in den NAND: " + f.path});
+        }
+    }
     if (contentHash(pkg.files) != pkg.meta.hash) return R::err(Error{ErrorCode::InvalidData, "Inhalts-Hash stimmt nicht"});
 
-    auto current = readUnit(fs, u);
-    if (!current.isOk()) return R::err(current.error());
-    std::set<std::string> had;
-    for (const SaveFile& f : current.value()) had.insert(f.path);
-
+    // Die Sicherung liest den alten Stand; ihre Pfadliste sagt, welche Dateien neu dazukommen (nur ein Lesedurchgang).
     auto backup = backupUnit(fs, dataDir, u, title, device, now);
     if (!backup.isOk()) return R::err(backup.error());
+    const std::set<std::string> had(backup.value().paths.begin(), backup.value().paths.end());
 
     RestoreJournal j;
     j.unit = u.id;
@@ -207,6 +222,7 @@ Result<void> restoreFromZip(FileSystem& fs, std::string_view dataDir, const Save
     auto zip = fs.readAll(zipPath, kMaxSaveUnitBytes * 2);
     if (!zip.isOk()) return R::err(zip.error());
     auto pkg = unpackSave(zip.value());
+    zip.value() = {};  // gepackte Bytes freigeben, das Paket hält die Dateien
     if (!pkg.isOk()) return R::err(pkg.error());
     return restoreUnit(fs, dataDir, u, pkg.value(), title, device, now);
 }

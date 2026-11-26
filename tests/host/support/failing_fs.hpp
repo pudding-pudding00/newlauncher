@@ -12,12 +12,14 @@ public:
 
     int failWriteAfter = -1;  // -1 = nie
     int writeCalls = 0;
+    std::vector<std::string> readAllPaths;  // jeder readAll-Aufruf, in Reihenfolge
 
     Result<std::vector<DirEntry>> list(std::string_view dir) override { return inner_.list(dir); }
     Result<std::size_t> read(std::string_view file, u64 offset, std::span<u8> out) override {
         return inner_.read(file, offset, out);
     }
     Result<std::vector<u8>> readAll(std::string_view file, std::size_t maxBytes) override {
+        readAllPaths.emplace_back(file);
         return inner_.readAll(file, maxBytes);
     }
     Result<void> writeAtomic(std::string_view file, std::span<const u8> data) override {

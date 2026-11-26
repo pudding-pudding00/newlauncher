@@ -19,15 +19,19 @@ inline constexpr std::size_t kKeepBackups = 5;
 std::string backupDir(std::string_view dataDir, std::string_view unitId);
 std::string backupFileName(u64 unix);  // yyyymmdd-hhmmss.zip (UTC)
 std::vector<std::string> listBackups(FileSystem& fs, std::string_view dataDir, std::string_view unitId);  // neueste zuerst
-Result<void> pruneBackups(FileSystem& fs, std::string_view dataDir, std::string_view unitId, std::size_t keep = kKeepBackups);
+// Löscht die ältesten über keep hinaus; `protect` (Dateiname) bleibt immer und zählt mit – auch wenn er nach Namen
+// der älteste ist (zurückgestellte Uhr).
+Result<void> pruneBackups(FileSystem& fs, std::string_view dataDir, std::string_view unitId, std::size_t keep = kKeepBackups,
+                          std::string_view protect = {});
 
 struct BackupInfo {
     std::string zipPath;  // leer bei empty
     std::string hash;
+    std::vector<std::string> paths;  // gesicherte Dateien relativ zum Ordner der Einheit
     bool empty = false;
 };
 
-// Leere Einheit → empty, kein ZIP. Belegt die Sekunde schon eine Sicherung, rückt der Name weiter. Danach pruneBackups.
+// Leere Einheit → empty, kein ZIP. Belegt die Sekunde schon eine Sicherung, rückt der Name weiter. Danach pruneBackups ohne die neue Datei.
 Result<BackupInfo> backupUnit(FileSystem& fs, std::string_view dataDir, const SaveUnit& u, std::string_view title,
                               std::string_view device, u64 now);
 

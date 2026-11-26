@@ -590,7 +590,8 @@ class DolphinToolsTest(unittest.TestCase):
         self.assertFalse((sd / "saves_smoke").exists())
 
     def test_smoke_save_fixture_emunand_sets_save_emu(self):
-        self.assertEqual(self._save_run("--save-fixture", "emunand", "--save-step", "backup"), 1)
+        with mock.patch("dolphin_smoke.ARGV_ECHO_DOL", self.dol):  # CI baut argv_echo.dol nicht vor den Tool-Tests
+            self.assertEqual(self._save_run("--save-fixture", "emunand", "--save-step", "backup"), 1)
         config = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
         self.assertIn("[emunand]\npath = sd:/emunand\n", config)
         self.assertIn("[wii]\nsave = emu\n", config)

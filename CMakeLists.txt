@@ -32,6 +32,7 @@ add_library(nl_core STATIC
     src/core/multipart.cpp
     src/core/http_types.cpp
     src/core/oauth_device.cpp
+    src/core/pkce.cpp
     src/core/token_store.cpp
     src/core/cloud_provider.cpp
     src/core/oauth_client.cpp

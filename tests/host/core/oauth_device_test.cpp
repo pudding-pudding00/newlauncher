@@ -152,3 +152,35 @@ TEST_CASE("revokeToken: leere URL (Microsoft) oder leeres Token, keine Anfrage")
     CHECK(revokeToken(t, ep(), "", kNoCancel) == RevokeResult::Failed);
     CHECK(t.seen.empty());
 }
+
+TEST_CASE("exchangeAuthCode: Formular mit Verifier, ohne Secret") {
+    FakeTransport t;
+    OAuthEndpoints e = ep();
+    e.clientSecret.clear();
+    t.expect(HttpMethod::Post, "https://auth.test/token",
+             jsonResponse(200, R"({"access_token":"AT","expires_in":14400,"refresh_token":"RT","account_id":"dbid:x"})"));
+    TokenSet out;
+    CHECK(exchangeAuthCode(t, e, "CODE-1_x", "VERIFIER", 1000, out, kNoCancel) == PollState::Ok);
+    CHECK(out.access == "AT");
+    CHECK(out.refresh == "RT");
+    CHECK(out.expiresAtMs == 1000 + 14400 * 1000ULL);
+    const std::string body = bodyOf(t.seen[0]);
+    CHECK(body.find("grant_type=authorization_code") != std::string::npos);
+    CHECK(body.find("code=CODE-1_x") != std::string::npos);
+    CHECK(body.find("code_verifier=VERIFIER") != std::string::npos);
+    CHECK(body.find("client_id=cid.apps") != std::string::npos);
+    CHECK(body.find("client_secret") == std::string::npos);
+}
+
+TEST_CASE("exchangeAuthCode: falscher Code und offline") {
+    FakeTransport t;
+    OAuthEndpoints e = ep();
+    e.clientSecret.clear();
+    t.expect(HttpMethod::Post, "https://auth.test/token",
+             jsonResponse(400, R"({"error":"invalid_grant","error_description":"code doesn't exist"})"));
+    t.expect(HttpMethod::Post, "https://auth.test/token", offlineResponse());
+    TokenSet out;
+    CHECK(exchangeAuthCode(t, e, "X", "V", 0, out, kNoCancel) == PollState::Denied);
+    CHECK(exchangeAuthCode(t, e, "X", "V", 0, out, kNoCancel) == PollState::Failed);
+    CHECK(out.access.empty());
+}

@@ -40,7 +40,12 @@ PollState pollToken(HttpTransport& http, const OAuthEndpoints& ep, std::string_v
 // invalid_grant (widerrufen/abgelaufen) → Denied; ohne neues refresh_token in der Antwort bleibt das alte.
 PollState refreshToken(HttpTransport& http, const OAuthEndpoints& ep, TokenSet& io, u64 nowMs,
                        const volatile bool& cancel);
-bool tokenFresh(const TokenSet& t, u64 nowMs);  // mit 60 s Puffer
+bool tokenFresh(const TokenSet& t, u64 nowMs);
+
+// Autorisierungscode mit PKCE-Verifier tauschen (Dropbox, M29). Öffentlicher Client: ohne client_secret.
+// Ok, Denied (invalid_grant: falscher/abgelaufener Code), sonst Failed.
+PollState exchangeAuthCode(HttpTransport& http, const OAuthEndpoints& ep, std::string_view code,
+                           std::string_view verifier, u64 nowMs, TokenSet& out, const volatile bool& cancel);  // mit 60 s Puffer
 
 // Abmelden: Refresh-Token beim Anbieter widerrufen (best effort). Unsupported ohne Anfrage, wenn revokeUrl leer.
 enum class RevokeResult : u8 { Ok, Failed, Unsupported };

@@ -25,6 +25,9 @@ add_library(nl_core STATIC
     src/core/game_filter.cpp
     src/core/play_stats.cpp
     src/core/sha256.cpp
+    src/core/base64.cpp
+    src/core/url_encode.cpp
+    src/core/hmac.cpp
     src/core/parental.cpp
     src/core/rgb5a3.cpp
     src/core/console.cpp

@@ -22,7 +22,7 @@ Stand: 2026-11-26, M26 (lokale Spielstände: Sichern, Zurückspielen, auch in de
 | – | wii_tls auf Release **v1.0.0** (`77229ff`, erste stabile Version): Schreib-Obergrenze gegen hängende Gegenstellen, DNS-Fallback über bis zu 4 Adressen, Netz-Reset bei IP-Wechsel, Sicherheits-Fixes | #39 |
 | M24 | Cover-Downloads nach Konsolengeneration (neu → alt), Sortierung Titel/Jahr über − in der A–Z-Leiste, größeres Raster mit gemischten Kachelformaten in Zuletzt/Favoriten/Suche, Plakette nur ohne Cover, „Cover-Cache löschen“ durch Halten von A und im Hintergrund (wii_tls-Abbruch-Callback), Cover-Speicher SD-Karte/Spielgerät, Retro-Cover-Sucher (libretro-Symlinks, Namensvarianten) | #40 |
 | M25 | WLAN: Backoff mit `net_deinit` zwischen Versuchen, Router-Check (Zustand „eingeschränkt“), Hintergrund-Check 5–30 s, genaueres Symbol (Lauflicht, gelber/roter Punkt), Info-Fenster per Klick aufs Symbol mit „Neu verbinden“, Hinweise bei Zustandswechsel | PR #43 |
-| M26 | Lokale Spielstände (Teil 1 der Cloud-Spielstände): Details-Zeile „Spielstand …“ mit eigener Szene, Sichern als ZIP unter `newlauncher/saves/<einheit>/` (höchstens 5), Zurückspielen mit Rückfrage, Journal mit Rollback beim Start; Wii-NAND über ISFS-Rechte-Patch (nur `/title/…/data`), EmuNAND, Nintendont, Emulatoren mit `save_dir` | PR folgt |
+| M26 | Lokale Spielstände (Teil 1 der Cloud-Spielstände): Details-Zeile „Spielstand …“ mit eigener Szene, Sichern als ZIP unter `newlauncher/saves/<einheit>/` (höchstens 5), Zurückspielen mit Rückfrage, Journal mit Rollback beim Start; Wii-NAND über ISFS-Rechte-Patch (nur `/title/…/data`), EmuNAND, Nintendont, Emulatoren mit `save_dir` | PR #45 |
 
 Die CI (`.github/workflows/build.yml`) baut Wii mit und ohne TLS und führt die Host-Tests aus.
 

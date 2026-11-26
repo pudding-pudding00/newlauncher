@@ -1144,13 +1144,12 @@ int main(int argc, char** argv) {
                     nl::log::line("NL_WII_DRYRUN %s", key.c_str());
                     return;
                 }
-                target.value().kind = nl::LaunchTarget::Kind::Wii;
-                target.value().wii = std::move(plan.value());
+                nl::applyEmuChannelPlan(target.value(), std::move(plan.value()));
             } else {
                 target = nl::Result<nl::LaunchTarget, nl::LaunchError>::err(plan.error());
             }
         }
-        if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii) {
+        if (target.isOk() && target.value().kind == nl::LaunchTarget::Kind::Wii && !target.value().channelPlanned) {
             if (auto plan = prepareWii(game, configDoc, gamesDoc); plan.isOk()) {
                 if (config.debugWiiDryRun) {
                     recordStats(key);

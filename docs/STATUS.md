@@ -1,6 +1,6 @@
 # Projektstand (Übergabe)
 
-Stand: 2026-11-26, M25 (WLAN robuster und mit Info-Fenster) umgesetzt; M24 (größeres Raster, Sortierung, Cover-Speicher auf der SD, Löschen ohne Hänger) umgesetzt, Hardware-Abnahme von M21 bis M25 offen. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
+Stand: 2026-11-26, M26 (lokale Spielstände: Sichern, Zurückspielen, auch in den NAND-Save-Ordner) umgesetzt; M25 (WLAN robuster und mit Info-Fenster) umgesetzt; M24 (größeres Raster, Sortierung, Cover-Speicher auf der SD, Löschen ohne Hänger) umgesetzt, Hardware-Abnahme von M21 bis M26 offen. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
 
 ## Erledigt
 
@@ -22,6 +22,7 @@ Stand: 2026-11-26, M25 (WLAN robuster und mit Info-Fenster) umgesetzt; M24 (grö
 | – | wii_tls auf Release **v1.0.0** (`77229ff`, erste stabile Version): Schreib-Obergrenze gegen hängende Gegenstellen, DNS-Fallback über bis zu 4 Adressen, Netz-Reset bei IP-Wechsel, Sicherheits-Fixes | #39 |
 | M24 | Cover-Downloads nach Konsolengeneration (neu → alt), Sortierung Titel/Jahr über − in der A–Z-Leiste, größeres Raster mit gemischten Kachelformaten in Zuletzt/Favoriten/Suche, Plakette nur ohne Cover, „Cover-Cache löschen“ durch Halten von A und im Hintergrund (wii_tls-Abbruch-Callback), Cover-Speicher SD-Karte/Spielgerät, Retro-Cover-Sucher (libretro-Symlinks, Namensvarianten) | #40 |
 | M25 | WLAN: Backoff mit `net_deinit` zwischen Versuchen, Router-Check (Zustand „eingeschränkt“), Hintergrund-Check 5–30 s, genaueres Symbol (Lauflicht, gelber/roter Punkt), Info-Fenster per Klick aufs Symbol mit „Neu verbinden“, Hinweise bei Zustandswechsel | PR #43 |
+| M26 | Lokale Spielstände (Teil 1 der Cloud-Spielstände): Details-Zeile „Spielstand …“ mit eigener Szene, Sichern als ZIP unter `newlauncher/saves/<einheit>/` (höchstens 5), Zurückspielen mit Rückfrage, Journal mit Rollback beim Start; Wii-NAND über ISFS-Rechte-Patch (nur `/title/…/data`), EmuNAND, Nintendont, Emulatoren mit `save_dir` | PR folgt |
 
 Die CI (`.github/workflows/build.yml`) baut Wii mit und ohne TLS und führt die Host-Tests aus.
 
@@ -73,6 +74,7 @@ Spec `docs/superpowers/specs/2026-11-25-m20-direktstart-design.md`, Abnahme
   Text) und weicht oft im Namen ab; der Launcher folgt Symlinks (2 Sprünge) und probiert bis zu 16 Namensvarianten
   (`libretroNameCandidates`). Die Fehlliste hat eine Versionszeile, ältere Listen werden verworfen.
   Abnahme: [acceptance/m24-wii.md](acceptance/m24-wii.md), **ungeprüft**.
+- **M26 (2026-11-26):** Erster Schritt der Cloud-Spielstände (Spec `docs/superpowers/specs/2026-11-26-cloud-spielstaende-design.md`, Ziele 1–4), noch ohne Cloud. Spielstand-Szene aus den Details: Sichern, Zurückspielen (vorher automatische Sicherung, Journal `saves/restore.ini`, Rollback beim nächsten Start), Sicherung löschen. Echter NAND nur über den ISFS-Rechte-Patch und nur im Save-Ordner; ohne AHBPROT „NAND gesperrt“. Spike S3: Dolphin schreibt den Save-Ordner; IOS benennt nur mit gleichem Dateinamen um (Zwischendatei `/tmp/<name>`). Smokes `--save-fixture gb|nand|emunand --save-step backup|restore|recover`. Abnahme: [acceptance/m26-wii.md](acceptance/m26-wii.md), **ungeprüft** (vor dem ersten echten NAND-Schreiben fragen, BootMii-Backup). Weiter mit M27 (Cloud-Kern + Google Drive).
 - **Smoke `--remote-check` wackelt (2026-11-25):** 2 von 11 Läufen meldeten „REMOTE KEY (Fokus blieb …)“,
   unabhängig von wii_tls (die Fernsteuerung nutzt es nicht). Vermutlich setzt ein Zeigerereignis in Dolphin den
   Fokus zurück auf die Kachel unter dem Zeiger. Offen.

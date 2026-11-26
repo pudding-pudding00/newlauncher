@@ -195,6 +195,12 @@ class CloudSmokeTest(unittest.TestCase):
         plan.pair_problems.append("Kopplung: kaputt")
         self.assertIn("Kopplung: kaputt", cloud_smoke.post_check(plan, self.user, "", lambda rel: b""))
 
+    def test_m29_leaked_secrets_checks_pair_token_and_wrong_code(self):
+        fake = cloud_fake.FakeDropbox()
+        self.assertEqual(cloud_smoke.leaked_secrets("NL_PAIR ok\n", fake), [])
+        self.assertEqual(len(cloud_smoke.leaked_secrets("tok=" + cloud_smoke.PAIR_TOKEN, fake)), 1)
+        self.assertEqual(len(cloud_smoke.leaked_secrets("code=" + cloud_smoke.WRONG_CODE, fake)), 1)
+
     def test_m29_pairer_runs_the_phone_flow(self):
         """Gegen eine Nachbildung der Kopplungsseite (core/pairing_http) und den echten Dropbox-Fake."""
         import http.server

@@ -143,7 +143,12 @@ void PairingServer::serve(s32 fd) {
     const u64 deadline = NetService::clockMs() + kConnTimeoutMs;
     for (;;) {
         if (req.size() > kPairMaxRequest) break;  // handle() antwortet 413
-        if (const auto head = parseHttpHead(req); head && req.size() >= head->headerBytes + head->contentLength) break;
+        if (req.find("\r\n\r\n") != std::string::npos) {
+            const auto head = parseHttpHead(req);
+            if (!head || head->headerBytes + head->contentLength > kPairMaxRequest ||
+                req.size() >= head->headerBytes + head->contentLength)
+                break;
+        }
         if (stop_ || NetService::clockMs() >= deadline) return;  // ohne Antwort schließen
         char buf[512];
         const s32 n = net_recv(fd, buf, sizeof buf, 0);

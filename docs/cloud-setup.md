@@ -160,7 +160,7 @@ entscheidet newlauncher neu bzw. fragt).
 ## Anbieter wechseln und „Alle abgleichen“
 
 - **Anbieter wechseln:** Anbieter umstellen (◀▶ in der Zeile „Anbieter“), dann **Anmelden**. Der alte Anbieter wird
-  dabei abgemeldet (Google: Token widerrufen). Direkt nach der Anmeldung gleicht newlauncher **alle** Spielstände der
+  dabei abgemeldet (Google und Dropbox: Token widerrufen). Direkt nach der Anmeldung gleicht newlauncher **alle** Spielstände der
   Bibliothek mit dem neuen Anbieter ab: Was nur auf der Wii liegt, wird hochgeladen; was nur in der Cloud liegt, wird
   geholt (mit Sicherung vorher). Gibt es Spielstände auf beiden Seiten mit verschiedenem Inhalt, fragt ein Dialog
   einmal für alle: **Wii-Stände nehmen**, **Cloud-Stände nehmen** oder **Beim Spielstart fragen** (Standard; dann
@@ -178,7 +178,7 @@ entscheidet newlauncher neu bzw. fragt).
 | „Anmeldung abgelaufen – bitte neu anmelden“, Log `NL_CLOUD <einheit> skip auth` | Refresh-Token ungültig (App noch im Status „Testen“, Zugriff entzogen) |
 | Log `NL_CLOUD <einheit> skip offline` | kein Netz; das Spiel startet ohne Abgleich, der Upload folgt später |
 | Log `NL_CLOUD_LINK failed` | Google: Client-ID/Secret falsch oder Typ nicht „Fernseher und Geräte mit begrenzter Eingabe“; Microsoft: „Öffentliche Clientflows zulassen“ aus oder Kontotyp nicht „persönliche Microsoft-Konten“; Dropbox: App key falsch, „Allow public clients“ aus oder Kopplung abgelaufen (5 Minuten) |
-| „Abgemeldet, Widerruf nicht bestätigt“, Log `NL_CLOUD_UNLINKED revoke=fail` | Tokens auf der SD sind gelöscht, Google hat den Widerruf aber nicht bestätigt (offline); Zugriff bei Bedarf in den Kontoeinstellungen entziehen |
+| „Abgemeldet, Widerruf nicht bestätigt“, Log `NL_CLOUD_UNLINKED revoke=fail` | Tokens auf der SD sind gelöscht, der Anbieter hat den Widerruf aber nicht bestätigt (offline); Zugriff bei Bedarf in den Kontoeinstellungen entziehen |
 | Szene „Code abgelehnt“, Log `NL_CLOUD_LINK badcode` | Dropbox-Code falsch abgetippt, schon benutzt oder abgelaufen; neuen Code über den Link holen |
 | Handy erreicht die Kopplungsseite nicht, Log nur `NL_PAIR listen 4301` | Handy nicht im selben WLAN, Gast-WLAN mit Client-Isolation oder Mobilfunk; **Y** (direkter QR) und **A** (Tastatur) nehmen |
 | Kopplungsseite „nicht mehr aktiv“, Log `NL_PAIR reject` | zweite Einsendung oder Szene schon geschlossen; Anmelden neu starten |

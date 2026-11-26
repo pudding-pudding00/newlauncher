@@ -1,5 +1,6 @@
 #include "ui/keyboard.hpp"
 #include "core/text_fold.hpp"
+#include "gfx/text.hpp"
 #include "ui/main_scene.hpp"
 #include "ui/test_library.hpp"
 #include "support/fake_font.hpp"
@@ -433,4 +434,43 @@ TEST_CASE_FIXTURE(Fixture, "Keyboard: setTarget leitet um, onEnter setzt Ebene z
     typeKeys(*this, k, "z");
     CHECK(a.queries.empty());
     CHECK(b.queries.size() == 1);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: requestClose schließt ohne Befehl und Klang, onEnter setzt zurück") {
+    SpySearch t;
+    Keyboard k(t);
+    k.setMode(codeMode());
+    k.onEnter();
+    k.requestClose();
+    const SceneRequests r = step(k, InputFrame{});
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::None);
+    CHECK(r.sound == UiSound::None);
+    k.onEnter();
+    CHECK_FALSE(step(k, InputFrame{}).pop);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Keyboard: visibleText hält bei langem oder maskiertem Code das Ende sichtbar") {
+    SpySearch t;
+    Keyboard k(t);
+    k.setMode(codeMode());
+    k.onEnter();
+    for (int i = 0; i < 127; ++i) typeKeys(*this, k, "a");
+    typeKeys(*this, k, "z");
+    const gfx::FontFace& face = fonts.face(gfx::FontSize::Title, gfx::FontWeight::Medium);
+    constexpr float kMaxW = 396.0f;
+    const std::string vis = k.visibleText(face, kMaxW);
+    CHECK(vis.rfind("\xE2\x80\xA6", 0) == 0);  // beginnt mit …
+    CHECK(vis.back() == 'z');
+    CHECK(gfx::measureText(face, vis) <= kMaxW);
+
+    KeyboardMode m = codeMode();
+    m.mask = true;
+    k.setMode(m);
+    const std::string masked = k.visibleText(face, kMaxW);
+    CHECK(masked.rfind("\xE2\x80\xA6", 0) == 0);
+    CHECK(gfx::measureText(face, masked) <= kMaxW);
+    // Nur ganze UTF-8-Zeichen (… + N × •, je 3 Byte)
+    CHECK((masked.size() % 3) == 0);
+    CHECK(masked.find('z') == std::string::npos);
 }

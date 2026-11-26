@@ -79,6 +79,21 @@ std::string Keyboard::shownText() const {
     return out;
 }
 
+std::string Keyboard::visibleText(const gfx::FontFace& face, float maxWidth) const {
+    const std::string shown = shownText();
+    if (text_.empty() || gfx::measureText(face, shown) <= maxWidth) return shown;
+    static constexpr std::string_view kEllipsis = "\xE2\x80\xA6";  // …
+    std::string best(kEllipsis);
+    for (std::size_t pos = shown.size(); pos > 0;) {
+        --pos;
+        if ((static_cast<u8>(shown[pos]) & 0xC0) == 0x80) continue;  // nur an UTF-8-Zeichengrenzen
+        std::string cand = std::string(kEllipsis) + shown.substr(pos);
+        if (gfx::measureText(face, cand) > maxWidth) break;
+        best = std::move(cand);
+    }
+    return best;
+}
+
 int Keyboard::keyCount() const { return rowStart(rowCount()); }
 
 int Keyboard::keyIndex(char key) const {
@@ -119,6 +134,7 @@ void Keyboard::onEnter() {
     focus_ = 0;
     filterRow_ = false;
     keysSincePointerMove_ = false;
+    closeRequested_ = false;
 }
 
 void Keyboard::stepFilter(int dir, SceneRequests& out) {
@@ -150,6 +166,11 @@ void Keyboard::press(int key, SceneRequests& out) {
 
 void Keyboard::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
     FocusSound sound(out, focus_);
+    if (closeRequested_) {
+        out.pop = true;
+        sound.silence();
+        return;
+    }
     const bool filterOn = hasFilter();
     if (!filterOn) filterRow_ = false;
     int hit = -1;
@@ -232,7 +253,7 @@ void Keyboard::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const gfx::FontFace& title = ctx.fonts->face(gfx::FontSize::Title, gfx::FontWeight::Medium);
     const Rect field{(ctx.width - 420) / 2, top + 8, 420, 36};
     gfx::roundRect(dl, s, field, 10, t.bg);
-    const std::string shown = shownText();
+    const std::string shown = visibleText(title, field.w - 24);
     gfx::drawTextEllipsis(dl, title, field.x + 12, field.y + field.h / 2 + (title.ascent - title.descent) / 2, field.w - 24,
                           shown.c_str(), text_.empty() ? t.textMuted : t.text);
 

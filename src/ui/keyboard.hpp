@@ -35,6 +35,7 @@ public:
     explicit Keyboard(TextTarget& target) : target_(&target) {}
     void setTarget(TextTarget& target) { target_ = &target; }
     void setMode(KeyboardMode mode) { mode_ = std::move(mode); }
+    void requestClose() { closeRequested_ = true; }
     void update(const UiContext& ctx, const InputFrame& in, float dtMs, SceneRequests& out) override;
     void draw(const UiContext& ctx, gfx::DrawList& dl) override;
     bool isOverlay() const override { return true; }
@@ -43,6 +44,7 @@ public:
 
     std::string_view text() const { return text_; }
     std::string shownText() const;  // was das Feld zeigt: Text, • je Zeichen oder der Hinweis
+    std::string visibleText(const gfx::FontFace& face, float maxWidth) const;
     std::string_view layerName() const;
     int keyCount() const;
     int keyIndex(char key) const;  // -1, wenn es die Taste nicht gibt
@@ -71,6 +73,7 @@ private:
     int focus_ = 0;
     bool filterRow_ = false;
     bool keysSincePointerMove_ = false;
+    bool closeRequested_ = false;
 };
 
 }  // namespace nl::ui

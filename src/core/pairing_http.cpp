@@ -16,8 +16,10 @@ bool equalsNoCase(std::string_view a, std::string_view b) {
 }
 
 std::string_view trim(std::string_view s) {
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.remove_prefix(1);
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t')) s.remove_suffix(1);
+    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r' || s.front() == '\n'))
+        s.remove_prefix(1);
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\n'))
+        s.remove_suffix(1);
     return s;
 }
 
@@ -203,6 +205,8 @@ PairingReply PairingSession::handle(std::string_view request, u64 nowMs) {
     if (request.size() > kPairMaxRequest) return plain(413, en ? "Request too large." : "Anfrage zu groß.", "reject");
     const auto head = parseHttpHead(request);
     if (!head) return plain(400, en ? "Bad request." : "Ungültige Anfrage.", "");
+    if (head->headerBytes + head->contentLength > kPairMaxRequest)
+        return plain(413, en ? "Request too large." : "Anfrage zu groß.", "reject");
     if (!tokenMatches(std::string_view(head->path).substr(1), token_))
         return plain(404, en ? "Not found." : "Nicht gefunden.", "reject");
     const std::string_view gone =

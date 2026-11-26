@@ -129,7 +129,14 @@ TEST_CASE("PairingSession: Größe, Methoden, Müll") {
     CHECK(s.handle("kaputt", kStart).status == 400);
     // Content-Length größer als der mitgeschickte Body → 400
     CHECK(s.handle("POST /" + kToken + " HTTP/1.1\r\nContent-Length: 50\r\n\r\ncode=abc", kStart).status == 400);
-    CHECK_FALSE(s.takeCode().has_value());
+    // Deklariertes Content-Length über kPairMaxRequest → sofort 413 + reject, auch bei kurzem Body
+    const PairingReply declaredBig =
+        s.handle("POST /" + kToken + " HTTP/1.1\r\nContent-Length: 5000\r\n\r\n", kStart);
+    CHECK(declaredBig.status == 413);
+    CHECK(declaredBig.marker == "reject");
+    // CR/LF um den Code wird mitgetrimmt
+    CHECK(s.handle(post("/" + kToken, "code=abc-123%0D%0A"), kStart).status == 200);
+    CHECK(s.takeCode() == std::optional<std::string>("abc-123"));
 }
 
 TEST_CASE("buildPairingResponse") {

@@ -203,11 +203,14 @@ TEST_CASE("DropboxProvider::upload: 409 path/conflict → RevMismatch, andere 40
     r.http.expect(HttpMethod::Post, "https://content.test/2/files/upload",
                   jsonResponse(409, R"({"error_summary":"path/insufficient_space/.."})"));
     r.http.expect(HttpMethod::Post, "https://content.test/2/files/upload",
+                  jsonResponse(409, R"({"error_summary":"too_many_write_operations/.."})"));
+    r.http.expect(HttpMethod::Post, "https://content.test/2/files/upload",
                   jsonResponse(429, R"({"error_summary":"too_many_write_operations/.."})"));
     r.http.expect(HttpMethod::Post, "https://content.test/2/files/upload", offlineResponse());
     const std::vector<u8> zip{1};
     CloudEntry out;
     CHECK(r.box.upload("wii-RMCP", zip, meta(), "a1c10ce0dd78", out, r.cancel) == CloudStatus::RevMismatch);
+    CHECK(r.box.upload("wii-RMCP", zip, meta(), "a1c10ce0dd78", out, r.cancel) == CloudStatus::Failed);
     CHECK(r.box.upload("wii-RMCP", zip, meta(), "a1c10ce0dd78", out, r.cancel) == CloudStatus::Failed);
     CHECK(r.box.upload("wii-RMCP", zip, meta(), "a1c10ce0dd78", out, r.cancel) == CloudStatus::Failed);
     CHECK(r.box.upload("wii-RMCP", zip, meta(), "a1c10ce0dd78", out, r.cancel) == CloudStatus::Offline);

@@ -214,7 +214,8 @@ def prepare(step: str, fake: cloud_fake.FakeDrive, user_dir: Path) -> CloudPlan:
 
 def leaked_secrets(log: str, fake: cloud_fake.FakeDrive) -> list[str]:
     """Tokens, Gerätecode und Client-Secret dürfen nie im Log stehen (nur der Anfang wird gemeldet)."""
-    found = [s for s in (*fake.secrets(), CLIENT_SECRET) if s and s in log]
+    extra = (PAIR_TOKEN, WRONG_CODE) if isinstance(fake, cloud_fake.FakeDropbox) else ()
+    found = [s for s in (*fake.secrets(), CLIENT_SECRET, *extra) if s and s in log]
     return [f"Geheimnis im Log: {s[:8]}…" for s in found]
 
 

@@ -51,7 +51,7 @@ struct AuthLink {
     std::string authorizeUrl, pairToken;
     u32 expiresInS = 0;
 };
-constexpr u32 kAuthCodeWaitS = 10 * 60;
+constexpr u32 kAuthCodeWaitS = 5 * 60;
 
 class CloudWorker {
 public:
@@ -65,6 +65,7 @@ public:
 
     bool startLink();
     LinkState linkState() const { return static_cast<LinkState>(link_); }
+    u32 badCodeCount() const;                      // Zähler abgelehnter Codes (M29, für rearm())
     std::optional<DeviceCode> deviceCode() const;  // solange ShowCode (Gerätecode-Anbieter)
     std::optional<AuthLink> authLink() const;      // solange ShowCode/BadCode (Dropbox)
     void submitCode(std::string code);             // Code von der Kopplungsseite oder Tastatur
@@ -125,6 +126,7 @@ private:
     std::optional<DeviceCode> code_;
     std::optional<AuthLink> auth_;
     std::optional<std::string> submitted_;
+    u32 badCodeCount_ = 0;
     std::optional<PreLaunchResult> pre_;
     std::optional<SyncAllResult> syncAll_;
     std::optional<RevokeResult> unlinked_;

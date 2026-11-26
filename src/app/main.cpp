@@ -1382,6 +1382,7 @@ int main(int argc, char** argv) {
         remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
         pairing.stop();
         for (const std::string& line : remote.takeLogLines()) nl::log::line("%s", line.c_str());
+        for (const std::string& line : pairing.takeLogLines()) nl::log::line("%s", line.c_str());
         netService.shutdown();  // wtls_shutdown im Netz-Thread, dann Thread beendet
         covers.shutdown();
         banners.shutdown();
@@ -1967,7 +1968,8 @@ int main(int argc, char** argv) {
                           2);  // Standard: beim Spielstart fragen, damit ein schnelles A nichts überschreibt
         scenes.push(&choiceDialog);
     };
-    bool cloudLinkWatch = false, cloudCodeShown = false, cloudBadCodeShown = false;
+    bool cloudLinkWatch = false, cloudCodeShown = false;
+    u32 cloudBadCodeSeen = 0;
     bool cloudAfterLink = false;  // cloud_device_auto: danach cloud_sync statt Uploads
     std::function<void()> runDebugCloudSync;
     auto onCloudLinkDone = [&](nl::platform::LinkState st) {
@@ -1987,6 +1989,7 @@ int main(int argc, char** argv) {
             case nl::platform::LinkState::BadCode: break;
         }
         if (scenes.contains(&deviceCodeScene)) deviceCodeScene.requestClose();
+        if (scenes.contains(&codeKeyboard)) codeKeyboard.requestClose();
         if (scenes.contains(&pairingScene)) pairingScene.requestClose();
         pairing.stop();
         cloudScene.setView(cloudViewNow());
@@ -2012,7 +2015,7 @@ int main(int argc, char** argv) {
         if (!cloud.startLink()) return false;
         cloudLinkWatch = true;
         cloudCodeShown = false;
-        cloudBadCodeShown = false;
+        cloudBadCodeSeen = 0;
         codeTarget.submitted.reset();
         return true;
     };
@@ -2075,12 +2078,10 @@ int main(int argc, char** argv) {
                         cloudCodeShown = true;
                     }
                 }
-                if (st == nl::platform::LinkState::BadCode && !cloudBadCodeShown) {
+                if (const u32 bc = cloud.badCodeCount(); bc != cloudBadCodeSeen) {
+                    cloudBadCodeSeen = bc;
                     pairingScene.setStatus(nl::ui::tr(nl::ui::Str::PairCodeRejected));
                     pairing.rearm();  // gleiche Seite, neue Einsendung
-                    cloudBadCodeShown = true;
-                } else if (st == nl::platform::LinkState::ShowCode) {
-                    cloudBadCodeShown = false;
                 }
             } else if (st != nl::platform::LinkState::Requesting && !cloud.running()) {
                 onCloudLinkDone(st);
@@ -2475,6 +2476,7 @@ int main(int argc, char** argv) {
     };
     auto pumpRemoteLog = [&]() {
         for (const std::string& line : remote.takeLogLines()) nl::log::line("%s", line.c_str());
+        for (const std::string& line : pairing.takeLogLines()) nl::log::line("%s", line.c_str());
     };
     // fromRemote: Antwort an den Client; die Fernsteuerung bleibt nach dem Neustart an, wenn sie jetzt läuft.
     auto restartSelf = [&](bool fromRemote) {
@@ -3146,6 +3148,7 @@ int main(int argc, char** argv) {
                 break;
             case nl::ui::AppCommand::CloudCancelLink:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                pairing.stop();
                 if (cloudLinkWatch) cloud.cancel();  // pumpCloud meldet das Ende (Idle) und frischt das Menü auf
                 break;
             case nl::ui::AppCommand::CloudUnlink:

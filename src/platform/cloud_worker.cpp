@@ -172,6 +172,9 @@ void CloudWorker::storeTokens(const std::string& account, const TokenSet& t) {
 
 bool CloudWorker::startLink() {
     if (running_) return false;
+    LWP_MutexLock(mutex_);
+    badCodeCount_ = 0;
+    LWP_MutexUnlock(mutex_);
     link_ = static_cast<u8>(LinkState::Requesting);
     if (!submit(false, [this](const volatile bool& cancel) { runLink(cancel); })) {
         link_ = static_cast<u8>(LinkState::Failed);
@@ -297,6 +300,7 @@ void CloudWorker::runPkceLink(const volatile bool& cancel) {
         submitted_.reset();
         LWP_MutexUnlock(mutex_);
         if (!code) continue;
+        if (link_ == static_cast<u8>(LinkState::BadCode)) link_ = static_cast<u8>(LinkState::ShowCode);
         const PollState p =
             exchangeAuthCode(http, cfg_.endpoints, *code, pkce.verifier, NetService::clockMs(), tokens, cancel);
         if (p == PollState::Ok) break;
@@ -306,6 +310,9 @@ void CloudWorker::runPkceLink(const volatile bool& cancel) {
         }
         if (p == PollState::Denied) {
             log("NL_CLOUD_LINK badcode");  // ohne den Code
+            LWP_MutexLock(mutex_);
+            ++badCodeCount_;
+            LWP_MutexUnlock(mutex_);
             link_ = static_cast<u8>(LinkState::BadCode);
             continue;
         }
@@ -340,12 +347,18 @@ std::optional<AuthLink> CloudWorker::authLink() const {
     return a;
 }
 
-// Haupt-Thread. Der Auftrag nimmt den Code beim nächsten 100-ms-Takt; BadCode gilt bis dahin als erledigt.
+u32 CloudWorker::badCodeCount() const {
+    LWP_MutexLock(mutex_);
+    const u32 n = badCodeCount_;
+    LWP_MutexUnlock(mutex_);
+    return n;
+}
+
+// Haupt-Thread. Der Auftrag nimmt den Code beim nächsten 100-ms-Takt.
 void CloudWorker::submitCode(std::string code) {
     LWP_MutexLock(mutex_);
     if (auth_) submitted_ = std::move(code);
     LWP_MutexUnlock(mutex_);
-    if (link_ == static_cast<u8>(LinkState::BadCode)) link_ = static_cast<u8>(LinkState::ShowCode);
 }
 
 // ---- Aufträge mit angemeldetem Anbieter ---------------------------------------------------------------------

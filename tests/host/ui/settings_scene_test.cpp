@@ -147,12 +147,30 @@ TEST_CASE_FIXTURE(Fixture, "A auf Einrichtung öffnet den Assistenten (M13)") {
     CHECK(std::string(appCommandName(AppCommand::OpenSetup)) == "open_setup");
 }
 
-TEST_CASE_FIXTURE(Fixture, "Karte mit allen Zeilen passt in 480 Zeilen") {
+TEST_CASE_FIXTURE(Fixture, "Karte passt in 480 Zeilen, die Liste scrollt mit dem Fokus (M27)") {
     ctx.height = 480.0f;
+    constexpr int kVisible = 27;
+    REQUIRE(SettingsScene::kCount > kVisible);
     const gfx::Rect first = s.rowRect(ctx, 0);
-    const gfx::Rect last = s.rowRect(ctx, SettingsScene::kCount - 1);
+    const gfx::Rect lastVisible = s.rowRect(ctx, kVisible - 1);
     CHECK(first.y >= 0.0f);
-    CHECK(last.y + last.h + 18.0f + 4.0f <= 480.0f + 0.5f);  // Hilfezeile + Rand (M24)
+    CHECK(lastVisible.y + lastVisible.h + 18.0f + 4.0f <= 480.0f + 0.5f);  // Hilfezeile + Rand (M24)
+    CHECK(s.scroll() == 0);
+    focusRow(static_cast<SettingRow>(SettingsScene::kCount - 1));
+    CHECK(s.scroll() == SettingsScene::kCount - kVisible);
+    const gfx::Rect last = s.rowRect(ctx, SettingsScene::kCount - 1);
+    CHECK(last.y == doctest::Approx(lastVisible.y));  // letzte Zeile sitzt jetzt unten in der Karte
+    for (int i = 0; i < SettingsScene::kCount; ++i) press(Action::Up);
+    CHECK(s.focus() == 0);
+    CHECK(s.scroll() == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "A auf Cloud-Spielstände öffnet das Cloud-Menü (M27)") {
+    focusRow(SettingRow::Cloud);
+    const SceneRequests r = press(Action::Confirm);
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::OpenCloud);
+    CHECK(std::string(appCommandName(AppCommand::OpenCloud)) == "open_cloud");
 }
 
 TEST_CASE_FIXTURE(Fixture, "A auf Fehlende Cover laden") {

@@ -197,3 +197,10 @@ TEST_CASE("Zeile Cover-Speicher folgt auf Cover automatisch und schaltet SD/Ger√
     stepSetting(c, SettingRow::CoverStorage, -1);
     CHECK(c.coverStorage == CoverStorage::Sd);
 }
+
+TEST_CASE("M27: Cloud-Zeile ist eine Aktion vor der Kindersicherung") {
+    CHECK(isAction(SettingRow::Cloud));
+    CHECK(static_cast<int>(SettingRow::Cloud) + 1 == static_cast<int>(SettingRow::Parental));
+    Config c;
+    CHECK(settingEnabled(c, SettingRow::Cloud));
+}

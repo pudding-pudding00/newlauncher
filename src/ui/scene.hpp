@@ -71,6 +71,13 @@ enum class AppCommand : u8 {
     RestoreSave,      // Saves-Szene: SavesScene::selectedBackup() zurückspielen (main fragt vorher nach)
     DeleteBackup,     // Saves-Szene: SavesScene::selectedBackup() löschen
     ConfirmRestore,   // ChoiceDialog der Rückfrage geschlossen: picked() == 0 heißt zurückspielen
+    OpenCloud,        // Einstellungen (M27): Cloud-Menü öffnen
+    CloudSetProvider, // Cloud-Menü: CloudScene::provider() übernehmen und config.ini schreiben
+    CloudLink,        // Cloud-Menü: Anmelden per Gerätecode starten
+    CloudUnlink,      // Cloud-Menü: abmelden (tokens.bin löschen)
+    CloudCancelLink,  // Gerätecode-Szene mit B geschlossen
+    CloudSkip,        // Abgleich-Szene: ohne Abgleich spielen
+    CloudConflict,    // ChoiceDialog des Konflikts geschlossen: 0 = Wii, 1 = Cloud, sonst Abbruch
 };
 const char* appCommandName(AppCommand c);
 

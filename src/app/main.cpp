@@ -2542,6 +2542,13 @@ int main(int argc, char** argv) {
                 savesScene.setStatus(ok ? nl::ui::tr(nl::ui::Str::SavesDone) : "");
                 break;
             }
+            case nl::ui::AppCommand::OpenCloud:  // M27: Einbau folgt mit dem Start-Tor (Task 11)
+            case nl::ui::AppCommand::CloudSetProvider:
+            case nl::ui::AppCommand::CloudLink:
+            case nl::ui::AppCommand::CloudUnlink:
+            case nl::ui::AppCommand::CloudCancelLink:
+            case nl::ui::AppCommand::CloudSkip:
+            case nl::ui::AppCommand::CloudConflict:
             case nl::ui::AppCommand::None:
                 break;
         }

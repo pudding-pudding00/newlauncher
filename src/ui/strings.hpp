@@ -232,6 +232,42 @@
     X(SavesNoBackup, "Keine Sicherungen", "No backups") \
     X(SavesSize, "%s · %u Dateien", "%s · %u files") \
     X(SavesCancel, "Abbrechen", "Cancel") \
+    X(Cloud, "Cloud-Spielstände", "Cloud saves") \
+    X(CloudProvider, "Anbieter", "Provider") \
+    X(CloudOff, "Aus", "Off") \
+    X(CloudDrive, "Google Drive", "Google Drive") \
+    X(CloudLinkRow, "Anmelden", "Sign in") \
+    X(CloudUnlinkRow, "Abmelden", "Sign out") \
+    X(CloudStatusOff, "Cloud-Abgleich ist aus", "Cloud sync is off") \
+    X(CloudNotLinked, "Nicht angemeldet", "Not signed in") \
+    X(CloudLinked, "Angemeldet – Spielstände werden abgeglichen", "Signed in – saves are synced") \
+    X(CloudRelink, "Anmeldung abgelaufen – bitte neu anmelden", "Sign-in expired – please sign in again") \
+    X(CloudNoTls, "Dieser Build hat kein HTTPS", "This build has no HTTPS") \
+    X(CloudNoClientId, "Keine Client-ID in config.ini (siehe docs/cloud-setup.md)", \
+      "No client ID in config.ini (see docs/cloud-setup.md)") \
+    X(CloudBusy, "Bitte warten …", "Please wait …") \
+    X(CloudHelp, "◀▶ Anbieter  A Auswählen  B Zurück", "◀▶ Provider  A Select  B Back") \
+    X(CloudCodeTitle, "Mit Google anmelden", "Sign in with Google") \
+    X(CloudCodeWaiting, "Code wird angefordert …", "Requesting code …") \
+    X(CloudCodeStep1, "Öffne auf Handy oder PC:", "On your phone or PC, open:") \
+    X(CloudCodeStep2, "und gib diesen Code ein:", "and enter this code:") \
+    X(CloudCodeRemaining, "Gültig noch %s", "Valid for %s") \
+    X(CloudCodeHelp, "B Abbrechen", "B Cancel") \
+    X(CloudSyncTitle, "Cloud-Abgleich – %s", "Cloud sync – %s") \
+    X(CloudSyncChecking, "Spielstand wird mit der Cloud abgeglichen …", "Syncing save with the cloud …") \
+    X(CloudSyncResolving, "Gewählter Spielstand wird übertragen …", "Transferring the chosen save …") \
+    X(CloudSyncSkip, "B: Ohne Abgleich spielen", "B: Play without syncing") \
+    X(CloudConflictTitle, "Spielstand-Konflikt", "Save conflict") \
+    X(CloudConflictText, "Wii und Cloud haben sich beide geändert. Welcher Stand soll gelten?\n%s", \
+      "Both the Wii and the cloud changed. Which save should be used?\n%s") \
+    X(CloudKeepWii, "Wii-Stand behalten", "Keep Wii save") \
+    X(CloudTakeCloud, "Cloud-Stand laden", "Load cloud save") \
+    X(CloudUnknownTime, "unbekannt", "unknown") \
+    X(CloudLinkedMsg, "Angemeldet", "Signed in") \
+    X(CloudLinkDenied, "Anmeldung abgelehnt", "Sign-in denied") \
+    X(CloudLinkExpired, "Code abgelaufen", "Code expired") \
+    X(CloudLinkFailed, "Anmeldung fehlgeschlagen", "Sign-in failed") \
+    X(CloudLinkOffline, "Keine Netzverbindung", "No network connection") \
     X(CheatsNoFile, "Keine Codeliste. +/R lädt Codes.", "No code list. +/R loads codes.") \
     X(CheatsLoading, "Lade Codes …", "Loading codes …") \
     X(CheatsNoCodes, "Keine Codes für dieses Spiel gefunden", "No codes found for this game") \

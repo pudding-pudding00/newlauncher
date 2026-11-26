@@ -166,6 +166,9 @@ add_library(nl_core STATIC
     src/ui/dialog_scene.cpp
     src/ui/choice_dialog.cpp
     src/ui/saves_scene.cpp
+    src/ui/cloud_scene.cpp
+    src/ui/device_code_scene.cpp
+    src/ui/cloud_sync_scene.cpp
     src/ui/launch_text.cpp
     src/ui/pin_scene.cpp
     src/ui/parental_scene.cpp

@@ -83,6 +83,11 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     c.debugFakeDisc = std::string(trim(ini.get("debug", "fake_disc")));
     c.debugSaveBackup = std::string(trim(ini.get("debug", "save_backup")));
     c.debugSaveRestore = std::string(trim(ini.get("debug", "save_restore")));
+    c.debugCloudBase = std::string(trim(ini.get("debug", "cloud_base")));
+    c.debugCloudDeviceAuto = parseIntIn(ini.get("debug", "cloud_device_auto"), 0, 1, 0) == 1;
+    const std::string_view conflict = trim(ini.get("debug", "cloud_conflict"));
+    if (conflict == "wii" || conflict == "cloud" || conflict == "cancel") c.debugCloudConflict = std::string(conflict);
+    c.debugCloudSync = std::string(trim(ini.get("debug", "cloud_sync")));
 }
 
 Config configFromIni(const IniDoc& ini, bool tls) {
@@ -128,6 +133,9 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     c.cheatSource = std::string(cheatSourceOk ? cheatSource : defaultCheatSource(tls));
     c.parental = parentalFromIni(ini);
     c.emuNandPath = std::string(trim(ini.get("emunand", "path")));
+    if (trim(ini.get("cloud", "provider")) == "drive") c.cloudProvider = CloudProviderId::Drive;
+    c.driveClientId = std::string(trim(ini.get("cloud", "drive_client_id")));
+    c.driveClientSecret = std::string(trim(ini.get("cloud", "drive_client_secret")));
     // Gerätename landet in newlauncher-save.ini: keine Steuerzeichen, kein '=' / '[' / ']', höchstens 32 Zeichen.
     for (const char ch : trim(ini.get("general", "device_name"))) {
         const auto u = static_cast<unsigned char>(ch);
@@ -193,6 +201,7 @@ std::vector<IniValue> configValues(const Config& c) {
     };
     for (auto& [key, value] : parentalIniValues(c.parental)) v.push_back({"parental", std::move(key), std::move(value)});
     if (!c.emuNandPath.empty()) v.push_back({"emunand", "path", c.emuNandPath});
+    v.push_back({"cloud", "provider", c.cloudProvider == CloudProviderId::Drive ? "drive" : "off"});
     return v;
 }
 

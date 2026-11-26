@@ -15,7 +15,7 @@ public:
     Result<std::vector<DirEntry>> list(std::string_view dir) override;
     Result<std::size_t> read(std::string_view file, u64 offset, std::span<u8> out) override;
     Result<std::vector<u8>> readAll(std::string_view file, std::size_t maxBytes) override;
-    // Über /tmp/nl_<crc> und ISFS_Rename; Eigentümer, Gruppe und Rechte kommen von der alten Datei oder dem Ordner,
+    // Über /tmp/<Dateiname> und ISFS_Rename; Eigentümer, Gruppe und Rechte kommen von der alten Datei oder dem Ordner,
     // sonst darf das Spiel seinen Spielstand danach nicht mehr selbst schreiben.
     Result<void> writeAtomic(std::string_view file, std::span<const u8> data) override;
     Result<void> makeDirs(std::string_view dir) override;  // nur unterhalb eines vorhandenen data-Ordners

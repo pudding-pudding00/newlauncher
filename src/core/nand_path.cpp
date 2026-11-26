@@ -58,10 +58,9 @@ bool isSaveDataPath(std::string_view isfs) { return depthBelowData(isfs) >= 1; }
 bool isSaveDataDir(std::string_view isfs) { return depthBelowData(isfs) >= 0; }
 
 std::string nandTempPath(std::string_view isfs) {
-    const u32 c = crc32(std::span<const u8>(reinterpret_cast<const u8*>(isfs.data()), isfs.size()));
-    char buf[24];
-    std::snprintf(buf, sizeof buf, "/tmp/nl_%08x", static_cast<unsigned>(c));
-    return buf;
+    // IOS benennt eine Datei nur in einen anderen Ordner um, wenn der Name gleich bleibt (sonst -101).
+    const std::size_t slash = isfs.rfind('/');
+    return "/tmp/" + std::string(slash == std::string_view::npos ? isfs : isfs.substr(slash + 1));
 }
 
 }  // namespace nl

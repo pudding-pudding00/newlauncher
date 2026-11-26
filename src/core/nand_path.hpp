@@ -19,7 +19,7 @@ bool isSaveDataPath(std::string_view isfs);
 // Der Ordner data selbst oder ein Unterordner davon.
 bool isSaveDataDir(std::string_view isfs);
 
-// Zwischendatei für atomares Schreiben: /tmp/nl_<crc32 des Ziels, 8 hex>.
+// Zwischendatei für atomares Schreiben: /tmp/<Dateiname des Ziels>. IOS lehnt ein Umbenennen mit neuem Namen ab.
 std::string nandTempPath(std::string_view isfs);
 
 }  // namespace nl

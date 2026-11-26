@@ -39,9 +39,7 @@ TEST_CASE("NAND-Grenzen: Namen höchstens 12 Zeichen, Pfad höchstens 64") {
     CHECK(!isSaveDataPath(deep + "/abc"));
 }
 
-TEST_CASE("nandTempPath: fester Ordner /tmp, Name aus CRC") {
-    const std::string t = nandTempPath("/title/00010000/524d4750/data/a.bin");
-    CHECK(t.rfind("/tmp/nl_", 0) == 0);
-    CHECK(t.size() == 16);
-    CHECK(t != nandTempPath("/title/00010000/524d4750/data/b.bin"));
+TEST_CASE("nandTempPath: /tmp mit demselben Dateinamen (IOS benennt Dateien nur ohne Namenswechsel um)") {
+    CHECK(nandTempPath("/title/00010000/524d4750/data/a.bin") == "/tmp/a.bin");
+    CHECK(nandTempPath("/title/00010000/524d4750/data/sub/smoke.sav") == "/tmp/smoke.sav");
 }

@@ -982,3 +982,23 @@ TEST_CASE_FIXTURE(Fixture, "Untere Taskbar überlagert Spielauswahl bei Zeiger, 
     CHECK(step(s, pointerAction(gear.x + gear.w / 2, gear.y + gear.h / 2, Action::Confirm)).command ==
           AppCommand::CycleTheme);
 }
+
+TEST_CASE_FIXTURE(Fixture, "Platzhalter-Titeltext verschwindet sobald ein Cover geladen ist") {
+    const Game games[] = {Game{Console::N64, "n64/a", "Super Langer Titel Der Sonst Hervorsteht", 0, 0}};
+    MainScene s(Library{games, {}, {}});
+    step(s, InputFrame{});
+    dl.clear();
+    s.draw(ctx, dl);
+    const u32 withoutCover = dl.quadCount();
+
+    test::FakeCovers covers;
+    CoverView cv{7, 1.0f};
+    cv.aspect = 0.7f;  // schmales/hohes Cover in breiter N64-Kachel
+    covers.views["n64/a"] = cv;
+    s.setCovers(&covers);
+    dl.clear();
+    s.draw(ctx, dl);
+    const u32 withCover = dl.quadCount();
+    // Ohne Cover: Hintergrund + Kachel + Platzhalter-Titeltext + Konsolen-Tag; mit Cover: Titeltext & Tag weg, +1 Cover
+    CHECK(withCover < withoutCover);
+}

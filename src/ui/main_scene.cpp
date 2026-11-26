@@ -590,28 +590,35 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
     if (index < 0 || index >= static_cast<int>(games_.size())) return;
     const Game& g = *games_[index];
 
-    // Platzhalter (Titel) zuerst: das Cover blendet darüber ein, Tag und Favoritenpunkt liegen obenauf.
-    const gfx::FontFace& body = ctx.fonts->face(FontSize::Small, FontWeight::Regular);
-    const float maxW = r.w - 16.0f;
-    gfx::Line lines[kTitleLines];
-    const std::string_view title(g.title);
-    const int n = gfx::wrapText(body, title, maxW, lines);
-    float baseline = r.y + 34.0f + body.ascent;
-    for (int i = 0; i < n; ++i) {
-        const std::string_view line = title.substr(lines[i].start, lines[i].length);
-        if (baseline + body.descent > r.y + r.h) break;
-        gfx::drawTextEllipsis(dl, body, r.x + 8, baseline, maxW, line, t.text);
-        baseline += body.lineHeight;
-    }
-
+    CoverView cv{};
     float coverAlpha = 0.0f;
     if (covers_ != nullptr) {
-        const CoverView cv = covers_->view(g);
+        cv = covers_->view(g);
         if (cv.texture != 0) coverAlpha = cv.alpha;
-        if (cv.texture != 0 && cv.alpha > 0.0f) {
-            const u8 a = static_cast<u8>(std::clamp(cv.alpha, 0.0f, 1.0f) * 255.0f);
-            dl.quad(cv.texture, fitAspectRect(r, kCoverInset, cv.aspect), cv.uv, Color{255, 255, 255, a});
+    }
+
+    // Platzhalter (Titel) blendet mit dem Cover aus (bei schmalen/hohen Covern sonst links/rechts dahinter sichtbar).
+    const float textA = std::clamp(1.0f - coverAlpha, 0.0f, 1.0f);
+    if (textA > 0.0f) {
+        Color textColor = t.text;
+        textColor.a = static_cast<u8>(static_cast<float>(textColor.a) * textA);
+        const gfx::FontFace& body = ctx.fonts->face(FontSize::Small, FontWeight::Regular);
+        const float maxW = r.w - 16.0f;
+        gfx::Line lines[kTitleLines];
+        const std::string_view title(g.title);
+        const int n = gfx::wrapText(body, title, maxW, lines);
+        float baseline = r.y + 34.0f + body.ascent;
+        for (int i = 0; i < n; ++i) {
+            const std::string_view line = title.substr(lines[i].start, lines[i].length);
+            if (baseline + body.descent > r.y + r.h) break;
+            gfx::drawTextEllipsis(dl, body, r.x + 8, baseline, maxW, line, textColor);
+            baseline += body.lineHeight;
         }
+    }
+
+    if (cv.texture != 0 && cv.alpha > 0.0f) {
+        const u8 a = static_cast<u8>(std::clamp(cv.alpha, 0.0f, 1.0f) * 255.0f);
+        dl.quad(cv.texture, fitAspectRect(r, kCoverInset, cv.aspect), cv.uv, Color{255, 255, 255, a});
     }
 
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Small, FontWeight::Medium);

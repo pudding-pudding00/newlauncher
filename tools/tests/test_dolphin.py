@@ -679,6 +679,22 @@ class DolphinToolsTest(unittest.TestCase):
             smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
                         "--cloud-fake", "drive", "--save-fixture", "gb"])
 
+
+    def test_smoke_cloud_fake_dropbox_wires_app_key_and_pair_token(self):
+        seen = {}
+        with mock.patch("dolphin_smoke.cloud_smoke.Pairer") as pairer:
+            self.assertEqual(self._cloud_run("link", seen, "dropbox"), 2)
+        self.assertIsInstance(seen["fake"], cloud_fake.FakeDropbox)
+        self.assertIn("[cloud]\nprovider = dropbox\n", seen["config"])
+        self.assertIn("dropbox_app_key = ", seen["config"])
+        self.assertIn("cloud_pair_token = ", seen["config"].partition("[debug]")[2])
+        pairer.assert_not_called()  # Popen scheiterte: kein Kopplungs-Thread
+
+    def test_smoke_cloud_badcode_needs_dropbox(self):
+        with mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--cloud-fake", "drive", "--cloud-step", "badcode"])
+
     # --- M9: --expect-frag gleicht NL_FRAG mit fat_frag.py ab ---
     FRAG_REL = "Super Mario Galaxy [RMGP01]/RMGP01.iso"
     FRAG_LINE = "NL_FRAG dev=sd part_lba=2048 n=2 size=3 crc=6dabbf0a first=0:3182:2"

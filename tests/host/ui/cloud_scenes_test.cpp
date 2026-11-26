@@ -2,6 +2,9 @@
 #include "ui/cloud_scene.hpp"
 #include "ui/cloud_sync_scene.hpp"
 #include "ui/device_code_scene.hpp"
+#include "ui/pairing_scene.hpp"
+#include "ui/qr_view.hpp"
+#include "core/qr.hpp"
 #include "ui/strings.hpp"
 #include "support/fake_font.hpp"
 #include <doctest/doctest.h>
@@ -170,6 +173,7 @@ TEST_CASE_FIXTURE(Fixture, "requestClose schließt Abgleich- und Code-Szene ohne
 TEST_CASE_FIXTURE(Fixture, "CloudScene M28: Anbieter-Zyklus Aus → Drive → OneDrive, ohne Client-ID übersprungen") {
     CloudScene s;
     CloudView v = view(CloudProviderId::None, CloudView::Status::NotLinked);
+    v.dropboxReady = false;
     s.open(v);
     step(s, action(Action::Right));
     CHECK(s.provider() == CloudProviderId::Drive);
@@ -245,4 +249,112 @@ TEST_CASE("M28: neue Cloud-Strings in beiden Sprachen") {
     setLanguage(Lang::En);
     CHECK(std::string(tr(Str::CloudUnlinkedRevokeFail)) == "Signed out, revocation not confirmed");
     setLanguage(Lang::De);
+}
+
+TEST_CASE_FIXTURE(Fixture, "PairingScene M29: QR der Kopplungsseite, Y wechselt auf den direkten QR") {
+    PairingScene s;
+    s.open();
+    s.setLink("http://192.0.2.10:4301/0123456789abcdef0123456789abcdef",
+              "https://www.dropbox.com/oauth2/authorize?client_id=k&response_type=code", 300);
+    CHECK_FALSE(s.directQr());
+    CHECK(s.qrText() == "http://192.0.2.10:4301/0123456789abcdef0123456789abcdef");
+    s.draw(ctx, dl);
+    CHECK(dl.droppedQuads() == 0);
+    const SceneRequests y = step(s, action(Action::Favorite));
+    CHECK(s.directQr());
+    CHECK(y.sound == UiSound::Move);
+    CHECK(s.qrText().rfind("https://www.dropbox.com/oauth2/authorize", 0) == 0);
+    dl.clear();
+    s.draw(ctx, dl);
+    CHECK(dl.droppedQuads() == 0);
+    step(s, action(Action::Favorite));
+    CHECK_FALSE(s.directQr());
+}
+
+TEST_CASE_FIXTURE(Fixture, "PairingScene M29: ohne Kopplungsadresse gleich der direkte QR, Y bleibt") {
+    PairingScene s;
+    s.open();
+    s.setLink("", "https://www.dropbox.com/oauth2/authorize?client_id=k", 300);
+    CHECK(s.directQr());
+    step(s, action(Action::Favorite));
+    CHECK(s.directQr());
+    s.draw(ctx, dl);
+}
+
+TEST_CASE_FIXTURE(Fixture, "PairingScene M29: A → CloudEnterCode ohne Schließen, B → CloudCancelLink") {
+    PairingScene s;
+    s.open();
+    s.setLink("http://10.0.0.2:4301/t", "https://www.dropbox.com/oauth2/authorize", 300);
+    const SceneRequests a = step(s, action(Action::Confirm));
+    CHECK(a.command == AppCommand::CloudEnterCode);
+    CHECK_FALSE(a.pop);
+    CHECK(std::string(appCommandName(AppCommand::CloudEnterCode)) == "cloud_enter_code");
+    const SceneRequests b = step(s, action(Action::Back));
+    CHECK(b.pop);
+    CHECK(b.command == AppCommand::CloudCancelLink);
+}
+
+TEST_CASE_FIXTURE(Fixture, "PairingScene M29: Restzeit zählt herunter, requestClose schließt ohne Befehl") {
+    PairingScene s;
+    s.open();
+    s.setLink("http://10.0.0.2:4301/t", "https://www.dropbox.com/oauth2/authorize", 300);
+    CHECK(s.remainingText() == "05:00");
+    step(s, InputFrame{}, 1000.0f);
+    CHECK(s.remainingText() == "04:59");
+    for (int i = 0; i < 400; ++i) step(s, InputFrame{}, 1000.0f);
+    CHECK(s.remainingText() == "00:00");
+    s.setStatus("Code abgelehnt");
+    s.draw(ctx, dl);
+    s.requestClose();
+    const SceneRequests r = step(s, InputFrame{});
+    CHECK(r.pop);
+    CHECK(r.command == AppCommand::None);
+}
+
+TEST_CASE_FIXTURE(Fixture, "drawQr M29: weißer Rand, Module im Bereich, Zeilenläufe zusammengefasst") {
+    const auto q = encodeQr(std::string(213, 'x'));  // Version 10
+    REQUIRE(q.has_value());
+    const gfx::Rect area{100, 50, 300, 300};
+    dl.clear();
+    drawQr(dl, kShapes, *q, area);
+    CHECK(dl.droppedQuads() == 0);
+    CHECK(dl.quadCount() < 1200u);
+    for (const auto& v : dl.vertices()) {
+        CHECK(v.x >= area.x);
+        CHECK(v.x <= area.x + area.w);
+        CHECK(v.y >= area.y);
+        CHECK(v.y <= area.y + area.h);
+    }
+}
+
+TEST_CASE("M29: Kopplungs-Strings in beiden Sprachen") {
+    const Str ids[] = {Str::CloudProviderDropbox, Str::PairTitle, Str::PairScanPhone, Str::PairScanDirect,
+                       Str::PairHelp,             Str::PairCodeHint, Str::PairCodeRejected, Str::PairWaiting};
+    for (Lang l : {Lang::De, Lang::En}) {
+        setLanguage(l);
+        for (Str id : ids) CHECK(std::string(tr(id)).size() > 0);
+    }
+    setLanguage(Lang::En);
+    CHECK(std::string(tr(Str::PairTitle)) == "Connect Dropbox");
+    setLanguage(Lang::De);
+    CHECK(std::string(tr(Str::PairTitle)) == "Dropbox verbinden");
+}
+
+TEST_CASE_FIXTURE(Fixture, "CloudScene M29: Zyklus Aus → Drive → OneDrive → Dropbox, ohne App-Key übersprungen") {
+    CloudScene s;
+    CloudView v = view(CloudProviderId::None, CloudView::Status::NotLinked);
+    s.open(v);
+    step(s, action(Action::Right));
+    step(s, action(Action::Right));
+    step(s, action(Action::Right));
+    CHECK(s.provider() == CloudProviderId::Dropbox);
+    s.draw(ctx, dl);
+    step(s, action(Action::Right));
+    CHECK(s.provider() == CloudProviderId::None);
+    step(s, action(Action::Left));
+    CHECK(s.provider() == CloudProviderId::Dropbox);
+    v.dropboxReady = false;
+    s.open(v);
+    step(s, action(Action::Left));
+    CHECK(s.provider() == CloudProviderId::OneDrive);
 }

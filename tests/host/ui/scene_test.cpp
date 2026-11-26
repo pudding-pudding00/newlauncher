@@ -159,12 +159,13 @@ TEST_CASE_FIXTURE(Fixture, "pop auf der letzten Szene wird ignoriert") {
     CHECK(st.depth() == 1);
 }
 
-TEST_CASE_FIXTURE(Fixture, "push über Tiefe 4 hinaus wird ignoriert") {
+TEST_CASE_FIXTURE(Fixture, "push über Tiefe 6 hinaus wird ignoriert") {
     SceneStack st;
-    Recorder s[5] = {Recorder(), Recorder(true), Recorder(true), Recorder(true), Recorder(true)};
+    Recorder s[7] = {Recorder(),     Recorder(true), Recorder(true), Recorder(true),
+                     Recorder(true), Recorder(true), Recorder(true)};
     for (auto& r : s) st.push(&r);
-    CHECK(st.depth() == 4);
-    CHECK(s[4].enters == 0);
+    CHECK(st.depth() == 6);
+    CHECK(s[6].enters == 0);
 }
 
 TEST_CASE_FIXTURE(Fixture, "leerer Stapel: update liefert None, draw zeichnet nichts") {
@@ -274,4 +275,12 @@ TEST_CASE_FIXTURE(Fixture, "eine ausblendende Szene lässt sich danach wieder ö
     CHECK(st.depth() == 2);
     CHECK(st.top() == &d);
     CHECK(d.enters == 2);
+}
+
+TEST_CASE_FIXTURE(Fixture, "M29: Stapel trägt Einstellungen → Cloud → Kopplung → Tastatur über dem Hauptmenü") {
+    SceneStack stack;
+    Recorder s[6] = {Recorder(), Recorder(), Recorder(true), Recorder(true), Recorder(true), Recorder(true)};
+    for (Recorder& r : s) stack.push(&r);
+    CHECK(stack.depth() == 6);
+    CHECK(stack.top() == &s[5]);
 }

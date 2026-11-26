@@ -20,8 +20,8 @@ namespace nl {
 // M24: Cover (covers_src, cache/covers, missing.txt) auf der SD-Karte (Standard) oder auf dem Spielgerät.
 enum class CoverStorage : u8 { Sd, Device };
 
-// M27/M28: aktiver Cloud-Anbieter ([cloud] provider = none|drive|onedrive; altes "off" = none); genau einer.
-enum class CloudProviderId : u8 { None, Drive, OneDrive };
+// M27/M28: aktiver Cloud-Anbieter ([cloud] provider = none|drive|onedrive|dropbox; altes "off" = none); genau einer.
+enum class CloudProviderId : u8 { None, Drive, OneDrive, Dropbox };
 
 // "none" | "drive" | "onedrive" (config.ini, Log, Konto-Präfix)
 std::string_view providerName(CloudProviderId id);
@@ -59,6 +59,7 @@ struct Config {
     std::string emuNandPath;                 // [emunand] path (M19): z. B. "usb:/nands/emu1", leer = aus
     CloudProviderId cloudProvider = CloudProviderId::None;  // [cloud] provider (M27)
     std::string driveClientId, driveClientSecret;  // [cloud] drive_client_id/_secret: nur lesen, nie schreiben oder loggen
+    std::string dropboxAppKey;  // [cloud] dropbox_app_key (öffentlicher Client, M29): nur lesen
     std::string onedriveClientId;  // [cloud] onedrive_client_id (öffentlicher Client, M28): nur lesen
     std::vector<std::string> badKeys;        // ungültige Werte außerhalb von [library]/[paths] (NL_CFG_BAD), z. B. "wii.ios"
     std::string debugAutostart;  // [debug] autostart: Spielschlüssel, der nach NL_READY startet
@@ -91,6 +92,7 @@ struct Config {
     std::string debugSaveBackup;    // [debug] save_backup = <spielschlüssel>: Spielstand nach NL_READY sichern (Smoke, M26)
     std::string debugSaveRestore;   // [debug] save_restore = <spielschlüssel>|latest: neueste Sicherung zurückspielen (M26)
     std::string debugCloudBase;     // [debug] cloud_base: Fake-Server statt Google (OAuth und API, Smoke, M27)
+    std::string debugCloudPairToken;  // [debug] cloud_pair_token = 32 Hex: fester Kopplungs-Token (Smoke, M29)
     bool debugCloudDeviceAuto = false;  // [debug] cloud_device_auto = 1: nach NL_READY anmelden (Smoke, M27)
     std::string debugCloudConflict;  // [debug] cloud_conflict = wii|cloud|cancel: Konfliktdialog beantworten (M27)
     std::string debugCloudSync;     // [debug] cloud_sync = <spielschlüssel>: Start-Tor ohne Start durchlaufen (M27)

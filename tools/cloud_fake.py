@@ -1,4 +1,4 @@
-"""Cloud-Fakes für die Smokes (M27 Google Drive, M28 OneDrive): Gerätecode, Tokens und Dateien im Speicher, optional
+"""Cloud-Fakes für die Smokes (M27 Google Drive, M28 OneDrive, M29 Dropbox): Gerätecode, Tokens und Dateien im Speicher, optional
 über TLS.
 
 Bildet genau die Anfragen nach, die src/core/oauth_device.cpp und src/core/drive_provider.cpp senden:
@@ -6,9 +6,10 @@ Bildet genau die Anfragen nach, die src/core/oauth_device.cpp und src/core/drive
   GET  /drive/v3/about, GET/POST /drive/v3/files, GET /drive/v3/files/<id>?alt=media
   POST /upload/drive/v3/files, PATCH /upload/drive/v3/files/<id> (multipart oder resumable + PUT)
   POST /revoke (token=…)
---provider onedrive bildet src/core/onedrive_provider.cpp nach (siehe FakeOneDrive).
+--provider onedrive bildet src/core/onedrive_provider.cpp nach (siehe FakeOneDrive),
+--provider dropbox src/core/dropbox_provider.cpp mit PKCE-Freigabeseite (siehe FakeDropbox).
 
-Aufruf: python tools/cloud_fake.py [--provider drive|onedrive] [--port N] [--cert server.pem --key server.key] [--approve auto|manual|deny]
+Aufruf: python tools/cloud_fake.py [--provider drive|onedrive|dropbox] [--port N] [--cert server.pem --key server.key] [--approve auto|manual|deny]
         [--expire-access-once] [--offline-api] [--offline-after-link] [--seed <einheit>=<zip>] [--state-dump datei.json]
 
 Tokens sind Fantasiewerte (ya29.fake…, 1//fake…); der Zustands-Dump enthält keine Tokens.
@@ -711,10 +712,254 @@ class OneDriveHandler(Handler):
             self._json(404, {"error": "not_found"})
 
 
+# --- Dropbox (M29) ----------------------------------------------------------------------------------------------------
+
+DBX_ACCOUNT = "dbid:AAFakeAccount0001"
+_DBX_CODE = re.compile(r'<code id="code">([A-Za-z0-9_-]+)</code>')
+
+
+def dropbox_code_from_page(html: str) -> str:
+    """Den Code aus der Freigabeseite des Fakes (wie ihn der Nutzer abliest)."""
+    m = _DBX_CODE.search(html)
+    if m is None:
+        raise ValueError("kein Code auf der Seite")
+    return m.group(1)
+
+
+def _s256(verifier: str) -> str:
+    import base64
+    return base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+
+
+def _dbx_error(summary: str) -> dict:
+    return {"error_summary": summary + "/..", "error": {".tag": summary.split("/", 1)[0]}}
+
+
+@dataclass
+class DropboxFile:
+    id: str
+    name: str
+    data: bytes
+    rev: str
+
+    def metadata(self, tag: bool) -> dict:
+        out = {"name": self.name, "path_lower": "/" + self.name.lower(), "path_display": "/" + self.name,
+               "id": self.id, "rev": self.rev, "size": len(self.data), "content_hash": sha256_hex(self.data),
+               "is_downloadable": True}
+        if tag:
+            out = {".tag": "file", **out}
+        return out
+
+
+class FakeDropbox(FakeDrive):
+    """Dropbox-Fake (M29): Freigabeseite /oauth2/authorize mit PKCE (S256), /oauth2/token (authorization_code,
+    refresh_token), RPC unter /2/… mit JSON, Content-Endpunkte mit Dropbox-API-Arg, Fehler als 409 + error_summary,
+    Widerruf per Bearer. Kein Metadaten-Feld: Hash, Gerät und Zeit stehen nur im ZIP."""
+
+    TOKEN_PATH, REVOKE_PATH = "/oauth2/token", "/2/auth/token/revoke"
+    ACCOUNT_PATH = "/2/users/get_current_account"
+    SCOPE = "account_info.read files.content.read files.content.write"
+    ACCESS_PREFIX, REFRESH_PREFIX, CODE_PREFIX = "sl.fake", "fake-rt-", "dbxcode_"
+
+    def __init__(self, *args, token_delay_s: float = 0.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.token_delay_s = token_delay_s  # pairtwice: der Code-Tausch dauert, die Kopplungsseite lebt noch
+        self.codes: dict[str, str | None] = {}  # Code → Challenge (None = verbraucht)
+        self.dbx: dict[str, DropboxFile] = {}  # Name → Datei
+
+    def _rev(self) -> str:
+        self._seq += 1
+        return f"{self._seq:09x}{_secrets.token_hex(3)}"
+
+    def seed(self, unit: str, data: bytes, device: str = "Dolphin", saved: int | None = None) -> DropboxFile:
+        zip_meta(data)  # wie die anderen Fakes: nur gültige Pakete
+        with self.lock:
+            f = DropboxFile("id:" + _secrets.token_urlsafe(12), unit + ".zip", data, self._rev())
+            self.dbx[f.name] = f
+            self._dump()
+            return f
+
+    def file_bytes(self, unit: str) -> bytes | None:
+        with self.lock:
+            f = self.dbx.get(unit + ".zip")
+            return f.data if f else None
+
+    def state_dump(self) -> dict:
+        files = {f.name: {"rev": f.rev, "size": len(f.data), "sha256": sha256_hex(f.data)} for f in self.dbx.values()}
+        return {"account": DBX_ACCOUNT, "files": files, "uploads": self.uploads, "refreshes": self.refreshes,
+                "linked": bool(self.refresh), "revokes": self.revokes}
+
+    # --- OAuth ---
+    def authorize(self, query: dict) -> tuple[int, str]:
+        if not query.get("client_id") or query.get("response_type") != "code":
+            return 400, "<p>invalid_request</p>"
+        challenge = query.get("code_challenge", "")
+        if query.get("code_challenge_method") != "S256" or not re.fullmatch(r"[A-Za-z0-9_-]{43}", challenge):
+            return 400, "<p>invalid code_challenge</p>"
+        with self.lock:
+            code = self._issue(self.CODE_PREFIX)
+            self.codes[code] = challenge
+        return 200, (f'<!doctype html><title>Fake Dropbox</title><p>Gib diesen Code in die App ein:</p>'
+                     f'<code id="code">{code}</code>')
+
+    def token(self, form: dict) -> tuple[int, dict]:
+        if form.get("grant_type") != "authorization_code":
+            return super().token(form)
+        if not form.get("client_id"):
+            return 400, {"error": "invalid_client"}
+        with self.lock:
+            code = form.get("code", "")
+            challenge = self.codes.get(code)
+            if challenge is None or _s256(form.get("code_verifier", "")) != challenge:
+                return 400, {"error": "invalid_grant", "error_description": "code doesn't exist or has expired"}
+            self.codes[code] = None
+            access, refresh = self._issue(self.ACCESS_PREFIX), self._issue(self.REFRESH_PREFIX)
+            self.access.add(access)
+            self.refresh.add(refresh)
+            self._dump()
+            return 200, {"access_token": access, "token_type": "bearer", "expires_in": 14400,
+                         "refresh_token": refresh, "scope": self.SCOPE, "uid": "12345",
+                         "account_id": DBX_ACCOUNT}
+
+    def revoke_bearer(self) -> tuple[int, dict]:
+        """/2/auth/token/revoke: der Bearer war gültig; mit ihm fällt die ganze Anmeldung (auch das Refresh-Token)."""
+        with self.lock:
+            self.access.clear()
+            self.refresh.clear()
+            self.revokes += 1
+            self._dump()
+            return 200, {}
+
+    # --- Dateien ---
+    def get_metadata(self, path: str) -> tuple[int, dict]:
+        with self.lock:
+            f = self.dbx.get(path.lstrip("/"))
+            if f is None:
+                return 409, _dbx_error("path/not_found")
+            return 200, f.metadata(tag=True)
+
+    def download(self, path: str) -> tuple[int, dict | bytes, dict]:
+        with self.lock:
+            if not path.startswith("rev:"):
+                return 400, {"error": "nur rev:"}, {}
+            f = next((x for x in self.dbx.values() if x.rev == path[4:]), None)
+            if f is None:
+                return 409, _dbx_error("path/not_found"), {}
+            return 200, f.data, {"Dropbox-API-Result": json.dumps(f.metadata(tag=False))}
+
+    def upload(self, arg: dict, data: bytes) -> tuple[int, dict]:
+        name = str(arg.get("path", "")).lstrip("/")
+        mode = arg.get("mode", "add")
+        if not name or "/" in name or arg.get("autorename") is True:
+            return 400, {"error": "path"}
+        with self.lock:
+            f = self.dbx.get(name)
+            if mode == "add" or mode == {".tag": "add"}:
+                if f is not None:
+                    return 409, _dbx_error("path/conflict/file")
+            elif isinstance(mode, dict) and mode.get(".tag") == "update":
+                if f is None or f.rev != mode.get("update"):
+                    # strict_conflict: auch eine gleich große, gleiche Datei zählt als Konflikt
+                    return 409, _dbx_error("path/conflict/file")
+            elif mode != "overwrite" and mode != {".tag": "overwrite"}:
+                return 400, {"error": "mode"}
+            if f is None:
+                f = DropboxFile("id:" + _secrets.token_urlsafe(12), name, data, self._rev())
+                self.dbx[name] = f
+            else:
+                f.data = data
+                f.rev = self._rev()
+            self.uploads += 1
+            self._dump()
+            return 200, f.metadata(tag=False)
+
+
+class DropboxHandler(Handler):
+    fake: FakeDropbox
+
+    def _route(self, method: str) -> None:
+        url = urllib.parse.urlsplit(self.path)
+        query = dict(urllib.parse.parse_qsl(url.query, keep_blank_values=True))
+        path = url.path
+        fake = self.fake
+        with fake.lock:
+            fake.requests.append(f"{method} {path}")
+        try:
+            body = self._body()
+        except ValueError:
+            self._json(413, {"error": "too_large"})
+            return
+
+        if method == "GET" and path == "/oauth2/authorize":
+            status, page = fake.authorize(query)
+            self._send(status, page.encode(), "text/html; charset=utf-8")
+            return
+        if method == "POST" and path == fake.TOKEN_PATH:
+            form = dict(urllib.parse.parse_qsl(body.decode("utf-8", "replace")))
+            if fake.token_delay_s and form.get("grant_type") == "authorization_code":
+                time.sleep(fake.token_delay_s)
+            self._json(*fake.token(form))
+            return
+        if not path.startswith("/2/"):
+            self._json(404, {"error": "not_found"})
+            return
+        if fake.offline_api:
+            self.close_connection = True
+            self.connection.close()
+            return
+        if method != "POST":
+            self._json(405, {"error": "method"})
+            return
+        if not fake.authorized(self.headers.get("Authorization"), path):
+            self._json(401, _dbx_error("invalid_access_token"))
+            return
+
+        if path == fake.REVOKE_PATH:
+            self._json(*fake.revoke_bearer())
+            return
+        if path in ("/2/files/upload", "/2/files/download"):
+            try:
+                arg = json.loads(self.headers.get("Dropbox-API-Arg") or "")
+            except ValueError:
+                self._json(400, {"error": "Dropbox-API-Arg"})
+                return
+            if path == "/2/files/download":
+                status, out, headers = fake.download(str(arg.get("path", "")))
+                if isinstance(out, bytes):
+                    self._send(status, out, "application/octet-stream", headers)
+                else:
+                    self._json(status, out)
+            elif self.headers.get("Content-Type") != "application/octet-stream":
+                self._json(400, {"error": "Content-Type"})
+            else:
+                self._json(*fake.upload(arg, body))
+            return
+        # RPC: JSON-Body ("null" für Aufrufe ohne Argument)
+        if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+            self._json(400, {"error": "Content-Type"})
+            return
+        try:
+            arg = json.loads(body or b"null")
+        except ValueError:
+            self._json(400, {"error": "json"})
+            return
+        if path == fake.ACCOUNT_PATH:
+            if fake.offline_after_link and fake.on_offline is not None:
+                fake.offline_after_link = False
+                fake.on_offline()
+                self.close_connection = True
+            self._json(200, {"account_id": DBX_ACCOUNT, "name": {"display_name": "Fake"}})
+        elif path == "/2/files/get_metadata" and isinstance(arg, dict):
+            self._json(*fake.get_metadata(str(arg.get("path", ""))))
+        else:
+            self._json(404, {"error": "not_found"})
+
+
 def start(fake: FakeDrive, ssl_context: ssl.SSLContext | None = None, port: int = 0,
           host: str = "127.0.0.1") -> tuple[http.server.ThreadingHTTPServer, int]:
     """Startet den Fake in einem Thread; liefert Server und Port."""
-    base = OneDriveHandler if isinstance(fake, FakeOneDrive) else Handler
+    base = (OneDriveHandler if isinstance(fake, FakeOneDrive)
+            else DropboxHandler if isinstance(fake, FakeDropbox) else Handler)
     handler = type("BoundHandler", (base,), {"fake": fake})
     server = http.server.ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
@@ -732,7 +977,7 @@ def start(fake: FakeDrive, ssl_context: ssl.SSLContext | None = None, port: int 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--provider", choices=["drive", "onedrive"], default="drive")
+    p.add_argument("--provider", choices=["drive", "onedrive", "dropbox"], default="drive")
     p.add_argument("--port", type=int, default=0)
     p.add_argument("--cert", type=Path)
     p.add_argument("--key", type=Path)
@@ -745,7 +990,8 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
     if (args.cert is None) != (args.key is None):
         p.error("--cert und --key nur zusammen")
-    fake = (FakeOneDrive if args.provider == "onedrive" else FakeDrive)(args.approve, args.expire_access_once, args.offline_api, args.offline_after_link)
+    cls = {"onedrive": FakeOneDrive, "dropbox": FakeDropbox}.get(args.provider, FakeDrive)
+    fake = cls(args.approve, args.expire_access_once, args.offline_api, args.offline_after_link)
     fake.dump_path = args.state_dump
     try:
         for spec in args.seed:

@@ -79,6 +79,7 @@ enum class AppCommand : u8 {
     CloudSyncAllCancel, // Cloud-Menü: laufendes "Alle abgleichen" abbrechen
     CloudSwitch,      // ChoiceDialog nach dem Anbieterwechsel: 0 = Wii, 1 = Cloud, sonst beim Spielstart fragen
     CloudCancelLink,  // Gerätecode-Szene mit B geschlossen
+    CloudEnterCode,   // Kopplungsszene (M29): A öffnet die Tastatur für den Dropbox-Code
     CloudSkip,        // Abgleich-Szene: ohne Abgleich spielen
     CloudConflict,    // ChoiceDialog des Konflikts geschlossen: 0 = Wii, 1 = Cloud, sonst Abbruch
 };
@@ -147,7 +148,7 @@ public:
     bool contains(const Scene* s) const;  // auf dem Stapel oder nach dem Ausblenden angefordert
 
 private:
-    static constexpr int kMaxDepth = 4;
+    static constexpr int kMaxDepth = 6;  // M29: Kopplung + Tastatur über Einstellungen → Cloud
     struct Entry {
         Scene* scene = nullptr;
         Tween alpha;

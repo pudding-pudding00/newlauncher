@@ -32,11 +32,15 @@ add_library(nl_core STATIC
     src/core/multipart.cpp
     src/core/http_types.cpp
     src/core/oauth_device.cpp
+    src/core/pkce.cpp
     src/core/token_store.cpp
     src/core/cloud_provider.cpp
     src/core/oauth_client.cpp
     src/core/drive_provider.cpp
     src/core/onedrive_provider.cpp
+    src/core/dropbox_provider.cpp
+    src/core/qr.cpp
+    src/core/pairing_http.cpp
     src/core/cloud_sync.cpp
     src/core/cloud_state.cpp
     src/core/cloud_outbox.cpp
@@ -171,6 +175,8 @@ add_library(nl_core STATIC
     src/ui/saves_scene.cpp
     src/ui/cloud_scene.cpp
     src/ui/device_code_scene.cpp
+    src/ui/qr_view.cpp
+    src/ui/pairing_scene.cpp
     src/ui/cloud_sync_scene.cpp
     src/ui/launch_text.cpp
     src/ui/pin_scene.cpp
@@ -360,6 +366,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/http_client.cpp
         src/platform/net_service.cpp
         src/platform/remote_server.cpp
+        src/platform/pairing_server.cpp
         src/platform/net_worker.cpp
         src/platform/cover_clear_worker.cpp
         src/platform/emu_worker.cpp

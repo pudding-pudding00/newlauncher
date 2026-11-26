@@ -130,6 +130,19 @@ PollState refreshToken(HttpTransport& http, const OAuthEndpoints& ep, TokenSet& 
     return tokenRequest(http, ep, form, nowMs, io, cancel);
 }
 
+PollState exchangeAuthCode(HttpTransport& http, const OAuthEndpoints& ep, std::string_view code,
+                           std::string_view verifier, u64 nowMs, TokenSet& out, const volatile bool& cancel) {
+    const Pair form[] = {{"client_id", ep.clientId},
+                         {"code", code},
+                         {"code_verifier", verifier},
+                         {"grant_type", "authorization_code"}};
+    TokenSet t;
+    const PollState s = tokenRequest(http, ep, form, nowMs, t, cancel);
+    if (s == PollState::Ok) out = std::move(t);
+    // Pending/SlowDown/Expired kennt der Code-Tausch nicht: alles außer invalid_grant ist ein Fehler.
+    return s == PollState::Ok || s == PollState::Denied ? s : PollState::Failed;
+}
+
 bool tokenFresh(const TokenSet& t, u64 nowMs) {
     return !t.access.empty() && t.expiresAtMs != 0 && nowMs + 60000 < t.expiresAtMs;
 }

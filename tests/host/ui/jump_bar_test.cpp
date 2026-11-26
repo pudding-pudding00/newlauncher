@@ -156,7 +156,7 @@ TEST_CASE_FIXTURE(Fixture, "Stapel: Suche-Taste → A–Z-Leiste → „Suche\" 
     const Library lib = testLibrary();
     MainScene s(lib);
     JumpBar bar(s);
-    struct NullSearch final : SearchTarget { void setQuery(std::string_view) override {} } ns;
+    struct NullSearch final : TextTarget { void setText(std::string_view) override {} } ns;
     Keyboard kb(ns);
     s.setJumpBar(&bar);
     s.setKeyboard(&kb);

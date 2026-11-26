@@ -21,11 +21,18 @@
 namespace nl::platform {
 
 struct CloudSettings {
-    std::string provider = "drive";  // drive | onedrive
+    std::string provider = "drive";  // drive | onedrive | dropbox
     std::string dataDir;             // "<gerät>:/newlauncher"
     OAuthEndpoints endpoints;        // des aktiven Anbieters
     std::string apiBase = "https://www.googleapis.com";
     std::string driveRevokeUrl;      // Widerruf alter Drive-Tokens nach dem Wechsel zu einem anderen Anbieter
+    // Dropbox (M29): Inhalts-Server, Freigabeseite (leer = echte) und die Daten für den Widerruf alter Dropbox-Tokens
+    // nach einem Wechsel (Bearer über DropboxProvider::revoke, darum Endpunkte samt App-Key).
+    std::string contentBase = "https://content.dropboxapi.com";
+    std::string authorizeBase;
+    OAuthEndpoints dropboxEndpoints;
+    std::string dropboxApiBase = "https://api.dropboxapi.com";
+    std::string pairToken;  // fester Kopplungs-Token (Debug cloud_pair_token), sonst aus secureRandom
     std::string device;  // Gerätename für Pakete
 };
 
@@ -36,7 +43,15 @@ struct CloudUpload {
     u64 played = 0;  // session.ini started
 };
 
-enum class LinkState : u8 { Idle, Requesting, ShowCode, Linked, Denied, Expired, Failed, Offline };
+// BadCode (M29): Dropbox hat den eingegebenen Code abgelehnt; der Auftrag wartet weiter auf einen neuen.
+enum class LinkState : u8 { Idle, Requesting, ShowCode, BadCode, Linked, Denied, Expired, Failed, Offline };
+
+// Dropbox-Anmeldung (M29): Freigabeseite mit PKCE-Challenge und der Token der Kopplungsseite.
+struct AuthLink {
+    std::string authorizeUrl, pairToken;
+    u32 expiresInS = 0;
+};
+constexpr u32 kAuthCodeWaitS = 5 * 60;
 
 class CloudWorker {
 public:
@@ -50,7 +65,10 @@ public:
 
     bool startLink();
     LinkState linkState() const { return static_cast<LinkState>(link_); }
-    std::optional<DeviceCode> deviceCode() const;  // solange ShowCode
+    u32 badCodeCount() const;                      // Zähler abgelehnter Codes (M29, für rearm())
+    std::optional<DeviceCode> deviceCode() const;  // solange ShowCode (Gerätecode-Anbieter)
+    std::optional<AuthLink> authLink() const;      // solange ShowCode/BadCode (Dropbox)
+    void submitCode(std::string code);             // Code von der Kopplungsseite oder Tastatur
 
     bool startPreLaunch(SaveUnit unit, std::string title);
     bool startResolve(SaveUnit unit, std::string title, ConflictChoice choice, std::string seenRev);
@@ -84,6 +102,10 @@ private:
     void log(std::string line);
     std::string tokensPath() const;
     void runLink(const volatile bool& cancel);
+    void runPkceLink(const volatile bool& cancel);
+    // Nach erhaltenen Tokens: Konto lesen, alten Anbieter widerrufen, speichern; setzt den Endzustand.
+    void completeLink(HttpTransport& http, TokenSet& tokens, const volatile bool& cancel);
+    void finishLink(LinkState s);
     // Nimmt die Tokens der Sitzung (sonst tokens.bin), baut Transport + DriveProvider und ruft fn(ctx).
     // false = nicht angemeldet.
     template <typename Fn>
@@ -102,6 +124,9 @@ private:
     volatile bool transferring_ = false;
     volatile u8 link_ = static_cast<u8>(LinkState::Idle);
     std::optional<DeviceCode> code_;
+    std::optional<AuthLink> auth_;
+    std::optional<std::string> submitted_;
+    u32 badCodeCount_ = 0;
     std::optional<PreLaunchResult> pre_;
     std::optional<SyncAllResult> syncAll_;
     std::optional<RevokeResult> unlinked_;

@@ -1,5 +1,5 @@
 #pragma once
-// Cloud-Menü (M27/M28) aus den Einstellungen: Zeile Anbieter (Aus → Google Drive → OneDrive, ◀▶ oder A; ohne
+// Cloud-Menü (M27/M28) aus den Einstellungen: Zeile Anbieter (Aus → Google Drive → OneDrive → Dropbox, ◀▶ oder A; ohne
 // Client-ID übersprungen), Anmelden, Alle abgleichen (während des Laufs: Abbrechen), Abmelden und eine Statuszeile. Gesperrte Zeilen überspringt der Fokus. Die Arbeit erledigt main (CloudWorker) und meldet den Stand
 // über setView/setStatus zurück.
 
@@ -16,7 +16,7 @@ struct CloudView {
     Status status = Status::NotLinked;
     bool busy = false;  // Anmelden oder Abgleich läuft
     bool syncing = false;  // "Alle abgleichen" läuft: nur die Abbrechen-Zeile ist frei
-    bool driveReady = true, onedriveReady = true;  // Client-ID in config.ini vorhanden
+    bool driveReady = true, onedriveReady = true, dropboxReady = true;  // Client-ID in config.ini vorhanden
 };
 
 class CloudScene final : public Scene {

@@ -8,43 +8,93 @@ namespace nl::ui {
 namespace {
 using gfx::Rect;
 
-constexpr const char* kRows[5] = {"1234567890", "QWERTZUIOP", "ASDFGHJKL", "YXCVBNM", "\x01\x02\x03"};
-constexpr int kRowCount = 5;
+// Tastenfelder; die letzte Reihe enthält die Sondertasten. Ohne Ebenen bleibt die Suche wie bisher.
+constexpr const char* kSearchRows[] = {"1234567890", "QWERTZUIOP", "ASDFGHJKL", "YXCVBNM", "\x01\x02\x03", nullptr};
+constexpr const char* kLayerRows[4][6] = {
+    {"1234567890", "qwertzuiop", "asdfghjkl", "yxcvbnm", "\x04\x01\x02\x03", nullptr},
+    {"1234567890", "QWERTZUIOP", "ASDFGHJKL", "YXCVBNM", "\x04\x01\x02\x03", nullptr},
+    {"1234567890", "-_.@", "\x04\x01\x02\x03", nullptr, nullptr, nullptr},
+    {"!?#$%&*+=/", ":;,()'\"", "\x04\x01\x02\x03", nullptr, nullptr, nullptr},
+};
+constexpr const char* kLayerNames[4] = {"abc", "ABC", "123", "#"};
+constexpr int kMaxRows = 5;
 constexpr float kKeyW = 44.0f, kKeyH = 40.0f, kGap = 6.0f, kInfoBarH = 60.0f;
-constexpr float kSpecialW[3] = {180.0f, 120.0f, 120.0f};
 constexpr float kFilterH = 36.0f;
 
-int rowLength(int r) {
+bool special(char c) { return c >= Keyboard::kSpace && c <= Keyboard::kLayer; }
+float specialW(char c) { return c == Keyboard::kSpace ? 180.0f : 120.0f; }
+
+bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
+
+// Feste Höhe (5 Reihen), damit das Feld beim Ebenenwechsel nicht springt.
+float panelTop(const UiContext& ctx) { return ctx.height - kInfoBarH - kMaxRows * (kKeyH + kGap) - 64.0f; }
+}  // namespace
+
+const char* const* Keyboard::rows() const {
+    return mode_.layers ? kLayerRows[layer_] : kSearchRows;
+}
+
+int Keyboard::rowCount() const {
     int n = 0;
-    while (kRows[r][n] != '\0') ++n;
+    while (rows()[n] != nullptr) ++n;
     return n;
 }
 
-int rowStart(int r) {
+int Keyboard::rowLength(int r) const {
+    int n = 0;
+    while (rows()[r][n] != '\0') ++n;
+    return n;
+}
+
+int Keyboard::rowStart(int r) const {
     int start = 0;
     for (int i = 0; i < r; ++i) start += rowLength(i);
     return start;
 }
 
-char keyChar(int index) {
-    for (int r = 0; r < kRowCount; ++r) {
-        if (index < rowLength(r)) return kRows[r][index];
+char Keyboard::keyChar(int index) const {
+    for (int r = 0; r < rowCount(); ++r) {
+        if (index < rowLength(r)) return rows()[r][index];
         index -= rowLength(r);
     }
     return '\0';
 }
 
-float rowWidth(int r) {
-    if (r == kRowCount - 1) return kSpecialW[0] + kSpecialW[1] + kSpecialW[2] + 2 * kGap;
-    return static_cast<float>(rowLength(r)) * (kKeyW + kGap) - kGap;
+float Keyboard::rowWidth(int r) const {
+    float w = 0;
+    for (int i = 0; i < rowLength(r); ++i) {
+        const char c = rows()[r][i];
+        w += (special(c) ? specialW(c) : kKeyW) + (i > 0 ? kGap : 0.0f);
+    }
+    return w;
 }
 
-bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
+std::string_view Keyboard::layerName() const { return mode_.layers ? kLayerNames[layer_] : "ABC"; }
 
-float panelTop(const UiContext& ctx) { return ctx.height - kInfoBarH - kRowCount * (kKeyH + kGap) - 64.0f; }
-}  // namespace
+std::string Keyboard::shownText() const {
+    if (text_.empty()) return mode_.hint.empty() ? std::string(tr(Str::SearchHint)) : mode_.hint;
+    if (!mode_.mask) return text_;
+    std::string out;
+    for (std::size_t i = 0; i < text_.size(); ++i) out += "\xE2\x80\xA2";  // •
+    return out;
+}
 
-int Keyboard::keyCount() const { return rowStart(kRowCount); }
+std::string Keyboard::visibleText(const gfx::FontFace& face, float maxWidth) const {
+    const std::string shown = shownText();
+    if (text_.empty() || gfx::measureText(face, shown) <= maxWidth) return shown;
+    static constexpr std::string_view kEllipsis = "\xE2\x80\xA6";  // …
+    std::string best(kEllipsis);
+    for (std::size_t pos = shown.size(); pos > 0;) {
+        --pos;
+        if ((static_cast<u8>(shown[pos]) & 0xC0) == 0x80) continue;  // nur an UTF-8-Zeichengrenzen
+        std::string cand = std::string(kEllipsis) + shown.substr(pos);
+        if (gfx::measureText(face, cand) > maxWidth) break;
+        best = std::move(cand);
+    }
+    return best;
+}
+
+int Keyboard::keyCount() const { return rowStart(rowCount()); }
 
 int Keyboard::keyIndex(char key) const {
     for (int i = 0; i < keyCount(); ++i)
@@ -53,22 +103,24 @@ int Keyboard::keyIndex(char key) const {
 }
 
 int Keyboard::row(int key) const {
-    for (int r = 0; r < kRowCount; ++r)
+    for (int r = 0; r < rowCount(); ++r)
         if (key < rowStart(r) + rowLength(r)) return r;
-    return kRowCount - 1;
+    return rowCount() - 1;
 }
 
 Rect Keyboard::keyRect(const UiContext& ctx, int index) const {
     const int r = row(index);
     const int col = index - rowStart(r);
     const float x0 = (ctx.width - rowWidth(r)) / 2;
-    const float y = panelTop(ctx) + 52.0f + static_cast<float>(r) * (kKeyH + kGap);
-    if (r == kRowCount - 1) {
-        float x = x0;
-        for (int i = 0; i < col; ++i) x += kSpecialW[i] + kGap;
-        return Rect{x, y, kSpecialW[col], kKeyH};
+    // Weniger Reihen (123, #) rücken nach unten, die Sondertasten bleiben am selben Platz.
+    const float y = panelTop(ctx) + 52.0f + static_cast<float>(kMaxRows - rowCount() + r) * (kKeyH + kGap);
+    float x = x0;
+    for (int i = 0; i < col; ++i) {
+        const char c = rows()[r][i];
+        x += (special(c) ? specialW(c) : kKeyW) + kGap;
     }
-    return Rect{x0 + static_cast<float>(col) * (kKeyW + kGap), y, kKeyW, kKeyH};
+    const char c = rows()[r][col];
+    return Rect{x, y, special(c) ? specialW(c) : kKeyW, kKeyH};
 }
 
 Rect Keyboard::filterRect(const UiContext& ctx) const {
@@ -78,9 +130,11 @@ Rect Keyboard::filterRect(const UiContext& ctx) const {
 
 void Keyboard::onEnter() {
     text_.clear();
+    layer_ = 0;
     focus_ = 0;
     filterRow_ = false;
     keysSincePointerMove_ = false;
+    closeRequested_ = false;
 }
 
 void Keyboard::stepFilter(int dir, SceneRequests& out) {
@@ -91,21 +145,32 @@ void Keyboard::stepFilter(int dir, SceneRequests& out) {
 void Keyboard::press(int key, SceneRequests& out) {
     const char c = keyChar(key);
     if (c == kDone) {
+        target_->submitText(text_);
         out.pop = true;
+        return;
+    }
+    if (c == kLayer) {
+        layer_ = (layer_ + 1) % 4;
+        focus_ = keyIndex(kLayer);  // Fokus bleibt auf der Ebenen-Taste
         return;
     }
     if (c == kBackspace) {
         if (text_.empty()) return;
         text_.pop_back();
     } else {
-        if (text_.size() >= kMaxText) return;
+        if (text_.size() >= mode_.maxLen) return;
         text_ += c == kSpace ? ' ' : c;
     }
-    target_.setQuery(text_);
+    target_->setText(text_);
 }
 
 void Keyboard::update(const UiContext& ctx, const InputFrame& in, float, SceneRequests& out) {
     FocusSound sound(out, focus_);
+    if (closeRequested_) {
+        out.pop = true;
+        sound.silence();
+        return;
+    }
     const bool filterOn = hasFilter();
     if (!filterOn) filterRow_ = false;
     int hit = -1;
@@ -143,7 +208,7 @@ void Keyboard::update(const UiContext& ctx, const InputFrame& in, float, SceneRe
     }
     if (!wasFilterRow && !filterRow_ && (in.pressed(Action::Up) || in.pressed(Action::Down))) {
         const int target = in.pressed(Action::Up) ? r - 1 : r + 1;
-        if (target >= 0 && target < kRowCount) {
+        if (target >= 0 && target < rowCount()) {
             const Rect cur = keyRect(ctx, focus_);
             const float cx = cur.x + cur.w / 2;
             int best = rowStart(target);
@@ -188,9 +253,9 @@ void Keyboard::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const gfx::FontFace& title = ctx.fonts->face(gfx::FontSize::Title, gfx::FontWeight::Medium);
     const Rect field{(ctx.width - 420) / 2, top + 8, 420, 36};
     gfx::roundRect(dl, s, field, 10, t.bg);
-    const char* shown = text_.empty() ? tr(Str::SearchHint) : text_.c_str();
+    const std::string shown = visibleText(title, field.w - 24);
     gfx::drawTextEllipsis(dl, title, field.x + 12, field.y + field.h / 2 + (title.ascent - title.descent) / 2, field.w - 24,
-                          shown, text_.empty() ? t.textMuted : t.text);
+                          shown.c_str(), text_.empty() ? t.textMuted : t.text);
 
     const gfx::FontFace& f = ctx.fonts->face(gfx::FontSize::Body, gfx::FontWeight::Medium);
     if (hasFilter()) {  // wie in der A–Z-Leiste
@@ -209,7 +274,11 @@ void Keyboard::draw(const UiContext& ctx, gfx::DrawList& dl) {
         gfx::roundRect(dl, s, r, 8, focused ? t.accent : t.tile);
         const char c = keyChar(i);
         char single[2] = {c, '\0'};
-        const char* label = c == kSpace ? tr(Str::KeySpace) : c == kBackspace ? tr(Str::KeyDelete) : c == kDone ? tr(Str::KeyDone) : single;
+        const char* label = c == kSpace       ? tr(Str::KeySpace)
+                            : c == kBackspace ? tr(Str::KeyDelete)
+                            : c == kDone      ? tr(Str::KeyDone)
+                            : c == kLayer     ? kLayerNames[(layer_ + 1) % 4]  // zeigt die nächste Ebene
+                                              : single;
         const float w = gfx::measureText(f, label);
         gfx::drawTextEllipsis(dl, f, w < r.w - 8 ? r.x + (r.w - w) / 2 : r.x + 4, r.y + r.h / 2 + (f.ascent - f.descent) / 2,
                               r.w - 8, label, focused ? t.onAccent : t.text);

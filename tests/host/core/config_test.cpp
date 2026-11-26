@@ -558,3 +558,25 @@ TEST_CASE("M28: Debug cloud_sync_all, cloud_switch, cloud_unlink") {
     for (const char* v : {"wii", "cloud", "ask"})
         CHECK(configFromIni(IniDoc::parse(std::string("[debug]\ncloud_switch = ") + v + "\n")).debugCloudSwitch == v);
 }
+
+TEST_CASE("M29: provider dropbox, dropbox_app_key nur gelesen, cloudClientId") {
+    const std::string prev = "[cloud]\nprovider = dropbox\ndropbox_app_key = abc123xyz\n";
+    Config c = configFromIni(IniDoc::parse(prev));
+    CHECK(c.cloudProvider == CloudProviderId::Dropbox);
+    CHECK(c.dropboxAppKey == "abc123xyz");
+    CHECK(providerName(CloudProviderId::Dropbox) == "dropbox");
+    CHECK(cloudClientId(c) == "abc123xyz");
+    c.dropboxAppKey = "anders";
+    const std::string text = configToIniText(c, prev);
+    CHECK(text.find("provider = dropbox") != std::string::npos);
+    CHECK(text.find("anders") == std::string::npos);
+    CHECK(configFromIni(IniDoc::parse(text)).dropboxAppKey == "abc123xyz");
+}
+
+TEST_CASE("M29: Debug cloud_pair_token nur mit 32 Hex-Zeichen") {
+    const std::string ok = "0123456789abcdef0123456789abcdef";
+    CHECK(configFromIni(IniDoc::parse("[debug]\ncloud_pair_token = " + ok + "\n")).debugCloudPairToken == ok);
+    for (const char* bad : {"", "0123", "0123456789abcdef0123456789abcdeg", "0123456789ABCDEF0123456789ABCDEF0"})
+        CHECK(configFromIni(IniDoc::parse(std::string("[debug]\ncloud_pair_token = ") + bad + "\n"))
+                  .debugCloudPairToken.empty());
+}

@@ -405,3 +405,14 @@ TEST_CASE("preLaunchSync: Konflikt bei Eintrag ohne Meta zeigt Gerät und Zeit a
     CHECK(res.cloud.device == "Dolphin-PC");
     CHECK(res.cloud.saved == kNow - 100);
 }
+
+TEST_CASE("preLaunchSync: Upload Failed bricht nach 1 Versuch ab (kein zweites stat)") {
+    Rig r;
+    r.fs.addFile(kDir + "/a.bin", bytes("lokal"));
+    r.cloud.beforeUpload = [](FakeProvider& p) { p.fail = CloudStatus::Failed; };
+    const auto res = preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel);
+    CHECK(res.kind == PreLaunch::Skipped);
+    CHECK(res.reason == "error");
+    CHECK(r.cloud.stats == 1);
+    CHECK(r.cloud.uploads == 1);
+}

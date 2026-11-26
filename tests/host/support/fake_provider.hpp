@@ -55,6 +55,7 @@ public:
             auto hook = std::move(beforeUpload);  // nur einmal
             beforeUpload = nullptr;
             hook(*this);
+            if (const CloudStatus s = gate(); s != CloudStatus::Ok) return s;
         }
         const std::string key(unit);
         const auto it = files.find(key);

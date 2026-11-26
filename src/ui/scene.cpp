@@ -29,6 +29,7 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::CloudSyncAllCancel: return "cloud_sync_all_cancel";
         case AppCommand::CloudSwitch: return "cloud_switch";
         case AppCommand::CloudCancelLink: return "cloud_cancel_link";
+        case AppCommand::CloudEnterCode: return "cloud_enter_code";
         case AppCommand::CloudSkip: return "cloud_skip";
         case AppCommand::CloudConflict: return "cloud_conflict";
         case AppCommand::SettingsChanged: return "settings_changed";

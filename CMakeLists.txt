@@ -34,6 +34,7 @@ add_library(nl_core STATIC
     src/core/oauth_device.cpp
     src/core/token_store.cpp
     src/core/cloud_provider.cpp
+    src/core/oauth_client.cpp
     src/core/drive_provider.cpp
     src/core/cloud_sync.cpp
     src/core/cloud_state.cpp

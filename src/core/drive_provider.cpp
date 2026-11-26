@@ -39,19 +39,12 @@ std::string_view utf8Prefix(std::string_view s, std::size_t max) {
     return s.substr(0, n);
 }
 
-void setHeader(HttpHeaders& h, std::string_view name, std::string value) {
-    h.erase(std::remove_if(h.begin(), h.end(), [&](const auto& kv) { return kv.first == name; }), h.end());
-    h.emplace_back(std::string(name), std::move(value));
-}
-
 HttpRequest request(HttpMethod m, std::string url) {
     HttpRequest r;
     r.method = m;
     r.url = std::move(url);
     return r;
 }
-
-bool offlineError(NetError e) { return e != NetError::Other && e != NetError::NoMem && e != NetError::None; }
 
 // Datei-Antwort (create/update) → Eintrag; hash/device/saved kommen aus der eigenen Meta.
 bool takeFile(const JsonValue& f, CloudEntry& out) {
@@ -66,73 +59,13 @@ bool takeFile(const JsonValue& f, CloudEntry& out) {
 
 }  // namespace
 
-HttpResponse DriveProvider::Tap::send(const HttpRequest& req, const volatile bool& cancel) {
-    HttpResponse r = inner.send(req, cancel);
-    lastStatus = r.status;
-    lastError = r.error;
-    return r;
-}
-
 DriveProvider::DriveProvider(HttpTransport& http, OAuthEndpoints ep, TokenSet& tokens, std::function<u64()> nowMs,
                              std::string apiBase)
-    : http_(http), ep_(std::move(ep)), tokens_(tokens), nowMs_(std::move(nowMs)), api_(std::move(apiBase)) {}
-
-CloudStatus DriveProvider::refresh(const volatile bool& cancel) {
-    http_.lastStatus = 0;
-    http_.lastError = NetError::None;
-    switch (refreshToken(http_, ep_, tokens_, nowMs_(), cancel)) {
-        case PollState::Ok:
-            tokensChanged_ = true;
-            refreshed_ = true;
-            return CloudStatus::Ok;
-        case PollState::Denied: return CloudStatus::Unauthorized;
-        default: break;
-    }
-    if (http_.lastStatus == 0 && offlineError(http_.lastError)) return CloudStatus::Offline;
-    return CloudStatus::Failed;
-}
-
-HttpResponse DriveProvider::call(HttpRequest req, const volatile bool& cancel) {
-    authFail_ = CloudStatus::Ok;
-    bool refreshedHere = false;
-    if (!tokenFresh(tokens_, nowMs_())) {
-        const CloudStatus s = refresh(cancel);
-        if (s != CloudStatus::Ok) {
-            authFail_ = s;
-            return HttpResponse{};
-        }
-        refreshedHere = true;
-    }
-    setHeader(req.headers, "Authorization", "Bearer " + tokens_.access);
-    HttpResponse r = http_.send(req, cancel);
-    if (r.status != 401 || refreshedHere) return r;
-
-    // Genau ein Refresh je Anfrage, dann eine Wiederholung.
-    const CloudStatus s = refresh(cancel);
-    if (s != CloudStatus::Ok) {
-        authFail_ = s;
-        return HttpResponse{};
-    }
-    setHeader(req.headers, "Authorization", "Bearer " + tokens_.access);
-    return http_.send(req, cancel);
-}
-
-namespace {
-
-CloudStatus statusOf(const HttpResponse& r, CloudStatus authFail) {
-    if (authFail != CloudStatus::Ok) return authFail;
-    if (r.status == 0) return offlineError(r.error) ? CloudStatus::Offline : CloudStatus::Failed;
-    if (r.status >= 200 && r.status < 300) return CloudStatus::Ok;
-    if (r.status == 401) return CloudStatus::Unauthorized;
-    if (r.status == 404) return CloudStatus::NotFound;
-    return CloudStatus::Failed;
-}
-
-}  // namespace
+    : oauth_(http, std::move(ep), tokens, std::move(nowMs)), api_(std::move(apiBase)) {}
 
 CloudStatus DriveProvider::account(std::string& id, const volatile bool& cancel) {
     const HttpResponse r = call(request(HttpMethod::Get, api_ + "/drive/v3/about?fields=user(permissionId)"), cancel);
-    const CloudStatus s = statusOf(r, authFail_);
+    const CloudStatus s = statusOf(r);
     if (s != CloudStatus::Ok) return s == CloudStatus::NotFound ? CloudStatus::Failed : s;
     const auto j = json(r);
     const JsonValue* user = j ? j->get("user") : nullptr;
@@ -152,7 +85,7 @@ CloudStatus DriveProvider::folder(std::string& id, const volatile bool& cancel) 
         call(request(HttpMethod::Get,
                      api_ + "/drive/v3/files?q=" + percentEncode(q) + "&orderBy=createdTime&fields=files(id)"),
              cancel);
-    CloudStatus s = statusOf(r, authFail_);
+    CloudStatus s = statusOf(r);
     if (s != CloudStatus::Ok) return s == CloudStatus::NotFound ? CloudStatus::Failed : s;
     auto j = json(r);
     const JsonValue* files = j ? j->get("files") : nullptr;
@@ -174,7 +107,7 @@ CloudStatus DriveProvider::folder(std::string& id, const volatile bool& cancel) 
         create.headers.emplace_back("Content-Type", "application/json; charset=UTF-8");
         create.body.assign(body.begin(), body.end());
         r = call(std::move(create), cancel);
-        s = statusOf(r, authFail_);
+        s = statusOf(r);
         if (s != CloudStatus::Ok) return s == CloudStatus::NotFound ? CloudStatus::Failed : s;
         j = json(r);
         if (j) found = std::string(j->string("id"));
@@ -195,7 +128,7 @@ CloudStatus DriveProvider::stat(std::string_view unit, CloudEntry& out, const vo
                                                              "&orderBy=createdTime" +
                                                              "&fields=files(id,version,size,appProperties)"),
                                 cancel);
-    const CloudStatus s = statusOf(r, authFail_);
+    const CloudStatus s = statusOf(r);
     if (s != CloudStatus::Ok) return s == CloudStatus::NotFound ? CloudStatus::Failed : s;
     const auto j = json(r);
     const JsonValue* files = j ? j->get("files") : nullptr;
@@ -222,7 +155,7 @@ CloudStatus DriveProvider::download(const CloudEntry& entry, std::vector<u8>& zi
     HttpRequest req = request(HttpMethod::Get, api_ + "/drive/v3/files/" + entry.id + "?alt=media");
     req.maxBody = static_cast<u32>(kMaxCloudPackageBytes);
     HttpResponse r = call(std::move(req), cancel);
-    const CloudStatus s = statusOf(r, authFail_);
+    const CloudStatus s = statusOf(r);
     if (s != CloudStatus::Ok) return s;
     if (r.body.size() > kMaxCloudPackageBytes) return CloudStatus::Failed;
     zip = std::move(r.body);
@@ -287,7 +220,7 @@ CloudStatus DriveProvider::upload(std::string_view unit, std::span<const u8> zip
         start.headers.emplace_back("X-Upload-Content-Length", std::to_string(zip.size()));
         start.body.assign(metaJson.begin(), metaJson.end());
         const HttpResponse session = call(std::move(start), cancel);
-        if (const CloudStatus s = statusOf(session, authFail_); s != CloudStatus::Ok) {
+        if (const CloudStatus s = statusOf(session); s != CloudStatus::Ok) {
             return s == CloudStatus::NotFound ? CloudStatus::RevMismatch : s;
         }
         // Die Sitzungs-URL bekommt das Bearer-Token: nur auf dem eigenen API-Ursprung.
@@ -298,7 +231,7 @@ CloudStatus DriveProvider::upload(std::string_view unit, std::span<const u8> zip
         put.bodyView = zip;  // keine zweite Kopie des Pakets; zip lebt bis nach call()
         r = call(std::move(put), cancel);
     }
-    const CloudStatus s = statusOf(r, authFail_);
+    const CloudStatus s = statusOf(r);
     if (s != CloudStatus::Ok) return s == CloudStatus::NotFound ? CloudStatus::RevMismatch : s;
     const auto j = json(r);
     CloudEntry e;

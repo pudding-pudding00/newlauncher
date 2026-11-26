@@ -353,6 +353,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/nand_emu.cpp
         src/platform/ios_patch.cpp
         src/platform/isfs_fs.cpp
+        src/platform/save_worker.cpp
         src/app/cover_service.cpp
         src/app/banner_service.cpp
         src/gfx/renderer.cpp

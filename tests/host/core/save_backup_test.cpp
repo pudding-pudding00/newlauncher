@@ -178,3 +178,21 @@ TEST_CASE("recoverRestore: leere Sicherung löscht nur die neuen Dateien") {
     CHECK(fs.file(kDir + "/a.bin") == nullptr);
     CHECK(fs.file(std::string(kData) + "/saves/restore.ini") == nullptr);
 }
+
+TEST_CASE("restoreFromZip: Sicherung zurückspielen, kaputtes ZIP schreibt nichts") {
+    MemFileSystem fs;
+    seed(fs);
+    auto b = backupUnit(fs, kData, unit(), "Galaxy", "Wii", kNow);
+    CHECK(b.isOk());
+    if (!b.isOk()) return;
+    fs.addFile(kDir + "/a.bin", bytes("A-später"));
+    CHECK(restoreFromZip(fs, kData, unit(), b.value().zipPath, "Galaxy", "Wii", kNow + 60).isOk());
+    CHECK(text(fs, kDir + "/a.bin") == "A-alt");
+    CHECK(listBackups(fs, kData, "wii-RMGP").size() == 2);  // der Stand davor ist auch gesichert
+
+    fs.addFile(std::string(kData) + "/kaputt.zip", bytes("kein zip"));
+    const int before = fs.writes;
+    CHECK(!restoreFromZip(fs, kData, unit(), std::string(kData) + "/kaputt.zip", "", "", kNow).isOk());
+    CHECK(!restoreFromZip(fs, kData, unit(), std::string(kData) + "/fehlt.zip", "", "", kNow).isOk());
+    CHECK(fs.writes == before);
+}

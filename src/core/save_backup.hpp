@@ -47,6 +47,10 @@ std::optional<RestoreJournal> parseJournal(std::string_view text);
 Result<void> restoreUnit(FileSystem& fs, std::string_view dataDir, const SaveUnit& u, const SavePackage& pkg,
                          std::string_view title, std::string_view device, u64 now);
 
+// Liest ein Spielstand-ZIP (Sicherung oder Cloud-Paket), entpackt es und ruft restoreUnit. Kaputtes ZIP → nichts geschrieben.
+Result<void> restoreFromZip(FileSystem& fs, std::string_view dataDir, const SaveUnit& u, std::string_view zipPath,
+                            std::string_view title, std::string_view device, u64 now);
+
 enum class RecoverResult : u8 { None, RolledBack, Failed };
 
 // Beim Start: liegt ein Journal, Sicherung zurückspielen (leer = nur added löschen), added löschen, Journal löschen.

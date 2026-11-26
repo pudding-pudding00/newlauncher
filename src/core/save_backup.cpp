@@ -200,6 +200,17 @@ Result<void> restoreUnit(FileSystem& fs, std::string_view dataDir, const SaveUni
     return fs.removeFile(journalPath(dataDir));
 }
 
+Result<void> restoreFromZip(FileSystem& fs, std::string_view dataDir, const SaveUnit& u, std::string_view zipPath,
+                            std::string_view title, std::string_view device, u64 now) {
+    using R = Result<void>;
+    // Deflate-Pakete sind kleiner als roh; das Doppelte der Rohgrenze lässt auch unkomprimierte ZIPs zu.
+    auto zip = fs.readAll(zipPath, kMaxSaveUnitBytes * 2);
+    if (!zip.isOk()) return R::err(zip.error());
+    auto pkg = unpackSave(zip.value());
+    if (!pkg.isOk()) return R::err(pkg.error());
+    return restoreUnit(fs, dataDir, u, pkg.value(), title, device, now);
+}
+
 RecoverResult recoverRestore(FileSystem& fs, std::string_view dataDir) {
     auto raw = fs.readAll(journalPath(dataDir), 1024 * 1024);
     if (!raw.isOk()) return raw.error().code == ErrorCode::NotFound ? RecoverResult::None : RecoverResult::Failed;

@@ -88,6 +88,10 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     const std::string_view conflict = trim(ini.get("debug", "cloud_conflict"));
     if (conflict == "wii" || conflict == "cloud" || conflict == "cancel") c.debugCloudConflict = std::string(conflict);
     c.debugCloudSync = std::string(trim(ini.get("debug", "cloud_sync")));
+    c.debugCloudSyncAll = parseIntIn(ini.get("debug", "cloud_sync_all"), 0, 1, 0) == 1;
+    const std::string_view sw = trim(ini.get("debug", "cloud_switch"));
+    if (sw == "wii" || sw == "cloud" || sw == "ask") c.debugCloudSwitch = std::string(sw);
+    c.debugCloudUnlink = parseIntIn(ini.get("debug", "cloud_unlink"), 0, 1, 0) == 1;
 }
 
 Config configFromIni(const IniDoc& ini, bool tls) {

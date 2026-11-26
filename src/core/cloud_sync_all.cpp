@@ -50,4 +50,25 @@ std::string syncAllLine(const SyncAllResult& r) {
            " skip=" + std::to_string(r.skipped) + " cancel=" + (r.cancelled ? "1" : "0");
 }
 
+ConflictPolicy switchPolicy(int picked) {
+    if (picked == 0) return ConflictPolicy::KeepWii;
+    if (picked == 1) return ConflictPolicy::TakeCloud;
+    return ConflictPolicy::Defer;
+}
+
+int parseSwitchAnswer(std::string_view v) {
+    if (v == "wii") return 0;
+    if (v == "cloud") return 1;
+    if (v == "ask") return 2;
+    return -1;
+}
+
+std::vector<SyncTarget> conflictTargets(std::span<const SyncTarget> targets, std::span<const std::string> ids) {
+    const std::set<std::string, std::less<>> want(ids.begin(), ids.end());
+    std::vector<SyncTarget> out;
+    for (const SyncTarget& t : targets)
+        if (want.count(t.unit.id) != 0) out.push_back(t);
+    return out;
+}
+
 }  // namespace nl

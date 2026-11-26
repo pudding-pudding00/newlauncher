@@ -1762,11 +1762,24 @@ int main(int argc, char** argv) {
         const unsigned n = static_cast<unsigned>(items.size());
         if (n > 0 && cloud.startUploads(std::move(items))) nl::log::line("NL_CLOUD_UPLOAD start n=%u", n);
     };
+    // M28 "Alle abgleichen": erster Lauf sammelt Konflikte (Defer), ein Dialog fragt einmal, ein zweiter Lauf löst sie.
+    enum class SyncAllMode : u8 { Idle, Manual, Switch };
+    SyncAllMode syncAllMode = SyncAllMode::Idle;
+    bool syncAllAsking = false, syncAllResolving = false;
+    u32 syncAllPushed = 0, syncAllPulled = 0;
+    std::pair<u32, u32> syncAllShown{~0u, ~0u};
+    std::vector<nl::SyncTarget> syncAllTargets;
+    std::vector<std::string> syncAllConflicts;
+    std::function<void()> afterSyncAll;
+    bool debugUnlinkPending = false;
     auto cloudViewNow = [&]() {
         using Status = nl::ui::CloudView::Status;
         nl::ui::CloudView v;
         v.provider = config.cloudProvider;
         v.busy = cloud.running();
+        v.syncing = syncAllMode != SyncAllMode::Idle;
+        v.driveReady = !config.driveClientId.empty();
+        v.onedriveReady = !config.onedriveClientId.empty();
         if (!cloudBuilt) v.status = Status::NoTls;
         else if (config.cloudProvider != nl::CloudProviderId::None && nl::cloudClientId(config).empty())
             v.status = Status::NoClientId;
@@ -1833,6 +1846,97 @@ int main(int argc, char** argv) {
                           2);  // Standard: Abbrechen, damit ein schnelles A nichts überschreibt
         scenes.push(&choiceDialog);
     };
+    // Ziele für "Alle abgleichen": jedes Bibliotheksspiel mit auffindbarer Einheit (NAND nur, wenn freigeschaltet).
+    auto collectSyncTargets = [&]() {
+        std::vector<nl::SyncTarget> out;
+        bool nandTried = false, nandOk = false;
+        for (const nl::Game& g : store.games()) {
+            const auto q = saveQueryForGame(g);
+            if (!q) continue;
+            if (q->root == "nand:") {
+                if (!nandTried) {
+                    nandOk = ensureNand();
+                    nandTried = true;
+                }
+                if (!nandOk) continue;
+            }
+            if (std::optional<nl::SaveUnit> unit = nl::locateSave(saveFs, *q)) {
+                nl::SyncTarget t;
+                t.unit = std::move(*unit);
+                t.title = g.title != nullptr ? g.title : (g.key != nullptr ? g.key : "");
+                out.push_back(std::move(t));
+            }
+        }
+        return out;
+    };
+    // Gesperrt wie jeder Cloud-Auftrag: kein lokaler Spielstand-Auftrag, kein Start-Tor, kein anderer Cloud-Auftrag.
+    auto startSyncAllRun = [&](SyncAllMode mode, std::vector<nl::SyncTarget> targets) {
+        if (!cloudActive() || !cloudLinked || saveWorker.running() || cloud.running() || cloudGate) return false;
+        syncAllTargets = targets;
+        if (!cloud.startSyncAll(std::move(targets), nl::ConflictPolicy::Defer)) return false;
+        syncAllMode = mode;
+        syncAllAsking = syncAllResolving = false;
+        syncAllPushed = syncAllPulled = 0;
+        syncAllShown = {~0u, ~0u};
+        syncAllConflicts.clear();
+        cloudScene.setView(cloudViewNow());
+        return true;
+    };
+    auto finishSyncAll = [&](std::size_t conflictsLeft) {
+        if (syncAllMode == SyncAllMode::Switch) {
+            nl::log::line("NL_CLOUD_SWITCH uploaded=%u conflict=%u", static_cast<unsigned>(syncAllPushed),
+                          static_cast<unsigned>(conflictsLeft));
+        }
+        syncAllMode = SyncAllMode::Idle;
+        syncAllAsking = syncAllResolving = false;
+        syncAllTargets.clear();
+        syncAllConflicts.clear();
+        char msg[96];
+        std::snprintf(msg, sizeof msg, nl::ui::tr(nl::ui::Str::CloudSyncDone), static_cast<unsigned>(syncAllPulled),
+                      static_cast<unsigned>(syncAllPushed));
+        cloudScene.setView(cloudViewNow());
+        cloudScene.setStatus(msg);
+        std::function<void()> next = std::move(afterSyncAll);
+        afterSyncAll = nullptr;
+        if (next) next();
+    };
+    // Antwort auf den Wechsel-Dialog: 0 = Wii-Stände, 1 = Cloud-Stände, sonst bleiben die Konflikte fürs Spielstart-Tor.
+    auto answerCloudSwitch = [&](int pick) {
+        if (syncAllMode == SyncAllMode::Idle || !syncAllAsking) return;
+        syncAllAsking = false;
+        nl::log::line("NL_CLOUD_SWITCH_CHOICE %s", pick == 0 ? "wii" : pick == 1 ? "cloud" : "ask");
+        const nl::ConflictPolicy policy = nl::switchPolicy(pick);
+        if (policy == nl::ConflictPolicy::Defer) {
+            finishSyncAll(syncAllConflicts.size());
+            return;
+        }
+        syncAllResolving = true;
+        syncAllShown = {~0u, ~0u};
+        if (!cloud.startSyncAll(nl::conflictTargets(syncAllTargets, syncAllConflicts), policy))
+            finishSyncAll(syncAllConflicts.size());
+    };
+    auto onSyncAllDone = [&](const nl::SyncAllResult& r) {
+        syncAllPushed += r.pushed;
+        syncAllPulled += r.pulled;
+        if (syncAllResolving || r.cancelled || r.conflicts.empty()) {
+            finishSyncAll(r.conflicts.size());
+            return;
+        }
+        syncAllConflicts = r.conflicts;
+        syncAllAsking = true;
+        if (!config.debugCloudSwitch.empty()) {  // nur für Tests: Knopf ohne Dialog wählen
+            answerCloudSwitch(nl::parseSwitchAnswer(config.debugCloudSwitch));
+            return;
+        }
+        char text[256];
+        std::snprintf(text, sizeof text, nl::ui::tr(nl::ui::Str::CloudSwitchText),
+                      static_cast<unsigned>(syncAllConflicts.size()));
+        const char* const buttons[] = {nl::ui::tr(nl::ui::Str::CloudSwitchWii), nl::ui::tr(nl::ui::Str::CloudSwitchCloud),
+                                       nl::ui::tr(nl::ui::Str::CloudSwitchAsk)};
+        choiceDialog.open(nl::ui::tr(nl::ui::Str::CloudSwitchTitle), text, buttons, nl::ui::AppCommand::CloudSwitch,
+                          2);  // Standard: beim Spielstart fragen, damit ein schnelles A nichts überschreibt
+        scenes.push(&choiceDialog);
+    };
     bool cloudLinkWatch = false, cloudCodeShown = false;
     bool cloudAfterLink = false;  // cloud_device_auto: danach cloud_sync statt Uploads
     std::function<void()> runDebugCloudSync;
@@ -1854,6 +1958,16 @@ int main(int argc, char** argv) {
         if (scenes.contains(&deviceCodeScene)) deviceCodeScene.requestClose();
         cloudScene.setView(cloudViewNow());
         cloudScene.setStatus(msg);
+        // Neu angemeldet (auch nach einem Anbieterwechsel): alles einmal abgleichen, danach die Outbox. Mit cloud_sync
+        // (Tests des Start-Tors) bleibt es beim alten Ablauf.
+        if (st == nl::platform::LinkState::Linked && config.debugCloudSync.empty()) {
+            afterSyncAll = [&]() { startCloudUploads(); };
+            if (startSyncAllRun(SyncAllMode::Switch, collectSyncTargets())) {
+                cloudAfterLink = false;
+                return;
+            }
+            afterSyncAll = nullptr;
+        }
         if (cloudAfterLink) {
             cloudAfterLink = false;
             runDebugCloudSync();
@@ -1878,7 +1992,23 @@ int main(int argc, char** argv) {
             cloudLinked = false;
             cloudRelink = false;
             cloudScene.setView(cloudViewNow());
-            cloudScene.setStatus("");
+            cloudScene.setStatus(*u == nl::RevokeResult::Failed ? nl::ui::tr(nl::ui::Str::CloudUnlinkedRevokeFail) : "");
+        }
+        if (syncAllMode != SyncAllMode::Idle && !syncAllAsking) {
+            if (const std::optional<nl::SyncAllResult> r = cloud.takeSyncAll()) {
+                onSyncAllDone(*r);
+            } else if (const auto p = cloud.syncProgress(); p != syncAllShown) {
+                syncAllShown = p;
+                char msg[64];
+                std::snprintf(msg, sizeof msg, nl::ui::tr(nl::ui::Str::CloudSyncProgress), static_cast<unsigned>(p.first),
+                              static_cast<unsigned>(p.second));
+                cloudScene.setStatus(msg);
+            }
+        }
+        if (debugUnlinkPending && !cloud.running() && syncAllMode == SyncAllMode::Idle && !cloudLinkWatch &&
+            !cloudGate) {
+            debugUnlinkPending = false;  // nur für Tests: zum Schluss abmelden
+            if (!cloud.startUnlink()) nl::log::line("NL_CLOUD_UNLINKED fail");
         }
         if (cloudLinkWatch) {
             const nl::platform::LinkState st = cloud.linkState();
@@ -2919,6 +3049,22 @@ int main(int argc, char** argv) {
                     cloudScene.setStatus(nl::ui::tr(nl::ui::Str::CloudLinkFailed));
                 }
                 break;
+            case nl::ui::AppCommand::CloudSyncAll:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                afterSyncAll = [&]() { startCloudUploads(); };
+                if (!startSyncAllRun(SyncAllMode::Manual, collectSyncTargets())) {
+                    afterSyncAll = nullptr;
+                    cloudScene.setStatus(nl::ui::tr(nl::ui::Str::CloudBusy));
+                }
+                break;
+            case nl::ui::AppCommand::CloudSyncAllCancel:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (syncAllMode != SyncAllMode::Idle) cloud.cancel();  // pumpCloud meldet das Ende
+                break;
+            case nl::ui::AppCommand::CloudSwitch:
+                nl::log::line("NL_CMD %s %d", nl::ui::appCommandName(cmd), choiceDialog.picked());
+                answerCloudSwitch(choiceDialog.picked());
+                break;
             case nl::ui::AppCommand::CloudCancelLink:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 if (cloudLinkWatch) cloud.cancel();  // pumpCloud meldet das Ende (Idle) und frischt das Menü auf
@@ -3130,9 +3276,16 @@ int main(int argc, char** argv) {
                     cloudAfterLink = false;
                     nl::log::line("NL_CLOUD_LINK failed");
                 }
+            } else if (config.debugCloudSyncAll) {  // M28: "Alle abgleichen" ohne Menü (nur Tests)
+                afterSyncAll = [&]() { startCloudUploads(); };
+                if (!startSyncAllRun(SyncAllMode::Manual, collectSyncTargets())) {
+                    afterSyncAll = nullptr;
+                    nl::log::line("NL_CLOUD_SYNCALL fail");
+                }
             } else {
                 runDebugCloudSync();
             }
+            debugUnlinkPending = config.debugCloudUnlink && cloudActive();
             if (config.debugSysinfoSave) {                          // nur für Tests (M13)
                 sysInfoScene.setInfo(buildSysInfo());
                 saveSysInfo();

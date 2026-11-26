@@ -237,7 +237,19 @@
     X(CloudProvider, "Anbieter", "Provider") \
     X(CloudOff, "Aus", "Off") \
     X(CloudDrive, "Google Drive", "Google Drive") \
+    X(CloudProviderOneDrive, "OneDrive", "OneDrive") \
     X(CloudLinkRow, "Anmelden", "Sign in") \
+    X(CloudSyncAll, "Alle abgleichen", "Sync all") \
+    X(CloudSyncAllCancel, "Abgleich abbrechen", "Cancel sync") \
+    X(CloudSyncProgress, "Abgleich %u/%u …", "Syncing %u/%u …") \
+    X(CloudSyncDone, "Abgleich fertig: %u geholt, %u hochgeladen", "Sync done: %u pulled, %u uploaded") \
+    X(CloudSwitchTitle, "Spielstände unterscheiden sich", "Saves differ") \
+    X(CloudSwitchText, "%u Spielstände gibt es auf der Wii und in der Cloud verschieden. Welche gelten?", \
+      "%u saves differ between the Wii and the cloud. Which should win?") \
+    X(CloudSwitchWii, "Wii-Stände nehmen", "Keep Wii saves") \
+    X(CloudSwitchCloud, "Cloud-Stände nehmen", "Take cloud saves") \
+    X(CloudSwitchAsk, "Beim Spielstart fragen", "Ask at game start") \
+    X(CloudUnlinkedRevokeFail, "Abgemeldet, Widerruf nicht bestätigt", "Signed out, revocation not confirmed") \
     X(CloudUnlinkRow, "Abmelden", "Sign out") \
     X(CloudStatusOff, "Cloud-Abgleich ist aus", "Cloud sync is off") \
     X(CloudNotLinked, "Nicht angemeldet", "Not signed in") \

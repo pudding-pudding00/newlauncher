@@ -25,6 +25,9 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::CloudSetProvider: return "cloud_set_provider";
         case AppCommand::CloudLink: return "cloud_link";
         case AppCommand::CloudUnlink: return "cloud_unlink";
+        case AppCommand::CloudSyncAll: return "cloud_sync_all";
+        case AppCommand::CloudSyncAllCancel: return "cloud_sync_all_cancel";
+        case AppCommand::CloudSwitch: return "cloud_switch";
         case AppCommand::CloudCancelLink: return "cloud_cancel_link";
         case AppCommand::CloudSkip: return "cloud_skip";
         case AppCommand::CloudConflict: return "cloud_conflict";

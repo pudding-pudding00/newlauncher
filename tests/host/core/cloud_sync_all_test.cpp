@@ -177,3 +177,24 @@ TEST_CASE("syncAll: doppelte Einheit (eine Karte, zwei Spiele) nur einmal") {
     CHECK(r.cloud.stats == 2);
     CHECK(r.progress.back() == std::pair<u32, u32>{2, 2});
 }
+
+TEST_CASE("Anbieterwechsel: Antwort → Regel, Debug-Text → Antwort, Konflikt-Ziele") {
+    CHECK(switchPolicy(0) == ConflictPolicy::KeepWii);
+    CHECK(switchPolicy(1) == ConflictPolicy::TakeCloud);
+    CHECK(switchPolicy(2) == ConflictPolicy::Defer);
+    CHECK(switchPolicy(-1) == ConflictPolicy::Defer);
+    CHECK(parseSwitchAnswer("wii") == 0);
+    CHECK(parseSwitchAnswer("cloud") == 1);
+    CHECK(parseSwitchAnswer("ask") == 2);
+    CHECK(parseSwitchAnswer("x") == -1);
+
+    std::vector<SyncTarget> all(3);
+    all[0].unit.id = "wii-RMCP";
+    all[1].unit.id = "gc-GALE";
+    all[2].unit.id = "ch-0001000148414145";
+    const std::vector<std::string> ids = {"ch-0001000148414145", "wii-RMCP", "fehlt"};
+    const auto sub = conflictTargets(all, ids);
+    REQUIRE(sub.size() == 2);
+    CHECK(sub[0].unit.id == "wii-RMCP");
+    CHECK(sub[1].unit.id == "ch-0001000148414145");
+}

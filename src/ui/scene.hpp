@@ -74,7 +74,10 @@ enum class AppCommand : u8 {
     OpenCloud,        // Einstellungen (M27): Cloud-Menü öffnen
     CloudSetProvider, // Cloud-Menü: CloudScene::provider() übernehmen und config.ini schreiben
     CloudLink,        // Cloud-Menü: Anmelden per Gerätecode starten
-    CloudUnlink,      // Cloud-Menü: abmelden (tokens.bin löschen)
+    CloudUnlink,      // Cloud-Menü: abmelden (Widerruf, tokens.bin löschen)
+    CloudSyncAll,     // Cloud-Menü (M28): alle Spielstände abgleichen
+    CloudSyncAllCancel, // Cloud-Menü: laufendes "Alle abgleichen" abbrechen
+    CloudSwitch,      // ChoiceDialog nach dem Anbieterwechsel: 0 = Wii, 1 = Cloud, sonst beim Spielstart fragen
     CloudCancelLink,  // Gerätecode-Szene mit B geschlossen
     CloudSkip,        // Abgleich-Szene: ohne Abgleich spielen
     CloudConflict,    // ChoiceDialog des Konflikts geschlossen: 0 = Wii, 1 = Cloud, sonst Abbruch

@@ -31,4 +31,11 @@ SyncAllResult syncAll(CloudCtx& ctx, std::span<const SyncTarget> targets, Confli
 // NL_CLOUD_SYNCALL pulled=N pushed=N same=N conflict=N skip=N cancel=0|1
 std::string syncAllLine(const SyncAllResult& r);
 
+// Anbieterwechsel-Dialog: 0 = Wii-Stände nehmen, 1 = Cloud-Stände nehmen, sonst beim Spielstart fragen.
+ConflictPolicy switchPolicy(int picked);
+// Debug cloud_switch = wii|cloud|ask → Knopf 0/1/2, sonst -1.
+int parseSwitchAnswer(std::string_view v);
+// Die Ziele, deren Einheit in ids steht, in der Reihenfolge von targets.
+std::vector<SyncTarget> conflictTargets(std::span<const SyncTarget> targets, std::span<const std::string> ids);
+
 }  // namespace nl

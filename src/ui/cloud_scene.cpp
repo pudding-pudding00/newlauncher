@@ -14,7 +14,7 @@ using gfx::FontSize;
 using gfx::FontWeight;
 using gfx::Rect;
 
-constexpr float kCardMaxW = 520.0f, kCardH = 250.0f, kPad = 24.0f, kRowH = 34.0f;
+constexpr float kCardMaxW = 520.0f, kCardH = 284.0f, kPad = 24.0f, kRowH = 34.0f;
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
 
@@ -50,15 +50,35 @@ void CloudScene::setView(CloudView v) {
 }
 
 bool CloudScene::rowEnabled(int row) const {
-    const bool usable = view_.status != CloudView::Status::NoTls && !view_.busy;
+    const bool tls = view_.status != CloudView::Status::NoTls;
+    const bool usable = tls && !view_.busy && !view_.syncing;
     switch (row) {
         case kRowProvider: return usable;
         case kRowLink:
-            return usable && view_.provider == CloudProviderId::Drive && view_.status != CloudView::Status::NoClientId;
+            return usable && view_.provider != CloudProviderId::None && view_.status != CloudView::Status::NoClientId;
+        case kRowSyncAll:
+            return tls && view_.status == CloudView::Status::Linked && (view_.syncing || !view_.busy);
         case kRowUnlink:
             return usable && (view_.status == CloudView::Status::Linked || view_.status == CloudView::Status::Relink);
         default: return false;
     }
+}
+
+bool CloudScene::cycleProvider(int dir) {
+    static constexpr CloudProviderId kOrder[] = {CloudProviderId::None, CloudProviderId::Drive,
+                                                 CloudProviderId::OneDrive};
+    constexpr int n = 3;
+    int i = 0;
+    while (i < n && kOrder[i] != view_.provider) ++i;
+    for (int k = 1; k < n; ++k) {
+        const CloudProviderId p = kOrder[((i + dir * k) % n + n) % n];
+        const bool ready = p == CloudProviderId::None || (p == CloudProviderId::Drive && view_.driveReady) ||
+                           (p == CloudProviderId::OneDrive && view_.onedriveReady);
+        if (!ready) continue;
+        view_.provider = p;
+        return true;
+    }
+    return false;
 }
 
 void CloudScene::fixFocus() {
@@ -119,14 +139,19 @@ void CloudScene::update(const UiContext& ctx, const InputFrame& in, float, Scene
     const bool confirm = in.pressed(Action::Confirm) && (!in.pointerValid || hit >= 0);
     if (focus_ == kRowProvider) {
         if (confirm || in.pressed(Action::Right) || in.pressed(Action::Left)) {
-            view_.provider = view_.provider == CloudProviderId::None ? CloudProviderId::Drive : CloudProviderId::None;
-            out.command = AppCommand::CloudSetProvider;
-            out.sound = UiSound::Move;
+            if (cycleProvider(in.pressed(Action::Left) ? -1 : 1)) {
+                out.command = AppCommand::CloudSetProvider;
+                out.sound = UiSound::Move;
+            }
         }
         return;
     }
     if (!confirm) return;
-    out.command = focus_ == kRowLink ? AppCommand::CloudLink : AppCommand::CloudUnlink;
+    switch (focus_) {
+        case kRowLink: out.command = AppCommand::CloudLink; break;
+        case kRowSyncAll: out.command = view_.syncing ? AppCommand::CloudSyncAllCancel : AppCommand::CloudSyncAll; break;
+        default: out.command = AppCommand::CloudUnlink; break;
+    }
     out.sound = UiSound::Confirm;
 }
 
@@ -143,16 +168,20 @@ void CloudScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const float x = c.x + kPad, w = c.w - 2 * kPad;
     gfx::drawTextEllipsis(dl, head, x, c.y + kPad + head.ascent, w, tr(Str::Cloud), t.text);
 
-    static constexpr Str kLabels[kRowCount] = {Str::CloudProvider, Str::CloudLinkRow, Str::CloudUnlinkRow};
+    static constexpr Str kLabels[kRowCount] = {Str::CloudProvider, Str::CloudLinkRow, Str::CloudSyncAll,
+                                               Str::CloudUnlinkRow};
     for (int r = 0; r < kRowCount; ++r) {
         const Rect row = rowRect(ctx, r);
         const bool enabled = rowEnabled(r);
         if (r == focus_ && enabled) gfx::roundRect(dl, s, Rect{row.x - 4, row.y + 2, row.w + 8, row.h - 4}, 10, t.tileFocus);
         const float base = row.y + row.h / 2 + (body.ascent - body.descent) / 2;
         const Color fg = enabled ? (r == kRowProvider ? t.text : t.accent) : t.textMuted;
-        gfx::drawTextEllipsis(dl, body, row.x + 8, base, row.w / 2, tr(kLabels[r]), fg);
+        const Str label = r == kRowSyncAll && view_.syncing ? Str::CloudSyncAllCancel : kLabels[r];
+        gfx::drawTextEllipsis(dl, body, row.x + 8, base, row.w / 2, tr(label), fg);
         if (r == kRowProvider) {
-            const char* v = tr(view_.provider == CloudProviderId::Drive ? Str::CloudDrive : Str::CloudOff);
+            const char* v = tr(view_.provider == CloudProviderId::Drive      ? Str::CloudDrive
+                               : view_.provider == CloudProviderId::OneDrive ? Str::CloudProviderOneDrive
+                                                                             : Str::CloudOff);
             const float vw = gfx::measureText(value, v);
             gfx::drawText(dl, value, row.x + row.w - 8 - vw, base, v, enabled ? t.text : t.textMuted);
         }

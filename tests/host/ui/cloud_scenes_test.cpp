@@ -95,6 +95,7 @@ TEST_CASE_FIXTURE(Fixture, "CloudScene: angemeldet → Abmelden meldet CloudUnli
     CHECK(s.rowEnabled(CloudScene::kRowUnlink));
     step(s, action(Action::Down));
     step(s, action(Action::Down));
+    step(s, action(Action::Down));
     CHECK(s.focus() == CloudScene::kRowUnlink);
     CHECK(step(s, action(Action::Confirm)).command == AppCommand::CloudUnlink);
     v.busy = true;
@@ -164,4 +165,84 @@ TEST_CASE_FIXTURE(Fixture, "requestClose schließt Abgleich- und Code-Szene ohne
     r = step(code, InputFrame{});
     CHECK(r.pop);
     CHECK(r.command == AppCommand::None);
+}
+
+TEST_CASE_FIXTURE(Fixture, "CloudScene M28: Anbieter-Zyklus Aus → Drive → OneDrive, ohne Client-ID übersprungen") {
+    CloudScene s;
+    CloudView v = view(CloudProviderId::None, CloudView::Status::NotLinked);
+    s.open(v);
+    step(s, action(Action::Right));
+    CHECK(s.provider() == CloudProviderId::Drive);
+    step(s, action(Action::Right));
+    CHECK(s.provider() == CloudProviderId::OneDrive);
+    step(s, action(Action::Right));
+    CHECK(s.provider() == CloudProviderId::None);
+    step(s, action(Action::Left));
+    CHECK(s.provider() == CloudProviderId::OneDrive);
+    s.draw(ctx, dl);
+
+    v.onedriveReady = false;
+    s.open(v);
+    step(s, action(Action::Right));
+    CHECK(s.provider() == CloudProviderId::Drive);
+    step(s, action(Action::Right));
+    CHECK(s.provider() == CloudProviderId::None);
+    step(s, action(Action::Left));
+    CHECK(s.provider() == CloudProviderId::Drive);
+
+    v.driveReady = false;
+    s.open(v);
+    CHECK(step(s, action(Action::Right)).command == AppCommand::None);  // nichts wählbar
+    CHECK(s.provider() == CloudProviderId::None);
+}
+
+TEST_CASE_FIXTURE(Fixture, "CloudScene M28: OneDrive angemeldet → Anmelden erlaubt") {
+    CloudScene s;
+    s.open(view(CloudProviderId::OneDrive, CloudView::Status::NotLinked));
+    CHECK(s.rowEnabled(CloudScene::kRowLink));
+}
+
+TEST_CASE_FIXTURE(Fixture, "CloudScene M28: Alle abgleichen nur angemeldet, A → CloudSyncAll, beim Abgleich Abbruch") {
+    CloudScene s;
+    CloudView v = view(CloudProviderId::Drive, CloudView::Status::NotLinked);
+    s.open(v);
+    CHECK_FALSE(s.rowEnabled(CloudScene::kRowSyncAll));
+    v.status = CloudView::Status::Relink;
+    s.setView(v);
+    CHECK_FALSE(s.rowEnabled(CloudScene::kRowSyncAll));
+    v.status = CloudView::Status::Linked;
+    s.setView(v);
+    CHECK(s.rowEnabled(CloudScene::kRowSyncAll));
+    step(s, action(Action::Down));
+    step(s, action(Action::Down));
+    CHECK(s.focus() == CloudScene::kRowSyncAll);
+    CHECK(step(s, action(Action::Confirm)).command == AppCommand::CloudSyncAll);
+    CHECK(std::string(appCommandName(AppCommand::CloudSyncAll)) == "cloud_sync_all");
+
+    v.syncing = true;
+    s.setView(v);
+    CHECK(s.rowEnabled(CloudScene::kRowSyncAll));
+    CHECK_FALSE(s.rowEnabled(CloudScene::kRowProvider));
+    CHECK_FALSE(s.rowEnabled(CloudScene::kRowUnlink));
+    CHECK(s.focus() == CloudScene::kRowSyncAll);
+    CHECK(step(s, action(Action::Confirm)).command == AppCommand::CloudSyncAllCancel);
+    CHECK(std::string(appCommandName(AppCommand::CloudSyncAllCancel)) == "cloud_sync_all_cancel");
+    s.draw(ctx, dl);
+}
+
+TEST_CASE("M28: neue Cloud-Strings in beiden Sprachen") {
+    const Str ids[] = {Str::CloudProviderOneDrive, Str::CloudSyncAll,   Str::CloudSyncAllCancel,
+                       Str::CloudSyncProgress,     Str::CloudSyncDone,  Str::CloudSwitchTitle,
+                       Str::CloudSwitchWii,        Str::CloudSwitchCloud, Str::CloudSwitchAsk,
+                       Str::CloudUnlinkedRevokeFail};
+    for (Lang l : {Lang::De, Lang::En}) {
+        setLanguage(l);
+        for (Str id : ids) CHECK(std::string(tr(id)).size() > 0);
+        CHECK(std::string(tr(Str::CloudSyncProgress)).find("%u/%u") != std::string::npos);
+    }
+    setLanguage(Lang::De);
+    CHECK(std::string(tr(Str::CloudUnlinkedRevokeFail)) == "Abgemeldet, Widerruf nicht bestätigt");
+    setLanguage(Lang::En);
+    CHECK(std::string(tr(Str::CloudUnlinkedRevokeFail)) == "Signed out, revocation not confirmed");
+    setLanguage(Lang::De);
 }

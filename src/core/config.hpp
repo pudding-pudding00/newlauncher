@@ -94,6 +94,9 @@ struct Config {
     bool debugCloudDeviceAuto = false;  // [debug] cloud_device_auto = 1: nach NL_READY anmelden (Smoke, M27)
     std::string debugCloudConflict;  // [debug] cloud_conflict = wii|cloud|cancel: Konfliktdialog beantworten (M27)
     std::string debugCloudSync;     // [debug] cloud_sync = <spielschlüssel>: Start-Tor ohne Start durchlaufen (M27)
+    bool debugCloudSyncAll = false;  // [debug] cloud_sync_all = 1: nach NL_READY "Alle abgleichen" (M28)
+    std::string debugCloudSwitch;   // [debug] cloud_switch = wii|cloud|ask: Wechsel-Dialog beantworten (M28)
+    bool debugCloudUnlink = false;  // [debug] cloud_unlink = 1: zum Schluss abmelden (M28)
 };
 
 // tls: Build mit HTTPS (NL_TLS). Bestimmt die Standardquellen; die offiziellen Quellen in http- oder https-Form

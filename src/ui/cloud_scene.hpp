@@ -1,6 +1,6 @@
 #pragma once
-// Cloud-Menü (M27) aus den Einstellungen: Zeile Anbieter (Aus/Google Drive, ◀▶ oder A), Anmelden, Abmelden und eine
-// Statuszeile. Gesperrte Zeilen überspringt der Fokus. Die Arbeit erledigt main (CloudWorker) und meldet den Stand
+// Cloud-Menü (M27/M28) aus den Einstellungen: Zeile Anbieter (Aus → Google Drive → OneDrive, ◀▶ oder A; ohne
+// Client-ID übersprungen), Anmelden, Alle abgleichen (während des Laufs: Abbrechen), Abmelden und eine Statuszeile. Gesperrte Zeilen überspringt der Fokus. Die Arbeit erledigt main (CloudWorker) und meldet den Stand
 // über setView/setStatus zurück.
 
 #include <string>
@@ -15,11 +15,13 @@ struct CloudView {
     CloudProviderId provider = CloudProviderId::None;
     Status status = Status::NotLinked;
     bool busy = false;  // Anmelden oder Abgleich läuft
+    bool syncing = false;  // "Alle abgleichen" läuft: nur die Abbrechen-Zeile ist frei
+    bool driveReady = true, onedriveReady = true;  // Client-ID in config.ini vorhanden
 };
 
 class CloudScene final : public Scene {
 public:
-    static constexpr int kRowProvider = 0, kRowLink = 1, kRowUnlink = 2, kRowCount = 3;
+    static constexpr int kRowProvider = 0, kRowLink = 1, kRowSyncAll = 2, kRowUnlink = 3, kRowCount = 4;
 
     void open(CloudView v);  // Fokus auf die erste freie Zeile, Meldung leer
     void setView(CloudView v);
@@ -40,6 +42,7 @@ public:
 
 private:
     void fixFocus();
+    bool cycleProvider(int dir);
     gfx::Rect cardRect(const UiContext& ctx) const;
 
     CloudView view_;

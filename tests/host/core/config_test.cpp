@@ -544,3 +544,17 @@ TEST_CASE("M28: cloudClientId gehört zum aktiven Anbieter") {
     c.cloudProvider = CloudProviderId::OneDrive;
     CHECK(cloudClientId(c) == "ms-id");
 }
+
+TEST_CASE("M28: Debug cloud_sync_all, cloud_switch, cloud_unlink") {
+    const Config c = configFromIni(
+        IniDoc::parse("[debug]\ncloud_sync_all = 1\ncloud_switch = cloud\ncloud_unlink = 1\n"));
+    CHECK(c.debugCloudSyncAll);
+    CHECK(c.debugCloudSwitch == "cloud");
+    CHECK(c.debugCloudUnlink);
+    const Config d = configFromIni(IniDoc::parse("[debug]\ncloud_switch = egal\n"));
+    CHECK_FALSE(d.debugCloudSyncAll);
+    CHECK(d.debugCloudSwitch.empty());
+    CHECK_FALSE(d.debugCloudUnlink);
+    for (const char* v : {"wii", "cloud", "ask"})
+        CHECK(configFromIni(IniDoc::parse(std::string("[debug]\ncloud_switch = ") + v + "\n")).debugCloudSwitch == v);
+}

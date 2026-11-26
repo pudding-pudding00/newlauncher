@@ -74,6 +74,7 @@ add_library(nl_core STATIC
     src/core/http.cpp
     src/core/crc32.cpp
     src/core/inflate.cpp
+    src/core/deflate.cpp
     src/core/zip_reader.cpp
     src/core/emu_catalog.cpp
     src/core/emu_install.cpp

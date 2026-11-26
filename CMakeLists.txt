@@ -38,6 +38,7 @@ add_library(nl_core STATIC
     src/core/oauth_client.cpp
     src/core/drive_provider.cpp
     src/core/onedrive_provider.cpp
+    src/core/dropbox_provider.cpp
     src/core/cloud_sync.cpp
     src/core/cloud_state.cpp
     src/core/cloud_outbox.cpp

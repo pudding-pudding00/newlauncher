@@ -74,10 +74,12 @@ bool CloudWorker::submit(bool front, NetJobFn fn) {
     if (running_ || cfg_.dataDir.empty()) return false;
     join();
     running_ = true;
+    transferring_ = false;
     NetJobFn job = [this, fn = std::move(fn)](const volatile bool& cancel) {
         fn(cancel);
         LWP_MutexLock(mutex_);
         running_ = false;
+        transferring_ = false;
         LWP_MutexUnlock(mutex_);
     };
     jobId_ = front ? service_.submitFront(std::move(job)) : service_.submit(std::move(job));
@@ -235,7 +237,7 @@ bool CloudWorker::withProvider(Fn&& fn) {
     WtlsTransport http;
     DriveProvider drive(http, cfg_.endpoints, stored->tokens, NetService::clockMs, cfg_.apiBase);
     CloudCtx ctx{fs_, cfg_.dataDir, drive, stored->account, cfg_.device, nowUnix(),
-                 [this](std::string line) { log(marker(line)); }};
+                 [this](std::string line) { log(marker(line)); }, [this] { transferring_ = true; }};
     fn(ctx);
     if (drive.refreshed()) log("NL_CLOUD_REFRESH ok");
     if (drive.tokensChanged()) storeTokens(stored->account, stored->tokens);

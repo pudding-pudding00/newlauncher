@@ -21,6 +21,7 @@ struct CloudCtx {
     std::string device;   // Gerätename für die Meta
     u64 now = 0;          // Unix-Zeit (nur Anzeige)
     std::function<void(std::string)> log;
+    std::function<void()> onTransfer;  // vor Download bzw. Upload (das Start-Tor stoppt dann sein Zeitlimit)
 };
 
 enum class PreLaunch : u8 { Ready, Pulled, Pushed, Conflict, Skipped };

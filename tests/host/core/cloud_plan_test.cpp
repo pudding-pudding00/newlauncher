@@ -97,6 +97,43 @@ TEST_CASE("preLaunchSync: Cloud neuer → Pulled, Datei hat Cloud-Bytes, Sicheru
     CHECK(base->rev == r.cloud.files["wii-RMGP"].entry.rev);
 }
 
+TEST_CASE("preLaunchSync: onTransfer meldet den Beginn der Übertragung, vor Download und Upload") {
+    // Das Start-Tor begrenzt nur die Abfrage; ab hier darf eine große Einheit länger brauchen.
+    SUBCASE("Download") {
+        Rig r;
+        remote(r.cloud, "nur in der Cloud");
+        int calls = 0, downloadsAtCall = -1;
+        r.ctx.onTransfer = [&] {
+            ++calls;
+            downloadsAtCall = r.cloud.downloads;
+        };
+        CHECK(preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel).kind == PreLaunch::Pulled);
+        CHECK(calls == 1);
+        CHECK(downloadsAtCall == 0);
+    }
+    SUBCASE("Upload") {
+        Rig r;
+        r.fs.addFile(kDir + "/a.bin", bytes("lokal"));
+        int calls = 0, uploadsAtCall = -1;
+        r.ctx.onTransfer = [&] {
+            ++calls;
+            uploadsAtCall = r.cloud.uploads;
+        };
+        CHECK(preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel).kind == PreLaunch::Pushed);
+        CHECK(calls == 1);
+        CHECK(uploadsAtCall == 0);
+    }
+    SUBCASE("nichts zu tun") {
+        Rig r;
+        r.fs.addFile(kDir + "/a.bin", bytes("lokal"));
+        REQUIRE(preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel).kind == PreLaunch::Pushed);
+        int calls = 0;
+        r.ctx.onTransfer = [&] { ++calls; };
+        CHECK(preLaunchSync(r.ctx, unit(), "Galaxy", r.cancel).kind == PreLaunch::Ready);
+        CHECK(calls == 0);
+    }
+}
+
 TEST_CASE("preLaunchSync: fehlt lokal → Pulled") {
     Rig r;
     remote(r.cloud, "aus der Cloud");

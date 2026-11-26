@@ -54,8 +54,10 @@ void CloudSyncScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     std::snprintf(title, sizeof title, tr(Str::CloudSyncTitle), title_.c_str());
     gfx::drawTextEllipsis(dl, head, x, y + head.ascent, iw, title, t.text);
     y += head.lineHeight + 12.0f;
-    gfx::drawTextEllipsis(dl, body, x, y + body.ascent, iw,
-                          tr(phase_ == CloudPhase::Resolving ? Str::CloudSyncResolving : Str::CloudSyncChecking), t.text2);
+    const Str line = phase_ == CloudPhase::Resolving      ? Str::CloudSyncResolving
+                     : phase_ == CloudPhase::Transferring ? Str::CloudSyncTransferring
+                                                          : Str::CloudSyncChecking;
+    gfx::drawTextEllipsis(dl, body, x, y + body.ascent, iw, tr(line), t.text2);
     y += body.lineHeight + 10.0f;
     // drei Punkte, einer hervorgehoben (zeigt, dass der Launcher nicht hängt)
     const int lit = static_cast<int>(elapsedMs_ / 300.0f) % 3;

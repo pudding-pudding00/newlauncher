@@ -256,6 +256,7 @@
     X(CloudSyncTitle, "Cloud-Abgleich – %s", "Cloud sync – %s") \
     X(CloudSyncChecking, "Spielstand wird mit der Cloud abgeglichen …", "Syncing save with the cloud …") \
     X(CloudSyncResolving, "Gewählter Spielstand wird übertragen …", "Transferring the chosen save …") \
+    X(CloudSyncTransferring, "Spielstand wird übertragen …", "Transferring save …") \
     X(CloudSyncSkip, "B: Ohne Abgleich spielen", "B: Play without syncing") \
     X(CloudConflictTitle, "Spielstand-Konflikt", "Save conflict") \
     X(CloudConflictText, "Wii und Cloud haben sich beide geändert. Welcher Stand soll gelten?\n%s", \

@@ -59,6 +59,7 @@ public:
 
     std::vector<std::string> takeLogLines();
     bool running() const { return running_; }
+    bool transferring() const { return transferring_; }  // laufender Auftrag ist bei Download/Upload
     bool active() const { return jobId_ != 0 && service_.active(jobId_); }
     void cancel();
     void join();
@@ -85,6 +86,7 @@ private:
     u32 jobId_ = 0;
     mutex_t mutex_ = LWP_MUTEX_NULL;
     volatile bool running_ = false;
+    volatile bool transferring_ = false;
     volatile u8 link_ = static_cast<u8>(LinkState::Idle);
     std::optional<DeviceCode> code_;
     std::optional<PreLaunchResult> pre_;

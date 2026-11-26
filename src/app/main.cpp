@@ -35,6 +35,7 @@
 #include "core/save_backup.hpp"
 #include "core/save_locator.hpp"
 #include "core/save_query.hpp"
+#include "core/cloud_gate.hpp"
 #include "core/cloud_outbox.hpp"
 #include "core/oauth_device.hpp"
 #include "core/playlist.hpp"
@@ -1860,8 +1861,12 @@ int main(int argc, char** argv) {
             }
         }
         if (!cloudGate) return;
-        if (!cloudGate->submitted) {
-            if (cloud.running()) return;  // wartet auf den abgebrochenen Upload (Zeitlimit unten gilt trotzdem)
+        if (cloudGate->submitted) {
+            if (const std::optional<nl::PreLaunchResult> r = cloud.takePreLaunch()) {
+                onCloudPreLaunch(*r);
+                if (!cloudGate) return;
+            }
+        } else if (!cloud.running()) {  // sonst wartet das Tor auf den abgebrochenen Upload (Zeitlimit gilt)
             static_cast<void>(cloud.takePreLaunch());  // veraltetes Ergebnis nach B oder Zeitlimit
             cloudGate->submitted = cloud.startPreLaunch(cloudGate->unit, cloudGate->title);
             if (!cloudGate->submitted) {
@@ -1869,11 +1874,16 @@ int main(int argc, char** argv) {
                 finishCloudGate(true);
                 return;
             }
-        } else if (const std::optional<nl::PreLaunchResult> r = cloud.takePreLaunch()) {
-            onCloudPreLaunch(*r);
-            if (!cloudGate) return;
         }
-        if (!cloudGate->asking && msSince(bootTicks) - cloudGate->startMs > 20000) {
+        const bool transferring = cloud.running() && cloud.transferring();
+        if (cloudGate->submitted && transferring && !cloudGate->asking &&
+            cloudSyncScene.phase() == nl::ui::CloudPhase::Checking) {
+            cloudSyncScene.setPhase(nl::ui::CloudPhase::Transferring);
+        }
+        if (nl::cloudGateExpired({.elapsedMs = msSince(bootTicks) - cloudGate->startMs,
+                                  .transferring = transferring,
+                                  .asking = cloudGate->asking,
+                                  .waitingForOld = !cloudGate->submitted})) {
             cloud.cancel();
             nl::log::line("NL_CLOUD_SKIP timeout %s", cloudGate->key.c_str());
             finishCloudGate(true);

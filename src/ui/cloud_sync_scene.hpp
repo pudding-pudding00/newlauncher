@@ -8,7 +8,7 @@
 
 namespace nl::ui {
 
-enum class CloudPhase : u8 { Checking, Resolving };
+enum class CloudPhase : u8 { Checking, Transferring, Resolving };
 
 class CloudSyncScene final : public Scene {
 public:

@@ -78,6 +78,7 @@ CloudStatus statCloud(CloudCtx& ctx, const SaveUnit& unit, std::optional<CloudEn
 PreLaunchResult pull(CloudCtx& ctx, const SaveUnit& unit, std::string_view title, const CloudEntry& cloud,
                      CloudState& state, const volatile bool& cancel) {
     std::vector<u8> zip;
+    if (ctx.onTransfer) ctx.onTransfer();
     const CloudStatus s = ctx.provider.download(cloud, zip, cancel);
     if (s != CloudStatus::Ok) return skipped(ctx, unit.id, skipReason(s));
     auto pkg = unpackSave(zip);
@@ -110,6 +111,7 @@ CloudStatus push(CloudCtx& ctx, const SaveUnit& unit, std::string_view title, co
     if (!zip.isOk()) return CloudStatus::Failed;
     meta.hash = *local.hash;
     meta.files = static_cast<u32>(local.files.size());
+    if (ctx.onTransfer) ctx.onTransfer();
     const CloudStatus s = ctx.provider.upload(unit.id, zip.value(), meta, expectRev, out, cancel);
     if (s != CloudStatus::Ok) {
         log(ctx, unit.id, std::string("push ") + cloudStatusName(s));

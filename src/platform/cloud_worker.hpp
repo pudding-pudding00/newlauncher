@@ -13,6 +13,7 @@
 #include "core/cloud_plan.hpp"
 #include "core/fs.hpp"
 #include "core/oauth_device.hpp"
+#include "core/token_store.hpp"
 #include "core/save_locator.hpp"
 #include "platform/net_service.hpp"
 
@@ -72,7 +73,8 @@ private:
     void log(std::string line);
     std::string tokensPath() const;
     void runLink(const volatile bool& cancel);
-    // Lädt tokens.bin, baut Transport + DriveProvider und ruft fn(ctx). false = nicht angemeldet.
+    // Nimmt die Tokens der Sitzung (sonst tokens.bin), baut Transport + DriveProvider und ruft fn(ctx).
+    // false = nicht angemeldet.
     template <typename Fn>
     bool withProvider(Fn&& fn);
     void storeTokens(const std::string& account, const TokenSet& t);
@@ -87,6 +89,9 @@ private:
     std::optional<DeviceCode> code_;
     std::optional<PreLaunchResult> pre_;
     std::vector<std::string> uploaded_, logLines_;
+    // Tokens dieser Sitzung samt Ablaufzeit (expiresAtMs wird nicht gespeichert): so braucht nicht jeder Auftrag
+    // einen Refresh vorab. Nur im Netz-Thread oder ohne laufenden Auftrag angefasst.
+    std::optional<StoredTokens> cached_;
 };
 
 }  // namespace nl::platform

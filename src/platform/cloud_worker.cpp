@@ -64,6 +64,7 @@ bool CloudWorker::available() {
 void CloudWorker::configure(CloudSettings s) {
     if (running_) return;
     cfg_ = std::move(s);
+    cached_.reset();  // anderer Anbieter oder Ordner
 }
 
 std::string CloudWorker::tokensPath() const { return cfg_.dataDir + "/cloud/tokens.bin"; }
@@ -129,6 +130,7 @@ void CloudWorker::storeTokens(const std::string& account, const TokenSet& t) {
     st.provider = cfg_.provider;
     st.account = account;
     st.tokens = t;
+    cached_ = st;
     std::array<u8, 16> salt{}, iv{};
     saltRandom(salt);
     saltRandom(iv);
@@ -227,8 +229,9 @@ void CloudWorker::runLink(const volatile bool& cancel) {
 
 template <typename Fn>
 bool CloudWorker::withProvider(Fn&& fn) {
-    auto stored = loadTokens(fs_, tokensPath());
-    if (!stored) return false;
+    if (!cached_ || cached_->provider != cfg_.provider) cached_ = loadTokens(fs_, tokensPath());
+    if (!cached_) return false;
+    StoredTokens* stored = &*cached_;  // DriveProvider schreibt erneuerte Tokens hier hinein
     WtlsTransport http;
     DriveProvider drive(http, cfg_.endpoints, stored->tokens, NetService::clockMs, cfg_.apiBase);
     CloudCtx ctx{fs_, cfg_.dataDir, drive, stored->account, cfg_.device, nowUnix(),
@@ -333,6 +336,7 @@ void CloudWorker::unlink() {
     if (running_ || cfg_.dataDir.empty()) return;
     const auto stored = loadTokens(fs_, tokensPath());
     (void)fs_.removeFile(tokensPath());
+    cached_.reset();
     if (!stored) return;
     const std::string statePath = cfg_.dataDir + "/cloud/state.ini";
     auto r = fs_.readAll(statePath, 1024 * 1024);

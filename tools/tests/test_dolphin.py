@@ -603,6 +603,74 @@ class DolphinToolsTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self._save_run("--save-step", "backup")
 
+    # --- M27: --cloud-fake drive startet den Drive-Fake über HTTPS und schreibt [cloud] + [debug] ---
+    def _cloud_run(self, step: str, seen: dict) -> int:
+        self._fake_dolphin("raise SystemExit(0)\n")
+
+        def fake_start(fake, ssl_context=None):
+            seen["ctx"] = ssl_context
+            seen["fake"] = fake
+            return mock.Mock(), 4444
+
+        def fake_popen(*a, **k):  # Zustand der SD, solange Dolphin liefe
+            sd = self.user / "SDSync"
+            seen["config"] = (sd / "newlauncher/config.ini").read_text(encoding="utf-8")
+            session = sd / "newlauncher/cloud/session.ini"
+            seen["session"] = session.read_text(encoding="utf-8") if session.is_file() else None
+            seen["sav"] = (sd / "saves_smoke/gb/Tetris (World) (Rev 1).sav").is_file()
+            raise OSError("kein Dolphin im Test")
+
+        with mock.patch("dolphin_smoke.cloud_fake_start", side_effect=fake_start), \
+                mock.patch("dolphin_smoke.make_test_ca", side_effect=self._fake_make_ca([])), \
+                mock.patch("dolphin_smoke.ssl_server_context", return_value="CTX"), \
+                mock.patch("dolphin_smoke.subprocess.Popen", side_effect=fake_popen):
+            return smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                               "--timeout", "2", "--cloud-fake", "drive", "--cloud-step", step])
+
+    def test_smoke_cloud_fake_implies_tls_and_wires_config(self):
+        seen = {}
+        self.assertEqual(self._cloud_run("link", seen), 2)  # Popen scheitert: Voraussetzung
+        self.assertEqual(seen["ctx"], "CTX")
+        self.assertIn("[cloud]\nprovider = drive\n", seen["config"])
+        self.assertIn("drive_client_id = ", seen["config"])
+        debug = seen["config"].partition("[debug]")[2]
+        self.assertIn("cloud_base = https://localhost:4444\n", debug)
+        self.assertIn("cloud_device_auto = 1\n", debug)
+        self.assertIn("tls_ca = sd:/newlauncher/test_ca.pem\n", debug)
+        self.assertNotIn("cloud_sync", debug)
+
+    def test_smoke_cloud_push_writes_session_and_cleans_up(self):
+        seen = {}
+        self._cloud_run("push", seen)
+        self.assertIn("game = gb/Tetris (World) (Rev 1).gb\n", seen["session"])
+        self.assertIn("unit = gb-tetris-world-rev-1-", seen["session"])
+        self.assertTrue(seen["sav"])
+        self.assertFalse((self.user / "SDSync/newlauncher/cloud").exists())
+        self.assertFalse((self.user / "SDSync/saves_smoke").exists())
+
+    def test_smoke_cloud_pull_seeds_fake_without_local_save(self):
+        seen = {}
+        self._cloud_run("pull", seen)
+        self.assertIn("cloud_sync = gb/Tetris (World) (Rev 1).gb\n", seen["config"])
+        self.assertFalse(seen["sav"])
+        self.assertEqual(len(seen["fake"].state_dump()["files"]), 1)
+
+    def test_smoke_cloud_conflict_answers_cloud(self):
+        seen = {}
+        self._cloud_run("conflict", seen)
+        self.assertIn("cloud_conflict = cloud\n", seen["config"])
+        self.assertTrue(seen["sav"])
+
+    def test_smoke_cloud_step_needs_cloud_fake(self):
+        with mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--cloud-step", "push"])
+
+    def test_smoke_cloud_fake_rejects_save_fixture(self):
+        with mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+            smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                        "--cloud-fake", "drive", "--save-fixture", "gb"])
+
     # --- M9: --expect-frag gleicht NL_FRAG mit fat_frag.py ab ---
     FRAG_REL = "Super Mario Galaxy [RMGP01]/RMGP01.iso"
     FRAG_LINE = "NL_FRAG dev=sd part_lba=2048 n=2 size=3 crc=6dabbf0a first=0:3182:2"

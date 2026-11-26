@@ -20,6 +20,7 @@ from pathlib import Path
 
 from deploy_dolphin import ARGV_ECHO_DOL, DEFAULT_DOL, DIST_DIR, FIXTURES_DIR, deploy
 from fat_frag import NotFat32Error, expected_frag_line, read_file
+import cloud_smoke
 import save_smoke
 from make_disk_image import make_image
 from make_fixtures import disc_header
@@ -27,6 +28,7 @@ from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_pat
                      sd_sync_dir, wait_for_markers, write_dev_config)
 from pngfile import solid_png, write_png
 from test_ca import make as make_test_ca
+from cloud_fake import start as cloud_fake_start
 from wii_remote import REMOTE_PORT, RemoteClient, RemoteError, yuyv_to_rgba
 from wii_title import TEST_CHANNEL_ID, TEST_CHANNEL_NAMES, install_channel
 
@@ -297,12 +299,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--save-step", choices=save_smoke.STEPS, default="backup",
                         help="M26: backup sichert und prüft das ZIP, restore spielt es zurück, recover rollt ein "
                              "Journal zurück (restore/recover brauchen einen backup-Lauf davor)")
+    parser.add_argument("--cloud-fake", choices=cloud_smoke.PROVIDERS,
+                        help="M27: Cloud-Fake über HTTPS (schließt --tls ein), Anmeldung per Gerätecode")
+    parser.add_argument("--cloud-step", choices=cloud_smoke.STEPS, default="link",
+                        help="Cloud-Schritt (siehe tools/cloud_smoke.py)")
     args = parser.parse_args(argv)
+    given = argv if argv is not None else sys.argv[1:]
+    if "--cloud-step" in given and not args.cloud_fake:
+        parser.error("--cloud-step braucht --cloud-fake")
+    if args.cloud_fake and (args.save_fixture or args.tls_wrong_ca):
+        parser.error("--cloud-fake verträgt sich nicht mit --save-fixture oder --tls-wrong-ca")
+    if args.cloud_fake:
+        args.tls = True
     if "--save-step" in (argv if argv is not None else sys.argv[1:]) and not args.save_fixture:
         parser.error("--save-step braucht --save-fixture")
     tls = args.tls or args.tls_wrong_ca
-    if tls and not (args.cover_server or args.emu_server or args.cheat_server or args.update_server):
-        parser.error("--tls/--tls-wrong-ca braucht --cover-server, --emu-server oder --cheat-server")
+    if tls and not (args.cover_server or args.emu_server or args.cheat_server or args.update_server
+                    or args.cloud_fake):
+        parser.error("--tls/--tls-wrong-ca braucht --cover-server, --emu-server, --cheat-server oder --cloud-fake")
     if args.cover_auto and not args.cover_server:
         parser.error("--cover-auto braucht --cover-server")
     markers = args.markers or DEFAULT_MARKERS
@@ -403,6 +417,12 @@ def main(argv: list[str] | None = None) -> int:
         servers.append(server)
         debug_lines += [f"cheat_url = {scheme_host}:{port}/codes/{{id6}}.txt", f"cheat_fetch = {CHEAT_SERVER_ID6}"]
         markers = markers + ["NL_CHEAT_FETCH " + ("ok" if args.cheat_server == "ok" else "nocodes")]
+    args.cloud_fake_drive = None
+    if args.cloud_fake:
+        args.cloud_fake_drive = cloud_smoke.make_fake(args.cloud_step)
+        server, port = cloud_fake_start(args.cloud_fake_drive, ssl_context)
+        servers.append(server)
+        debug_lines.append(f"cloud_base = {scheme_host}:{port}")
     if getattr(args, "return_stub", False):
         debug_lines.append(f"autostart = {RETURN_STUB_ROM}")
         markers = markers + RETURN_STUB_MARKERS
@@ -581,6 +601,15 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
                 with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
                     f.write(plan.config_append)
         args.save_fx = save_fx
+        args.cloud_plan = None
+        if getattr(args, "cloud_fake_drive", None) is not None:
+            plan = cloud_smoke.prepare(args.cloud_step, args.cloud_fake_drive, user_dir)
+            args.cloud_plan = plan
+            debug_lines = debug_lines + plan.debug_lines
+            markers = markers + plan.markers
+            if not args.fresh_data:
+                with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
+                    f.write(plan.config_append)
         if getattr(args, "emunand", False):
             if not ARGV_ECHO_DOL.is_file():
                 print(f"SMOKE FEHLER: argv_echo.dol nicht gebaut: {ARGV_ECHO_DOL}")
@@ -620,6 +649,8 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
         shutil.rmtree(sd_sync_dir(user_dir) / "emunand", ignore_errors=True)  # --emunand
         if getattr(args, "save_fx", None) is not None:
             save_smoke.cleanup(args.save_fx, user_dir)
+        if getattr(args, "cloud_plan", None) is not None:
+            cloud_smoke.cleanup(user_dir)
 
 
 def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -> int:
@@ -637,7 +668,8 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
             missing = _remote_session(user_dir)
         if not missing and getattr(args, "update_server", False):
             missing = _update_restart(user_dir)
-        if not missing and (getattr(args, "cheat_server", None) or getattr(args, "save_fx", None)):
+        if not missing and (getattr(args, "cheat_server", None) or getattr(args, "save_fx", None)
+                            or getattr(args, "cloud_plan", None)):
             # Dolphin puffert SD-Schreibzugriffe; ein sofortiges Beenden verliert die gerade geschriebene Datei.
             time.sleep(SD_SETTLE_SECONDS)
     finally:
@@ -665,6 +697,9 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
     if not missing and getattr(args, "save_fx", None) is not None:
         missing = save_smoke.post_check(args.save_fx, args.save_step, user_dir, _read_log_text(user_dir),
                                         lambda rel: read_file(user_dir / "Load/WiiSD.raw", rel))
+    if not missing and getattr(args, "cloud_plan", None) is not None:
+        missing = cloud_smoke.post_check(args.cloud_plan, user_dir, _read_log_text(user_dir),
+                                         lambda rel: read_file(user_dir / "Load/WiiSD.raw", rel))
     if not missing:
         print("SMOKE OK")
         return 0

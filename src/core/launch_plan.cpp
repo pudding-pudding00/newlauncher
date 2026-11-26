@@ -421,4 +421,10 @@ Result<LaunchTarget, LaunchError> preflightGame(FileSystem& fs, const Game& g, s
     return withFsWarning(dolTarget(planFor(fs, g, libRoot, *emu), d.chosen), emu, deviceFs);
 }
 
+void applyEmuChannelPlan(LaunchTarget& target, WiiBootPlan plan) {
+    target.kind = LaunchTarget::Kind::Wii;
+    target.wii = std::move(plan);
+    target.channelPlanned = true;
+}
+
 }  // namespace nl

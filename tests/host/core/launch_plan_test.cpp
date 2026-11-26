@@ -873,6 +873,26 @@ TEST_CASE("preflightEmuChannel und preflightGame für Console::Channel") {
     CHECK(dryBadCios.isOk());
 }
 
+TEST_CASE("applyEmuChannelPlan: Kanal-Plan wird Wii-Ziel und ist als geplant markiert") {
+    test::MemFileSystem fs;
+    const Game ch{Console::Channel, "000100014E4C5443", "Testkanal", 0, 0, nullptr,
+                  "sd:/emunand/title/00010001/4e4c5443/content/00000000.app", kNoDevice, 0};
+    auto tgt = preflightGame(fs, ch, "", emus(), nullptr, false);
+    REQUIRE(tgt.isOk());
+    CHECK_FALSE(tgt.value().channelPlanned);
+
+    const EmuNandInfo okNand{EmuNandStatus::Ok, {"sd", "/emunand"}, false, 0, "SD"};
+    auto plan = preflightEmuChannel(ch, kD2x, okNand, false);
+    REQUIRE(plan.isOk());
+    LaunchTarget& t = tgt.value();
+    applyEmuChannelPlan(t, std::move(plan.value()));
+    CHECK(t.kind == LaunchTarget::Kind::Wii);
+    CHECK(t.channelPlanned);  // main.cpp darf danach kein prepareWii (USB-Plan) mehr rechnen
+    REQUIRE(t.wii.has_value());
+    CHECK(t.wii->source == WiiBootSource::Channel);
+    CHECK(t.wii->channelTitleId == 0x000100014E4C5443ull);
+}
+
 TEST_CASE("preflightGame: vWii ohne GC-Port-Warnungen und mit wiiu_wide-Standard") {
     auto fs = gcFs();
     const IniDoc cfg = IniDoc::parse("[gc]\nmemcard = real\nnative_si = 1\n");

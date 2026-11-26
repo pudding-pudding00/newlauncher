@@ -141,6 +141,7 @@ struct LaunchTarget {
     std::optional<N64Method> n64;  // gewählter Weg bei N64-Spielen
     std::optional<NinVersion> nintendont;  // GC: erkannte Version (Marker NL_NIN)
     std::optional<WiiBootPlan> wii;        // Kind::Wii: erst nach preflightWii gesetzt
+    bool channelPlanned = false;           // M19: wii stammt aus preflightEmuChannel, kein preflightWii mehr
     std::optional<GcOptions> gc;           // GC mit opts: aufgelöste Optionen (Marker NL_NIN_CFG, NL_OPT_*)
     std::vector<LaunchWarning> warnings;   // M14: Hinweise, Start trotzdem möglich
     std::vector<u8> gct;                   // M15 GC: vor dem Start nach gctPath schreiben (Nintendont CheatPath)
@@ -159,5 +160,10 @@ struct LaunchTarget {
 Result<LaunchTarget, LaunchError> preflightGame(FileSystem& fs, const Game& g, std::string_view libRoot, const EmulatorTable& emus,
                                                 const N64Inputs* n64, bool ahbprotOff,
                                                 const GameOptionInputs* opts = nullptr, FsKind deviceFs = FsKind::Fat);
+
+// M19: EmuNAND-Kanal nach preflightEmuChannel als Wii-Start übernehmen: kind = Wii, wii = plan,
+// channelPlanned = true. Die Plattform rechnet dann keinen USB-Plan (prepareWii) mehr, der Kanal hat
+// kein Bibliotheksgerät und keine Fragmente.
+void applyEmuChannelPlan(LaunchTarget& target, WiiBootPlan plan);
 
 }  // namespace nl

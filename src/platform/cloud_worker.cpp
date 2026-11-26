@@ -2,11 +2,13 @@
 
 #include <array>
 #include <ctime>
+#include <memory>
 #include <unistd.h>
 #include <utility>
 
 #include "core/cloud_state.hpp"
 #include "core/drive_provider.hpp"
+#include "core/onedrive_provider.hpp"
 #include "core/token_store.hpp"
 #include "platform/device_key.hpp"
 #include "platform/http_client.hpp"
@@ -33,6 +35,15 @@ std::optional<StoredTokens> loadTokens(FileSystem& fs, const std::string& path) 
     return unsealTokens(blob.value(), key);
 }
 
+const char* revokeName(RevokeResult r) {
+    switch (r) {
+        case RevokeResult::Ok: return "ok";
+        case RevokeResult::Failed: return "fail";
+        case RevokeResult::Unsupported: break;
+    }
+    return "none";
+}
+
 // Wartet ms in 100-ms-Schritten; false = abgebrochen.
 bool sleepMs(u32 ms, const volatile bool& cancel) {
     for (u32 waited = 0; waited < ms; waited += 100) {
@@ -43,6 +54,14 @@ bool sleepMs(u32 ms, const volatile bool& cancel) {
 }
 
 }  // namespace
+
+// Ohne RTTI und ohne std::variant: der Anbieter kommt als Zeiger auf die Basisklasse.
+std::unique_ptr<CloudProvider> makeProvider(const CloudSettings& cfg, HttpTransport& http, TokenSet& tokens) {
+    if (cfg.provider == "onedrive") {
+        return std::make_unique<OneDriveProvider>(http, cfg.endpoints, tokens, NetService::clockMs, cfg.apiBase);
+    }
+    return std::make_unique<DriveProvider>(http, cfg.endpoints, tokens, NetService::clockMs, cfg.apiBase);
+}
 
 CloudWorker::CloudWorker(NetService& service, FileSystem& fs) : service_(service), fs_(fs) {
     LWP_MutexInit(&mutex_, false);
@@ -215,12 +234,16 @@ void CloudWorker::runLink(const volatile bool& cancel) {
         break;  // Ok
     }
 
-    DriveProvider drive(http, cfg_.endpoints, tokens, NetService::clockMs, cfg_.apiBase);
+    const std::unique_ptr<CloudProvider> provider = makeProvider(cfg_, http, tokens);
     std::string id;
-    if (drive.account(id, cancel) != CloudStatus::Ok || id.empty()) {
+    if (provider->account(id, cancel) != CloudStatus::Ok || id.empty()) {
         log("NL_CLOUD_LINK failed");
         finish(LinkState::Failed);
         return;
+    }
+    // Wechsel des Anbieters: das alte Token best effort widerrufen, bevor tokens.bin überschrieben wird.
+    if (const auto old = loadTokens(fs_, tokensPath()); old && old->provider != cfg_.provider) {
+        log(std::string("NL_CLOUD_UNLINKED revoke=") + revokeName(revoke(http, *old, cancel)));
     }
     storeTokens(cfg_.provider + ":" + id, tokens);
     log("NL_CLOUD_LINKED " + cfg_.provider);
@@ -232,15 +255,16 @@ void CloudWorker::runLink(const volatile bool& cancel) {
 template <typename Fn>
 bool CloudWorker::withProvider(Fn&& fn) {
     if (!cached_ || cached_->provider != cfg_.provider) cached_ = loadTokens(fs_, tokensPath());
+    if (cached_ && cached_->provider != cfg_.provider) cached_.reset();  // Tokens des vorigen Anbieters
     if (!cached_) return false;
-    StoredTokens* stored = &*cached_;  // DriveProvider schreibt erneuerte Tokens hier hinein
+    StoredTokens* stored = &*cached_;  // der Anbieter schreibt erneuerte Tokens hier hinein
     WtlsTransport http;
-    DriveProvider drive(http, cfg_.endpoints, stored->tokens, NetService::clockMs, cfg_.apiBase);
-    CloudCtx ctx{fs_, cfg_.dataDir, drive, stored->account, cfg_.device, nowUnix(),
+    const std::unique_ptr<CloudProvider> provider = makeProvider(cfg_, http, stored->tokens);
+    CloudCtx ctx{fs_, cfg_.dataDir, *provider, stored->account, cfg_.device, nowUnix(),
                  [this](std::string line) { log(marker(line)); }, [this] { transferring_ = true; }};
     fn(ctx);
-    if (drive.refreshed()) log("NL_CLOUD_REFRESH ok");
-    if (drive.tokensChanged()) storeTokens(stored->account, stored->tokens);
+    if (provider->refreshed()) log("NL_CLOUD_REFRESH ok");
+    if (provider->tokensChanged()) storeTokens(stored->account, stored->tokens);
     return true;
 }
 
@@ -328,28 +352,101 @@ std::vector<std::string> CloudWorker::takeUploaded() {
     return out;
 }
 
-// ---- Haupt-Thread ---------------------------------------------------------------------------------------------
+// ---- Alle abgleichen ------------------------------------------------------------------------------------------
 
-bool CloudWorker::linked() {
-    if (cfg_.dataDir.empty() || running_) return false;
-    return loadTokens(fs_, tokensPath()).has_value();
+bool CloudWorker::startSyncAll(std::vector<SyncTarget> targets, ConflictPolicy policy) {
+    syncDone_ = 0;
+    syncTotal_ = static_cast<u32>(targets.size());
+    return submit(false, [this, targets = std::move(targets), policy](const volatile bool& cancel) {
+        SyncAllResult res;
+        if (!service_.networkUp()) {
+            res.stopped = true;
+            log("NL_CLOUD_SYNCALL offline");
+        } else if (!withProvider([&](CloudCtx& ctx) {
+                       res = syncAll(ctx, targets, policy, cancel, [this](u32 done, u32 total) {
+                           syncDone_ = done;
+                           syncTotal_ = total;
+                       });
+                   })) {
+            res.stopped = true;
+            log("NL_CLOUD_SYNCALL unlinked");
+        }
+        log(syncAllLine(res));
+        LWP_MutexLock(mutex_);
+        syncAll_ = std::move(res);
+        LWP_MutexUnlock(mutex_);
+    });
 }
 
-void CloudWorker::unlink() {
-    if (running_ || cfg_.dataDir.empty()) return;
-    const auto stored = loadTokens(fs_, tokensPath());
-    (void)fs_.removeFile(tokensPath());
-    cached_.reset();
-    if (!stored) return;
+std::optional<SyncAllResult> CloudWorker::takeSyncAll() {
+    LWP_MutexLock(mutex_);
+    std::optional<SyncAllResult> r = std::move(syncAll_);
+    syncAll_.reset();
+    LWP_MutexUnlock(mutex_);
+    return r;
+}
+
+// ---- Abmelden ---------------------------------------------------------------------------------------------------
+
+std::string CloudWorker::revokeUrlFor(const std::string& provider) const {
+    if (provider == cfg_.provider) return cfg_.endpoints.revokeUrl;
+    if (provider == "drive") return cfg_.driveRevokeUrl;
+    return std::string();  // OneDrive: kein Widerruf
+}
+
+RevokeResult CloudWorker::revoke(HttpTransport& http, const StoredTokens& t, const volatile bool& cancel) {
+    OAuthEndpoints ep;
+    ep.revokeUrl = revokeUrlFor(t.provider);
+    if (ep.revokeUrl.empty()) return RevokeResult::Unsupported;
+    if (!service_.networkUp()) return RevokeResult::Failed;
+    return revokeToken(http, ep, t.tokens.refresh, cancel);
+}
+
+void CloudWorker::forget(const std::string& account) {
     const std::string statePath = cfg_.dataDir + "/cloud/state.ini";
     auto r = fs_.readAll(statePath, 1024 * 1024);
     if (!r.isOk()) return;
     const auto& b = r.value();
     CloudState state = CloudState::parse(std::string_view(reinterpret_cast<const char*>(b.data()), b.size()));
-    state.clearAccount(stored->account);
+    state.clearAccount(account);
     const std::string text = state.serialize();
     (void)fs_.writeAtomic(statePath, {reinterpret_cast<const u8*>(text.data()), text.size()});
-    link_ = static_cast<u8>(LinkState::Idle);
+}
+
+bool CloudWorker::startUnlink() {
+    return submit(false, [this](const volatile bool& cancel) {
+        const auto stored = loadTokens(fs_, tokensPath());
+        RevokeResult res = RevokeResult::Unsupported;
+        if (stored) {
+            WtlsTransport http;
+            res = revoke(http, *stored, cancel);
+        }
+        // Lokal abmelden gelingt immer, auch offline oder wenn der Widerruf scheitert.
+        (void)fs_.removeFile(tokensPath());
+        cached_.reset();
+        if (stored) forget(stored->account);
+        link_ = static_cast<u8>(LinkState::Idle);
+        log(std::string("NL_CLOUD_UNLINKED revoke=") + revokeName(res));
+        LWP_MutexLock(mutex_);
+        unlinked_ = res;
+        LWP_MutexUnlock(mutex_);
+    });
+}
+
+std::optional<RevokeResult> CloudWorker::takeUnlinked() {
+    LWP_MutexLock(mutex_);
+    std::optional<RevokeResult> r = unlinked_;
+    unlinked_.reset();
+    LWP_MutexUnlock(mutex_);
+    return r;
+}
+
+// ---- Haupt-Thread ---------------------------------------------------------------------------------------------
+
+bool CloudWorker::linked() {
+    if (cfg_.dataDir.empty() || running_) return false;
+    const auto t = loadTokens(fs_, tokensPath());
+    return t && t->provider == cfg_.provider;  // nach einem Wechsel erst neu anmelden
 }
 
 }  // namespace nl::platform

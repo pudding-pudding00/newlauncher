@@ -96,6 +96,7 @@ OAuthEndpoints microsoftEndpoints(std::string_view base, std::string_view client
     ep.tokenUrl = b + "/consumers/oauth2/v2.0/token";
     ep.clientId = std::string(clientId);
     ep.scope = std::string(kOneDriveScope);
+    // revokeUrl bleibt leer: Microsoft hat keinen Widerruf-Endpunkt für Refresh-Tokens.
     return ep;
 }
 

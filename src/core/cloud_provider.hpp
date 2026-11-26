@@ -32,6 +32,9 @@ public:
     // expectRev leer = die Datei darf noch nicht existieren; sonst muss ihre Revision gleich sein (RevMismatch).
     virtual CloudStatus upload(std::string_view unit, std::span<const u8> zip, const SaveMeta& meta,
                                std::string_view expectRev, CloudEntry& out, const volatile bool& cancel) = 0;
+    // OAuth-Anbieter: Tokens nach einem Refresh neu versiegeln (tokensChanged), NL_CLOUD_REFRESH (refreshed).
+    virtual bool tokensChanged() const { return false; }
+    virtual bool refreshed() const { return false; }
 };
 
 // Paketgrenze in der Cloud (gepackt): größere Downloads werden abgelehnt.

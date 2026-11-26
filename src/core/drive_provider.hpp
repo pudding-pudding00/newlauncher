@@ -27,8 +27,8 @@ public:
     CloudStatus upload(std::string_view unit, std::span<const u8> zip, const SaveMeta& meta,
                        std::string_view expectRev, CloudEntry& out, const volatile bool& cancel) override;
 
-    bool tokensChanged() const { return oauth_.tokensChanged(); }  // nach einem Refresh neu versiegeln
-    bool refreshed() const { return oauth_.refreshed(); }          // für NL_CLOUD_REFRESH
+    bool tokensChanged() const override { return oauth_.tokensChanged(); }  // nach einem Refresh neu versiegeln
+    bool refreshed() const override { return oauth_.refreshed(); }          // für NL_CLOUD_REFRESH
 
     static constexpr std::size_t kMultipartMax = 5 * 1024 * 1024;
 

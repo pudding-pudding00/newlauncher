@@ -39,6 +39,7 @@
 #include "core/cloud_gate.hpp"
 #include "core/cloud_outbox.hpp"
 #include "core/oauth_device.hpp"
+#include "core/onedrive_provider.hpp"
 #include "core/playlist.hpp"
 #include "core/library_store.hpp"
 #include "core/meta_db.hpp"
@@ -844,15 +845,22 @@ int main(int argc, char** argv) {
     auto configureCloud = [&]() {
         nl::platform::CloudSettings s;
         s.dataDir = data.writable ? data.dir : std::string();
-        s.endpoints = nl::googleEndpoints(config.debugCloudBase, config.driveClientId, config.driveClientSecret);
+        if (config.cloudProvider == nl::CloudProviderId::OneDrive) {
+            s.provider = "onedrive";
+            s.endpoints = nl::microsoftEndpoints(config.debugCloudBase, config.onedriveClientId);
+            s.apiBase = "https://graph.microsoft.com";
+        } else {
+            s.endpoints = nl::googleEndpoints(config.debugCloudBase, config.driveClientId, config.driveClientSecret);
+        }
+        s.driveRevokeUrl = nl::googleEndpoints(config.debugCloudBase, "", "").revokeUrl;
         if (!config.debugCloudBase.empty()) s.apiBase = config.debugCloudBase;
         s.device = config.deviceName;
         cloud.configure(std::move(s));
         cloudLinked = cloudBuilt && cloud.linked();
     };
     auto cloudActive = [&]() {
-        return cloudBuilt && data.writable && config.cloudProvider == nl::CloudProviderId::Drive &&
-               !config.driveClientId.empty();
+        return cloudBuilt && data.writable && config.cloudProvider != nl::CloudProviderId::None &&
+               !nl::cloudClientId(config).empty();
     };
 #if defined(NL_TLS) && NL_TLS  // ab M11 Task 4 vom CMake-Schalter gesetzt
     aboutScene.setBuildInfo(NL_VERSION, true);
@@ -1760,7 +1768,7 @@ int main(int argc, char** argv) {
         v.provider = config.cloudProvider;
         v.busy = cloud.running();
         if (!cloudBuilt) v.status = Status::NoTls;
-        else if (config.cloudProvider == nl::CloudProviderId::Drive && config.driveClientId.empty())
+        else if (config.cloudProvider != nl::CloudProviderId::None && nl::cloudClientId(config).empty())
             v.status = Status::NoClientId;
         else if (cloudLinked) v.status = cloudRelink ? Status::Relink : Status::Linked;
         else v.status = Status::NotLinked;
@@ -1865,6 +1873,12 @@ int main(int argc, char** argv) {
         if (const std::vector<std::string> done = cloud.takeUploaded(); !done.empty()) {
             for (const std::string& k : done) nl::removePending(cloudPending, k);
             if (!writePending()) nl::log::line("NL_WARN pending.ini nicht gespeichert");
+        }
+        if (const std::optional<nl::RevokeResult> u = cloud.takeUnlinked()) {
+            cloudLinked = false;
+            cloudRelink = false;
+            cloudScene.setView(cloudViewNow());
+            cloudScene.setStatus("");
         }
         if (cloudLinkWatch) {
             const nl::platform::LinkState st = cloud.linkState();
@@ -2891,7 +2905,7 @@ int main(int argc, char** argv) {
                 config.cloudProvider = cloudScene.provider();
                 saveConfig();
                 configureCloud();
-                nl::log::line("NL_CLOUD_PROVIDER %s", config.cloudProvider == nl::CloudProviderId::Drive ? "drive" : "off");
+                nl::log::line("NL_CLOUD_PROVIDER %s", std::string(nl::providerName(config.cloudProvider)).c_str());
                 cloudScene.setView(cloudViewNow());
                 break;
             case nl::ui::AppCommand::CloudLink:
@@ -2911,11 +2925,7 @@ int main(int argc, char** argv) {
                 break;
             case nl::ui::AppCommand::CloudUnlink:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
-                if (cloud.running()) break;
-                cloud.unlink();
-                cloudLinked = false;
-                cloudRelink = false;
-                nl::log::line("NL_CLOUD_UNLINKED");
+                if (cloud.running() || !cloud.startUnlink()) break;  // pumpCloud meldet das Ende
                 cloudScene.setView(cloudViewNow());
                 cloudScene.setStatus("");
                 break;

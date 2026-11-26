@@ -116,3 +116,39 @@ TEST_CASE("tokenFresh: 60 s Puffer") {
     CHECK_FALSE(tokenFresh(TokenSet{"a", "r", 0}, 0));
     CHECK_FALSE(tokenFresh(TokenSet{"", "r", 100000}, 0));
 }
+
+TEST_CASE("revokeToken: Google POST token=..., 200 Ok, 400 Failed, offline Failed") {
+    {
+        FakeTransport t;
+        t.expect(HttpMethod::Post, "https://auth.test/revoke", jsonResponse(200, "{}"));
+        CHECK(ep().revokeUrl == "https://auth.test/revoke");
+        CHECK(revokeToken(t, ep(), "1//refresh-geheim", kNoCancel) == RevokeResult::Ok);
+        REQUIRE(t.seen.size() == 1);
+        CHECK(bodyOf(t.seen[0]) == "token=1%2F%2Frefresh-geheim");
+        bool form = false;
+        for (const auto& [k, v] : t.seen[0].headers) {
+            if (k == "Content-Type" && v == "application/x-www-form-urlencoded") form = true;
+        }
+        CHECK(form);
+    }
+    {
+        FakeTransport t;
+        t.expect(HttpMethod::Post, "https://auth.test/revoke", jsonResponse(400, R"({"error":"invalid_token"})"));
+        CHECK(revokeToken(t, ep(), "x", kNoCancel) == RevokeResult::Failed);
+    }
+    {
+        FakeTransport t;
+        t.expect(HttpMethod::Post, "https://auth.test/revoke", offlineResponse());
+        CHECK(revokeToken(t, ep(), "x", kNoCancel) == RevokeResult::Failed);
+    }
+    CHECK(googleEndpoints("", "a", "b").revokeUrl == "https://oauth2.googleapis.com/revoke");
+}
+
+TEST_CASE("revokeToken: leere URL (Microsoft) oder leeres Token, keine Anfrage") {
+    FakeTransport t;
+    OAuthEndpoints ms = ep();
+    ms.revokeUrl.clear();
+    CHECK(revokeToken(t, ms, "x", kNoCancel) == RevokeResult::Unsupported);
+    CHECK(revokeToken(t, ep(), "", kNoCancel) == RevokeResult::Failed);
+    CHECK(t.seen.empty());
+}

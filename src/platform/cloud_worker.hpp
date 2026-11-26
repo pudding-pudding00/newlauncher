@@ -11,6 +11,7 @@
 #include <ogc/mutex.h>
 
 #include "core/cloud_plan.hpp"
+#include "core/cloud_sync_all.hpp"
 #include "core/fs.hpp"
 #include "core/oauth_device.hpp"
 #include "core/token_store.hpp"
@@ -20,10 +21,11 @@
 namespace nl::platform {
 
 struct CloudSettings {
-    std::string provider = "drive";  // M27 nur drive
+    std::string provider = "drive";  // drive | onedrive
     std::string dataDir;             // "<gerät>:/newlauncher"
-    OAuthEndpoints endpoints;
+    OAuthEndpoints endpoints;        // des aktiven Anbieters
     std::string apiBase = "https://www.googleapis.com";
+    std::string driveRevokeUrl;      // Widerruf alter Drive-Tokens nach dem Wechsel zu einem anderen Anbieter
     std::string device;  // Gerätename für Pakete
 };
 
@@ -57,6 +59,16 @@ public:
     bool startUploads(std::vector<CloudUpload> items);
     std::vector<std::string> takeUploaded();  // bestätigte Schlüssel (aus pending.ini entfernen)
 
+    // "Alle abgleichen" (M28): Fortschritt fertig/gesamt, Abbruch über cancel().
+    bool startSyncAll(std::vector<SyncTarget> targets, ConflictPolicy policy);
+    std::optional<SyncAllResult> takeSyncAll();
+    std::pair<u32, u32> syncProgress() const { return {syncDone_, syncTotal_}; }
+
+    // Abmelden (M28): Refresh-Token widerrufen (best effort, im Netz-Thread), danach immer tokens.bin löschen und
+    // den Zustand dieses Kontos leeren.
+    bool startUnlink();
+    std::optional<RevokeResult> takeUnlinked();
+
     std::vector<std::string> takeLogLines();
     bool running() const { return running_; }
     bool transferring() const { return transferring_; }  // laufender Auftrag ist bei Download/Upload
@@ -66,8 +78,6 @@ public:
 
     // Verknüpfung auf der SD (tokens.bin lesbar)? Liest die Datei; nur im Haupt-Thread ohne laufenden Auftrag.
     bool linked();
-    // Abmelden ohne Widerruf (M28 widerruft): tokens.bin löschen, Zustand dieses Kontos leeren.
-    void unlink();
 
 private:
     bool submit(bool front, NetJobFn fn);
@@ -79,6 +89,9 @@ private:
     template <typename Fn>
     bool withProvider(Fn&& fn);
     void storeTokens(const std::string& account, const TokenSet& t);
+    std::string revokeUrlFor(const std::string& provider) const;
+    RevokeResult revoke(HttpTransport& http, const StoredTokens& t, const volatile bool& cancel);
+    void forget(const std::string& account);  // Zustand dieses Kontos in state.ini leeren
 
     NetService& service_;
     FileSystem& fs_;
@@ -90,6 +103,9 @@ private:
     volatile u8 link_ = static_cast<u8>(LinkState::Idle);
     std::optional<DeviceCode> code_;
     std::optional<PreLaunchResult> pre_;
+    std::optional<SyncAllResult> syncAll_;
+    std::optional<RevokeResult> unlinked_;
+    volatile u32 syncDone_ = 0, syncTotal_ = 0;
     std::vector<std::string> uploaded_, logLines_;
     // Tokens dieser Sitzung samt Ablaufzeit (expiresAtMs wird nicht gespeichert): so braucht nicht jeder Auftrag
     // einen Refresh vorab. Nur im Netz-Thread oder ohne laufenden Auftrag angefasst.

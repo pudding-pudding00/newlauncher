@@ -20,8 +20,15 @@ namespace nl {
 // M24: Cover (covers_src, cache/covers, missing.txt) auf der SD-Karte (Standard) oder auf dem Spielgerät.
 enum class CoverStorage : u8 { Sd, Device };
 
-// M27: aktiver Cloud-Anbieter ([cloud] provider = off|drive); genau einer.
-enum class CloudProviderId : u8 { None, Drive };
+// M27/M28: aktiver Cloud-Anbieter ([cloud] provider = none|drive|onedrive; altes "off" = none); genau einer.
+enum class CloudProviderId : u8 { None, Drive, OneDrive };
+
+// "none" | "drive" | "onedrive" (config.ini, Log, Konto-Präfix)
+std::string_view providerName(CloudProviderId id);
+
+struct Config;
+// Client-ID des aktiven Anbieters (leer bei None oder ohne Eintrag in config.ini).
+std::string_view cloudClientId(const Config& c);
 
 struct Config {
     enum class Language : u8 { Auto, De, En };
@@ -52,6 +59,7 @@ struct Config {
     std::string emuNandPath;                 // [emunand] path (M19): z. B. "usb:/nands/emu1", leer = aus
     CloudProviderId cloudProvider = CloudProviderId::None;  // [cloud] provider (M27)
     std::string driveClientId, driveClientSecret;  // [cloud] drive_client_id/_secret: nur lesen, nie schreiben oder loggen
+    std::string onedriveClientId;  // [cloud] onedrive_client_id (öffentlicher Client, M28): nur lesen
     std::vector<std::string> badKeys;        // ungültige Werte außerhalb von [library]/[paths] (NL_CFG_BAD), z. B. "wii.ios"
     std::string debugAutostart;  // [debug] autostart: Spielschlüssel, der nach NL_READY startet
     std::string debugCoverUrl;   // [debug] cover_url: ersetzt die GameTDB-Basis (Smoke-Test)

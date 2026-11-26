@@ -33,8 +33,8 @@ public:
     CloudStatus upload(std::string_view unit, std::span<const u8> zip, const SaveMeta& meta,
                        std::string_view expectRev, CloudEntry& out, const volatile bool& cancel) override;
 
-    bool tokensChanged() const { return oauth_.tokensChanged(); }
-    bool refreshed() const { return oauth_.refreshed(); }
+    bool tokensChanged() const override { return oauth_.tokensChanged(); }
+    bool refreshed() const override { return oauth_.refreshed(); }
 
     static constexpr std::size_t kSimpleMax = 4 * 1024 * 1024;
 

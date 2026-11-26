@@ -267,3 +267,7 @@ TEST_CASE("onedrive: 401 → ein Refresh über consumers, dann Wiederholung") {
     CHECK(r.drive.tokensChanged());
     CHECK(r.tokens.refresh == "r2");
 }
+
+TEST_CASE("microsoftEndpoints: kein Widerruf-Endpunkt") {
+    CHECK(microsoftEndpoints("", "cid").revokeUrl.empty());
+}

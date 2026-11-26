@@ -14,6 +14,7 @@ namespace nl {
 struct OAuthEndpoints {
     std::string deviceUrl, tokenUrl;
     std::string clientId, clientSecret, scope;
+    std::string revokeUrl;  // leer: Anbieter kennt keinen Widerruf (Microsoft)
 };
 
 inline constexpr std::string_view kDriveScope = "https://www.googleapis.com/auth/drive.file";
@@ -40,5 +41,10 @@ PollState pollToken(HttpTransport& http, const OAuthEndpoints& ep, std::string_v
 PollState refreshToken(HttpTransport& http, const OAuthEndpoints& ep, TokenSet& io, u64 nowMs,
                        const volatile bool& cancel);
 bool tokenFresh(const TokenSet& t, u64 nowMs);  // mit 60 s Puffer
+
+// Abmelden: Refresh-Token beim Anbieter widerrufen (best effort). Unsupported ohne Anfrage, wenn revokeUrl leer.
+enum class RevokeResult : u8 { Ok, Failed, Unsupported };
+RevokeResult revokeToken(HttpTransport& http, const OAuthEndpoints& ep, std::string_view token,
+                         const volatile bool& cancel);
 
 }  // namespace nl

@@ -238,6 +238,14 @@
     X(CloudOff, "Aus", "Off") \
     X(CloudDrive, "Google Drive", "Google Drive") \
     X(CloudProviderOneDrive, "OneDrive", "OneDrive") \
+    X(CloudProviderDropbox, "Dropbox", "Dropbox") \
+    X(PairTitle, "Dropbox verbinden", "Connect Dropbox") \
+    X(PairWaiting, "Kopplung wird vorbereitet …", "Preparing pairing …") \
+    X(PairScanPhone, "Mit dem Handy scannen oder öffnen:", "Scan with your phone or open:") \
+    X(PairScanDirect, "Scannen, bei Dropbox zulassen, dann mit A den Code eingeben", "Scan, allow on Dropbox, then press A to enter the code") \
+    X(PairHelp, "A Code eingeben   Y/1 anderer QR   B Abbrechen", "A Enter code   Y/1 other QR   B Cancel") \
+    X(PairCodeHint, "Dropbox-Code", "Dropbox code") \
+    X(PairCodeRejected, "Code abgelehnt, bitte erneut eingeben", "Code rejected, please enter it again") \
     X(CloudLinkRow, "Anmelden", "Sign in") \
     X(CloudSyncAll, "Alle abgleichen", "Sync all") \
     X(CloudSyncAllCancel, "Abgleich abbrechen", "Cancel sync") \

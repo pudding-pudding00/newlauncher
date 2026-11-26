@@ -1,6 +1,6 @@
 # Projektstand (Übergabe)
 
-Stand: 2026-11-25, M24 (größeres Raster, Sortierung, Cover-Speicher auf der SD, Löschen ohne Hänger) umgesetzt, Hardware-Abnahme von M21 bis M24 offen. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
+Stand: 2026-11-26, M25 (WLAN robuster und mit Info-Fenster) umgesetzt; M24 (größeres Raster, Sortierung, Cover-Speicher auf der SD, Löschen ohne Hänger) umgesetzt, Hardware-Abnahme von M21 bis M25 offen. Regeln für Agenten stehen in [AGENTS.md](../AGENTS.md).
 
 ## Erledigt
 
@@ -21,6 +21,7 @@ Stand: 2026-11-25, M24 (größeres Raster, Sortierung, Cover-Speicher auf der SD
 | – | wii_tls auf Release **v0.3.0** (`b648ac2`): P-256-Signaturprüfung beschleunigt (Handshake laut Upstream 66 → 28 ms auf der Wii), Sende-Fix für IOS, mTLS und Streaming-Uploads (ungenutzt) | #38 |
 | – | wii_tls auf Release **v1.0.0** (`77229ff`, erste stabile Version): Schreib-Obergrenze gegen hängende Gegenstellen, DNS-Fallback über bis zu 4 Adressen, Netz-Reset bei IP-Wechsel, Sicherheits-Fixes | #39 |
 | M24 | Cover-Downloads nach Konsolengeneration (neu → alt), Sortierung Titel/Jahr über − in der A–Z-Leiste, größeres Raster mit gemischten Kachelformaten in Zuletzt/Favoriten/Suche, Plakette nur ohne Cover, „Cover-Cache löschen“ durch Halten von A und im Hintergrund (wii_tls-Abbruch-Callback), Cover-Speicher SD-Karte/Spielgerät, Retro-Cover-Sucher (libretro-Symlinks, Namensvarianten) | #40 |
+| M25 | WLAN: Backoff mit `net_deinit` zwischen Versuchen, Router-Check (Zustand „eingeschränkt“), Hintergrund-Check 5–30 s, genaueres Symbol (Lauflicht, gelber/roter Punkt), Info-Fenster per Klick aufs Symbol mit „Neu verbinden“, Hinweise bei Zustandswechsel | PR folgt |
 
 Die CI (`.github/workflows/build.yml`) baut Wii mit und ohne TLS und führt die Host-Tests aus.
 

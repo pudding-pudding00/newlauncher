@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <network.h>
+#include <ogc/lwp_watchdog.h>
 #include <unistd.h>
 
 #include "core/net_error.hpp"
@@ -32,7 +33,48 @@ namespace nl::platform {
 namespace {
 constexpr u32 kStackBytes = 64 * 1024;
 constexpr u8 kPriority = 40;  // wie Scan und Cover-Thread: unter dem Haupt-Thread
+
+// M25: Router-Check (Spec 2026-11-26-m25-wlan-design.md 2).
+constexpr u16 kGatewayPort = 80;
+constexpr u64 kGatewayTimeoutMs = 1500;
+constexpr u64 kLimitedReinitMs = 60000;
+// IOS-Werte wie in wii_tls (plat_ogc.c) und http_client.cpp.
+constexpr u32 kIosFGetFl = 3, kIosFSetFl = 4, kIosNonBlock = 0x04, kIosPollOut = 0x0008;
+
+// Nicht blockierender TCP-Connect auf gateway:80. Verbunden oder abgewiesen (RST) = Router antwortet.
+// IOS weckt net_poll nur für ein RST, nicht für einen fertigen Connect: deshalb in kurzen Scheiben pollen und
+// den Connect jedes Mal erneut fragen (wie wii_tls). Ergebnis: Antwortzeit in ms oder -1.
+s32 measureGatewayMs(u32 gatewayHost) {
+    const s32 fd = net_socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+    if (fd < 0) return -1;
+    s32 fl = net_fcntl(fd, kIosFGetFl, 0);
+    if (fl < 0) fl = 0;
+    net_fcntl(fd, kIosFSetFl, static_cast<u32>(fl) | kIosNonBlock);
+    sockaddr_in sa{};
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(kGatewayPort);
+    sa.sin_addr.s_addr = htonl(gatewayHost);
+    const u64 start = NetService::clockMs();
+    s32 result = -1;
+    s32 r = net_connect(fd, reinterpret_cast<sockaddr*>(&sa), sizeof sa);
+    for (;;) {
+        const GatewayReply g = classifyGatewayConnect(r);
+        const u64 elapsed = NetService::clockMs() - start;
+        if (gatewayReachable(g)) {
+            result = static_cast<s32>(elapsed);
+            break;
+        }
+        if (g == GatewayReply::Failed || elapsed >= kGatewayTimeoutMs) break;
+        pollsd p{fd, kIosPollOut, 0};
+        net_poll(&p, 1, 10);
+        r = net_connect(fd, reinterpret_cast<sockaddr*>(&sa), sizeof sa);
+    }
+    net_close(fd);
+    return result;
+}
 }  // namespace
+
+u64 NetService::clockMs() { return ticks_to_millisecs(gettime()); }
 
 NetService::NetService() {
     LWP_MutexInit(&mutex_, false);
@@ -97,6 +139,7 @@ void NetService::shutdown() {
     stopped_ = true;
     stop_ = true;
     probeRequested_ = false;
+    reconnectRequested_ = false;
     queue_.cancelAll();
     LWP_CondBroadcast(cond_);
     const lwp_t t = thread_;
@@ -124,39 +167,149 @@ void* NetService::entry(void* self) {
     return nullptr;
 }
 
-void NetService::probeWifi() {
-    if (!netUp_) {
-        wifi_ = static_cast<u8>(WifiStatus::Connecting);
-        const int attempts = initialProbeDone_ ? 1 : 2;
-        initialProbeDone_ = true;
-        s32 r = -1;
-        for (int i = 0; i < attempts && r < 0 && !stop_; ++i) {
-            r = net_init();
-            if (r < 0 && i + 1 < attempts && !stop_) usleep(500 * 1000);
-        }
-        netCode_ = r;
-        netUp_ = (r >= 0 && net_gethostip() != 0);
-        wifi_ = static_cast<u8>(netUp_ ? WifiStatus::Connected : WifiStatus::Disconnected);
+void NetService::requestReconnect() {
+    LWP_MutexLock(mutex_);
+    if (stopped_ || !ensureThreadLocked()) {
+        LWP_MutexUnlock(mutex_);
         return;
     }
-    const bool alive = (net_gethostip() != 0);
-    if (!alive) netUp_ = false;
-    wifi_ = static_cast<u8>(alive ? WifiStatus::Connected : WifiStatus::Disconnected);
+    reconnectRequested_ = true;
+    probeRequested_ = true;
+    LWP_CondBroadcast(cond_);
+    LWP_MutexUnlock(mutex_);
+}
+
+bool NetService::probePending() const {
+    LWP_MutexLock(mutex_);
+    const bool p = probeRequested_ || probing_;
+    LWP_MutexUnlock(mutex_);
+    return p;
+}
+
+WifiSnapshot NetService::snapshot() const {
+    LWP_MutexLock(mutex_);
+    WifiSnapshot s = snap_;
+    LWP_MutexUnlock(mutex_);
+#if defined(NL_TLS) && NL_TLS
+    s.tlsBuild = true;
+#endif
+    s.tlsUp = tlsUp_;
+    return s;
+}
+
+void NetService::publish(WifiStatus status) {
+    LWP_MutexLock(mutex_);
+    snap_.status = status;
+    wifi_ = static_cast<u8>(status);
+    LWP_MutexUnlock(mutex_);
+}
+
+bool NetService::bringUp(WifiProbeKind kind) {
+    publish(WifiStatus::Connecting);
+    const int attempts = wifiInitAttempts(kind);
+    s32 r = -1;
+    bool up = false;
+    for (int i = 0; i < attempts && !stop_; ++i) {
+        r = net_init();
+        up = r >= 0 && net_gethostip() != 0;
+        if (up) break;
+        net_deinit();  // halb aufgebautes Netz verwerfen, der nächste Versuch beginnt frisch
+        if (i + 1 < attempts && !stop_) usleep(wifiRetryDelayMs(i) * 1000);
+    }
+    netCode_ = r;
+    netUp_ = up;
+    in_addr ip{}, mask{}, gw{};
+    // Nach erfolgreichem net_init ist net_init in if_configex ein No-op; es liefert nur die Adressen.
+    if (up && if_configex(&ip, &mask, &gw, true, 1) < 0) {
+        ip.s_addr = net_gethostip();
+        mask.s_addr = 0;
+        gw.s_addr = 0;
+    }
+    u8 mac[6] = {};
+    const bool macOk = net_get_mac_address(mac) >= 0;
+    const u64 now = clockMs();
+    LWP_MutexLock(mutex_);
+    snap_.lastInitCode = r;
+    snap_.checked = true;
+    snap_.lastCheckMs = now;
+    if (macOk) {
+        for (int i = 0; i < 6; ++i) snap_.mac[static_cast<std::size_t>(i)] = mac[i];
+        snap_.macKnown = true;
+    }
+    if (up) {
+        snap_.ip = ntohl(ip.s_addr);
+        snap_.netmask = ntohl(mask.s_addr);
+        snap_.gateway = ntohl(gw.s_addr);
+        snap_.failedProbes = 0;
+        snap_.connectedSinceMs = now;
+        // gatewayFails bleibt: Ein Neuaufbau wegen Limited soll nicht zwischen Limited und Connected flackern.
+        snap_.status = wifiStatusFrom(true, snap_.gatewayFails);
+    } else {
+        snap_.ip = snap_.netmask = snap_.gateway = 0;
+        snap_.gatewayMs = -1;
+        snap_.connectedSinceMs = 0;
+        ++snap_.failedProbes;
+        snap_.status = WifiStatus::Disconnected;
+    }
+    wifi_ = static_cast<u8>(snap_.status);
+    LWP_MutexUnlock(mutex_);
+#if defined(NL_TLS) && NL_TLS
+    if (up && tlsUp_) wtls_net_reset();  // DNS-Cache und Keep-alive-Verbindungen gehören zum alten Netz
+#endif
+    return up;
+}
+
+void NetService::tearDown() {
+    net_deinit();
+    netUp_ = false;
+    LWP_MutexLock(mutex_);
+    ++snap_.reconnects;
+    LWP_MutexUnlock(mutex_);
+}
+
+void NetService::checkGateway() {
+    LWP_MutexLock(mutex_);
+    const u32 gw = snap_.gateway;
+    LWP_MutexUnlock(mutex_);
+    const s32 ms = gw != 0 ? measureGatewayMs(gw) : -1;
+    const u64 now = clockMs();
+    LWP_MutexLock(mutex_);
+    if (gw != 0) {  // ohne bekanntes Gateway kein Router-Check: Zustand nur nach der IP
+        snap_.gatewayMs = ms;
+        snap_.gatewayFails = ms >= 0 ? 0 : snap_.gatewayFails + 1;
+    }
+    snap_.status = wifiStatusFrom(true, snap_.gatewayFails);
+    snap_.checked = true;
+    snap_.lastCheckMs = now;
+    wifi_ = static_cast<u8>(snap_.status);
+    LWP_MutexUnlock(mutex_);
+}
+
+void NetService::probeWifi(WifiProbeKind kind) {
+    if (kind == WifiProbeKind::Reconnect && netUp_) tearDown();
+    if (netUp_ && net_gethostip() == 0) {
+        tearDown();  // IP weg: still neu aufbauen; scheitert das, zeigt die Leiste getrennt
+        kind = WifiProbeKind::Background;
+    }
+    if (!netUp_) {
+        if (bringUp(kind)) checkGateway();
+        return;
+    }
+    checkGateway();
+    LWP_MutexLock(mutex_);
+    const bool limited = snap_.status == WifiStatus::Limited;
+    LWP_MutexUnlock(mutex_);
+    const u64 now = clockMs();
+    if (limited && (lastLimitedReinitMs_ == 0 || now - lastLimitedReinitMs_ >= kLimitedReinitMs)) {
+        lastLimitedReinitMs_ = now;  // höchstens einmal je Minute, falls der Router Port 80 nur filtert
+        tearDown();
+        if (bringUp(WifiProbeKind::Background)) checkGateway();
+    }
 }
 
 void NetService::prepare() {
-    if (netUp_ && net_gethostip() == 0) netUp_ = false;
-    if (!netUp_) {
-        wifi_ = static_cast<u8>(WifiStatus::Connecting);
-        s32 r = -1;
-        for (int i = 0; i < 3 && r < 0 && !stop_; ++i) {
-            r = net_init();
-            if (r < 0 && i + 1 < 3 && !stop_) usleep(500 * 1000);
-        }
-        netCode_ = r;
-        netUp_ = (r >= 0 && net_gethostip() != 0);
-    }
-    wifi_ = static_cast<u8>(netUp_ ? WifiStatus::Connected : WifiStatus::Disconnected);
+    if (netUp_ && net_gethostip() == 0) tearDown();
+    if (!netUp_) bringUp(WifiProbeKind::Job);
 #if defined(NL_TLS) && NL_TLS
     if (netUp_ && !tlsTried_) {
         tlsTried_ = true;
@@ -184,8 +337,17 @@ void NetService::loop() {
             LWP_MutexUnlock(mutex_);
         } else if (probeRequested_) {
             probeRequested_ = false;
+            probing_ = true;
+            const bool reconnect = reconnectRequested_;
+            reconnectRequested_ = false;
             LWP_MutexUnlock(mutex_);
-            probeWifi();
+            probeWifi(reconnect           ? WifiProbeKind::Reconnect
+                      : initialProbeDone_ ? WifiProbeKind::Background
+                                          : WifiProbeKind::Initial);
+            initialProbeDone_ = true;
+            LWP_MutexLock(mutex_);
+            probing_ = false;
+            LWP_MutexUnlock(mutex_);
         }
     }
 #if defined(NL_TLS) && NL_TLS

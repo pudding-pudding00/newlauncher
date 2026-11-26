@@ -11,6 +11,7 @@
 #include "core/job_queue.hpp"
 #include "core/net_error.hpp"
 #include "core/types.hpp"
+#include "core/wifi_state.hpp"
 
 namespace nl::platform {
 
@@ -26,6 +27,13 @@ public:
     u32 submit(NetJobFn job);
     // Startet bei Bedarf einen WLAN-Statuscheck im Netz-Thread ohne Heap-Allokation und ohne wtls_init().
     void startWifiProbe();
+    // M25: Netz abbauen und neu aufbauen (Info-Fenster, A); läuft als nächster Statuscheck.
+    void requestReconnect();
+    // Statuscheck angefordert oder läuft gerade.
+    bool probePending() const;
+    // M25: Stand für Anzeige und Info-Fenster; Zeiten in clockMs().
+    WifiSnapshot snapshot() const;
+    static u64 clockMs();
     void cancel(u32 id);
     void cancelAndWait(u32 id);  // wartend → entfernt; laufend → abbrechen und auf sein Ende warten
     void shutdown();             // alles abbrechen, laufenden abwarten, wtls_shutdown (NL_TLS), Thread beendet
@@ -42,8 +50,12 @@ private:
     static void* entry(void* self);
     bool ensureThreadLocked();
     void loop();
-    void probeWifi();
-    void prepare();  // vor jedem Auftrag: net_init (3 Versuche), solange es nicht geklappt hat; dann wtls_init
+    void probeWifi(WifiProbeKind kind);
+    void prepare();  // vor jedem Auftrag: Netz aufbauen (3 Versuche), solange es nicht steht; dann wtls_init
+    bool bringUp(WifiProbeKind kind);  // net_init mit Backoff, nach Fehlschlag net_deinit
+    void tearDown();                   // net_deinit, Zustand zurücksetzen
+    void checkGateway();               // Router-Antwort messen, Limited ableiten
+    void publish(WifiStatus status);   // snap_ und wifi_ unter dem Mutex setzen
 
     lwp_t thread_ = LWP_THREAD_NULL;
     mutable mutex_t mutex_ = LWP_MUTEX_NULL;
@@ -52,8 +64,12 @@ private:
     bool stop_ = false;
     bool stopped_ = false;
     bool probeRequested_ = false;
+    bool probing_ = false;
+    bool reconnectRequested_ = false;
     bool initialProbeDone_ = false;
-    volatile u8 wifi_ = static_cast<u8>(WifiStatus::Disconnected);
+    u64 lastLimitedReinitMs_ = 0;
+    WifiSnapshot snap_;  // nur unter mutex_; der Netz-Thread schreibt
+    volatile u8 wifi_ = static_cast<u8>(WifiStatus::Connecting);
     volatile bool netUp_ = false;
     volatile s32 netCode_ = 0;
     volatile bool tlsUp_ = false;

@@ -734,15 +734,13 @@ void MainScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
 
     drawTopBar(ctx, dl);
     drawInfoBar(ctx, dl);
-    // Die vergrößerte Fokus-Kachel ragt im kompakten Raster in die Leisten: zuletzt zeichnen, damit sie über
-    // Leisten und Nachbar-Kacheln liegt statt darunter. Der Clip lässt nur den Vergrößerungsrand (samt Fokusring)
-    // über die Leisten ragen: eine weggescrollte Fokus-Kachel (Rand-Scrollen mit dem Zeiger) bleibt verdeckt.
+    // Die vergrößerte Fokus-Kachel ragt oben leicht in die Konsolenleiste, unten schneidet sie an der Taskbar ab.
     if (focus >= 0) {
         const Rect r = grid_.tileRect(focus, scroll);
         const float k = kFocusScale * focusAnim_.value();
         const Rect scaled{r.x - r.w * k / 2, r.y - r.h * k / 2, r.w * (1 + k), r.h * (1 + k)};
         const float pop = r.h * k / 2 + 3.0f;
-        dl.setClip(Rect{0, viewTop - pop, ctx.width, viewBottom - viewTop + 2 * pop});
+        dl.setClip(Rect{0, viewTop - pop, ctx.width, viewBottom - viewTop + pop});
         drawTile(ctx, dl, focus, scaled, true);
         dl.clearClip();
     }

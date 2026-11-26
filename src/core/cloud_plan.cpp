@@ -77,21 +77,46 @@ CloudStatus statCloud(CloudCtx& ctx, const SaveUnit& unit, std::optional<CloudEn
     return s;
 }
 
-// Herunterladen, prüfen (Einheit, Hash gegen die Cloud-Eigenschaft), erst dann schreiben.
-PreLaunchResult pull(CloudCtx& ctx, const SaveUnit& unit, std::string_view title, const CloudEntry& cloud,
-                     CloudState& state, const volatile bool& cancel) {
+// Herunterladen und entpacken; Speicher: Paket und entpackte Dateien nicht gleichzeitig halten.
+CloudStatus fetch(CloudCtx& ctx, const CloudEntry& cloud, std::optional<SavePackage>& pkg,
+                  const volatile bool& cancel) {
     std::vector<u8> zip;
     if (ctx.onTransfer) ctx.onTransfer();
     const CloudStatus s = ctx.provider.download(cloud, zip, cancel);
-    if (s != CloudStatus::Ok) return skipped(ctx, unit.id, skipReason(s));
-    auto pkg = unpackSave(zip);
-    std::vector<u8>().swap(zip);  // Speicher: Paket und entpackte Dateien nicht gleichzeitig halten
-    if (!pkg.isOk()) return skipped(ctx, unit.id, "error");
-    if (pkg.value().meta.unit != unit.id || pkg.value().meta.hash != cloud.hash ||
-        contentHash(pkg.value().files) != cloud.hash) {
+    if (s != CloudStatus::Ok) return s;
+    auto p = unpackSave(zip);
+    std::vector<u8>().swap(zip);
+    if (!p.isOk()) return CloudStatus::Failed;
+    pkg = std::move(p.value());
+    return CloudStatus::Ok;
+}
+
+// Eintrag ohne Hash (Meta fehlt, z. B. OneDrive nach gescheitertem PATCH oder fremde Datei): Paket laden, die Einheit
+// prüfen und den Hash aus dem Inhalt nehmen. Das Paket bleibt für einen folgenden Pull (kein zweiter Download).
+CloudStatus fillHash(CloudCtx& ctx, const SaveUnit& unit, CloudEntry& cloud, std::optional<SavePackage>& pkg,
+                     const volatile bool& cancel) {
+    pkg.reset();
+    if (!cloud.hash.empty()) return CloudStatus::Ok;
+    if (const CloudStatus s = fetch(ctx, cloud, pkg, cancel); s != CloudStatus::Ok) return s;
+    if (pkg->meta.unit != unit.id) return CloudStatus::Failed;
+    cloud.hash = contentHash(pkg->files);
+    log(ctx, unit.id, "hash from package");
+    return CloudStatus::Ok;
+}
+
+// Herunterladen (oder das schon geladene Paket nehmen), prüfen (Einheit, Hash gegen die Cloud-Eigenschaft), erst
+// dann schreiben.
+PreLaunchResult pull(CloudCtx& ctx, const SaveUnit& unit, std::string_view title, const CloudEntry& cloud,
+                     CloudState& state, std::optional<SavePackage>& pkg, const volatile bool& cancel) {
+    if (!pkg) {
+        if (const CloudStatus s = fetch(ctx, cloud, pkg, cancel); s != CloudStatus::Ok) {
+            return skipped(ctx, unit.id, skipReason(s));
+        }
+    }
+    if (pkg->meta.unit != unit.id || pkg->meta.hash != cloud.hash || contentHash(pkg->files) != cloud.hash) {
         return skipped(ctx, unit.id, "error");
     }
-    if (!restoreUnit(ctx.fs, ctx.dataDir, unit, pkg.value(), title, ctx.device, ctx.now).isOk()) {
+    if (!restoreUnit(ctx.fs, ctx.dataDir, unit, *pkg, title, ctx.device, ctx.now).isOk()) {
         return skipped(ctx, unit.id, "nand");
     }
     state.setBase(ctx.account, unit.id, SyncBase{cloud.hash, cloud.rev});
@@ -150,9 +175,15 @@ PreLaunchResult preLaunchSync(CloudCtx& ctx, const SaveUnit& unit, std::string_v
 
     // Höchstens zwei Runden: ändert sich die Cloud zwischen stat und upload zweimal, fragt der Nutzer.
     std::optional<CloudEntry> cloud;
+    std::optional<SavePackage> pkg;
     for (int round = 0; round < 2; ++round) {
         if (const CloudStatus s = statCloud(ctx, unit, cloud, cancel); s != CloudStatus::Ok) {
             return skipped(ctx, unit.id, skipReason(s));
+        }
+        if (cloud) {
+            if (const CloudStatus s = fillHash(ctx, unit, *cloud, pkg, cancel); s != CloudStatus::Ok) {
+                return skipped(ctx, unit.id, skipReason(s));
+            }
         }
         const SyncInput in{local->hash, state.base(ctx.account, unit.id), cloud};
         switch (decideSync(in)) {
@@ -166,7 +197,7 @@ PreLaunchResult preLaunchSync(CloudCtx& ctx, const SaveUnit& unit, std::string_v
                 log(ctx, unit.id, "setbase");
                 return PreLaunchResult{PreLaunch::Ready, *cloud, 0, {}};
             }
-            case SyncAction::Download: return pull(ctx, unit, title, *cloud, state, cancel);
+            case SyncAction::Download: return pull(ctx, unit, title, *cloud, state, pkg, cancel);
             case SyncAction::Conflict: return conflict(ctx, unit, *cloud, state);
             case SyncAction::Upload: {
                 CloudEntry out;
@@ -194,7 +225,11 @@ PreLaunchResult resolveConflict(CloudCtx& ctx, const SaveUnit& unit, std::string
     if (cloud && cloud->rev != seenRev) return conflict(ctx, unit, *cloud, state);
     if (choice == ConflictChoice::TakeCloud) {
         if (!cloud) return skipped(ctx, unit.id, "error");
-        return pull(ctx, unit, title, *cloud, state, cancel);
+        std::optional<SavePackage> pkg;
+        if (const CloudStatus s = fillHash(ctx, unit, *cloud, pkg, cancel); s != CloudStatus::Ok) {
+            return skipped(ctx, unit.id, skipReason(s));
+        }
+        return pull(ctx, unit, title, *cloud, state, pkg, cancel);
     }
     auto local = readLocal(ctx, unit);
     if (!local) return skipped(ctx, unit.id, "nand");

@@ -42,6 +42,22 @@ constexpr const char* kHeaderText =
 
 constexpr Console kRomConsoles[] = {Console::Nes, Console::Snes, Console::Gb, Console::Gbc, Console::Gba};
 
+// M26: „EEP, sra ,.fla“ → {".eep", ".sra", ".fla"}; leere Teile entfallen.
+std::vector<std::string> parseExtList(std::string_view text) {
+    std::vector<std::string> out;
+    while (!text.empty()) {
+        const std::size_t comma = text.find(',');
+        std::string part(trim(text.substr(0, comma)));
+        text = comma == std::string_view::npos ? std::string_view{} : text.substr(comma + 1);
+        if (part.empty()) continue;
+        for (char& c : part)
+            if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        if (part.front() != '.') part.insert(part.begin(), '.');
+        out.push_back(std::move(part));
+    }
+    return out;
+}
+
 // Leeres dol wäre ein sicherer Fehlstart; leeres args ist dagegen gültig (nur argv[0]).
 EmulatorEntry readEntry(const IniDoc& doc, const IniDoc& defaults, std::string_view section) {
     EmulatorEntry e;
@@ -50,6 +66,8 @@ EmulatorEntry readEntry(const IniDoc& doc, const IniDoc& defaults, std::string_v
     e.fromFile = !dol.empty();
     e.args = std::string(doc.get(section, "args", defaults.get(section, "args")));
     e.fsMask = parseFsMask(doc.get(section, "fs", ""));
+    e.saveDir = std::string(trim(doc.get(section, "save_dir", "")));
+    e.saveExt = parseExtList(doc.get(section, "save_ext", ""));
     return e;
 }
 

@@ -77,3 +77,13 @@ TEST_CASE("forN64 liefert Not64/Wii64 aus emulators.ini, VC nullptr") {
     CHECK(t.forN64(N64Method::Not64)->args == "rompath=\"{path}\"");
     CHECK(t.forN64(N64Method::Wii64)->dol == "sd:/apps/wii64/boot.dol");
 }
+
+TEST_CASE("save_dir und save_ext je Konsolen-Abschnitt") {
+    const EmulatorTable t = EmulatorTable::fromIni(
+        IniDoc::parse("[n64_not64]\nsave_dir = sd:/not64/saves\nsave_ext = EEP, sra ,.fla\n[snes]\nsave_dir = usb:/srm\n"));
+    CHECK(t.section("n64_not64")->saveDir == "sd:/not64/saves");
+    CHECK(t.section("n64_not64")->saveExt == std::vector<std::string>{".eep", ".sra", ".fla"});
+    CHECK(t.section("snes")->saveDir == "usb:/srm");
+    CHECK(t.section("snes")->saveExt.empty());
+    CHECK(t.section("gb")->saveDir.empty());
+}

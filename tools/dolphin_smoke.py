@@ -20,6 +20,7 @@ from pathlib import Path
 
 from deploy_dolphin import ARGV_ECHO_DOL, DEFAULT_DOL, DIST_DIR, FIXTURES_DIR, deploy
 from fat_frag import NotFat32Error, expected_frag_line, read_file
+import save_smoke
 from make_disk_image import make_image
 from make_fixtures import disc_header
 from dolphin import (DEFAULT_DOLPHIN, DEFAULT_USER_DIR, dolphin_command, log_path, reset_log,
@@ -290,7 +291,15 @@ def main(argv: list[str] | None = None) -> int:
                              "newlauncher neu laden")
     parser.add_argument("--emunand", action="store_true",
                         help="Fixture-EmuNAND sd:/emunand mit Testkanal 000100014E4C5443 anlegen (M19)")
+    parser.add_argument("--save-fixture", choices=save_smoke.FIXTURES,
+                        help="M26: Spielstand-Einheit mit Testbytes anlegen (gb: SD, nand: Dolphin-NAND, "
+                             "emunand: sd:/emunand mit save = emu)")
+    parser.add_argument("--save-step", choices=save_smoke.STEPS, default="backup",
+                        help="M26: backup sichert und prüft das ZIP, restore spielt es zurück, recover rollt ein "
+                             "Journal zurück (restore/recover brauchen einen backup-Lauf davor)")
     args = parser.parse_args(argv)
+    if "--save-step" in (argv if argv is not None else sys.argv[1:]) and not args.save_fixture:
+        parser.error("--save-step braucht --save-fixture")
     tls = args.tls or args.tls_wrong_ca
     if tls and not (args.cover_server or args.emu_server or args.cheat_server or args.update_server):
         parser.error("--tls/--tls-wrong-ca braucht --cover-server, --emu-server oder --cheat-server")
@@ -556,6 +565,22 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
         if args.config_append and not args.fresh_data:
             with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
                 f.write(_cli_text(args.config_append))
+        save_fx = None
+        if getattr(args, "save_fixture", None):
+            save_fx = save_smoke.fixture(args.save_fixture, user_dir)
+            try:
+                plan = save_smoke.prepare(save_fx, args.save_step, user_dir)
+            except (FileNotFoundError, ValueError) as e:
+                save_smoke.cleanup(save_fx, user_dir)
+                print(f"SMOKE FEHLER: Spielstand-Fixture: {e}")
+                return 2
+            args.emunand = args.emunand or plan.emunand
+            debug_lines = debug_lines + plan.debug_lines
+            markers = markers + plan.markers
+            if plan.config_append and not args.fresh_data:
+                with (sd / CONFIG_REL).open("a", encoding="utf-8", newline="\n") as f:
+                    f.write(plan.config_append)
+        args.save_fx = save_fx
         if getattr(args, "emunand", False):
             if not ARGV_ECHO_DOL.is_file():
                 print(f"SMOKE FEHLER: argv_echo.dol nicht gebaut: {ARGV_ECHO_DOL}")
@@ -593,6 +618,8 @@ def _run(args: argparse.Namespace, markers: list[str], debug_lines: list[str]) -
         (sd_sync_dir(user_dir) / SD_TEST_CA).unlink(missing_ok=True)  # Test-CA nicht auf der SD lassen
         shutil.rmtree(sd_sync_dir(user_dir) / MULTI_DIR, ignore_errors=True)  # --sd-layout multi
         shutil.rmtree(sd_sync_dir(user_dir) / "emunand", ignore_errors=True)  # --emunand
+        if getattr(args, "save_fx", None) is not None:
+            save_smoke.cleanup(args.save_fx, user_dir)
 
 
 def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -> int:
@@ -610,7 +637,7 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
             missing = _remote_session(user_dir)
         if not missing and getattr(args, "update_server", False):
             missing = _update_restart(user_dir)
-        if not missing and getattr(args, "cheat_server", None):
+        if not missing and (getattr(args, "cheat_server", None) or getattr(args, "save_fx", None)):
             # Dolphin puffert SD-Schreibzugriffe; ein sofortiges Beenden verliert die gerade geschriebene Datei.
             time.sleep(SD_SETTLE_SECONDS)
     finally:
@@ -635,11 +662,21 @@ def _run_dolphin(args: argparse.Namespace, markers: list[str], user_dir: Path) -
         missing = _check_cheat_file(user_dir, args.cheat_server == "ok")
     if not missing and getattr(args, "fresh_data", False):
         missing = _check_second_start(args, user_dir)
+    if not missing and getattr(args, "save_fx", None) is not None:
+        missing = save_smoke.post_check(args.save_fx, args.save_step, user_dir, _read_log_text(user_dir),
+                                        lambda rel: read_file(user_dir / "Load/WiiSD.raw", rel))
     if not missing:
         print("SMOKE OK")
         return 0
     print(f"SMOKE FEHLGESCHLAGEN: fehlende Marker nach {args.timeout:g} s: {', '.join(missing)}")
     return 1
+
+
+def _read_log_text(user_dir: Path) -> str:
+    try:
+        return log_path(user_dir).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
 
 
 def _update_restart(user_dir: Path) -> list[str]:

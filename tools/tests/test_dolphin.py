@@ -570,6 +570,38 @@ class DolphinToolsTest(unittest.TestCase):
                                      "--user-dir", str(self.user), "--timeout", "2",
                                      "--marker", "NL_READY", "--marker", "NL_SELFTEST_OK"]), 1)
 
+    # --- M26: --save-fixture/--save-step legen eine Test-Einheit an und räumen sie wieder weg ---
+    def _save_run(self, *extra: str) -> int:
+        self._fake_dolphin(
+            "import pathlib, time\n"
+            "log = pathlib.Path(__file__).parent / 'Logs' / 'dolphin.log'\n"
+            "log.parent.mkdir(parents=True, exist_ok=True)\n"
+            "log.write_text('OSREPORT: NL_READY\\n')\n"
+            "time.sleep(60)\n")
+        return smoke_main(["--dolphin", sys.executable, "--dol", str(self.dol), "--user-dir", str(self.user),
+                           "--timeout", "2", *extra])
+
+    def test_smoke_save_fixture_gb_backup_wires_debug_and_cleans_up(self):
+        self.assertEqual(self._save_run("--save-fixture", "gb", "--save-step", "backup"), 1)  # Marker fehlt
+        sd = self.user / "SDSync"
+        config = (sd / "newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertIn("save_backup = gb/Tetris (World) (Rev 1).gb", config)
+        self.assertIn("save_dir = sd:/saves_smoke/gb", (sd / "newlauncher/emulators.ini").read_text(encoding="utf-8"))
+        self.assertFalse((sd / "saves_smoke").exists())
+
+    def test_smoke_save_fixture_emunand_sets_save_emu(self):
+        self.assertEqual(self._save_run("--save-fixture", "emunand", "--save-step", "backup"), 1)
+        config = (self.user / "SDSync/newlauncher/config.ini").read_text(encoding="utf-8")
+        self.assertIn("[emunand]\npath = sd:/emunand\n", config)
+        self.assertIn("[wii]\nsave = emu\n", config)
+
+    def test_smoke_save_restore_without_backup_is_precondition(self):
+        self.assertEqual(self._save_run("--save-fixture", "nand", "--save-step", "restore"), 2)
+
+    def test_smoke_save_step_needs_fixture(self):
+        with self.assertRaises(SystemExit):
+            self._save_run("--save-step", "backup")
+
     # --- M9: --expect-frag gleicht NL_FRAG mit fat_frag.py ab ---
     FRAG_REL = "Super Mario Galaxy [RMGP01]/RMGP01.iso"
     FRAG_LINE = "NL_FRAG dev=sd part_lba=2048 n=2 size=3 crc=6dabbf0a first=0:3182:2"

@@ -1557,7 +1557,8 @@ int main(int argc, char** argv) {
         if (!r) return;
         const std::string unit = savesUnit ? savesUnit->id : std::string("?");
         if (r->kind == nl::platform::SaveJobResult::Kind::Backup)
-            nl::log::line("NL_SAVE_BACKUP %s %s", !r->ok ? "fail" : r->backup.empty ? "empty" : "ok", unit.c_str());
+            nl::log::line("NL_SAVE_BACKUP %s %s %s", !r->ok ? "fail" : r->backup.empty ? "empty" : "ok", unit.c_str(),
+                          r->ok ? r->backup.zipPath.c_str() : "");  // Pfad für den Smoke (Dolphin schreibt nicht zurück)
         else
             nl::log::line("NL_SAVE_RESTORE %s %s", r->ok ? "ok" : "fail", unit.c_str());
         if (!r->ok) nl::log::line("NL_WARN Spielstand: %s", r->detail.c_str());

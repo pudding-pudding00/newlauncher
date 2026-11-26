@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "core/cover_paths.hpp"
+#include "core/url_encode.hpp"
 #include <string>
 
 namespace nl {
@@ -50,21 +51,6 @@ const char* libretroSystem(Console c) {
     return nullptr;
 }
 
-void percentEncode(std::string& out, std::string_view s) {
-    static constexpr char kHex[] = "0123456789ABCDEF";
-    for (const char ch : s) {
-        const auto c = static_cast<unsigned char>(ch);
-        const bool plain = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
-                           c == '.' || c == '_' || c == '~';
-        if (plain) {
-            out += ch;
-        } else {
-            out += '%';
-            out += kHex[c >> 4];
-            out += kHex[c & 0x0F];
-        }
-    }
-}
 }  // namespace
 
 std::string libretroCoverUrl(std::string_view base, Console console, std::string_view fileStem) {
@@ -78,7 +64,7 @@ std::string libretroCoverUrl(std::string_view base, Console console, std::string
     std::string name(fileStem);
     for (char& ch : name)
         if (std::string_view("&*/:`<>?\\|\"").find(ch) != std::string_view::npos) ch = '_';
-    percentEncode(url, name);
+    appendPercentEncoded(url, name);
     url += ".png";
     return url;
 }
@@ -219,7 +205,7 @@ std::string libretroSymlinkTarget(std::span<const u8> body) {
 
 std::string libretroLinkUrl(std::string_view url, std::string_view target) {
     std::string out(url.substr(0, url.rfind('/') + 1));
-    percentEncode(out, target);
+    appendPercentEncoded(out, target);
     return out;
 }
 

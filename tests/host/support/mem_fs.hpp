@@ -32,6 +32,7 @@ public:
 
     Result<std::vector<DirEntry>> list(std::string_view dir) override {
         const std::string d(dir);
+        if (readBlocked(d)) return Result<std::vector<DirEntry>>::err(Error{ErrorCode::IoError, "gesperrt"});
         if (dirs_.find(d) == dirs_.end()) return Result<std::vector<DirEntry>>::err(Error{ErrorCode::NotFound, d});
         std::vector<DirEntry> out;
         for (const auto& [path, mtime] : dirs_)
@@ -43,6 +44,7 @@ public:
 
     Result<std::size_t> read(std::string_view file, u64 offset, std::span<u8> out) override {
         ++reads;
+        if (readBlocked(file)) return Result<std::size_t>::err(Error{ErrorCode::IoError, "gesperrt"});
         auto it = files_.find(std::string(file));
         if (it == files_.end()) return Result<std::size_t>::err(Error{ErrorCode::NotFound, std::string(file)});
         const auto& data = it->second.data;
@@ -53,6 +55,7 @@ public:
     }
 
     Result<std::vector<u8>> readAll(std::string_view file, std::size_t maxBytes) override {
+        if (readBlocked(file)) return Result<std::vector<u8>>::err(Error{ErrorCode::IoError, "gesperrt"});
         auto it = files_.find(std::string(file));
         if (it == files_.end()) return Result<std::vector<u8>>::err(Error{ErrorCode::NotFound, std::string(file)});
         if (it->second.data.size() > maxBytes) return Result<std::vector<u8>>::err(Error{ErrorCode::InvalidData, "zu groß"});
@@ -110,6 +113,8 @@ public:
         return it == files_.end() ? nullptr : &it->second;
     }
     bool failWrites = false;
+    std::string failReadsUnder;  // nicht leer: Lesen unter diesem Präfix scheitert mit IoError (gesperrter NAND)
+    bool readBlocked(std::string_view p) const { return !failReadsUnder.empty() && p.rfind(failReadsUnder, 0) == 0; }
 
 private:
     static std::string parentOf(const std::string& p) {

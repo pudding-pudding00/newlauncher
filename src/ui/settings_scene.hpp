@@ -26,6 +26,7 @@ public:
     void onEnter() override;
 
     int focus() const { return focus_; }
+    int scroll() const { return scroll_; }
     void setThemePacks(std::vector<std::string> packs) { themePacks_ = std::move(packs); }  // gefundene Theme-Pakete
     void setActiveSources(const SourceSpec& running) { bootSources_ = running; }  // laufende Quellen (Rückfall auf SD)
     bool restartHintShown() const { return live_ != nullptr && !(live_->libraryRules.sources == bootSources_); }
@@ -45,6 +46,7 @@ private:
     AppCommand pendingAction_ = AppCommand::None;  // Aktion nach SaveSettings im nächsten Frame
     Console pendingConsole_ = Console::Wii;        // OpenOptions: Wii- oder GameCube-Spiele
     int focus_ = 0;
+    int scroll_ = 0;  // M27: erste sichtbare Zeile
     bool holding_ = false;  // M24: A wird auf „Cover-Cache löschen“ gehalten
     float holdMs_ = 0.0f;
     bool keysSincePointerMove_ = false;

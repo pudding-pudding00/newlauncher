@@ -15,11 +15,12 @@ using gfx::FontWeight;
 using gfx::Rect;
 
 constexpr float kCardMaxW = 480.0f, kPad = 16.0f, kPadY = 4.0f, kTitleH = 22.0f, kRowH = 16.0f, kHelpH = 18.0f;  // 27 Zeilen in 480 (M24)
+constexpr int kVisibleRows = 27;  // M27: mehr Zeilen → die Liste scrollt mit dem Fokus
 
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo, Str::ThemePack,  Str::Music,       Str::Volume,
     Str::Sounds,   Str::Banners, Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::CoverAuto, Str::CoverStorage, Str::Rescan, Str::FetchCovers, Str::ClearCovers, Str::VcMapTitle,
-    Str::Emulators, Str::WiiGames, Str::GcGames, Str::Parental, Str::Setup, Str::SysInfo, Str::About, Str::SelfUpdate, Str::RestartSelf,
+    Str::Emulators, Str::WiiGames, Str::GcGames, Str::Cloud, Str::Parental, Str::Setup, Str::SysInfo, Str::About, Str::SelfUpdate, Str::RestartSelf,
 };
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
@@ -42,6 +43,7 @@ AppCommand actionCommand(SettingRow r) {
         case SettingRow::Emulators: return AppCommand::OpenEmulators;
         case SettingRow::WiiGames:
         case SettingRow::GcGames: return AppCommand::OpenOptions;
+        case SettingRow::Cloud: return AppCommand::OpenCloud;
         case SettingRow::Parental: return AppCommand::OpenParental;
         case SettingRow::Setup: return AppCommand::OpenSetup;
         case SettingRow::SysInfo: return AppCommand::OpenSysInfo;
@@ -113,17 +115,18 @@ bool SettingsScene::dirty() const { return live_ != nullptr && !sameSettings(*li
 
 Rect SettingsScene::cardRect(const UiContext& ctx) const {
     const float w = ctx.width - 64.0f < kCardMaxW ? ctx.width - 64.0f : kCardMaxW;
-    const float h = kPadY + kTitleH + kCount * kRowH + kHelpH + kPadY;
+    const int rows = kCount < kVisibleRows ? kCount : kVisibleRows;
+    const float h = kPadY + kTitleH + static_cast<float>(rows) * kRowH + kHelpH + kPadY;
     return Rect{(ctx.width - w) / 2, (ctx.height - h) / 2, w, h};
 }
 
 Rect SettingsScene::rowRect(const UiContext& ctx, int row) const {
     const Rect c = cardRect(ctx);
-    return Rect{c.x + kPad, c.y + kPadY + kTitleH + static_cast<float>(row) * kRowH, c.w - 2 * kPad, kRowH};
+    return Rect{c.x + kPad, c.y + kPadY + kTitleH + static_cast<float>(row - scroll_) * kRowH, c.w - 2 * kPad, kRowH};
 }
 
 int SettingsScene::hitTest(const UiContext& ctx, float x, float y) const {
-    for (int i = 0; i < kCount; ++i)
+    for (int i = scroll_; i < kCount && i < scroll_ + kVisibleRows; ++i)
         if (contains(rowRect(ctx, i), x, y)) return i;
     return -1;
 }
@@ -151,6 +154,8 @@ void SettingsScene::update(const UiContext& ctx, const InputFrame& in, float dtM
     if (in.pressed(Action::Up) && focus_ > 0) --focus_;
     if (in.pressed(Action::Down) && focus_ + 1 < kCount) ++focus_;
     if (in.pressed(Action::Up) || in.pressed(Action::Down)) keysSincePointerMove_ = true;
+    if (focus_ < scroll_) scroll_ = focus_;
+    if (focus_ >= scroll_ + kVisibleRows) scroll_ = focus_ - kVisibleRows + 1;
     // M24: Loslassen und Fokuswechsel brechen das Halten ab.
     if (focus_ != static_cast<int>(SettingRow::ClearCovers) || !in.confirmHeld) holding_ = false;
     if (!holding_) holdMs_ = 0.0f;
@@ -224,7 +229,7 @@ void SettingsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Body, FontWeight::Regular);
     const gfx::FontFace& value = ctx.fonts->face(FontSize::Body, FontWeight::Medium);
     const gfx::FontFace& small = ctx.fonts->face(FontSize::Small, FontWeight::Regular);
-    for (int i = 0; i < kCount; ++i) {
+    for (int i = scroll_; i < kCount && i < scroll_ + kVisibleRows; ++i) {
         const Rect r = rowRect(ctx, i);
         const SettingRow row = static_cast<SettingRow>(i);
         const bool enabled = live_ == nullptr || settingEnabled(*live_, row);

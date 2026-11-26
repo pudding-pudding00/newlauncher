@@ -20,6 +20,9 @@ namespace nl {
 // M24: Cover (covers_src, cache/covers, missing.txt) auf der SD-Karte (Standard) oder auf dem Spielgerät.
 enum class CoverStorage : u8 { Sd, Device };
 
+// M27: aktiver Cloud-Anbieter ([cloud] provider = off|drive); genau einer.
+enum class CloudProviderId : u8 { None, Drive };
+
 struct Config {
     enum class Language : u8 { Auto, De, En };
     enum class LibraryDevice : u8 { Usb, Sd };
@@ -47,6 +50,8 @@ struct Config {
     std::optional<u8> wiiIos;                // [wii] ios (M13, Spec 6.2): auto → nullopt, sonst Slot 200–255
     std::string deviceName;  // [general] device_name (M26): Gerätename in Spielstand-Paketen, leer = "Wii"
     std::string emuNandPath;                 // [emunand] path (M19): z. B. "usb:/nands/emu1", leer = aus
+    CloudProviderId cloudProvider = CloudProviderId::None;  // [cloud] provider (M27)
+    std::string driveClientId, driveClientSecret;  // [cloud] drive_client_id/_secret: nur lesen, nie schreiben oder loggen
     std::vector<std::string> badKeys;        // ungültige Werte außerhalb von [library]/[paths] (NL_CFG_BAD), z. B. "wii.ios"
     std::string debugAutostart;  // [debug] autostart: Spielschlüssel, der nach NL_READY startet
     std::string debugCoverUrl;   // [debug] cover_url: ersetzt die GameTDB-Basis (Smoke-Test)
@@ -77,6 +82,10 @@ struct Config {
     std::string debugFakeDisc;      // [debug] fake_disc = <ID6>|gc:<ID6>: eingelegte Disc vortäuschen (Smoke, M19)
     std::string debugSaveBackup;    // [debug] save_backup = <spielschlüssel>: Spielstand nach NL_READY sichern (Smoke, M26)
     std::string debugSaveRestore;   // [debug] save_restore = <spielschlüssel>|latest: neueste Sicherung zurückspielen (M26)
+    std::string debugCloudBase;     // [debug] cloud_base: Fake-Server statt Google (OAuth und API, Smoke, M27)
+    bool debugCloudDeviceAuto = false;  // [debug] cloud_device_auto = 1: nach NL_READY anmelden (Smoke, M27)
+    std::string debugCloudConflict;  // [debug] cloud_conflict = wii|cloud|cancel: Konfliktdialog beantworten (M27)
+    std::string debugCloudSync;     // [debug] cloud_sync = <spielschlüssel>: Start-Tor ohne Start durchlaufen (M27)
 };
 
 // tls: Build mit HTTPS (NL_TLS). Bestimmt die Standardquellen; die offiziellen Quellen in http- oder https-Form

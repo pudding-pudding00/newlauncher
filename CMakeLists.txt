@@ -25,6 +25,20 @@ add_library(nl_core STATIC
     src/core/game_filter.cpp
     src/core/play_stats.cpp
     src/core/sha256.cpp
+    src/core/base64.cpp
+    src/core/url_encode.cpp
+    src/core/hmac.cpp
+    src/core/json.cpp
+    src/core/multipart.cpp
+    src/core/http_types.cpp
+    src/core/oauth_device.cpp
+    src/core/token_store.cpp
+    src/core/cloud_provider.cpp
+    src/core/drive_provider.cpp
+    src/core/cloud_sync.cpp
+    src/core/cloud_state.cpp
+    src/core/cloud_outbox.cpp
+    src/core/cloud_plan.cpp
     src/core/parental.cpp
     src/core/rgb5a3.cpp
     src/core/console.cpp
@@ -152,6 +166,9 @@ add_library(nl_core STATIC
     src/ui/dialog_scene.cpp
     src/ui/choice_dialog.cpp
     src/ui/saves_scene.cpp
+    src/ui/cloud_scene.cpp
+    src/ui/device_code_scene.cpp
+    src/ui/cloud_sync_scene.cpp
     src/ui/launch_text.cpp
     src/ui/pin_scene.cpp
     src/ui/parental_scene.cpp
@@ -356,6 +373,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/ios_patch.cpp
         src/platform/isfs_fs.cpp
         src/platform/save_worker.cpp
+        src/platform/cloud_worker.cpp
+        src/platform/device_key.cpp
         src/app/cover_service.cpp
         src/app/banner_service.cpp
         src/gfx/renderer.cpp

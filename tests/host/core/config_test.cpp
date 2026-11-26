@@ -472,3 +472,39 @@ TEST_CASE("M26: device_name und Debug-Schlüssel save_backup/save_restore") {
     CHECK(configFromIni(IniDoc::parse("[general]\ndevice_name = " + std::string(31, 'x') + "\xC3\xBC\n")).deviceName ==
           std::string(31, 'x'));
 }
+
+TEST_CASE("M27: [cloud] provider, Client-IDs und Debug-Schlüssel") {
+    const Config c = configFromIni(IniDoc::parse(
+        "[cloud]\nprovider = drive\ndrive_client_id =  abc.apps.googleusercontent.com \ndrive_client_secret = s3cr3t\n"
+        "[debug]\ncloud_base = https://127.0.0.1:8443\ncloud_device_auto = 1\ncloud_conflict = wii\n"
+        "cloud_sync = RMGP01\n"));
+    CHECK(c.cloudProvider == CloudProviderId::Drive);
+    CHECK(c.driveClientId == "abc.apps.googleusercontent.com");
+    CHECK(c.driveClientSecret == "s3cr3t");
+    CHECK(c.debugCloudBase == "https://127.0.0.1:8443");
+    CHECK(c.debugCloudDeviceAuto);
+    CHECK(c.debugCloudConflict == "wii");
+    CHECK(c.debugCloudSync == "RMGP01");
+
+    const Config d = configFromIni(IniDoc::parse(""));
+    CHECK(d.cloudProvider == CloudProviderId::None);
+    CHECK(d.driveClientId.empty());
+    CHECK_FALSE(d.debugCloudDeviceAuto);
+    CHECK(configFromIni(IniDoc::parse("[cloud]\nprovider = icloud\n")).cloudProvider == CloudProviderId::None);
+    CHECK(configFromIni(IniDoc::parse("[debug]\ncloud_conflict = egal\n")).debugCloudConflict.empty());
+    CHECK(configFromIni(IniDoc::parse("[debug]\ncloud_conflict = cancel\n")).debugCloudConflict == "cancel");
+}
+
+TEST_CASE("M27: provider wird geschrieben, Client-ID und Secret bleiben unangetastet") {
+    const std::string prev = "[cloud]\nprovider = off\ndrive_client_id = abc\ndrive_client_secret = s3cr3t\n";
+    Config c = configFromIni(IniDoc::parse(prev));
+    c.cloudProvider = CloudProviderId::Drive;
+    c.driveClientSecret = "anders";  // nie zurückschreiben: config.ini des Nutzers ist die Quelle
+    const std::string text = configToIniText(c, prev);
+    const Config back = configFromIni(IniDoc::parse(text));
+    CHECK(back.cloudProvider == CloudProviderId::Drive);
+    CHECK(back.driveClientId == "abc");
+    CHECK(back.driveClientSecret == "s3cr3t");
+    CHECK(text.find("anders") == std::string::npos);
+    CHECK(configToIniText(Config{}, "").find("provider = off") != std::string::npos);
+}

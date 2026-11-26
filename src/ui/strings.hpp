@@ -229,6 +229,7 @@
       "Restore the backup from %s? The current save is backed up first.") \
     X(SavesDone, "Fertig", "Done") \
     X(SavesFailed, "Fehlgeschlagen: %s", "Failed: %s") \
+    X(SavesCloudBusy, "Cloud-Abgleich läuft, bitte gleich noch einmal", "Cloud sync running, please try again shortly") \
     X(SavesNoBackup, "Keine Sicherungen", "No backups") \
     X(SavesSize, "%s · %u Dateien", "%s · %u files") \
     X(SavesCancel, "Abbrechen", "Cancel") \

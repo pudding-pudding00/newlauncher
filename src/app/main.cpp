@@ -34,6 +34,7 @@
 #include "core/launch_plan.hpp"
 #include "core/save_backup.hpp"
 #include "core/save_locator.hpp"
+#include "core/save_lock.hpp"
 #include "core/save_query.hpp"
 #include "core/cloud_gate.hpp"
 #include "core/cloud_outbox.hpp"
@@ -1608,15 +1609,26 @@ int main(int argc, char** argv) {
         nl::log::line("NL_SCENE saves %s backups=%u", savesScene.view().unitId.c_str(),
                       static_cast<unsigned>(savesBackups.size()));
     };
+    // Lokale Aufträge nie neben einem Cloud-Auftrag (gleiche Ordner, gleiches Journal); sonst Hinweis in der Szene.
+    auto localSaveJobAllowed = [&]() {
+        if (nl::mayStartLocalSaveJob({.local = saveWorker.running(), .cloud = cloud.running(),
+                                      .gate = cloudGate.has_value()}))
+            return true;
+        if (!saveWorker.running()) {
+            savesScene.setStatus(nl::ui::tr(nl::ui::Str::SavesCloudBusy));
+            nl::log::line("NL_SAVE_BUSY cloud");
+        }
+        return false;
+    };
     // Aufträge für die Einheit der Szene (auch über die Debug-Schlüssel); false = nichts gestartet.
     auto startSaveBackup = [&]() {
         const nl::Game* g = savesScene.game();
-        if (g == nullptr || !savesUnit || saveWorker.running()) return false;
+        if (g == nullptr || !savesUnit || !localSaveJobAllowed()) return false;
         return saveWorker.startBackup(*savesUnit, g->title != nullptr ? g->title : "");
     };
     auto startSaveRestore = [&](const std::string& fileName) {
         const nl::Game* g = savesScene.game();
-        if (g == nullptr || !savesUnit || saveWorker.running() || fileName.empty()) return false;
+        if (g == nullptr || !savesUnit || fileName.empty() || !localSaveJobAllowed()) return false;
         return saveWorker.startRestore(*savesUnit, nl::backupDir(data.dir, savesUnit->id) + "/" + fileName,
                                        g->title != nullptr ? g->title : "");
     };
@@ -1698,9 +1710,16 @@ int main(int argc, char** argv) {
             if (g.key != nullptr && key == g.key) return &g;
         return nullptr;
     };
+    bool cloudUploadsDeferred = false;  // Upload wartete auf einen lokalen Spielstand-Auftrag
     // Hintergrund-Upload aller ausstehenden Spiele mit erreichbarer Einheit (gesperrter NAND → bleibt liegen).
     auto startCloudUploads = [&]() {
-        if (!cloudActive() || !cloudLinked || cloudPending.empty() || cloud.running() || cloudGate) return;
+        if (!cloudActive() || !cloudLinked || cloudPending.empty()) return;
+        if (!nl::mayStartCloudUpload({.local = saveWorker.running(), .cloud = cloud.running(),
+                                      .gate = cloudGate.has_value()})) {
+            cloudUploadsDeferred = saveWorker.running();  // nach dem lokalen Auftrag nachholen (pumpNet)
+            return;
+        }
+        cloudUploadsDeferred = false;
         std::vector<nl::platform::CloudUpload> items;
         bool dropped = false;
         for (auto it = cloudPending.begin(); it != cloudPending.end();) {
@@ -1866,7 +1885,8 @@ int main(int argc, char** argv) {
                 onCloudPreLaunch(*r);
                 if (!cloudGate) return;
             }
-        } else if (!cloud.running()) {  // sonst wartet das Tor auf den abgebrochenen Upload (Zeitlimit gilt)
+        } else if (nl::maySubmitCloudGate({.local = saveWorker.running(), .cloud = cloud.running(), .gate = true})) {
+            // sonst wartet das Tor auf den abgebrochenen Upload bzw. den lokalen Auftrag (Zeitlimit gilt)
             static_cast<void>(cloud.takePreLaunch());  // veraltetes Ergebnis nach B oder Zeitlimit
             cloudGate->submitted = cloud.startPreLaunch(cloudGate->unit, cloudGate->title);
             if (!cloudGate->submitted) {
@@ -1919,6 +1939,7 @@ int main(int argc, char** argv) {
     auto pumpNet = [&]() {
         pumpCheats();
         pumpSaves();
+        if (cloudUploadsDeferred && !saveWorker.running()) startCloudUploads();
         for (const std::string& line : net.takeLogLines()) nl::log::line("%s", line.c_str());
         for (const std::string& stem : net.takeFinishedStems()) covers.invalidate(stem);
         if (net.running() && coverClear == CoverClear::Idle) {
@@ -2847,8 +2868,8 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 const int i = savesScene.selectedBackup();
                 const nl::Game* g = savesScene.game();
-                if (g == nullptr || !savesUnit || saveWorker.running() || i < 0 ||
-                    static_cast<std::size_t>(i) >= savesBackups.size())
+                if (g == nullptr || !savesUnit || i < 0 || static_cast<std::size_t>(i) >= savesBackups.size() ||
+                    !localSaveJobAllowed())
                     break;
                 const std::string path =
                     nl::backupDir(data.dir, savesUnit->id) + "/" + savesBackups[static_cast<std::size_t>(i)];

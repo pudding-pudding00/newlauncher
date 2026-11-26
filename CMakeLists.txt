@@ -74,6 +74,13 @@ add_library(nl_core STATIC
     src/core/http.cpp
     src/core/crc32.cpp
     src/core/inflate.cpp
+    src/core/deflate.cpp
+    src/core/zip_writer.cpp
+    src/core/save_archive.cpp
+    src/core/save_locator.cpp
+    src/core/save_query.cpp
+    src/core/save_backup.cpp
+    src/core/nand_path.cpp
     src/core/zip_reader.cpp
     src/core/emu_catalog.cpp
     src/core/emu_install.cpp
@@ -143,6 +150,8 @@ add_library(nl_core STATIC
     src/ui/cheats_scene.cpp
     src/ui/vc_map_scene.cpp
     src/ui/dialog_scene.cpp
+    src/ui/choice_dialog.cpp
+    src/ui/saves_scene.cpp
     src/ui/launch_text.cpp
     src/ui/pin_scene.cpp
     src/ui/parental_scene.cpp
@@ -344,6 +353,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/disc_drive.cpp
         src/platform/fs_extents.cpp
         src/platform/nand_emu.cpp
+        src/platform/ios_patch.cpp
+        src/platform/isfs_fs.cpp
+        src/platform/save_worker.cpp
         src/app/cover_service.cpp
         src/app/banner_service.cpp
         src/gfx/renderer.cpp

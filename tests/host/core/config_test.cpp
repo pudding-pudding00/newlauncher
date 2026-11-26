@@ -456,3 +456,19 @@ TEST_CASE("configFromIni: [covers] storage (M24), Standard sd, Round-Trip") {
     CHECK(configFromIni(IniDoc::parse(configToIniText(c, defaultConfigText()))).coverStorage == CoverStorage::Device);
     CHECK(configFromIni(IniDoc::parse(configToIniText(c, ""))).coverStorage == CoverStorage::Device);
 }
+
+TEST_CASE("M26: device_name und Debug-Schlüssel save_backup/save_restore") {
+    const Config c = configFromIni(IniDoc::parse(
+        "[general]\ndevice_name =  Wohnzimmer-Wii \n[debug]\nsave_backup = RMGP01\nsave_restore = latest\n"));
+    CHECK(c.deviceName == "Wohnzimmer-Wii");
+    CHECK(c.debugSaveBackup == "RMGP01");
+    CHECK(c.debugSaveRestore == "latest");
+    CHECK(configFromIni(IniDoc::parse("")).deviceName.empty());
+    // zu lang → auf 32 Zeichen gekürzt; Steuerzeichen und ']' / '=' fliegen raus (landet in newlauncher-save.ini)
+    const Config l = configFromIni(IniDoc::parse("[general]\ndevice_name = " + std::string(40, 'x') + "\n"));
+    CHECK(l.deviceName.size() == 32);
+    CHECK(configFromIni(IniDoc::parse("[general]\ndevice_name = a=b]c\n")).deviceName == "abc");
+    // 31 × 'x' + "ü" (2 Bytes) → das halbe ü fällt weg
+    CHECK(configFromIni(IniDoc::parse("[general]\ndevice_name = " + std::string(31, 'x') + "\xC3\xBC\n")).deviceName ==
+          std::string(31, 'x'));
+}

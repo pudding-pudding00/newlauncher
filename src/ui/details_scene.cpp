@@ -190,6 +190,7 @@ void DetailsScene::open(const Game& game, bool favorite, u32 lastPlayedUnix) {
     keysSincePointerMove_ = false;
     hasN64_ = false;
     hasCheats_ = game.console == Console::Wii || game.console == Console::Gc;
+    hasSave_ = false;
     n64_ = N64Decision{};
     choice_ = 0;
     method_[0] = '\0';
@@ -217,6 +218,18 @@ Rect DetailsScene::cheatsRect(const UiContext& ctx) const {
     return Rect{b0.x, b0.y - rows * (kMethodGap + kMethodH), kButtonW, kMethodH};
 }
 
+Rect DetailsScene::saveRect(const UiContext& ctx) const {
+    const Rect upper = cheatsRect(ctx);
+    const float dx = hasCheats_ || hasN64_ ? kButtonW + 16.0f : 0.0f;  // allein steht sie links
+    return Rect{upper.x + dx, upper.y, kButtonW, kMethodH};
+}
+
+void DetailsScene::setHasSave(bool hasSave) {
+    if (!hasGame_) return;
+    hasSave_ = hasSave;
+    if (!hasSave_ && focus_ == kFocusSave) focus_ = 0;
+}
+
 void DetailsScene::setCategories(std::vector<std::string> names, std::vector<bool> checked) {
     checked.resize(names.size(), false);
     catNames_ = std::move(names);
@@ -228,6 +241,7 @@ void DetailsScene::setCategories(std::vector<std::string> names, std::vector<boo
 int DetailsScene::upperRowFocus() const {
     if (hasCheats_) return kFocusCheats;
     if (hasN64_) return kFocusMethod;
+    if (hasSave_) return kFocusSave;
     return -1;
 }
 
@@ -244,6 +258,7 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, Sce
         for (int i = 0; i < 2; ++i)
             if (contains(buttonRect(ctx, i), in.pointerX, in.pointerY)) hit = i;
         if (hasCheats_ && contains(cheatsRect(ctx), in.pointerX, in.pointerY)) hit = kFocusCheats;
+        if (hasSave_ && contains(saveRect(ctx), in.pointerX, in.pointerY)) hit = kFocusSave;
         if (hasCategories() && contains(categoriesRect(ctx), in.pointerX, in.pointerY)) hit = kFocusCategories;
         if (in.pointerMoved) {
             if (hit >= 0) focus_ = hit;
@@ -267,10 +282,19 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, Sce
         if (in.pressed(Action::Down)) {
             focus_ = hasCategories() ? kFocusCategories : 0;
             keysSincePointerMove_ = true;
+        } else if (in.pressed(Action::Up) && hasSave_) {
+            focus_ = kFocusSave;
+            keysSincePointerMove_ = true;
         }
-    } else if (focus_ == kFocusCheats) {
+    } else if (focus_ == kFocusCheats || focus_ == kFocusSave) {
         if (in.pressed(Action::Down)) {
             focus_ = hasCategories() ? kFocusCategories : 0;
+            keysSincePointerMove_ = true;
+        } else if (in.pressed(Action::Right) && focus_ == kFocusCheats && hasSave_) {
+            focus_ = kFocusSave;
+            keysSincePointerMove_ = true;
+        } else if (in.pressed(Action::Left) && focus_ == kFocusSave && (hasCheats_ || hasN64_)) {
+            focus_ = upperRowFocus();
             keysSincePointerMove_ = true;
         }
     } else if (focus_ == kFocusCategories) {
@@ -310,6 +334,11 @@ void DetailsScene::update(const UiContext& ctx, const InputFrame& in, float, Sce
     const bool pointerOff = in.pointerValid && hit < 0 && !keysSincePointerMove_;
     if (in.pressed(Action::Confirm) && !pointerOff && focus_ == kFocusCheats && hasGame_) {
         out.command = AppCommand::OpenCheats;
+        out.game = &game_;
+        return;
+    }
+    if (in.pressed(Action::Confirm) && !pointerOff && focus_ == kFocusSave && hasGame_) {
+        out.command = AppCommand::OpenSaves;
         out.game = &game_;
         return;
     }
@@ -385,7 +414,7 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     y += 12.0f;
     const std::string_view desc(description_);
     const int descLines =
-        std::max(0, (hasN64_ || hasCheats_ ? 2 : 3) - (device_.empty() ? 0 : 1) - (hasCategories() ? 1 : 0) -
+        std::max(0, (hasN64_ || hasCheats_ || hasSave_ ? 2 : 3) - (device_.empty() ? 0 : 1) - (hasCategories() ? 1 : 0) -
                         (stats_[0] != '\0' ? 1 : 0));
     n = gfx::wrapText(body, desc, w, std::span<gfx::Line>(lines, static_cast<std::size_t>(descLines)));
     for (int i = 0; i < n; ++i) {
@@ -397,7 +426,7 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
     if (hasN64_) {
         const Rect b0 = buttonRect(ctx, 0);
         const Rect upper = cheatsRect(ctx);
-        const Rect row{upper.x, upper.y, 2 * kButtonW + 16.0f, kMethodH};
+        const Rect row{upper.x, upper.y, hasSave_ ? kButtonW : 2 * kButtonW + 16.0f, kMethodH};
         const bool focused = focus_ == kFocusMethod;
         if (focused) gfx::roundRect(dl, s, Rect{row.x - 3, row.y - 3, row.w + 6, row.h + 6}, kMethodH / 2 + 3, t.accent);
         gfx::roundRect(dl, s, row, kMethodH / 2, t.tile);
@@ -414,6 +443,16 @@ void DetailsScene::draw(const UiContext& ctx, gfx::DrawList& dl) {
         gfx::roundRect(dl, s, row, kMethodH / 2, t.tile);
         gfx::drawTextEllipsis(dl, body, row.x + 16, row.y + row.h / 2 + (body.ascent - body.descent) / 2, row.w - 32,
                               tr(Str::DetailsCheats), t.text);
+    }
+
+    // Spielstand (M26): rechts neben Cheats bzw. Startmethode, sonst links
+    if (hasSave_) {
+        const Rect row = saveRect(ctx);
+        const bool focused = focus_ == kFocusSave;
+        if (focused) gfx::roundRect(dl, s, Rect{row.x - 3, row.y - 3, row.w + 6, row.h + 6}, kMethodH / 2 + 3, t.accent);
+        gfx::roundRect(dl, s, row, kMethodH / 2, t.tile);
+        gfx::drawTextEllipsis(dl, body, row.x + 16, row.y + row.h / 2 + (body.ascent - body.descent) / 2, row.w - 32,
+                              tr(Str::DetailsSave), t.text);
     }
 
     // Kategorien (M17): "Kategorien:  < [x] Party >"; Links/Rechts wählen, A schaltet um

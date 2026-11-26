@@ -6,6 +6,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/console.hpp"
 #include "core/ini.hpp"
@@ -20,6 +21,8 @@ struct EmulatorEntry {
     bool fromFile = false;  // dol stand in emulators.ini (sonst v1-Vorgabe)
     std::string profile;    // nach resolveTable: erkanntes Profil; sonst leer
     u8 fsMask = 0;          // M16: fs = fat,ntfs,ext (Bits fsBit); 0 = Vorgabe des Profils
+    std::string saveDir;    // M26: save_dir = Speicherordner (absolut mit Gerät); leer = Vorgabe des Profils
+    std::vector<std::string> saveExt;  // M26: save_ext = Komma-Liste, klein, mit Punkt; leer = .sav,.srm
 };
 
 // M16: „fat, ntfs“ → Bits; Namen ohne Groß/klein, durch Komma getrennt; Unbekanntes zählt nicht.

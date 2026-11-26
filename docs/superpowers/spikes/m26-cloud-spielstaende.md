@@ -7,7 +7,7 @@ Fremder Quellcode wurde nur gelesen, nichts übernommen.
 |---|---|---|
 | S1 | NAND-Save-Ordner unter IOS 58 + AHBPROT lesen/schreiben | offen (Hardware) |
 | S2 | AHBPROT/ISFS nach `--from-game` | offen (Hardware) |
-| S3 | Schreibt Dolphin `/title/…/data` aus einer DOL? | offen |
+| S3 | Schreibt Dolphin `/title/…/data` aus einer DOL? | **erledigt: ja** (mit gleichem Dateinamen beim Umbenennen) |
 | S4 | Speicherpfade der Emulatoren | teilweise (GX ja, N64/RetroArch offen) |
 | S5 | Kann wii_tls v1.0.0, was die Anbieter brauchen? | **erledigt: ja** |
 | S6 | App-Registrierungen | Nutzeraktion |
@@ -62,7 +62,25 @@ Quellen: `dborth/snes9xgx`, `dborth/fceugx`, `dborth/vbagx` (`source/*.h`, `pref
   Hardware-Abnahme prüft die tatsächlichen Dateien auf der SD-Karte des Nutzers. Danach werden die Standards
   nachgetragen.
 
-## S1, S2, S3, S7
+## S3: Dolphin schreibt den Save-Ordner – Ergebnis positiv
+
+Gemessen am 2026-11-26 mit `tools/dolphin_smoke.py --save-fixture nand` (Dev-User, Dolphin-NAND
+`Wii/title/00010000/524d4750/data`, Datei vom Host angelegt):
+
+- Der Rechte-Patch meldet `NL_IOSPATCH emulated`; Dolphin prüft keine IOS-Rechte, Lesen, `CreateFile` in `/tmp`,
+  Schreiben, `SetAttr`, `Rename` und `Delete` klappen ohne Patch.
+- **Befund:** `ISFS_Rename` von `/tmp/nl_<crc>` nach `…/data/smoke.sav` scheitert mit **-101**. IOS (und Dolphin
+  genauso) benennt eine Datei nur dann in einen anderen Ordner um, wenn der Dateiname gleich bleibt. Die
+  Zwischendatei heißt deshalb jetzt `/tmp/<Dateiname des Ziels>` (`nandTempPath`); danach laufen Sichern,
+  Zurückspielen und Journal-Rollback grün. Für S1 auf der Wii gilt dieselbe Regel.
+- NAND-Namen haben höchstens 12 Zeichen; ein Journal-Eintrag mit längerem Namen endet in `NL_SAVE_RECOVER failed`.
+- Folge: Die NAND-Smokes bleiben im Dolphin-NAND, eine Beschränkung auf EmuNAND ist nicht nötig.
+
+## S1, S2, S7
 
 Noch offen. S1/S2/S7 brauchen die echte Wii (wiiload, Port 4299), S1-Schreibtests erst nach Rückfrage und
 BootMii-NAND-Backup.
+
+Für S1 offen: Fehlt `/title/<hi>/<lo>/data` im echten NAND (Disc nie gespielt), scheitert Zurückspielen sauber mit
+Rollback, weil der Eigentümer des neuen Ordners unbekannt ist. Auf der Wii prüfen, ob das Spiel den Ordner selbst
+anlegt; bis dahin legt newlauncher dort keinen Ordner an.

@@ -268,3 +268,12 @@ TEST_CASE("fsMask: eingebaute Profile lesen nur FAT; emulators.ini fs überschre
     REQUIRE(r);
     CHECK(r->fsMask == (fsBit(FsKind::Fat) | fsBit(FsKind::Ntfs)));
 }
+
+TEST_CASE("resolveTable: save_dir und save_ext bleiben erhalten (M26)") {
+    const EmulatorTable ini =
+        EmulatorTable::fromIni(IniDoc::parse("[gba]\nsave_dir = usb:/vba/saves\nsave_ext = sav,rtc\n[n64_not64]\nsave_dir = sd:/n64\n"));
+    const EmulatorTable t = resolveTable(ini, {});
+    CHECK(t.forConsole(Console::Gba)->saveDir == "usb:/vba/saves");
+    CHECK(t.forConsole(Console::Gba)->saveExt == std::vector<std::string>{".sav", ".rtc"});
+    CHECK(t.forN64(N64Method::Not64)->saveDir == "sd:/n64");
+}

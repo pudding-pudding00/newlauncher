@@ -182,9 +182,13 @@ EmulatorTable resolveTable(const EmulatorTable& ini, std::span<const FoundApp> f
     auto apply = [&](const Section& s) {
         const EmulatorEntry* e = ini.section(s.name);
         if (e == nullptr) return;
-        ResolvedEmu r = resolveSection(s, *e, found, std::nullopt);
-        r.fsMask = e->fsMask;
-        out.set(s.name, EmulatorEntry{r.dol, r.args, r.fromIni, r.profile, r.fsMask});
+        const ResolvedEmu r = resolveSection(s, *e, found, std::nullopt);
+        EmulatorEntry entry = *e;  // fs, save_dir und save_ext gehören zum Abschnitt, gleich welcher Emulator gewählt wird
+        entry.dol = r.dol;
+        entry.args = r.args;
+        entry.fromFile = r.fromIni;
+        entry.profile = r.profile;
+        out.set(s.name, std::move(entry));
     };
     for (Console c : kRomConsoles) apply(Section{consoleInfo(c).key, bit(c), orderOf(c)});
     apply(Section{"n64_not64", bit(Console::N64), kOrderNot64});

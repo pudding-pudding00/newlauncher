@@ -47,8 +47,8 @@ Eine **Einheit** ist der Satz Dateien, der zu einem Spiel gehört. ID und Ort:
   und `.rtc`, vbagx `vbagx/saves/<stem>.sav`. Gerät: vorhandener Ordner auf `sd:` vor `usb:`; `saveFolder` aus
   `apps/<app>/settings.xml` überschreibt den Ordner. Savestates (`.frz`, `.fcs`, `.sgm`, `.st0`–`.st9`, `.state*`)
   und Bilder (`.png`) gehören nie dazu.
-- Für not64, wii64 und RetroArch ist der Ort ungeklärt: `emulators.ini [<profil>] save_dir = …`, `save_ext = …`
-  (Liste). Ohne Eintrag gibt es für diese Profile **keine** Einheit (Anzeige „Speicherort unbekannt“).
+- Für not64, wii64 und RetroArch ist der Ort ungeklärt: `emulators.ini [<konsolen-abschnitt>] save_dir = …`, `save_ext = …`
+  (Liste; Abschnitte `nes`, `snes`, `gb`, `gbc`, `gba`, `n64_not64`, `n64_wii64`). Ohne Eintrag gibt es für diese Profile **keine** Einheit (Anzeige „Speicherort unbekannt“).
 - `memcard=real` (echte Speicherkarte), Savestates und Dateien außerhalb der Tabelle sind nicht im Umfang.
 - Eine Einheit ist höchstens **16 MiB** roh groß (Nintendont-Multikarte).
 

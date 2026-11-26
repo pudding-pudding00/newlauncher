@@ -40,4 +40,8 @@ Result<std::vector<ZipEntry>> readZipDirectory(FileSystem& fs, std::string_view 
 
 Result<std::vector<u8>> extractZipEntry(FileSystem& fs, std::string_view zip, const ZipEntry& e);
 
+// M26: dieselben Prüfungen für ein Archiv im Speicher (Spielstand-Pakete).
+Result<std::vector<ZipEntry>> readZipDirectory(std::span<const u8> zip);
+Result<std::vector<u8>> extractZipEntry(std::span<const u8> zip, const ZipEntry& e);
+
 }  // namespace nl

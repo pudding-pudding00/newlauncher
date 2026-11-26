@@ -150,6 +150,7 @@ add_library(nl_core STATIC
     src/ui/cheats_scene.cpp
     src/ui/vc_map_scene.cpp
     src/ui/dialog_scene.cpp
+    src/ui/choice_dialog.cpp
     src/ui/launch_text.cpp
     src/ui/pin_scene.cpp
     src/ui/parental_scene.cpp

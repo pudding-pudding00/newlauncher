@@ -585,17 +585,35 @@ bool MainScene::isGameLocked(const Game& g) const {
 void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rect r, bool focused) const {
     const Theme& t = *ctx.theme;
     const gfx::AtlasShapes& s = *ctx.shapes;
-    if (focused) gfx::roundRect(dl, s, grow(r, 3), 13, t.accent);
-    gfx::roundRect(dl, s, r, 10, focused ? t.tileFocus : t.tile);
-    if (index < 0 || index >= static_cast<int>(games_.size())) return;
-    const Game& g = *games_[index];
-
+    const bool valid = index >= 0 && index < static_cast<int>(games_.size());
     CoverView cv{};
     float coverAlpha = 0.0f;
-    if (covers_ != nullptr) {
-        cv = covers_->view(g);
-        if (cv.texture != 0) coverAlpha = cv.alpha;
+    if (valid && covers_ != nullptr) {
+        cv = covers_->view(*games_[index]);
+        if (cv.texture != 0) coverAlpha = std::clamp(cv.alpha, 0.0f, 1.0f);
     }
+    const Rect coverRect = fitAspectRect(r, kCoverInset, cv.aspect);
+
+    // Focus ring: the rounded tile ring for the placeholder, fading into a ring that follows the cover's own
+    // shape (its alpha silhouette dilated by 3 px), so rounded or disc-shaped covers get a matching border.
+    if (focused && coverAlpha < 1.0f) {
+        Color ring = t.accent;
+        ring.a = static_cast<u8>(static_cast<float>(ring.a) * (1.0f - coverAlpha));
+        gfx::roundRect(dl, s, grow(r, 3), 13, ring);
+    }
+    gfx::roundRect(dl, s, r, 10, focused ? t.tileFocus : t.tile);
+    if (focused && coverAlpha > 0.0f) {
+        Color ring = t.accent;
+        ring.a = static_cast<u8>(static_cast<float>(ring.a) * coverAlpha);
+        constexpr float kRing = 3.0f, kDiag = 2.1213203f;  // 3 px in 8 directions
+        constexpr float kOffsets[8][2] = {{kRing, 0},  {-kRing, 0}, {0, kRing},     {0, -kRing},
+                                          {kDiag, kDiag}, {-kDiag, kDiag}, {kDiag, -kDiag}, {-kDiag, -kDiag}};
+        for (const auto& o : kOffsets)
+            dl.silhouette(cv.texture, Rect{coverRect.x + o[0], coverRect.y + o[1], coverRect.w, coverRect.h}, cv.uv,
+                          ring);
+    }
+    if (!valid) return;
+    const Game& g = *games_[index];
 
     // Platzhalter (Titel) blendet mit dem Cover aus (bei schmalen/hohen Covern sonst links/rechts dahinter sichtbar).
     const float textA = std::clamp(1.0f - coverAlpha, 0.0f, 1.0f);
@@ -618,7 +636,7 @@ void MainScene::drawTile(const UiContext& ctx, gfx::DrawList& dl, int index, Rec
 
     if (cv.texture != 0 && cv.alpha > 0.0f) {
         const u8 a = static_cast<u8>(std::clamp(cv.alpha, 0.0f, 1.0f) * 255.0f);
-        dl.quad(cv.texture, fitAspectRect(r, kCoverInset, cv.aspect), cv.uv, Color{255, 255, 255, a});
+        dl.quad(cv.texture, coverRect, cv.uv, Color{255, 255, 255, a});
     }
 
     const gfx::FontFace& label = ctx.fonts->face(FontSize::Small, FontWeight::Medium);

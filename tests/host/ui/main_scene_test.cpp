@@ -8,6 +8,7 @@
 #include "support/fake_covers.hpp"
 #include "support/fake_font.hpp"
 #include <doctest/doctest.h>
+#include <algorithm>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -90,7 +91,7 @@ TEST_CASE_FIXTURE(Fixture, "PrevConsole am Anfang und NextConsole am Ende bleibe
     CHECK(s.barIndex() == 8);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Zeiger bewegt → Fokus auf der Kachel unter dem Zeiger") {
+TEST_CASE_FIXTURE(Fixture, "Zeiger bewegt â†’ Fokus auf der Kachel unter dem Zeiger") {
     const Library lib = testLibrary();
     MainScene s(lib);
     for (int i = 0; i < 5; ++i) step(s, action(Action::NextConsole));  // N64, 20 Spiele
@@ -99,7 +100,7 @@ TEST_CASE_FIXTURE(Fixture, "Zeiger bewegt → Fokus auf der Kachel unter dem Zei
     CHECK(s.focusIndex() == 2);
 }
 
-TEST_CASE_FIXTURE(Fixture, "ruhender Zeiger überschreibt den Steuerkreuz-Fokus nicht") {
+TEST_CASE_FIXTURE(Fixture, "ruhender Zeiger Ã¼berschreibt den Steuerkreuz-Fokus nicht") {
     const Library lib = testLibrary();
     MainScene s(lib);
     for (int i = 0; i < 5; ++i) step(s, action(Action::NextConsole));
@@ -113,12 +114,12 @@ TEST_CASE_FIXTURE(Fixture, "ruhender Zeiger überschreibt den Steuerkreuz-Fokus 
     CHECK(s.focusIndex() == 3);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Zeiger bewegt auf leere Fläche → kein Fokus, Infoleiste zeigt Datum") {
+TEST_CASE_FIXTURE(Fixture, "Zeiger bewegt auf leere FlÃ¤che â†’ kein Fokus, Infoleiste zeigt Datum") {
     const Library lib = testLibrary();
     MainScene s(lib);
     const gfx::Rect r = s.grid().tileRect(0, 0);
-    step(s, pointer(r.x + 10, r.y + 10));  // erst auf eine Kachel zeigen …
-    step(s, pointer(r.x - 6, r.y + 10));   // … dann in die Lücke
+    step(s, pointer(r.x + 10, r.y + 10));  // erst auf eine Kachel zeigen â€¦
+    step(s, pointer(r.x - 6, r.y + 10));   // â€¦ dann in die LÃ¼cke
     CHECK(s.focusIndex() == -1);
     CHECK(std::string(s.infoTitle()).find("November") == std::string::npos);  // Standarddatum: Januar
     CHECK(std::string(s.infoTitle()).find("2026") != std::string::npos);
@@ -176,11 +177,11 @@ TEST_CASE_FIXTURE(Fixture, "ruhender Zeiger auf dem Zahnrad wirkt auch nach eine
     MainScene s(lib);
     const gfx::Rect g = s.gearRect(ctx);
     step(s, pointer(g.x + g.w / 2, g.y + g.h / 2));
-    step(s, InputFrame{});  // z. B. HOME-Menü lag darüber
+    step(s, InputFrame{});  // z. B. HOME-MenÃ¼ lag darÃ¼ber
     CHECK(step(s, pointerAction(g.x + g.w / 2, g.y + g.h / 2, Action::Confirm)).command == AppCommand::CycleTheme);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Konsolenleiste nutzt die ganze Breite mit gleichen Abständen") {
+TEST_CASE_FIXTURE(Fixture, "Konsolenleiste nutzt die ganze Breite mit gleichen AbstÃ¤nden") {
     const Library lib = testLibrary();
     for (float w : {640.0f, 854.0f}) {
         ctx.width = w;
@@ -197,7 +198,7 @@ TEST_CASE_FIXTURE(Fixture, "Konsolenleiste nutzt die ganze Breite mit gleichen A
     }
 }
 
-TEST_CASE_FIXTURE(Fixture, "Home fordert push des HOME-Menüs an") {
+TEST_CASE_FIXTURE(Fixture, "Home fordert push des HOME-MenÃ¼s an") {
     const Library lib = testLibrary();
     MainScene s(lib);
     DummyScene home;
@@ -208,7 +209,7 @@ TEST_CASE_FIXTURE(Fixture, "Home fordert push des HOME-Menüs an") {
     CHECK(step(s, pointerAction(h.x + h.w / 2, h.y + h.h / 2, Action::Confirm)).push == &home);
 }
 
-TEST_CASE_FIXTURE(Fixture, "M25: Zeiger auf dem WLAN-Symbol + Confirm öffnet die WLAN-Info") {
+TEST_CASE_FIXTURE(Fixture, "M25: Zeiger auf dem WLAN-Symbol + Confirm Ã¶ffnet die WLAN-Info") {
     const Library lib = testLibrary();
     MainScene s(lib);
     DummyScene wifi;
@@ -221,7 +222,7 @@ TEST_CASE_FIXTURE(Fixture, "M25: Zeiger auf dem WLAN-Symbol + Confirm öffnet di
     CHECK(step(s, pointerAction(w.x + w.w / 2, w.y + w.h / 2, Action::Confirm)).push == &wifi);
 }
 
-TEST_CASE_FIXTURE(Fixture, "M25: WLAN-Symbol zeichnet alle Zustände") {
+TEST_CASE_FIXTURE(Fixture, "M25: WLAN-Symbol zeichnet alle ZustÃ¤nde") {
     const Library lib = testLibrary();
     MainScene s(lib);
     for (WifiStatus st : {WifiStatus::Connecting, WifiStatus::Connected, WifiStatus::Limited,
@@ -234,7 +235,7 @@ TEST_CASE_FIXTURE(Fixture, "M25: WLAN-Symbol zeichnet alle Zustände") {
     }
 }
 
-TEST_CASE_FIXTURE(Fixture, "Zeiger über einem Leisten-Eintrag + Confirm wählt ihn aus") {
+TEST_CASE_FIXTURE(Fixture, "Zeiger Ã¼ber einem Leisten-Eintrag + Confirm wÃ¤hlt ihn aus") {
     const Library lib = testLibrary();
     MainScene s(lib);
     step(s, InputFrame{});
@@ -244,7 +245,7 @@ TEST_CASE_FIXTURE(Fixture, "Zeiger über einem Leisten-Eintrag + Confirm wählt 
     CHECK(s.barIndex() == 4);
 }
 
-TEST_CASE_FIXTURE(Fixture, "draw bleibt innerhalb der DrawList-Kapazität") {
+TEST_CASE_FIXTURE(Fixture, "draw bleibt innerhalb der DrawList-KapazitÃ¤t") {
     const Library lib = testLibrary();
     for (float w : {640.0f, 854.0f}) {
         ctx.width = w;
@@ -262,7 +263,7 @@ TEST_CASE_FIXTURE(Fixture, "draw bleibt innerhalb der DrawList-Kapazität") {
     }
 }
 
-TEST_CASE_FIXTURE(Fixture, "200 Zeichen langer Titel mit ungültigem UTF-8: Quads bleiben in der Kachel") {
+TEST_CASE_FIXTURE(Fixture, "200 Zeichen langer Titel mit ungÃ¼ltigem UTF-8: Quads bleiben in der Kachel") {
     std::string title(200, 'W');
     title[50] = '\xC3';
     title[120] = '\xFF';
@@ -275,7 +276,7 @@ TEST_CASE_FIXTURE(Fixture, "200 Zeichen langer Titel mit ungültigem UTF-8: Quad
     CHECK(s.barIndex() == 2);
     step(s, action(Action::Left));  // Fokus weg von Kachel 0 geht nicht; Fokus bleibt
     step(s, InputFrame{}, 300);
-    // Nur das Raster zeichnen lassen und prüfen, dass der Titeltext die Kachelbreite einhält.
+    // Nur das Raster zeichnen lassen und prÃ¼fen, dass der Titeltext die Kachelbreite einhÃ¤lt.
     dl.clear();
     s.drawTile(ctx, dl, 0, s.grid().tileRect(0, 0), false);
     const gfx::Rect r = s.grid().tileRect(0, 0);
@@ -302,9 +303,9 @@ const Game kLibB[] = {
 Library libOf(std::span<const Game> games) { return Library{games, {}, {}}; }
 }  // namespace
 
-TEST_CASE_FIXTURE(Fixture, "setLibrary behält Leisten-Eintrag und fokussiertes Spiel per Schlüssel") {
+TEST_CASE_FIXTURE(Fixture, "setLibrary behÃ¤lt Leisten-Eintrag und fokussiertes Spiel per SchlÃ¼ssel") {
     MainScene s(libOf(kLibA));
-    // Leiste: Favoriten, Zuletzt, Wii, N64, NES → NES ist Index 4
+    // Leiste: Favoriten, Zuletzt, Wii, N64, NES â†’ NES ist Index 4
     for (int i = 0; i < 4; ++i) step(s, action(Action::NextConsole));
     REQUIRE(s.barIndex() == 4);
     step(s, action(Action::Right));
@@ -312,12 +313,12 @@ TEST_CASE_FIXTURE(Fixture, "setLibrary behält Leisten-Eintrag und fokussiertes 
     REQUIRE(s.focusIndex() == 2);
     s.setLibrary(libOf(kLibB), s.focusedKey());
     step(s, InputFrame{});
-    CHECK(s.barIndex() == 3);  // N64 weg: NES rückt auf Index 3
+    CHECK(s.barIndex() == 3);  // N64 weg: NES rÃ¼ckt auf Index 3
     CHECK(s.focusIndex() == 1);  // "Gamma" steht in der neuen NES-Liste an Position 1
     CHECK(std::string(s.infoTitle()) == "Gamma");
 }
 
-TEST_CASE_FIXTURE(Fixture, "fokussiertes Spiel entfernt → Fokus 0") {
+TEST_CASE_FIXTURE(Fixture, "fokussiertes Spiel entfernt â†’ Fokus 0") {
     MainScene s(libOf(kLibA));
     for (int i = 0; i < 4; ++i) step(s, action(Action::NextConsole));
     REQUIRE(std::string(s.infoTitle()) == "Alpha");
@@ -327,9 +328,9 @@ TEST_CASE_FIXTURE(Fixture, "fokussiertes Spiel entfernt → Fokus 0") {
     CHECK(std::string(s.infoTitle()) == "Beta");
 }
 
-TEST_CASE_FIXTURE(Fixture, "Konsole verschwindet → Leiste fällt auf den Eintrag an gleicher Position bzw. den letzten") {
+TEST_CASE_FIXTURE(Fixture, "Konsole verschwindet â†’ Leiste fÃ¤llt auf den Eintrag an gleicher Position bzw. den letzten") {
     MainScene s(libOf(kLibA));
-    step(s, action(Action::NextConsole));  // Start bei Wii (erster Eintrag mit Spielen) → N64
+    step(s, action(Action::NextConsole));  // Start bei Wii (erster Eintrag mit Spielen) â†’ N64
     REQUIRE(s.barIndex() == 3);
     s.setLibrary(libOf(kLibB), s.focusedKey());
     step(s, InputFrame{});
@@ -341,7 +342,7 @@ TEST_CASE_FIXTURE(Fixture, "Konsole verschwindet → Leiste fällt auf den Eintr
     CHECK(s.barIndex() == 2);  // letzter Eintrag
 }
 
-TEST_CASE_FIXTURE(Fixture, "setLibrary mit leerer Bibliothek → nur Favoriten/Zuletzt, kein Absturz") {
+TEST_CASE_FIXTURE(Fixture, "setLibrary mit leerer Bibliothek â†’ nur Favoriten/Zuletzt, kein Absturz") {
     MainScene s(libOf(kLibA));
     for (int i = 0; i < 4; ++i) step(s, action(Action::NextConsole));
     s.setLibrary(Library{}, s.focusedKey());
@@ -367,18 +368,18 @@ TEST_CASE_FIXTURE(Fixture, "Favorit-Taste mit Fokus liefert ToggleFavorite mit d
     CHECK(std::string(appCommandName(AppCommand::ToggleFavorite)) == "toggle_favorite");
 }
 
-TEST_CASE_FIXTURE(Fixture, "showToast ersetzt die Infozeile für 2 s") {
+TEST_CASE_FIXTURE(Fixture, "showToast ersetzt die Infozeile fÃ¼r 2 s") {
     const Library lib = testLibrary();
     MainScene s(lib);
     step(s, InputFrame{});
-    s.showToast("Zu Favoriten hinzugefügt");
+    s.showToast("Zu Favoriten hinzugefÃ¼gt");
     step(s, InputFrame{}, 100);
-    CHECK(std::string(s.infoLineText()) == "Zu Favoriten hinzugefügt");
+    CHECK(std::string(s.infoLineText()) == "Zu Favoriten hinzugefÃ¼gt");
     step(s, InputFrame{}, 2000);
-    CHECK(std::string(s.infoLineText()) != "Zu Favoriten hinzugefügt");
+    CHECK(std::string(s.infoLineText()) != "Zu Favoriten hinzugefÃ¼gt");
 }
 
-TEST_CASE_FIXTURE(Fixture, "Favoriten-Kachel trägt eine Markierung (ein Quad mehr)") {
+TEST_CASE_FIXTURE(Fixture, "Favoriten-Kachel trÃ¤gt eine Markierung (ein Quad mehr)") {
     IndexData d;
     d.games.push_back(IndexGame{Console::Nes, 0, "nes/a.nes", "Gleich", "roms/nes/a.nes", 0});
     d.games.push_back(IndexGame{Console::Nes, 0, "nes/b.nes", "Gleich", "roms/nes/b.nes", 0});
@@ -407,7 +408,7 @@ IndexData nesIndex(std::initializer_list<const char*> titles) {
 }
 }  // namespace
 
-TEST_CASE_FIXTURE(Fixture, "Bibliothekswechsel über LibraryStore: Fokus bleibt per Schlüssel trotz neuer Reihenfolge und Größe") {
+TEST_CASE_FIXTURE(Fixture, "Bibliothekswechsel Ã¼ber LibraryStore: Fokus bleibt per SchlÃ¼ssel trotz neuer Reihenfolge und GrÃ¶ÃŸe") {
     LibraryStore store;
     store.setGames(nesIndex({"Aardvark", "Alpha", "Beta", "Gamma"}), nullptr);
     MainScene s(Library{store.games(), store.favorites(), store.recent()});
@@ -415,7 +416,7 @@ TEST_CASE_FIXTURE(Fixture, "Bibliothekswechsel über LibraryStore: Fokus bleibt 
     REQUIRE(s.barIndex() == 2);
     for (int i = 0; i < 3; ++i) step(s, action(Action::Right));
     REQUIRE(std::string(s.infoTitle()) == "Gamma");
-    const std::string key = s.focusedKey();  // vor jeder Änderung am Speicher holen
+    const std::string key = s.focusedKey();  // vor jeder Ã„nderung am Speicher holen
     store.setGames(nesIndex({"Alpha", "Beta", "Gamma", "Zeta", "Omega", "Delta"}), nullptr);
     s.setLibrary(Library{store.games(), store.favorites(), store.recent()}, key);
     step(s, InputFrame{});
@@ -512,7 +513,7 @@ TEST_CASE_FIXTURE(Fixture, "Cover: Quad mit Textur und Alpha aus dem Provider") 
     CHECK((v.color.a == 127 || v.color.a == 128));
     CHECK(v.u == 0.0f);
     CHECK(v.v == 0.0f);
-    // Seitenverhältnis 5:7
+    // SeitenverhÃ¤ltnis 5:7
     const gfx::Vertex& br = dl.vertices()[cover->firstVertex + 2];
     CHECK((br.x - v.x) / (br.y - v.y) == doctest::Approx(5.0 / 7.0).epsilon(0.01));
 }
@@ -533,7 +534,7 @@ TEST_CASE_FIXTURE(Fixture, "Cover: ohne Textur bleibt der Platzhalter, ohne Prov
     CHECK_FALSE(hasCoverBatch(dl, 7));
 }
 
-TEST_CASE_FIXTURE(Fixture, "Klänge: rechts → Move, ohne Wirkung still, HOME → Open") {
+TEST_CASE_FIXTURE(Fixture, "KlÃ¤nge: rechts â†’ Move, ohne Wirkung still, HOME â†’ Open") {
     const Library lib = testLibrary();
     MainScene s(lib);
     step(s, InputFrame{});
@@ -545,7 +546,7 @@ TEST_CASE_FIXTURE(Fixture, "Klänge: rechts → Move, ohne Wirkung still, HOME �
     CHECK(step(s, action(Action::Home)).sound == UiSound::Open);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Hintergrundbild: ein Quad mit kBackgroundTexture über den ganzen Bildschirm, ohne Bild keiner") {
+TEST_CASE_FIXTURE(Fixture, "Hintergrundbild: ein Quad mit kBackgroundTexture Ã¼ber den ganzen Bildschirm, ohne Bild keiner") {
     const Library lib = testLibrary();
     MainScene s(lib);
     step(s, InputFrame{});
@@ -562,7 +563,7 @@ TEST_CASE_FIXTURE(Fixture, "Hintergrundbild: ein Quad mit kBackgroundTexture üb
     ctx.backgroundU1 = 0.5f;
     ctx.backgroundV1 = 1.0f;
     CHECK(countBg() == 4);
-    const gfx::Batch& first = dl.batches()[1];  // direkt nach der Grundfläche
+    const gfx::Batch& first = dl.batches()[1];  // direkt nach der GrundflÃ¤che
     CHECK(first.texture == gfx::kBackgroundTexture);
     CHECK(dl.vertices()[first.firstVertex + 2].u == doctest::Approx(0.5f));
 }
@@ -586,7 +587,7 @@ int barOf(const MainScene& m, const char* label) {
 }
 }  // namespace
 
-TEST_CASE("MainScene: Kategorie-Filter zeigt nur deren Spiele; Konsolenwechsel setzt auf Alle zurück") {
+TEST_CASE("MainScene: Kategorie-Filter zeigt nur deren Spiele; Konsolenwechsel setzt auf Alle zurÃ¼ck") {
     FilterLib fl;
     MainScene m(fl.lib());
     Categories cats = Categories::fromText("[Party]\nnes/c\nnes/a\n");
@@ -610,7 +611,7 @@ TEST_CASE("MainScene: Kategorie-Filter zeigt nur deren Spiele; Konsolenwechsel s
     CHECK(m.grid().count() == 1);
 }
 
-TEST_CASE("MainScene: die Suche übernimmt den Filter des Eintrags davor (Filterzeile im Such-Overlay)") {
+TEST_CASE("MainScene: die Suche Ã¼bernimmt den Filter des Eintrags davor (Filterzeile im Such-Overlay)") {
     FilterLib fl;
     MainScene m(fl.lib());
     const Categories cats = Categories::fromText("[Party]\nnes/a\nsnes/d\n");
@@ -624,12 +625,12 @@ TEST_CASE("MainScene: die Suche übernimmt den Filter des Eintrags davor (Filter
     m.setQuery("al");
     CHECK(m.grid().count() == 1);  // gleicher Eintrag: Filter bleibt
     CHECK(m.filterLabel(m.filterIndex()) == "Party");
-    m.setQuery("");  // Text gelöscht, Tastatur noch offen: Filter bleibt auf dem Eintrag davor
+    m.setQuery("");  // Text gelÃ¶scht, Tastatur noch offen: Filter bleibt auf dem Eintrag davor
     CHECK(m.filterLabel(m.filterIndex()) == "Party");
     CHECK(m.grid().count() == 1);  // NES-Party: nur Alpha
 }
 
-TEST_CASE("MainScene: ein Genre ohne Treffer bleibt als Filter sichtbar statt „Alle“ anzuzeigen") {
+TEST_CASE("MainScene: ein Genre ohne Treffer bleibt als Filter sichtbar statt â€žAlleâ€œ anzuzeigen") {
     FilterLib fl;
     MainScene m(fl.lib());
     m.selectBarForTest(barOf(m, "NES"));
@@ -640,7 +641,7 @@ TEST_CASE("MainScene: ein Genre ohne Treffer bleibt als Filter sichtbar statt �
     CHECK(m.filterLabel(m.filterIndex()) == sport);
 }
 
-TEST_CASE("MainScene::setFilter liefert die Trefferzahl; unbekannte Kategorie → 0 Spiele") {
+TEST_CASE("MainScene::setFilter liefert die Trefferzahl; unbekannte Kategorie â†’ 0 Spiele") {
     FilterLib fl;
     MainScene m(fl.lib());
     const Categories cats = Categories::fromText("[Party]\nnes/a\n");
@@ -652,7 +653,7 @@ TEST_CASE("MainScene::setFilter liefert die Trefferzahl; unbekannte Kategorie �
     CHECK(m.setFilter(GameFilter{}) == 3);
 }
 
-TEST_CASE_FIXTURE(Fixture, "MainScene: Details öffnen setzt die Kategorien mit Häkchen fürs Spiel") {
+TEST_CASE_FIXTURE(Fixture, "MainScene: Details Ã¶ffnen setzt die Kategorien mit HÃ¤kchen fÃ¼rs Spiel") {
     FilterLib fl;
     MainScene m(fl.lib());
     DetailsScene d;
@@ -670,7 +671,7 @@ TEST_CASE_FIXTURE(Fixture, "MainScene: Details öffnen setzt die Kategorien mit 
     CHECK(d.focusedButton() == DetailsScene::kFocusCategories);
 }
 
-TEST_CASE("MainScene::setSort sortiert Konsoleneinträge sofort; Favoriten bleiben in ihrer Reihenfolge") {
+TEST_CASE("MainScene::setSort sortiert KonsoleneintrÃ¤ge sofort; Favoriten bleiben in ihrer Reihenfolge") {
     FilterLib fl;
     MainScene m(fl.lib());
     PlayStats stats;
@@ -695,7 +696,7 @@ TEST_CASE("MainScene::setSort sortiert Konsoleneinträge sofort; Favoriten bleib
     CHECK(m.focusedKey() == "nes/a");
 }
 
-TEST_CASE_FIXTURE(Fixture, "MainScene: Details öffnen zeigt die Statistik des Spiels (M17)") {
+TEST_CASE_FIXTURE(Fixture, "MainScene: Details Ã¶ffnen zeigt die Statistik des Spiels (M17)") {
     FilterLib fl;
     MainScene m(fl.lib());
     DetailsScene d;
@@ -736,7 +737,7 @@ TEST_CASE_FIXTURE(Fixture, "MainScene: gesperrte Spiele tragen ein Schloss (M17)
     CHECK_FALSE(m.isGameLocked(fl.games[1]));
 }
 
-TEST_CASE_FIXTURE(Fixture, "Infoleiste zeigt WLAN-Anzeige links neben der Uhr ohne Überschneidung") {
+TEST_CASE_FIXTURE(Fixture, "Infoleiste zeigt WLAN-Anzeige links neben der Uhr ohne Ãœberschneidung") {
     const Library lib = testLibrary();
     for (float width : {640.0f, 854.0f}) {
         ctx.width = width;
@@ -752,7 +753,7 @@ TEST_CASE_FIXTURE(Fixture, "Infoleiste zeigt WLAN-Anzeige links neben der Uhr oh
     }
 }
 
-TEST_CASE_FIXTURE(Fixture, "WLAN-Zustände (Disconnected, Connecting, Connected) zeichnen ohne Fehler in DE und EN") {
+TEST_CASE_FIXTURE(Fixture, "WLAN-ZustÃ¤nde (Disconnected, Connecting, Connected) zeichnen ohne Fehler in DE und EN") {
     const Library lib = testLibrary();
     MainScene s(lib);
     step(s, InputFrame{});
@@ -778,7 +779,7 @@ TEST_CASE_FIXTURE(Fixture, "WLAN-Zustände (Disconnected, Connecting, Connected)
             }
         }
     }
-    CHECK(disconnectedQuads > connectedQuads);  // roter Punkt bei Disconnected erzeugt zusätzliche Quads
+    CHECK(disconnectedQuads > connectedQuads);  // roter Punkt bei Disconnected erzeugt zusÃ¤tzliche Quads
     setLanguage(savedLang);
 }
 
@@ -797,7 +798,7 @@ struct MixedGames {  // je drei N64-, GB- und NES-Spiele
 };
 }  // namespace
 
-TEST_CASE_FIXTURE(Fixture, "Kachelhöhe je Konsole nach Cover-Format (M23, Maße M24)") {
+TEST_CASE_FIXTURE(Fixture, "KachelhÃ¶he je Konsole nach Cover-Format (M23, MaÃŸe M24)") {
     ctx.width = 854;
     const MixedGames mixed;
     MainScene s(mixed.library());
@@ -807,7 +808,7 @@ TEST_CASE_FIXTURE(Fixture, "Kachelhöhe je Konsole nach Cover-Format (M23, Maße
         s.selectBarForTest(i);
         const std::string label = s.barLabelText(i);
         const float h = s.grid().tileRect(0, 0).h;
-        float want = 179.0f;  // NES; leere Favoriten/Zuletzt: Grundmaß
+        float want = 179.0f;  // NES; leere Favoriten/Zuletzt: GrundmaÃŸ
         if (label == "N64") want = 90.0f;
         if (label == "GB") want = 128.0f;
         if (label == "N64" || label == "GB" || label == "NES") ++seen;
@@ -842,7 +843,7 @@ TEST_CASE_FIXTURE(Fixture, "Cover: Inhaltsbereich als UV, eingepasst ohne Verzer
     CHECK(tl.v == doctest::Approx(64.0f / 280));
     CHECK(br.v == doctest::Approx(216.0f / 280));
     CHECK((br.x - tl.x) / (br.y - tl.y) == doctest::Approx(200.0 / 152.0).epsilon(0.01));
-    CHECK(br.y - tl.y < 90.0f);  // passt in die flache N64-Kachel (fokussiert leicht vergrößert)
+    CHECK(br.y - tl.y < 90.0f);  // passt in die flache N64-Kachel (fokussiert leicht vergrÃ¶ÃŸert)
 }
 
 TEST_CASE_FIXTURE(Fixture, "Zeiger im unteren Randstreifen scrollt, Fokus folgt der Kachel darunter (M23)") {
@@ -856,14 +857,14 @@ TEST_CASE_FIXTURE(Fixture, "Zeiger im unteren Randstreifen scrollt, Fokus folgt 
     for (int i = 0; i < 15; ++i) step(s, pointer(x, bottom - 4, false), 16);  // 0,25 s
     const float after = s.grid().targetScroll();
     CHECK(after > 0.0f);
-    CHECK(after <= s.grid().rowPitch() + 1.0f);  // höchstens etwa eine Reihe je 0,25 s
+    CHECK(after <= s.grid().rowPitch() + 1.0f);  // hÃ¶chstens etwa eine Reihe je 0,25 s
     CHECK(s.focusIndex() == s.grid().hitTest(x, bottom - 4, after));
     // Mitte: steht
     step(s, pointer(x, s.grid().viewTop() + s.grid().viewHeight() / 2));
     const float mid = s.grid().targetScroll();
     for (int i = 0; i < 30; ++i) step(s, pointer(x, s.grid().viewTop() + s.grid().viewHeight() / 2, false), 16);
     CHECK(s.grid().targetScroll() == mid);
-    // Oberer Streifen: zurück, nie unter 0
+    // Oberer Streifen: zurÃ¼ck, nie unter 0
     for (int i = 0; i < 300; ++i) step(s, pointer(x, s.grid().viewTop() + 2, false), 16);
     CHECK(s.grid().targetScroll() == 0.0f);
 }
@@ -880,7 +881,7 @@ TEST_CASE_FIXTURE(Fixture, "Zeiger-Randscrollen endet an der letzten Reihe (M23)
     CHECK(last.y + last.h >= bottom - 20.0f);  // die letzte Reihe ist ganz zu sehen, nicht weiter
 }
 
-TEST_CASE_FIXTURE(Fixture, "Favoriten gemischt: Kachel im Cover-Format, Reihe so hoch wie die höchste (M24)") {
+TEST_CASE_FIXTURE(Fixture, "Favoriten gemischt: Kachel im Cover-Format, Reihe so hoch wie die hÃ¶chste (M24)") {
     ctx.width = 854;
     const MixedGames mixed;
     const Game* favs[] = {&mixed.games[6], &mixed.games[0], &mixed.games[3]};  // N64, NES, GB
@@ -913,7 +914,7 @@ TEST_CASE_FIXTURE(Fixture, "sortLabel zeigt die Sortierung der Konsolenlisten (M
     CHECK(s.sortLabel() == std::string(tr(Str::SortOrder)) + ": " + tr(Str::SortYear));
 }
 
-TEST_CASE_FIXTURE(Fixture, "Fokus-Kachel liegt über Konsolen- und Infoleiste, andere Kacheln darunter") {
+TEST_CASE_FIXTURE(Fixture, "Fokus-Kachel liegt Ã¼ber Konsolen- und Infoleiste, andere Kacheln darunter") {
     const ManyGames many(3);
     MainScene s(many.library());
     test::FakeCovers covers;
@@ -923,7 +924,7 @@ TEST_CASE_FIXTURE(Fixture, "Fokus-Kachel liegt über Konsolen- und Infoleiste, a
     step(s, InputFrame{});
     dl.clear();
     s.draw(ctx, dl);
-    // Letzter Quad über die volle Breite gehört zu einer Leiste (Hintergrund kommt zuerst).
+    // Letzter Quad Ã¼ber die volle Breite gehÃ¶rt zu einer Leiste (Hintergrund kommt zuerst).
     u32 lastBar = 0;
     const auto verts = dl.vertices();
     for (u32 q = 0; q < dl.quadCount(); ++q)
@@ -940,7 +941,7 @@ TEST_CASE_FIXTURE(Fixture, "Fokus-Kachel liegt über Konsolen- und Infoleiste, a
     CHECK(other < lastBar);
 }
 
-TEST_CASE_FIXTURE(Fixture, "Fokus-Kachel ragt höchstens um ihren Vergrößerungsrand über das Raster") {
+TEST_CASE_FIXTURE(Fixture, "Fokus-Kachel ragt hÃ¶chstens um ihren VergrÃ¶ÃŸerungsrand Ã¼ber das Raster") {
     const ManyGames many(3);
     MainScene s(many.library());
     test::FakeCovers covers;
@@ -955,28 +956,28 @@ TEST_CASE_FIXTURE(Fixture, "Fokus-Kachel ragt höchstens um ihren Vergrößerung
     REQUIRE(cover != nullptr);
     REQUIRE(cover->clipped);
     const auto tile = s.grid().tileRect(0, 0.0f);
-    CHECK(cover->clip.y < s.grid().viewTop());                       // darf in die Konsolenleiste ragen …
-    CHECK(cover->clip.y >= s.grid().viewTop() - tile.h * 0.08f);     // … aber nur um den Rand
+    CHECK(cover->clip.y < s.grid().viewTop());                       // darf in die Konsolenleiste ragen â€¦
+    CHECK(cover->clip.y >= s.grid().viewTop() - tile.h * 0.08f);     // â€¦ aber nur um den Rand
     CHECK(cover->clip.y + cover->clip.h <= doctest::Approx(s.grid().viewTop() + s.grid().viewHeight()));
 }
 
-TEST_CASE_FIXTURE(Fixture, "Untere Taskbar überlagert Spielauswahl bei Zeiger, Fokus-Cover bleibt über der Leiste") {
+TEST_CASE_FIXTURE(Fixture, "Untere Taskbar Ã¼berlagert Spielauswahl bei Zeiger, Fokus-Cover bleibt Ã¼ber der Leiste") {
     const ManyGames many(20);
     MainScene s(many.library());
     DetailsScene details;
     s.setDetails(&details, nullptr);
     step(s, InputFrame{});
     const float viewBottom = s.grid().viewTop() + s.grid().viewHeight();
-    // Zeiger knapp über der Taskbar auf einer Kachel der unteren Reihe → Kachel fokussiert
+    // Zeiger knapp Ã¼ber der Taskbar auf einer Kachel der unteren Reihe â†’ Kachel fokussiert
     const gfx::Rect r = s.grid().tileRect(6, 0.0f);
     const float tileY = r.y + r.h < viewBottom ? r.y + r.h - 2.0f : viewBottom - 2.0f;
     step(s, pointer(r.x + r.w / 2, tileY));
     CHECK(s.focusIndex() == 6);
-    // Zeiger wandert in die untere Taskbar (leere Fläche) → Kachel wird abgewählt, Confirm öffnet kein Spiel
+    // Zeiger wandert in die untere Taskbar (leere FlÃ¤che) â†’ Kachel wird abgewÃ¤hlt, Confirm Ã¶ffnet kein Spiel
     step(s, pointer(ctx.width / 2, viewBottom + 4.0f));
     CHECK(s.focusIndex() == -1);
     CHECK(step(s, pointerAction(ctx.width / 2, viewBottom + 4.0f, Action::Confirm)).push == nullptr);
-    // Zahnrad in der Taskbar lässt sich direkt treffen
+    // Zahnrad in der Taskbar lÃ¤sst sich direkt treffen
     const gfx::Rect gear = s.gearRect(ctx);
     step(s, pointer(gear.x + gear.w / 2, gear.y + gear.h / 2));
     CHECK(step(s, pointerAction(gear.x + gear.w / 2, gear.y + gear.h / 2, Action::Confirm)).command ==
@@ -1001,4 +1002,81 @@ TEST_CASE_FIXTURE(Fixture, "Platzhalter-Titeltext verschwindet sobald ein Cover 
     const u32 withCover = dl.quadCount();
     // Ohne Cover: Hintergrund + Kachel + Platzhalter-Titeltext + Konsolen-Tag; mit Cover: Titeltext & Tag weg, +1 Cover
     CHECK(withCover < withoutCover);
+}
+
+namespace {
+// Bounding box of all vertices in batches with texture tex and the given silhouette mode.
+bool batchBounds(const gfx::DrawList& dl, gfx::TextureId tex, bool silhouette, gfx::Rect& out, u32& quads) {
+    float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+    quads = 0;
+    for (const gfx::Batch& b : dl.batches()) {
+        if (b.texture != tex || b.silhouette != silhouette) continue;
+        for (u32 i = 0; i < b.vertexCount; ++i) {
+            const gfx::Vertex& v = dl.vertices()[b.firstVertex + i];
+            x0 = std::min(x0, v.x), y0 = std::min(y0, v.y), x1 = std::max(x1, v.x), y1 = std::max(y1, v.y);
+        }
+        quads += b.vertexCount / 4;
+    }
+    out = gfx::Rect{x0, y0, x1 - x0, y1 - y0};
+    return quads > 0;
+}
+
+// Atlas vertices in accent colour, optionally only inside area (other UI such as the active filter pill uses it too).
+int accentAtlasVertices(const gfx::DrawList& dl, Color accent, const gfx::Rect* area = nullptr) {
+    int n = 0;
+    for (const gfx::Batch& b : dl.batches())
+        if (b.texture == 0)
+            for (u32 i = 0; i < b.vertexCount; ++i) {
+                const gfx::Vertex& v = dl.vertices()[b.firstVertex + i];
+                if (v.color != accent) continue;
+                if (area != nullptr && (v.x < area->x || v.x > area->x + area->w || v.y < area->y ||
+                                        v.y > area->y + area->h))
+                    continue;
+                ++n;
+            }
+    return n;
+}
+}  // namespace
+
+TEST_CASE_FIXTURE(Fixture, "Focus ring follows the cover silhouette, not the tile") {
+    const ManyGames many(3);
+    MainScene s(many.library());
+    test::FakeCovers covers;
+    CoverView wide{7, 1.0f};
+    wide.aspect = 4.0f / 3.0f;  // much wider than the 5:7 tile: the ring must not span the tile
+    covers.views["nes/00"] = wide;  // focused
+    s.setCovers(&covers);
+    for (int i = 0; i < 30; ++i) step(s, InputFrame{});  // focus animation done
+    dl.clear();
+    s.draw(ctx, dl);
+
+    gfx::Rect cover{}, ring{};
+    u32 coverQuads = 0, ringQuads = 0;
+    REQUIRE(batchBounds(dl, 7, false, cover, coverQuads));
+    REQUIRE(batchBounds(dl, 7, true, ring, ringQuads));
+    CHECK(coverQuads == 1);
+    CHECK(ringQuads == 8);  // dilation: the cover's own alpha shape, offset in 8 directions
+    CHECK(ring.x == doctest::Approx(cover.x - 3.0f));
+    CHECK(ring.y == doctest::Approx(cover.y - 3.0f));
+    CHECK(ring.w == doctest::Approx(cover.w + 6.0f));
+    CHECK(ring.h == doctest::Approx(cover.h + 6.0f));
+    // Ring in accent colour, drawn before (under) the cover.
+    for (const gfx::Batch& b : dl.batches())
+        if (b.texture == 7 && b.silhouette) CHECK(dl.vertices()[b.firstVertex].color == ctx.theme->accent);
+    // The old rounded tile ring is gone once the cover is fully shown (the 4:3 cover spans the tile's width, the
+    // tile is taller: an area around the cover covers the whole tile).
+    const gfx::Rect tileArea{ring.x - 6.0f, ring.y - ring.w, ring.w + 12.0f, ring.h + 2.0f * ring.w};
+    CHECK(accentAtlasVertices(dl, ctx.theme->accent, &tileArea) == 0);
+}
+
+TEST_CASE_FIXTURE(Fixture, "Focus ring without a cover stays the rounded tile ring") {
+    const ManyGames many(3);
+    MainScene s(many.library());
+    test::FakeCovers covers;
+    s.setCovers(&covers);
+    for (int i = 0; i < 30; ++i) step(s, InputFrame{});
+    dl.clear();
+    s.draw(ctx, dl);
+    for (const gfx::Batch& b : dl.batches()) CHECK_FALSE(b.silhouette);
+    CHECK(accentAtlasVertices(dl, ctx.theme->accent) > 0);
 }

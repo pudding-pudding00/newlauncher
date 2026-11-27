@@ -147,6 +147,7 @@ void Renderer::submit(const DrawList& list, const CoverTextures* covers) {
     }
     const auto vertices = list.vertices();
     TextureId bound = 0;
+    bool boundSilhouette = false;
     bool clipped = false;
     for (const Batch& b : list.batches()) {
         if (b.vertexCount == 0) continue;
@@ -154,7 +155,7 @@ void Renderer::submit(const DrawList& list, const CoverTextures* covers) {
             setClip(b);
             clipped = b.clipped;
         }
-        if (b.texture != bound) {
+        if (b.texture != bound || b.silhouette != boundSilhouette) {
             if (b.texture == 0) {
                 GX_LoadTexObj(&g_atlasTex, GX_TEXMAP0);
                 useAtlasTev();
@@ -174,9 +175,13 @@ void Renderer::submit(const DrawList& list, const CoverTextures* covers) {
                               GX_FALSE);
                 GX_InitTexObjLOD(&g_coverTex, GX_LINEAR, GX_LINEAR, 0.0f, 0.0f, 0.0f, GX_FALSE, GX_FALSE, GX_ANISO_1);
                 GX_LoadTexObj(&g_coverTex, GX_TEXMAP0);
-                GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);  // Texel × Vertexfarbe, Alpha für die Einblendung
+                if (b.silhouette)
+                    useAtlasTev();  // colour from the vertices, alpha from the cover: flat silhouette (focus ring)
+                else
+                    GX_SetTevOp(GX_TEVSTAGE0, GX_MODULATE);  // Texel × Vertexfarbe, Alpha für die Einblendung
             }
             bound = b.texture;
+            boundSilhouette = b.silhouette;
         }
         GX_Begin(GX_QUADS, GX_VTXFMT0, static_cast<u16>(b.vertexCount));
         for (u32 i = 0; i < b.vertexCount; ++i) {

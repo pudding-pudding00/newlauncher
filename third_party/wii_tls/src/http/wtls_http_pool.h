@@ -21,12 +21,12 @@
 
 /* Adds c; a full pool closes its oldest entry first. */
 void wtls_http_pool_put(void *c, bool secure, const char *host, uint16_t port, bool insecure,
-                        bool has_cred, const uint8_t *cred_fp, uint64_t now_ms);
+                        bool has_cred, const uint8_t *cred_fp, bool h2, uint64_t now_ms);
 
 /* Closes entries idle for more than WTLS_HTTP_POOL_IDLE_MS, then removes and
  * returns the most recently put match (LIFO). NULL = miss. */
 void *wtls_http_pool_take(bool secure, const char *host, uint16_t port, bool insecure,
-                          bool has_cred, const uint8_t *cred_fp, uint64_t now_ms);
+                          bool has_cred, const uint8_t *cred_fp, bool h2, uint64_t now_ms);
 
 /* Test hook: how entries are closed. NULL => wtls_http_tr_close(). */
 void wtls_http_pool_set_closer(void (*fn)(void *));

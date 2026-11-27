@@ -1,0 +1,49 @@
+name: Hardware report
+description: Results of the hardware test suites or the entropy measurement on your console.
+labels: [hardware-report]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you! Reports from different consoles help confirm the entropy source and the IOS socket workarounds.
+        How to run the suites: CONTRIBUTING.md → "Hardware reports".
+  - type: input
+    id: version
+    attributes:
+      label: libwiitls version or commit
+    validations:
+      required: true
+  - type: input
+    id: console
+    attributes:
+      label: Console
+      description: Model / revision (e.g. RVL-001 with GameCube ports, RVL-101 Family Edition, Wii Mini, vWii on Wii U), IOS used by the Homebrew Channel if known.
+    validations:
+      required: true
+  - type: dropdown
+    id: network
+    attributes:
+      label: Network
+      options:
+        - Built-in Wi-Fi
+        - USB Ethernet adapter
+    validations:
+      required: true
+  - type: textarea
+    id: suites
+    attributes:
+      label: Suite results
+      description: The `=== suite ... ===` and `WTLS-HWTEST DONE ...` lines of `--suite all` (and failing test output, if any).
+      render: text
+  - type: textarea
+    id: jitter
+    attributes:
+      label: Entropy assessment
+      description: Output of `python tools/jitter_assess.py jd.log` after `--suite jitterdump`.
+      render: text
+  - type: textarea
+    id: bench
+    attributes:
+      label: Benchmark (optional)
+      description: '`BENCH` lines of `wtls_bench.dol`.'
+      render: text

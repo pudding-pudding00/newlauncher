@@ -8,7 +8,7 @@ DEVKITPRO_BASH = r"C:\devkitPro\msys2\usr\bin\bash.exe"
 WII_BUILD = "cmake --preset wii -DNL_TLS=ON -DNL_FS_NTFS=ON{extra} && cmake --build --preset wii --parallel $(nproc)"
 WII_BUILD_NOTLS = "cmake --preset wii -B build/wii-notls -DNL_TLS=OFF -DNL_FS_NTFS=OFF && cmake --build build/wii-notls --parallel $(nproc)"
 # Unter Windows vorab entpackte Mbed-TLS-Quelle (tools/mbedtls_src.py); $(pwd -P) läuft erst in der MSYS-Shell (geerbtes $PWD wäre ein Windows-Pfad).
-WIN_MBEDTLS_SRC = " -DFETCHCONTENT_SOURCE_DIR_MBEDTLS=$(pwd -P)/build/mbedtls/mbedtls-4.1.1"
+WIN_MBEDTLS_SRC = " -DFETCHCONTENT_SOURCE_DIR_MBEDTLS=$(pwd -P)/build/mbedtls/mbedtls-4.1.2"
 
 
 def wii_build_invocation(repo_root: Path, platform: str, tls: bool = True) -> tuple[list[str], dict[str, str]]:

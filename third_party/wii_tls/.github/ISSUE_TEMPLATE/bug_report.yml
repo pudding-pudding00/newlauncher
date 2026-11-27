@@ -1,0 +1,49 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! For security vulnerabilities, please do **not** open an issue — see SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: libwiitls version
+      description: Output of `wtls_version()`, or the release / commit you built.
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Where does it happen?
+      options:
+        - Wii (real hardware)
+        - vWii (Wii U)
+        - Dolphin emulator
+        - Host build (Linux / macOS / Windows)
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Build setup
+      description: Release package or built from source; devkitPPC / libogc versions; Wi-Fi or USB Ethernet.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: The failing call, its return value and `wtls_strerror()` text. For `WTLS_ERR_CERT`, include `wtls_last_verify_flags()`. Server host name if it is server-specific.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: A minimal code snippet or steps.
+      render: c
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?

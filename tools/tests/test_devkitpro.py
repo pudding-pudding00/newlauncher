@@ -54,7 +54,7 @@ class DevkitProTest(unittest.TestCase):
     def test_windows_tls_uses_local_mbedtls_source(self):
         # MSYS-tar kann die Symlinks im Mbed-TLS-Archiv nicht anlegen (tools/mbedtls_src.py).
         cmd, _ = wii_build_invocation(Path(r"C:\x\repo"), "win32")
-        self.assertIn("-DFETCHCONTENT_SOURCE_DIR_MBEDTLS=$(pwd -P)/build/mbedtls/mbedtls-4.1.1", cmd[2])
+        self.assertIn("-DFETCHCONTENT_SOURCE_DIR_MBEDTLS=$(pwd -P)/build/mbedtls/mbedtls-4.1.2", cmd[2])
         cmd, _ = wii_build_invocation(Path(r"C:\x\repo"), "win32", tls=False)
         self.assertNotIn("FETCHCONTENT", cmd[2])
 

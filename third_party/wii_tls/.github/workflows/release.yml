@@ -1,0 +1,90 @@
+name: release
+
+# Builds the prebuilt Wii package for a version tag and attaches it to a
+# draft GitHub release. Review the draft and publish it by hand.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)build, e.g. v1.0.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Install tools
+        run: command -v cmake || (apt-get update && apt-get install -y cmake)
+      - name: Check tag matches the project version
+        id: ver
+        shell: bash
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VER=$(sed -n 's/^project(libwiitls VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          echo "tag=$TAG version=$VER"
+          [ "$TAG" = "v$VER" ] || { echo "::error::tag $TAG does not match CMakeLists.txt version $VER"; exit 1; }
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+      - name: Build package
+        shell: bash
+        run: bash tools/make_release.sh
+      - name: Checksums
+        shell: bash
+        run: |
+          cd dist
+          sha256sum "libwiitls-${{ steps.ver.outputs.version }}-wii.zip" > SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libwiitls-${{ steps.ver.outputs.version }}-wii
+          path: |
+            dist/libwiitls-${{ steps.ver.outputs.version }}-wii.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: libwiitls-${{ needs.package.outputs.version }}-wii
+          path: dist
+      - name: Release notes from CHANGELOG.md
+        run: |
+          VER="${{ needs.package.outputs.version }}"
+          awk -v v="$VER" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/        { exit }
+            on                    { print }
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "::error::no CHANGELOG.md section for $VER"; exit 1; }
+          printf '\n---\n\n**Package:** `libwiitls-%s-wii.zip` — see [docs/usage.md](https://github.com/%s/blob/v%s/docs/usage.md#1-add-it-to-your-project) to integrate it. SHA-256 in `SHA256SUMS`.\n' \
+            "$VER" "$GITHUB_REPOSITORY" "$VER" >> notes.md
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER="${{ needs.package.outputs.version }}"
+          TAG="v$VER"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" dist/* --draft --verify-tag \
+              --title "libwiitls $VER" --notes-file notes.md
+          fi

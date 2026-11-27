@@ -5,7 +5,7 @@ Starts a TCP log listener and tests/host/tls_test_server.py (bound to 0.0.0.0),
 sends the DOL with wiiload and prints the log. Exit code 0 only if the runner
 reports "WTLS-HWTEST DONE pass=P fail=0".
 
-  python tools/hwtest.py --wii 192.168.1.50 --dol build-wii/tests/hw/wtls_hwtest.dol --suite selftest
+  python tools/hwtest.py --wii <wii-ip> --dol build-wii/tests/hw/wtls_hwtest.dol --suite selftest
 """
 import argparse
 import os

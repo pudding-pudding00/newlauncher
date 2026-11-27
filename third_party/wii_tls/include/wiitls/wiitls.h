@@ -150,15 +150,32 @@ void        wtls_shutdown(void);
 void        wtls_net_reset(void);
 
 /**
- * Adds a trust anchor in addition to the built-in Mozilla CA bundle.
+ * Adds a trust anchor in addition to the built-in Mozilla CA bundle (unless
+ * built with WTLS_EMBED_CA=OFF or suppressed by wtls_reset_trusted_cas(false)).
  *
  * Accepts DER, or PEM with the terminating NUL byte included in @p len. A PEM
  * with several certificates is added only if all of them parse. The data is
- * copied. Requires wtls_init(); the CA lives until wtls_shutdown().
+ * copied. Requires wtls_init(); the CA lives until wtls_reset_trusted_cas() or
+ * wtls_shutdown().
  *
  * @return WTLS_OK, WTLS_ERR_ARG (unparsable), WTLS_ERR_NOMEM, or WTLS_ERR_STATE.
  */
 wtls_status wtls_add_trusted_ca(const uint8_t *buf, size_t len);
+
+/**
+ * Resets the runtime trust store: drops all CAs added via
+ * wtls_add_trusted_ca(), clears cached session tickets, and flushes any idle
+ * pooled HTTP connections.
+ *
+ * When @p keep_builtin is true (the default after wtls_init()), the built-in
+ * CA bundle remains active if compiled in (WTLS_EMBED_CA=ON). When false, the
+ * built-in bundle is suppressed so only CAs subsequently added via
+ * wtls_add_trusted_ca() (or SPKI pins) are trusted — e.g., to replace the
+ * snapshot with a fresh cacert.pem loaded at runtime.
+ *
+ * Requires wtls_init(). wtls_shutdown() restores the default state.
+ */
+void        wtls_reset_trusted_cas(bool keep_builtin);
 
 /**
  * Loads a client certificate chain and the matching private key for mutual
@@ -166,9 +183,9 @@ wtls_status wtls_add_trusted_ca(const uint8_t *buf, size_t len);
  *
  * @p cert is the certificate chain with the leaf first; @p key is the private
  * key of the leaf. Both accept DER, or PEM with the terminating NUL byte
- * included in len. Supported keys: ECDSA (P-256, P-384) and RSA. Password-
- * protected keys are not supported. The data is copied; it is validated
- * immediately that the private key matches the leaf certificate.
+ * included in len. Supported keys: ECDSA (P-256, P-384) and RSA. For
+ * password-protected keys, use wtls_client_cred_load_ex(). The data is copied;
+ * it is validated immediately that the private key matches the leaf certificate.
  *
  * The returned credential is reference-counted behind the scenes: connections
  * (including idle keep-alive connections of the HTTP client) hold references,
@@ -182,6 +199,16 @@ wtls_status wtls_add_trusted_ca(const uint8_t *buf, size_t len);
 wtls_status wtls_client_cred_load(wtls_client_cred **out,
                                   const uint8_t *cert, size_t cert_len,
                                   const uint8_t *key, size_t key_len);
+
+/**
+ * Like wtls_client_cred_load(), additionally accepting an optional password
+ * (@p pwd / @p pwd_len) for encrypted PKCS#8 (PBES2) or encrypted PEM keys.
+ * Pass @p pwd = NULL and @p pwd_len = 0 for unencrypted keys.
+ */
+wtls_status wtls_client_cred_load_ex(wtls_client_cred **out,
+                                     const uint8_t *cert, size_t cert_len,
+                                     const uint8_t *key, size_t key_len,
+                                     const uint8_t *pwd, size_t pwd_len);
 
 /** Releases one reference to the credential (zeroizing private key material
  *  once no connection uses it anymore). NULL is safe. */
@@ -211,6 +238,32 @@ void wtls_client_cred_free(wtls_client_cred *cred);
  */
 wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port,
                          const wtls_options *opt);
+
+/**
+ * Begins a non-blocking TCP connect + TLS handshake.
+ *
+ * Resolves @p host (synchronously for DNS if not cached/IPv4 literal), starts
+ * the non-blocking TCP connect, and advances as far as possible without
+ * blocking.
+ *
+ * @return WTLS_OK (handshake already finished), WTLS_WANT_READ or
+ *         WTLS_WANT_WRITE (*out is set; poll wtls_get_fd(*out) and drive with
+ *         wtls_connect_step()), or a negative error (*out is NULL).
+ */
+wtls_status wtls_connect_start(wtls_conn **out, const char *host, uint16_t port,
+                               const wtls_options *opt);
+
+/**
+ * Advances an in-progress connection started by wtls_connect_start().
+ *
+ * On WTLS_WANT_READ or WTLS_WANT_WRITE, wait for socket readiness (on the Wii
+ * during TCP connect, IOS net_poll does not wake on connect completion, so
+ * poll in <= 5 ms slices and call wtls_connect_step() again) and retry.
+ * Once WTLS_OK is returned, the connection is ready for wtls_read()/wtls_write().
+ * On any other negative error, the connection is failed and must be freed with
+ * wtls_close().
+ */
+wtls_status wtls_connect_step(wtls_conn *c);
 
 /**
  * Reads decrypted application data.

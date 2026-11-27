@@ -1,0 +1,10 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=${exec_prefix}/@CMAKE_INSTALL_LIBDIR@
+includedir=${prefix}/@CMAKE_INSTALL_INCLUDEDIR@
+
+Name: libwiitls
+Description: Modern TLS 1.3/1.2, HTTP/2 and HTTP/1.1 client for Nintendo Wii homebrew
+Version: @PROJECT_VERSION@
+Cflags: -I${includedir} @_wtls_pc_extra_cflags@ -DMBEDTLS_CONFIG_FILE='"wtls_mbedtls_config.h"' -DTF_PSA_CRYPTO_CONFIG_FILE='"wtls_crypto_config.h"'
+Libs: -L${libdir} @_wtls_pc_extra_lflags@ -lwiitls -lmbedtls -lmbedx509 -ltfpsacrypto -lwiitls

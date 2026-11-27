@@ -15,6 +15,9 @@ typedef struct wtls_gzip wtls_gzip;
 /* NULL: out of memory. About 7 KiB of state plus a 32 KiB window. */
 wtls_gzip *wtls_gzip_new(void);
 
+/* Streaming deflate (RFC 1950 zlib format) decoder for Content-Encoding: deflate. */
+wtls_gzip *wtls_deflate_new(void);
+
 /* Decodes from in[0..in_len) into out[0..out_cap). On WTLS_OK *produced > 0 or
  * all input was taken (*used == in_len); with no input it still hands out
  * output that did not fit before. WTLS_OK, WTLS_ERR_HTTP (not gzip, corrupt

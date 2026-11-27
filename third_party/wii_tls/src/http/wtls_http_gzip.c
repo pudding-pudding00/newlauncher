@@ -8,19 +8,26 @@
 
 struct wtls_gzip {
     z_stream z;
+    bool deflate;    /* false: gzip (multi-member), true: zlib deflate (single stream) */
     bool in_member;  /* input taken since the last member ended: the end of input here is a cut */
-    bool need_reset; /* a member ended; the next input byte starts a new one */
+    bool need_reset; /* gzip: a member ended; the next input byte starts a new one */
+    bool ended;      /* deflate: Z_STREAM_END reached */
 };
 
-wtls_gzip *wtls_gzip_new(void) {
+static wtls_gzip *alloc_inflate(int window_bits, bool deflate) {
     wtls_gzip *g = calloc(1, sizeof *g);
     if (!g) return NULL;
-    if (inflateInit2(&g->z, 16 + MAX_WBITS) != Z_OK) { /* 16: gzip wrapper only, no zlib/raw */
+    g->deflate = deflate;
+    if (inflateInit2(&g->z, window_bits) != Z_OK) {
         free(g);
         return NULL;
     }
     return g;
 }
+
+wtls_gzip *wtls_gzip_new(void) { return alloc_inflate(16 + MAX_WBITS, false); }
+
+wtls_gzip *wtls_deflate_new(void) { return alloc_inflate(MAX_WBITS, true); }
 
 int wtls_gzip_inflate(wtls_gzip *g, const uint8_t *in, size_t in_len, size_t *used, uint8_t *out, size_t out_cap,
                       size_t *produced) {
@@ -28,6 +35,7 @@ int wtls_gzip_inflate(wtls_gzip *g, const uint8_t *in, size_t in_len, size_t *us
     if (produced) *produced = 0;
     if (!g || !used || !produced || (!in && in_len) || (!out && out_cap)) return WTLS_ERR_ARG;
     for (;;) {
+        if (g->ended) return *used < in_len ? WTLS_ERR_HTTP : WTLS_OK;
         if (g->need_reset) {
             if (*used == in_len) return WTLS_OK;
             if (inflateReset(&g->z) != Z_OK) return WTLS_ERR_HTTP;
@@ -49,6 +57,11 @@ int wtls_gzip_inflate(wtls_gzip *g, const uint8_t *in, size_t in_len, size_t *us
         switch (zr) {
         case Z_STREAM_END:
             g->in_member = false;
+            if (g->deflate) {
+                g->ended = true;
+                if (*used < in_len) return WTLS_ERR_HTTP;
+                return WTLS_OK;
+            }
             g->need_reset = true;
             if (*produced) return WTLS_OK;
             continue;

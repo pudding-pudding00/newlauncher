@@ -99,6 +99,7 @@ wtls_status wtls_init(void) {
 }
 
 void (*wtls_shutdown_hook)(void);
+void (*wtls_pool_flush_hook)(void);
 
 void wtls_net_reset(void) {
     if (!WTLS_THREAD_GUARD("wtls_net_reset")) return;
@@ -114,6 +115,7 @@ void wtls_shutdown(void) {
     if (!s_initialized) return;
     if (!WTLS_THREAD_GUARD("wtls_shutdown")) return;
     wtls_net_reset();
+    wtls_pool_flush_hook = NULL;
     wtls_castore_free();
     wtls_scache_clear(); /* holds resumption secrets */
     mbedtls_psa_crypto_free();
@@ -125,6 +127,14 @@ wtls_status wtls_add_trusted_ca(const uint8_t *buf, size_t len) {
     if (!s_initialized) return WTLS_ERR_STATE; /* key parsing needs PSA */
     if (!WTLS_THREAD_GUARD("wtls_add_trusted_ca")) return WTLS_ERR_STATE;
     return (wtls_status)wtls_castore_add(buf, len);
+}
+
+void wtls_reset_trusted_cas(bool keep_builtin) {
+    if (!s_initialized) return;
+    if (!WTLS_THREAD_GUARD("wtls_reset_trusted_cas")) return;
+    wtls_castore_reset(keep_builtin);
+    wtls_scache_clear();
+    if (wtls_pool_flush_hook) wtls_pool_flush_hook();
 }
 
 static int try_addrs(const uint32_t *addrs, size_t count, uint16_t port, uint32_t timeout_ms,

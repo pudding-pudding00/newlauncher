@@ -76,7 +76,11 @@ uint64_t wtls_plat_now_us(void) {
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#if defined(__APPLE__)
+#include <stdlib.h>
+#else
 #include <sys/random.h>
+#endif
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <time.h>
@@ -97,6 +101,10 @@ static int sock_err(void) { return errno; }
 #endif
 
 int wtls_plat_os_entropy(uint8_t *out, size_t len) {
+#if defined(__APPLE__)
+    arc4random_buf(out, len);
+    return WTLS_OK;
+#else
     while (len > 0) {
         ssize_t n = getrandom(out, len, 0);
         if (n < 0) {
@@ -107,6 +115,7 @@ int wtls_plat_os_entropy(uint8_t *out, size_t len) {
         len -= (size_t)n;
     }
     return WTLS_OK;
+#endif
 }
 
 int wtls_plat_init(void) { return WTLS_OK; }
@@ -231,6 +240,12 @@ int wtls_plat_connect_abortable(uint32_t ipv4_be, uint16_t port, uint32_t timeou
     if (abort_cb && abort_cb(abort_ctx)) return WTLS_ERR_CANCELLED;
     sock_t s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s == SOCK_INVALID) return WTLS_ERR_CONNECT;
+#if defined(SO_NOSIGPIPE)
+    {
+        int on = 1;
+        (void)setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+    }
+#endif
     if (set_nonblocking(s) != 0) {
         sock_close(s);
         return WTLS_ERR_CONNECT;
@@ -286,6 +301,57 @@ int wtls_plat_connect_abortable(uint32_t ipv4_be, uint16_t port, uint32_t timeou
 
 int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int *fd_out) {
     return wtls_plat_connect_abortable(ipv4_be, port, timeout_ms, NULL, NULL, fd_out);
+}
+
+int wtls_plat_connect_begin(uint32_t ipv4_be, uint16_t port, int *fd_out) {
+    if (!fd_out) return WTLS_ERR_ARG;
+    *fd_out = -1;
+    sock_t s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (s == SOCK_INVALID) return WTLS_ERR_CONNECT;
+#if defined(SO_NOSIGPIPE)
+    {
+        int on = 1;
+        (void)setsockopt(s, SOL_SOCKET, SO_NOSIGPIPE, &on, sizeof on);
+    }
+#endif
+    if (set_nonblocking(s) != 0) {
+        sock_close(s);
+        return WTLS_ERR_CONNECT;
+    }
+    struct sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(port);
+    memcpy(&sa.sin_addr, &ipv4_be, 4);
+    if (connect(s, (struct sockaddr *)&sa, sizeof sa) != 0) {
+        int e = sock_err();
+        if (e == ERR_INPROGRESS || is_wouldblock(e)) {
+            *fd_out = (int)s;
+            return WTLS_WANT_WRITE;
+        }
+        sock_close(s);
+        return WTLS_ERR_CONNECT;
+    }
+    int one = 1;
+    (void)setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (const char *)&one, sizeof one);
+    *fd_out = (int)s;
+    return WTLS_OK;
+}
+
+int wtls_plat_connect_check(int fd, uint32_t ipv4_be, uint16_t port) {
+    (void)ipv4_be;
+    (void)port;
+    short rev = 0;
+    int r = poll_one((sock_t)fd, POLLOUT, 0, &rev);
+    if (r == 0) return WTLS_WANT_WRITE;
+    if (r < 0) return WTLS_ERR_CONNECT;
+    int soerr = 0;
+    socklen_t sl = sizeof soerr;
+    if (getsockopt((sock_t)fd, SOL_SOCKET, SO_ERROR, (char *)&soerr, &sl) != 0 || soerr != 0)
+        return WTLS_ERR_CONNECT;
+    int one = 1;
+    (void)setsockopt((sock_t)fd, IPPROTO_TCP, TCP_NODELAY, (const char *)&one, sizeof one);
+    return WTLS_OK;
 }
 
 int wtls_plat_send(int fd, const uint8_t *buf, size_t len) {

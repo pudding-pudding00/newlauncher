@@ -51,7 +51,7 @@
  */
 
 //#define PSA_WANT_ALG_CBC_NO_PADDING             1
-//#define PSA_WANT_ALG_CBC_PKCS7                  1
+#define PSA_WANT_ALG_CBC_PKCS7                  1
 //#define PSA_WANT_ALG_CCM                        1
 //#define PSA_WANT_ALG_CCM_STAR_NO_TAG            1
 //#define PSA_WANT_ALG_CMAC                       1
@@ -71,7 +71,7 @@
 #define PSA_WANT_ALG_HMAC                       1
 //#define PSA_WANT_ALG_MD5                        1
 //#define PSA_WANT_ALG_OFB                        1
-//#define PSA_WANT_ALG_PBKDF2_HMAC                1
+#define PSA_WANT_ALG_PBKDF2_HMAC                1
 //#define PSA_WANT_ALG_PBKDF2_AES_CMAC_PRF_128    1
 //#define PSA_WANT_ALG_RIPEMD160                  1
 #define PSA_WANT_ALG_RSA_OAEP                   1
@@ -850,7 +850,7 @@
  *
  * This module adds support for the PKCS#5 functions.
  */
-//#define MBEDTLS_PKCS5_C
+#define MBEDTLS_PKCS5_C
 
 /**
  * \def MBEDTLS_PK_PARSE_C

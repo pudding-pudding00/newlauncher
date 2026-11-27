@@ -17,7 +17,7 @@
 
 /* IOS socket error numbers (alphabetical SUSv3 order, as emulated by Dolphin's
  * IOS network code). libogc returns them negated, untranslated.
- * See docs/ios-socket-behaviour.md: confirmed by the Task 2 spike once run. */
+ * Confirmed on hardware by the spike suite, see docs/ios-socket-behaviour.md. */
 /* IOS errno values and IPC_ENOMEM handling: plat.h (wtls_plat_ios_*). */
 #define IPC_RETRY_US 2000
 /* Poll slice while a non-blocking connect runs (two IPCs of ~135 us each). */
@@ -215,6 +215,45 @@ int wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms, int 
     return wtls_plat_connect_abortable(ipv4_be, port, timeout_ms, NULL, NULL, fd_out);
 }
 
+int wtls_plat_connect_begin(uint32_t ipv4_be, uint16_t port, int *fd_out) {
+    if (!fd_out) return WTLS_ERR_ARG;
+    *fd_out = -1;
+    s32 fd = net_socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+    if (fd < 0) return WTLS_ERR_CONNECT;
+    if (set_nonblocking(fd) != 0) {
+        net_close(fd);
+        return WTLS_ERR_CONNECT;
+    }
+    struct sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(port);
+    memcpy(&sa.sin_addr, &ipv4_be, 4);
+    s32 r = net_connect(fd, (struct sockaddr *)&sa, sizeof sa);
+    if (wtls_plat_ios_connected(r)) {
+        *fd_out = (int)fd;
+        return WTLS_OK;
+    }
+    if (wtls_plat_ios_connect_pending(true, r)) {
+        *fd_out = (int)fd;
+        return WTLS_WANT_WRITE;
+    }
+    net_close(fd);
+    return WTLS_ERR_CONNECT;
+}
+
+int wtls_plat_connect_check(int fd, uint32_t ipv4_be, uint16_t port) {
+    struct sockaddr_in sa;
+    memset(&sa, 0, sizeof sa);
+    sa.sin_family = AF_INET;
+    sa.sin_port = htons(port);
+    memcpy(&sa.sin_addr, &ipv4_be, 4);
+    s32 r = net_connect((s32)fd, (struct sockaddr *)&sa, sizeof sa);
+    if (wtls_plat_ios_connected(r)) return WTLS_OK;
+    if (wtls_plat_ios_connect_in_progress(r)) return WTLS_WANT_WRITE;
+    return WTLS_ERR_CONNECT;
+}
+
 int wtls_plat_send(int fd, const uint8_t *buf, size_t len) {
     if (len == 0) return WTLS_ERR_ARG;
     if (len > OGC_SEND_MAX) len = OGC_SEND_MAX;
@@ -311,4 +350,12 @@ uint32_t wtls_plat_jitter_sample(void) {
     uint32_t d = now - prev;
     prev = now;
     return d;
+}
+
+void wtls_plat_entropy_aux(uint32_t aux[4]) {
+    u64 tb = gettime();
+    aux[0] = (uint32_t)(tb >> 32);
+    aux[1] = (uint32_t)tb;
+    aux[2] = (uint32_t)IOS_GetVersion();
+    aux[3] = net_gethostip();
 }

@@ -25,6 +25,7 @@ Last updated: 2026-11-26. All planned milestones through **M29** (Cloud Saves wi
 | M28 | OneDrive (Graph AppFolder), provider switching, "Sync all", sign-out with token revocation | #47 |
 | M29 | Dropbox (PKCE), LAN pairing page (HTTP port 4301), QR encoder, layered 128-char keyboard | #48, #49 |
 | – | Cover top-to-bottom FIFO loading, 6x `.tex` batching, Favorites/Recent priority; taskbar pointer & placeholder fixes | #50, #51, #52, #53 |
+| – | `wii_tls` switched to the public **libwiitls v1.0.0** (`pudding-pudding00/libwiitls`, Mbed TLS 4.1.2 LTS, HTTP/2) | this PR |
 
 CI (`.github/workflows/build.yml`) builds Wii DOLs with and without TLS and runs all host and Python tool tests.
 
@@ -38,7 +39,7 @@ CI (`.github/workflows/build.yml`) builds Wii DOLs with and without TLS and runs
 
 ### 2. Known Minor Technical Notes
 - **Flaky Dolphin smoke `--remote-check`:** 2 of 11 runs reported `REMOTE KEY (Fokus blieb …)`, likely due to a Dolphin simulated IR pointer event resetting tile focus.
-- **Upstream `wii_tls` (`z_errmsg`):** `z_errmsg` collides with zlib 1.3.1 despite `Z_PREFIX`; currently worked around with `-Dz_errmsg=wtls_z_errmsg` in CMake.
+- **Upstream libwiitls (`z_errmsg`):** `z_errmsg` still collides with zlib 1.3.1 despite `Z_PREFIX` in libwiitls 1.0.0; worked around with `-Dz_errmsg=wtls_z_errmsg` in CMake.
 - **Side finding (M13):** cIOS slots 248–251 appear as `other` instead of `d2x` in SysInfo because `wii_disc.cpp` cannot read `.app` under stock IOS 58 without ISFS patches; slot 249 is verified d2x.
 - **Deferred / Out-of-scope enhancements:** Parallel cover downloads (would require `wii_tls` changes), `txt1`/`wnd1` banner elements, `.wbf1`/WBFS banner extraction.
 

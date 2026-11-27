@@ -185,6 +185,13 @@ class CheckPerfTest(unittest.TestCase):
         self.assertIn("heap nicht messbar", only_negative.value)
         self.assertEqual(only_negative.status, "PASS")
 
+    def test_tls_h2_field_parsed(self):
+        # libwiitls 1.0.0: the marker also says whether the response came over HTTP/2.
+        log = summary() + "\nNL_PERF tls heap=36536 ms=800 h2=1\n"
+        parsed = parse_log(log)
+        self.assertEqual(parsed.tls, [{"heap": 36536, "ms": 800, "h2": 1}])
+        self.assertEqual(by_name(evaluate(parsed))["TLS"].status, "PASS")
+
     def test_tls_missing_is_na(self):
         self.assertEqual(by_name(evaluate(parse_log(summary())))["TLS"].status, "N/A")
 

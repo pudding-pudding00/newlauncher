@@ -83,17 +83,24 @@ static void add_field(sbuf *b, const char *name, const char *value) {
 }
 
 int wtls_http_build_head(const char *method, const wtls_url *u, const wtls_http_header *h, size_t n,
-                         bool has_body, size_t body_len, bool chunked, bool no_keepalive, bool want_gzip,
-                         char **out, size_t *len) {
+                         bool has_body, size_t body_len, unsigned flags, char **out, size_t *len) {
     static const char *const reserved[] = {"host", "content-length", "transfer-encoding", "connection"};
+    bool chunked = (flags & WTLS_HTTP_REQ_CHUNKED) != 0;
+    bool no_keepalive = (flags & WTLS_HTTP_REQ_NO_KEEPALIVE) != 0;
+    bool want_gzip = (flags & WTLS_HTTP_REQ_GZIP) != 0;
+    bool allow_upgrade = (flags & WTLS_HTTP_REQ_UPGRADE) != 0;
+    bool expect_100 = (flags & WTLS_HTTP_REQ_EXPECT_100) != 0;
+    bool proxy_abs = (flags & WTLS_HTTP_REQ_PROXY) != 0;
     if (!u || !out || !len || (n && !h)) return WTLS_ERR_ARG;
     *out = NULL;
     *len = 0;
     if (!method) method = "GET";
     if (!wtls_http_is_token(method) || n > WTLS_HTTP_MAX_REQ_HEADERS) return WTLS_ERR_ARG;
+    size_t n_reserved = sizeof reserved / sizeof reserved[0];
+    if (allow_upgrade) n_reserved--; /* Connection is permitted for Upgrade handshakes */
     for (size_t i = 0; i < n; i++) {
         if (!wtls_http_is_token(h[i].name) || !h[i].value || !value_ok(h[i].value)) return WTLS_ERR_ARG;
-        for (size_t k = 0; k < sizeof reserved / sizeof reserved[0]; k++)
+        for (size_t k = 0; k < n_reserved; k++)
             if (wtls_http_ieq(h[i].name, reserved[k])) return WTLS_ERR_ARG;
     }
 
@@ -103,6 +110,14 @@ int wtls_http_build_head(const char *method, const wtls_url *u, const wtls_http_
 
     adds(&b, method);
     add(&b, " ", 1);
+    if (proxy_abs && !u->secure) {
+        adds(&b, "http://");
+        adds(&b, u->host);
+        if (u->port != 80) {
+            snprintf(num, sizeof num, ":%u", (unsigned)u->port);
+            adds(&b, num);
+        }
+    }
     if (u->target_needs_slash) add(&b, "/", 1);
     add(&b, u->target, u->target_len);
     adds(&b, " HTTP/1.1\r\nHost: ");
@@ -114,8 +129,14 @@ int wtls_http_build_head(const char *method, const wtls_url *u, const wtls_http_
     add(&b, "\r\n", 2);
     if (!wtls_http_headers_have(h, n, "User-Agent")) add_field(&b, "User-Agent", "libwiitls/" WTLS_VERSION);
     if (!wtls_http_headers_have(h, n, "Accept")) add_field(&b, "Accept", "*/*");
-    if (want_gzip && !wtls_http_headers_have(h, n, "Accept-Encoding")) add_field(&b, "Accept-Encoding", "gzip");
-    if (no_keepalive) add_field(&b, "Connection", "close");
+    if (want_gzip && !wtls_http_headers_have(h, n, "Accept-Encoding"))
+        add_field(&b, "Accept-Encoding", "gzip, deflate");
+    if (allow_upgrade) {
+        if (wtls_http_headers_have(h, n, "Upgrade") && !wtls_http_headers_have(h, n, "Connection"))
+            add_field(&b, "Connection", "Upgrade");
+    } else if (no_keepalive) {
+        add_field(&b, "Connection", "close");
+    }
     if (chunked) {
         add_field(&b, "Transfer-Encoding", "chunked");
     } else if (has_body || strcmp(method, "POST") == 0 || strcmp(method, "PUT") == 0 ||
@@ -123,6 +144,8 @@ int wtls_http_build_head(const char *method, const wtls_url *u, const wtls_http_
         snprintf(num, sizeof num, "%llu", (unsigned long long)(has_body ? body_len : 0));
         add_field(&b, "Content-Length", num);
     }
+    if (expect_100 && !wtls_http_headers_have(h, n, "Expect"))
+        add_field(&b, "Expect", "100-continue");
     for (size_t i = 0; i < n; i++) add_field(&b, h[i].name, h[i].value);
     add(&b, "\r\n", 2);
 

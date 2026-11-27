@@ -17,7 +17,7 @@ inline constexpr int kOk = 0, kNoMem = -12, kClock = -21, kDns = -31, kConnect =
                      kHandshake = -40, kCert = -41, kHttp = -50, kHttpLimit = -51, kHttpRedirect = -52;
 }  // namespace wtls_status
 
-// MBEDTLS_X509_BADCERT_EXPIRED / _FUTURE (Mbed TLS 4.1.1).
+// MBEDTLS_X509_BADCERT_EXPIRED / _FUTURE (Mbed TLS 4.1.x).
 inline constexpr u32 kX509BadCertExpired = 0x01;
 inline constexpr u32 kX509BadCertFuture = 0x0200;
 

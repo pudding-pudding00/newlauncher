@@ -9,6 +9,10 @@ endif()
 
 project(newlauncher VERSION 0.0.1 LANGUAGES C CXX)
 
+# Version the launcher reports (log, About, self-update). Development releases pass their dev-0.0.N version here
+# (see tools/dev_release.py); the default is the project version.
+set(NL_APP_VERSION "${PROJECT_VERSION}" CACHE STRING "Version the launcher reports")
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -326,7 +330,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         ${CMAKE_CURRENT_SOURCE_DIR}/boot ${CMAKE_CURRENT_SOURCE_DIR}/src ${NL_CH_DIR})
     add_dependencies(nl_game_booter nl_codehandler)
     # NL_BOOTER_CHEATS=1 (M15): Codehandler aus Quelltext statt des Ocarina-Blobs (M11, Spec v2 3.2).
-    target_compile_definitions(nl_game_booter PRIVATE HAVE_CONFIG_H NL_VERSION="${PROJECT_VERSION}" NL_BOOTER_CHEATS=1)
+    target_compile_definitions(nl_game_booter PRIVATE HAVE_CONFIG_H NL_VERSION="${NL_APP_VERSION}" NL_BOOTER_CHEATS=1)
     target_compile_options(nl_game_booter PRIVATE
         $<$<COMPILE_LANGUAGE:C>:-std=gnu17>
         $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions;-fno-rtti>
@@ -406,7 +410,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         target_link_directories(${name} PRIVATE ${FREETYPE_STATIC_LIBRARY_DIRS})
         target_link_libraries(${name} PRIVATE nl_core nl_fonts nl_booter nl_rstub ${FREETYPE_STATIC_LIBRARIES} ${PNG_STATIC_LIBRARIES} nl_game_booter_blob fat wiiuse bte asnd vorbisidec ogg)
         # NL_WII_CHEATS=1 (M15): der Booter bringt den Codehandler mit, die Cheat-Szene bietet Wii-Codes an.
-        target_compile_definitions(${name} PRIVATE NL_VERSION="${PROJECT_VERSION}" NL_WII_CHEATS=1)
+        target_compile_definitions(${name} PRIVATE NL_VERSION="${NL_APP_VERSION}" NL_WII_CHEATS=1)
         if(NL_TLS)
             target_link_libraries(${name} PRIVATE wiitls)
             target_compile_definitions(${name} PRIVATE NL_TLS=1)

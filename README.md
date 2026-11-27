@@ -32,8 +32,10 @@ Hardware acceptance for the newer features is still in progress; see [docs/STATU
 
 ## Installing
 
-There is no published release yet, so build it yourself (see below) and copy it to the SD card
-(`E:` stands for the card's drive):
+Every merge into `main` publishes a development build on the
+[Releases page](https://github.com/pudding-pudding00/newlauncher/releases) (`dev-0.0.N`), and the newest one is what the launcher's self-update offers. Unzip its ZIP to the SD
+card, or load its `.dol` with wiiload. To build it yourself and copy it to the SD card (`E:` stands for the card's
+drive):
 
 ```bash
 python tools/build_wii.py

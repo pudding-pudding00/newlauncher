@@ -1,0 +1,101 @@
+name: dev-release
+
+# Every merge into main publishes a development release numbered 0.0.N, where N is one above the newest dev-0.0.* tag
+# (the first one is 0.0.1). The publish job tags the merge commit dev-0.0.N and creates the GitHub release with the
+# release ZIP (SD card), the bare DOL (wiiload), update.ini and SHA256SUMS. update.ini is the manifest of the launcher's
+# self-update, which reads the "latest" release: the newest development release is the one installed launchers offer.
+# Pull requests run the same build as a dry run and publish nothing.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Publishes for main run one after another and are never cancelled, so no two merges share a number.
+  group: dev-release-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:20261102
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # all tags: the number follows the newest dev-0.0.* tag
+      - name: Install tools
+        run: |
+          command -v cmake || (apt-get update && apt-get install -y --no-install-recommends cmake)
+          command -v python3 || (apt-get update && apt-get install -y --no-install-recommends python3)
+          test -f "$DEVKITPRO/portlibs/ppc/lib/libfreetype.a" || dkp-pacman -S --noconfirm --needed ppc-freetype
+          test -f "$DEVKITPRO/portlibs/ppc/lib/libpng.a" || dkp-pacman -S --noconfirm --needed ppc-libpng
+          test -f "$DEVKITPRO/portlibs/ppc/lib/libvorbisidec.a" || dkp-pacman -S --noconfirm --needed ppc-libvorbisidec ppc-libogg
+      - name: Development version
+        id: ver
+        run: |
+          VER=$(python3 tools/dev_release.py next-version --rev "$GITHUB_SHA")
+          echo "development release $VER for $GITHUB_SHA"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+      - name: Build
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          cmake --preset wii -DNL_TLS=ON -DNL_FS_NTFS=ON -DNL_APP_VERSION="$VER"
+          grep -q "^NL_APP_VERSION:[A-Z]*=$VER\$" build/wii/CMakeCache.txt
+          cmake --build --preset wii --parallel $(nproc)
+          python3 tools/check_licenses.py build/wii
+      - name: Package
+        env:
+          VER: ${{ steps.ver.outputs.version }}
+        run: |
+          python3 tools/make_release.py --version "$VER" \
+            --zip-base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/dev-$VER" \
+            --out "out/newlauncher-$VER.zip"
+          cp build/wii/newlauncher.dol "out/newlauncher-$VER.dol"
+          python3 tools/dev_release.py check-package "out/newlauncher-$VER.zip" "$VER"
+          cd out && sha256sum "newlauncher-$VER.zip" "newlauncher-$VER.dol" update.ini > SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: newlauncher-dev-release
+          path: out/
+          if-no-files-found: error
+
+  publish:
+    needs: package
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VER: ${{ needs.package.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: newlauncher-dev-release
+          path: out
+      - name: Publish the pre-release
+        run: |
+          TAG="dev-$VER"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # A re-run for the same merge: refresh the files, keep the release and its notes.
+            gh release upload "$TAG" out/* --clobber
+            exit 0
+          fi
+          printf '%s\n\n' \
+            "Development build of newlauncher from the merge commit \`$GITHUB_SHA\`, numbered automatically." \
+            "- **SD card:** unzip \`newlauncher-$VER.zip\` into the root of the card. It contains \`apps/newlauncher/\`." \
+            "- **wiiload:** \`python tools/wii_deploy.py --wiiload <wii-ip> --dol newlauncher-$VER.dol\`, or any wiiload tool with the \`.dol\`." \
+            "- **Self-update:** installed launchers offer this build in their self-update, as it is the latest release." \
+            "- Check the files against \`SHA256SUMS\` after downloading." > notes.md
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$TAG" \
+            -f target_commitish="$GITHUB_SHA" --jq .body >> notes.md
+          gh release create "$TAG" out/* --target "$GITHUB_SHA" \
+            --title "newlauncher $VER (development)" --notes-file notes.md

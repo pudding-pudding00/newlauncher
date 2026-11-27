@@ -27,6 +27,15 @@ See [docs/development.md](docs/development.md).
 - `third_party/wii_tls` is only updated with `python tools/vendor_wii_tls.py <checkout> --rev <tag>`. Certificate
   verification is never disabled and HTTPS never falls back to HTTP.
 
+## Development releases
+
+Every merge into `main` publishes a development release automatically (`.github/workflows/dev-release.yml`). The
+numbers start at `0.0.1` and count up by one per merge: the tag is `dev-0.0.N` and the GitHub release is a regular release.
+Each one carries the Wii ZIP for the SD card, the bare DOL for wiiload, `update.ini` and `SHA256SUMS`. Pull requests
+run the same build as a dry run and publish nothing. The newest one is the "latest" release, so the launcher's self-update
+offers it. Once stable releases start, mark the dev releases as pre-releases (`--prerelease` in `dev-release.yml`)
+so they do not shadow stable ones.
+
 ## Releasing (maintainers)
 
 1. Set the version in `CMakeLists.txt` (`project(newlauncher VERSION ...)`) and `dist/apps/newlauncher/meta.xml`.

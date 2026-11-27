@@ -46,7 +46,10 @@ def resolve_version(all_tags: Iterable[str], tags_at_rev: Iterable[str]) -> str:
 
 
 def _git(root: Path, *args: str) -> list[str]:
-    out = subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True).stdout
+    # The CI container runs as root in a workspace owned by the runner user, and git refuses such a repository
+    # ("dubious ownership"). safe.directory is honoured on the command line, so whitelist this repository there.
+    cmd = ["git", "-c", f"safe.directory={root}", "-C", str(root), *args]
+    out = subprocess.run(cmd, check=True, capture_output=True, text=True).stdout
     return [line for line in out.splitlines() if line]
 
 

@@ -9,6 +9,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -132,6 +133,18 @@ class PackageVersionTest(unittest.TestCase):
         for factor in re.findall(r"\d+", expr):
             launcher_limit *= int(factor)
         self.assertEqual(dev_release.MAX_ZIP_BYTES, launcher_limit)
+
+
+class GitSafeDirectoryTest(unittest.TestCase):
+    def test_git_is_run_with_the_repository_whitelisted(self):
+        # The CI container runs as root in a workspace owned by the runner user. git refuses such a repository
+        # ("dubious ownership") unless it is whitelisted on the command line.
+        root = Path("/work/repo")
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with mock.patch.object(dev_release.subprocess, "run", return_value=completed) as run:
+            dev_release.repo_dev_tags(root)
+        cmd = run.call_args.args[0]
+        self.assertEqual(cmd[:3], ["git", "-c", f"safe.directory={root}"])
 
 
 if __name__ == "__main__":

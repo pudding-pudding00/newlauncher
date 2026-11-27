@@ -33,6 +33,7 @@ struct Batch {
     u32 vertexCount;
     bool clipped = false;  // M18: nur innerhalb von clip zeichnen (logische Koordinaten)
     Rect clip{};
+    bool silhouette = false;  // texture alpha only, colour from the vertices (focus ring around a cover)
 };
 
 class DrawList {
@@ -44,6 +45,9 @@ public:
     void quad(TextureId tex, Rect dst, UvRect uv, Color c);
     // Freies Viereck (M18, Banner): Ecken im Uhrzeigersinn ab links oben, Alpha-Stapel wirkt wie bei quad.
     void quadVerts(TextureId tex, const Vertex (&v)[4]);
+    // Like quad, but only the texture's alpha is used and the colour comes from c: a flat silhouette of the image.
+    // Always its own batch, also for the same texture.
+    void silhouette(TextureId tex, Rect dst, UvRect uv, Color c);
 
     // Clip-Rechteck für alle folgenden Quads bis clearClip/clear; ein Wechsel beginnt einen neuen Batch.
     void setClip(Rect r);
@@ -61,7 +65,8 @@ public:
 private:
     static constexpr int kAlphaDepth = 8;
 
-    Vertex* reserve(TextureId tex);  // nullptr: voll, gezählt in dropped_
+    Vertex* reserve(TextureId tex, bool silhouette = false);
+    void put(Vertex* v, Rect dst, UvRect uv, Color c) const;  // v == nullptr: nothing  // nullptr: voll, gezählt in dropped_
 
     u32 maxQuads_, maxBatches_;
     std::unique_ptr<Vertex[]> vertices_;

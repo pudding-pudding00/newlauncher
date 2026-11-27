@@ -42,7 +42,7 @@ void DrawList::popAlpha() {
     alpha_ = alphaStack_[--alphaDepth_];
 }
 
-Vertex* DrawList::reserve(TextureId tex) {
+Vertex* DrawList::reserve(TextureId tex, bool silhouette) {
     if (quadCount_ >= maxQuads_) {
         ++dropped_;
         return nullptr;
@@ -51,12 +51,12 @@ Vertex* DrawList::reserve(TextureId tex) {
     const bool sameClip = last != nullptr && last->clipped == clipped_ &&
                           (!clipped_ || (last->clip.x == clip_.x && last->clip.y == clip_.y && last->clip.w == clip_.w &&
                                          last->clip.h == clip_.h));
-    if (last == nullptr || last->texture != tex || !sameClip) {
+    if (last == nullptr || last->texture != tex || last->silhouette != silhouette || !sameClip) {
         if (batchCount_ >= maxBatches_) {
             ++dropped_;
             return nullptr;
         }
-        batches_[batchCount_++] = Batch{tex, quadCount_ * 4, 0, clipped_, clip_};
+        batches_[batchCount_++] = Batch{tex, quadCount_ * 4, 0, clipped_, clip_, silhouette};
     }
     Vertex* v = &vertices_[static_cast<std::size_t>(quadCount_) * 4];
     ++quadCount_;
@@ -64,8 +64,11 @@ Vertex* DrawList::reserve(TextureId tex) {
     return v;
 }
 
-void DrawList::quad(TextureId tex, Rect dst, UvRect uv, Color c) {
-    Vertex* v = reserve(tex);
+void DrawList::quad(TextureId tex, Rect dst, UvRect uv, Color c) { put(reserve(tex), dst, uv, c); }
+
+void DrawList::silhouette(TextureId tex, Rect dst, UvRect uv, Color c) { put(reserve(tex, true), dst, uv, c); }
+
+void DrawList::put(Vertex* v, Rect dst, UvRect uv, Color c) const {
     if (v == nullptr) return;
     if (alpha_ < 1.0f) c.a = static_cast<u8>(static_cast<float>(c.a) * alpha_ + 0.5f);
     const float x1 = dst.x + dst.w, y1 = dst.y + dst.h;

@@ -127,3 +127,18 @@ TEST_CASE("setClip trennt Batches und merkt sich das Rechteck (M18)") {
     dl.quad(0, Rect{0, 0, 1, 1}, kUv, kWhite);
     CHECK_FALSE(dl.batches()[0].clipped);
 }
+
+TEST_CASE("silhouette: own batch per mode, even for the same texture") {
+    DrawList dl(8, 8);
+    dl.silhouette(7, Rect{0, 0, 10, 10}, kUv, Color{0, 0, 255, 255});
+    dl.silhouette(7, Rect{1, 0, 10, 10}, kUv, Color{0, 0, 255, 255});
+    dl.quad(7, Rect{0, 0, 10, 10}, kUv, kWhite);
+    auto b = dl.batches();
+    REQUIRE(b.size() == 2);
+    CHECK(b[0].texture == 7);
+    CHECK(b[0].silhouette);
+    CHECK(b[0].vertexCount == 8);
+    CHECK(b[1].texture == 7);
+    CHECK_FALSE(b[1].silhouette);
+    CHECK(dl.vertices()[0].color == Color{0, 0, 255, 255});
+}

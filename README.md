@@ -3,7 +3,7 @@
 [![CI](https://github.com/pudding-pudding00/newlauncher/actions/workflows/build.yml/badge.svg)](https://github.com/pudding-pudding00/newlauncher/actions/workflows/build.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
 
-**A fast, Wii-style game launcher for homebrew and cIOS setups.** One library for Wii, GameCube, N64 and
+**A fast, Wii game launcher for homebrew and cIOS setups.** One library for Wii, GameCube, N64 and
 retro consoles, sorted by console generation.
 
 ## What it offers

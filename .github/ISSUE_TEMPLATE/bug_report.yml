@@ -1,0 +1,47 @@
+name: Bug report
+description: Something does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! For security vulnerabilities, please do **not** open an issue, see SECURITY.md.
+        Remove tokens, client secrets and other personal data from logs and screenshots.
+  - type: input
+    id: version
+    attributes:
+      label: newlauncher version or commit
+      placeholder: 0.0.1
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Where does it happen?
+      options:
+        - Wii (real hardware)
+        - vWii (Wii U)
+        - Dolphin emulator
+        - PC tools / host build
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Relevant lines of `sd:/newlauncher/log.txt`.
+      render: text

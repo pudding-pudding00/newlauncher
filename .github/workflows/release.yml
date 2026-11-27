@@ -1,0 +1,95 @@
+name: release
+
+# Builds the release package for a version tag and attaches it to a draft
+# GitHub release. Review the draft and publish it by hand.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)build, e.g. v1.0.0'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitppc:20261102
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Install tools
+        run: |
+          command -v cmake || (apt-get update && apt-get install -y --no-install-recommends cmake)
+          command -v python3 || (apt-get update && apt-get install -y --no-install-recommends python3)
+          test -f "$DEVKITPRO/portlibs/ppc/lib/libfreetype.a" || dkp-pacman -S --noconfirm --needed ppc-freetype
+          test -f "$DEVKITPRO/portlibs/ppc/lib/libpng.a" || dkp-pacman -S --noconfirm --needed ppc-libpng
+          test -f "$DEVKITPRO/portlibs/ppc/lib/libvorbisidec.a" || dkp-pacman -S --noconfirm --needed ppc-libvorbisidec ppc-libogg
+      - name: Check tag matches the project version
+        id: ver
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          VER=$(sed -n 's/^project(newlauncher VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          echo "tag=$TAG version=$VER"
+          [ "$TAG" = "v$VER" ] || { echo "::error::tag $TAG does not match CMakeLists.txt version $VER"; exit 1; }
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+      - name: Build
+        run: |
+          cmake --preset wii -DNL_TLS=ON -DNL_FS_NTFS=ON
+          cmake --build --preset wii --parallel $(nproc)
+          python3 tools/check_licenses.py build/wii
+      - name: Package
+        shell: bash
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          python3 tools/make_release.py --out "out/newlauncher-$VER.zip"
+          cd out && sha256sum "newlauncher-$VER.zip" update.ini > SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: newlauncher-release
+          path: out/
+          if-no-files-found: error
+
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: newlauncher-release
+          path: out
+      - name: Release notes from CHANGELOG.md
+        run: |
+          VER="${{ needs.package.outputs.version }}"
+          awk -v v="$VER" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/        { exit }
+            on                    { print }
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "::error::no CHANGELOG.md section for $VER"; exit 1; }
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER="${{ needs.package.outputs.version }}"
+          TAG="v$VER"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber
+          else
+            gh release create "$TAG" out/* --draft --verify-tag \
+              --title "newlauncher $VER" --notes-file notes.md
+          fi

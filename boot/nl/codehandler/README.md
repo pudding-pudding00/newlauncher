@@ -1,18 +1,18 @@
-# Gecko-Codehandler (M15)
+# Gecko code handler (M15)
 
-`codehandler.s` ist der Gecko-Codehandler aus Dolphin:
+`codehandler.s` is the Gecko code handler from Dolphin:
 
-- Quelle: https://github.com/dolphin-emu/dolphin/blob/da9e9323ce8c7a6c0e06bb0d3f183a05753f8803/docs/codehandler.s
+- Source: https://github.com/dolphin-emu/dolphin/blob/da9e9323ce8c7a6c0e06bb0d3f183a05753f8803/docs/codehandler.s
 - Commit: `da9e9323ce8c7a6c0e06bb0d3f183a05753f8803`
-- Lizenz: MIT (Kopf der Datei; Volltext in `LICENSES/MIT.txt`)
-- Änderung: nur ein abschließender Zeilenumbruch ergänzt
+- License: MIT (file header; full text in `LICENSES/MIT.txt`)
+- Change: only a trailing newline added
 
-Der Build assembliert die Datei mit dem devkitPPC-Assembler (`-mgekko`) an 0x80001800 und erzeugt daraus
-`codehandler.h` und `codehandler_info.h` (siehe `cmake/NlCodehandler.cmake`). Kein Binärblob liegt im Repo.
+The build assembles the file with the devkitPPC assembler (`-mgekko`) at 0x80001800 and generates `codehandler.h`
+and `codehandler_info.h` from it (see `cmake/NlCodehandler.cmake`). No binary blob is in the repository.
 
-Schnittstelle zum Booter (`boot/source/fst.c`, `load_handler()`):
+Interface to the booter (`boot/source/fst.c`, `load_handler()`):
 
-- Einsprung `_start` = 0x800018A8; dorthin springen die Hooks aus `patchhook.S`.
-- An Offset 0x104/0x108 steht `lis r15,codelist@h` / `ori r15,r15,codelist@l`. Der Booter patcht die beiden
-  Halbwörter, wenn Codes vorhanden sind; das Generator-Skript bricht ab, wenn dort etwas anderes steht.
-- Die Codeliste liegt hinter dem Handler bis 0x80003000 (Beginn der OS-Globals).
+- Entry point `_start` = 0x800018A8; the hooks in `patchhook.S` jump there.
+- Offset 0x104/0x108 holds `lis r15,codelist@h` / `ori r15,r15,codelist@l`. The booter patches both half-words when
+  codes are present; the generator script aborts if something else is there.
+- The code list is behind the handler up to 0x80003000 (start of the OS globals).

@@ -33,7 +33,7 @@ CI (`.github/workflows/build.yml`) builds Wii DOLs with and without TLS and runs
 
 ### 1. Hardware Acceptance on Real Wii
 - **M20:** R1–R6, F1, U2 **passed** ([acceptance/m20-wii.md](acceptance/m20-wii.md)). **U1** (GitHub Release self-update) awaits the first published release.
-- **M11–M19, M21–M29, and v1/M7 ([hardware-acceptance.md](hardware-acceptance.md)):** Formal checklists remain `ungeprüft` / open.
+- **M11–M19, M21–M29, and v1/M7 ([hardware-acceptance.md](hardware-acceptance.md)):** Formal checklists remain open (unchecked).
 - **M26 Spike S1 (real hardware, read-only check done):** Opening the Save Manager scene on a Wii game (`RUUE01`) under stock IOS 58 with AHBPROT off succeeded (`nand:/title/00010000/.../data` opened without "NAND locked"). Actual NAND write/restore remains untested on hardware (ask user and recommend BootMii NAND backup first).
 - **M27–M29 Cloud:** Requires user-provided OAuth app credentials in `sd:/newlauncher/config.ini` (see [cloud-setup.md](cloud-setup.md)).
 

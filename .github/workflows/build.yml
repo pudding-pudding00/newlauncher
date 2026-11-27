@@ -2,7 +2,15 @@ name: build
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   wii:
@@ -11,29 +19,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        nl_tls: [ON, OFF]  # HTTPS über wii_tls an/aus (M11, Spec v2 4.1); NTFS (M16) folgt: ON/ON, OFF/OFF
+        nl_tls: [ON, OFF]  # HTTPS through wii_tls on/off (M11, spec v2 4.1); NTFS (M16) follows: ON/ON, OFF/OFF
     steps:
-      - uses: actions/checkout@v4
-      - name: CMake bereitstellen (Presets v6 brauchen >= 3.25)
+      - uses: actions/checkout@v7
+      - name: Provide CMake (presets v6 need >= 3.25)
         run: |
           command -v cmake || (apt-get update && apt-get install -y --no-install-recommends cmake)
           cmake --version
           printf '%s\n' 'if(CMAKE_VERSION VERSION_LESS 3.25)' \
-            '  message(FATAL_ERROR "CMake ${CMAKE_VERSION} ist zu alt, Presets v6 brauchen >= 3.25")' \
+            '  message(FATAL_ERROR "CMake ${CMAKE_VERSION} is too old, presets v6 need >= 3.25")' \
             'endif()' > /tmp/check_cmake.cmake
           cmake -P /tmp/check_cmake.cmake
-      - name: FreeType und libpng bereitstellen
+      - name: Provide FreeType, libpng and Tremor
         run: |
           test -f "$DEVKITPRO/portlibs/ppc/lib/libfreetype.a" || dkp-pacman -S --noconfirm --needed ppc-freetype
           test -f "$DEVKITPRO/portlibs/ppc/lib/libpng.a" || dkp-pacman -S --noconfirm --needed ppc-libpng
           test -f "$DEVKITPRO/portlibs/ppc/lib/libvorbisidec.a" || dkp-pacman -S --noconfirm --needed ppc-libvorbisidec ppc-libogg
-      - name: DOL bauen
+      - name: Build DOLs
         run: cmake --preset wii -DNL_TLS=${{ matrix.nl_tls }} -DNL_FS_NTFS=${{ matrix.nl_tls }} && cmake --build --preset wii --parallel $(nproc)
-      - name: Lizenzeinträge prüfen (Spec v2 3.4)
+      - name: Check license entries (spec v2 3.4)
         run: |
           command -v python3 || (apt-get update && apt-get install -y --no-install-recommends python3)
           python3 tools/check_licenses.py build/wii
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: newlauncher-dol-tls-${{ matrix.nl_tls }}
           path: |
@@ -45,10 +53,10 @@ jobs:
   host-tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Ninja installieren
+      - uses: actions/checkout@v7
+      - name: Install Ninja
         run: sudo apt-get update && sudo apt-get install -y ninja-build
-      - name: Host-Tests
+      - name: Host tests
         run: cmake --preset host && cmake --build --preset host && ctest --preset host
-      - name: Werkzeug-Tests
+      - name: Tool tests
         run: python3 -m unittest discover -s tools/tests -v

@@ -1,38 +1,36 @@
-# Cloud-Spielstände einrichten
+# Setting up cloud saves
 
-newlauncher gleicht Spielstände mit **einem** Cloud-Anbieter ab: Vor dem Spielstart holt er einen neueren Stand,
-nach dem Spielen lädt er Änderungen hoch, bei einem Konflikt fragt er. Dafür braucht jeder Nutzer eine eigene
-App-Registrierung beim Anbieter. Client-ID und Secret stehen **nur** in `sd:/newlauncher/config.ini`, nie im Repo
-und nie in einem CI-Build. Ohne Client-ID ist der Anbieter in den Einstellungen ausgegraut.
+newlauncher syncs saves with **one** cloud provider: before a game starts it fetches a newer save, after playing
+it uploads changes, and on a conflict it asks. Every user needs their own app registration with the provider.
+Client ID and secret belong **only** in `sd:/newlauncher/config.ini`, never in the repository or a CI build.
+Without a client ID the provider is greyed out in the settings.
 
-Voraussetzung: ein Build **mit TLS** (`python tools/build_wii.py`). Der Build ohne TLS blendet die Cloud aus.
+Requirement: a build **with TLS** (`python tools/build_wii.py`). The build without TLS hides the cloud features.
 
 ## Google Drive
 
-### 1. Projekt und Zustimmungsbildschirm
+### 1. Project and consent screen
 
-1. <https://console.cloud.google.com/> öffnen und ein neues Projekt anlegen, z. B. „newlauncher“.
-2. **APIs & Dienste → Bibliothek:** „Google Drive API“ suchen und **Aktivieren**.
-3. **APIs & Dienste → OAuth-Zustimmungsbildschirm** (bzw. „Google Auth Platform“):
-   - Nutzertyp **Extern**, App-Name frei wählbar, eigene E-Mail als Support- und Entwicklerkontakt.
-   - **Datenzugriff / Bereiche:** nur `https://www.googleapis.com/auth/drive.file` hinzufügen. Dieser Bereich gibt
-     newlauncher nur Zugriff auf Dateien, die newlauncher selbst angelegt hat (Ordner „newlauncher“), nicht auf den
-     Rest des Drive.
-4. **Veröffentlichungsstatus auf „In Produktion“ stellen** („Publish app“). Im Status „Testen“ verfallen
-   Refresh-Tokens nach **7 Tagen**, dann muss man sich auf der Wii neu anmelden. Für `drive.file` verlangt Google
-   keine Prüfung; der Anmeldebildschirm zeigt dann höchstens den Hinweis „Google hat diese App nicht überprüft“,
-   den man als Besitzer bestätigen kann.
+1. Open <https://console.cloud.google.com/> and create a project, for example "newlauncher".
+2. **APIs & Services → Library:** search for "Google Drive API" and **enable** it.
+3. **APIs & Services → OAuth consent screen** (or "Google Auth Platform"):
+   - User type **External**, any app name, your own e-mail as support and developer contact.
+   - **Data access / scopes:** add only `https://www.googleapis.com/auth/drive.file`. This scope gives
+     newlauncher access only to files it created itself (folder "newlauncher"), not to the rest of your Drive.
+4. **Set the publishing status to "In production"** ("Publish app"). In "Testing", refresh tokens expire after
+   **7 days** and you have to sign in on the Wii again. Google requires no verification for `drive.file`; the
+   sign-in screen at most shows "Google hasn't verified this app", which you can confirm as the owner.
 
-### 2. Client-ID anlegen
+### 2. Create the client ID
 
-1. **APIs & Dienste → Anmeldedaten → Anmeldedaten erstellen → OAuth-Client-ID.**
-2. Anwendungstyp **„Fernseher und Geräte mit begrenzter Eingabe“** („TVs and Limited Input devices“).
-3. Client-ID (`…apps.googleusercontent.com`) und Client-Secret (`GOCSPX-…`) kopieren. Beim Gerätecode-Ablauf gilt
-   das Secret laut Google nicht als geheim, es gehört trotzdem nicht ins Repo und nicht in Screenshots.
+1. **APIs & Services → Credentials → Create credentials → OAuth client ID.**
+2. Application type **"TVs and Limited Input devices"**.
+3. Copy the client ID (`…apps.googleusercontent.com`) and client secret (`GOCSPX-…`). Google does not treat the
+   secret as confidential in the device-code flow, but it still does not belong in a repository or screenshot.
 
 ### 3. config.ini
 
-In `sd:/newlauncher/config.ini` eintragen:
+Add to `sd:/newlauncher/config.ini`:
 
 ```ini
 [cloud]
@@ -41,45 +39,45 @@ drive_client_id = 1234567890-abc.apps.googleusercontent.com
 drive_client_secret = GOCSPX-...
 
 [general]
-; optional: erscheint im Konfliktdialog anderer Geräte als Herkunft des Cloud-Stands (höchstens 32 Zeichen)
-device_name = Wii Wohnzimmer
+; optional: shown in the conflict dialog of other devices as the origin of the cloud save (max. 32 characters)
+device_name = Living room Wii
 ```
 
-`provider = drive` lässt sich auch in den Einstellungen setzen; die Client-ID muss in der Datei stehen.
+`provider = drive` can also be chosen in the settings; the client ID must be in the file.
 
-### 4. Auf der Wii anmelden
+### 4. Sign in on the Wii
 
-1. **Einstellungen → Cloud-Spielstände → Anbieter: Google Drive → Anmelden.**
-2. Am Handy oder PC die angezeigte Adresse (`google.com/device`) öffnen und den Code eingeben.
-3. Konto wählen und Zugriff erlauben. Die Wii zeigt „Angemeldet“.
+1. **Settings → Cloud saves → Provider: Google Drive → Sign in.**
+2. On your phone or PC open the shown address (`google.com/device`) and enter the code.
+3. Choose the account and allow access. The Wii shows "Signed in".
 
-Die Tokens liegen verschlüsselt in `sd:/newlauncher/cloud/tokens.bin`. Das ist nur Verschleierung: Der Schlüssel
-entsteht aus der Geräte-ID der Wii. Wer SD-Karte **und** Wii hat, kommt an den Zugriff auf den Ordner
-„newlauncher“, nicht an den Rest des Drive. **Abmelden** löscht die Tokens auf der SD. Den Zugriff ganz entziehen kann
-man unter <https://myaccount.google.com/permissions>.
+The tokens are stored encrypted in `sd:/newlauncher/cloud/tokens.bin`. This is only obfuscation: the key is
+derived from the Wii's device ID. Whoever has both SD card **and** Wii can reach the "newlauncher" folder, not
+the rest of your Drive. **Sign out** deletes the tokens on the SD card. You can revoke access completely at
+<https://myaccount.google.com/permissions>.
 
-### Was in der Cloud liegt
+### What is stored in the cloud
 
-Im Drive-Ordner `newlauncher` liegt je Spielstand eine Datei `<einheit>.zip`, z. B. `wii-RMCP.zip` oder
-`gb-tetris-world-rev-1-d2ff925e.zip`. Das ZIP enthält die rohen Spielstand-Dateien und `newlauncher-save.ini`
-(Gerät, Zeit, Inhalts-Hash) und lässt sich am PC öffnen. Lokal merkt sich newlauncher den letzten gemeinsamen
-Stand in `sd:/newlauncher/cloud/state.ini`.
+The Drive folder `newlauncher` holds one `<unit>.zip` per save, for example `wii-RMCP.zip` or
+`gb-tetris-world-rev-1-d2ff925e.zip`. The ZIP contains the raw save files and `newlauncher-save.ini` (device,
+time, content hash) and can be opened on a PC. Locally, newlauncher remembers the last common state in
+`sd:/newlauncher/cloud/state.ini`.
 
 ## OneDrive
 
-### 1. App in Microsoft Entra registrieren
+### 1. Register an app in Microsoft Entra
 
-1. <https://entra.microsoft.com/> (oder <https://portal.azure.com/>) mit einem Microsoft-Konto öffnen.
-   **Identität → Anwendungen → App-Registrierungen → Neue Registrierung.**
-2. Name frei wählbar, z. B. „newlauncher“. Unterstützte Kontotypen: **„Nur persönliche Microsoft-Konten“**
-   (newlauncher meldet sich am Endpunkt `consumers` an, Geschäfts- und Schulkonten gehen damit nicht).
-   Umleitungs-URI leer lassen.
-3. **Authentifizierung → Erweiterte Einstellungen → „Öffentliche Clientflows zulassen“** („Allow public client
-   flows“) auf **Ja** stellen und speichern. Ohne diesen Schalter lehnt Microsoft den Gerätecode ab.
-4. **API-Berechtigungen → Berechtigung hinzufügen → Microsoft Graph → Delegierte Berechtigungen:**
-   `Files.ReadWrite.AppFolder` und `offline_access`. Mit `Files.ReadWrite.AppFolder` sieht newlauncher nur seinen
-   eigenen App-Ordner, nicht den Rest des OneDrive. Ein Client-Secret braucht man **nicht**.
-5. **Übersicht:** die **Anwendungs-ID (Client-ID)** kopieren (Form `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
+1. Open <https://entra.microsoft.com/> (or <https://portal.azure.com/>) with a Microsoft account.
+   **Identity → Applications → App registrations → New registration.**
+2. Any name, for example "newlauncher". Supported account types: **"Personal Microsoft accounts only"**
+   (newlauncher signs in at the `consumers` endpoint, so work and school accounts do not work). Leave the
+   redirect URI empty.
+3. **Authentication → Advanced settings → "Allow public client flows"**: set to **Yes** and save. Without this
+   switch Microsoft rejects the device code.
+4. **API permissions → Add a permission → Microsoft Graph → Delegated permissions:**
+   `Files.ReadWrite.AppFolder` and `offline_access`. With `Files.ReadWrite.AppFolder`, newlauncher sees only its
+   own app folder. A client secret is **not** needed.
+5. **Overview:** copy the **Application (client) ID** (form `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`).
 
 ### 2. config.ini
 
@@ -89,37 +87,36 @@ provider = onedrive
 onedrive_client_id = xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 
-Beide Anbieter dürfen eingetragen sein; aktiv ist immer nur der unter `provider`.
+Both providers may be configured; only the one under `provider` is active.
 
-### 3. Auf der Wii anmelden
+### 3. Sign in on the Wii
 
-1. **Einstellungen → Cloud-Spielstände → Anbieter: OneDrive → Anmelden.**
-2. Am Handy oder PC `microsoft.com/link` öffnen, den Code eingeben, mit dem Microsoft-Konto anmelden und zustimmen.
+1. **Settings → Cloud saves → Provider: OneDrive → Sign in.**
+2. On your phone or PC open `microsoft.com/link`, enter the code, sign in with the Microsoft account and agree.
 
-### Was in der Cloud liegt
+### What is stored in the cloud
 
-Im OneDrive unter **Apps → <App-Name>** liegt je Spielstand eine Datei `<einheit>.zip` wie bei Google Drive. Gerät,
-Zeit und Inhalts-Hash stehen zusätzlich in der Beschreibung der Datei (`nl1 hash=… saved=… device=…`); diese Zeile
-bitte nicht von Hand ändern.
+OneDrive holds one `<unit>.zip` per save under **Apps → <app name>**, as with Google Drive. Device, time and
+content hash are also in the file description (`nl1 hash=… saved=… device=…`); do not edit that line by hand.
 
-**Abmelden** löscht die Tokens auf der SD. Microsoft bietet keinen Widerruf einzelner Refresh-Tokens an; den Zugriff
-ganz entziehen kann man unter <https://account.live.com/consent/Manage>.
+**Sign out** deletes the tokens on the SD card. Microsoft offers no revocation of single refresh tokens; you can
+revoke access completely at <https://account.live.com/consent/Manage>.
 
 ## Dropbox
 
-### 1. App in der Dropbox App Console anlegen
+### 1. Create an app in the Dropbox App Console
 
-1. <https://www.dropbox.com/developers/apps> mit dem Dropbox-Konto öffnen → **Create app**.
-2. **Scoped access**, Zugriff **App folder** (newlauncher sieht dann nur seinen eigenen Ordner, nicht den Rest der
-   Dropbox). Name frei wählbar, z. B. „newlauncher-<deinname>“ (der Name muss bei Dropbox eindeutig sein).
-3. Reiter **Permissions:** `files.content.read`, `files.content.write` und `account_info.read` anhaken und unten
-   **Submit** drücken. Rechte, die erst nach einer Anmeldung dazukommen, gelten erst nach einer neuen Anmeldung.
-4. Reiter **Settings → OAuth 2 → Allow public clients (Implicit Grant & PKCE)** auf **Allow** lassen bzw. stellen.
-   newlauncher meldet sich mit PKCE an und braucht **kein** App-Secret. Redirect-URIs bleiben leer.
-5. Den **App key** kopieren (nicht das App secret).
+1. Open <https://www.dropbox.com/developers/apps> with your Dropbox account → **Create app**.
+2. **Scoped access**, access type **App folder** (newlauncher then sees only its own folder). Any name, for
+   example "newlauncher-<yourname>" (it must be unique at Dropbox).
+3. Tab **Permissions:** tick `files.content.read`, `files.content.write` and `account_info.read`, then press
+   **Submit**. Permissions added after a sign-in only apply after signing in again.
+4. Tab **Settings → OAuth 2 → Allow public clients (Implicit Grant & PKCE):** keep or set **Allow**.
+   newlauncher uses PKCE and needs **no** app secret. Leave the redirect URIs empty.
+5. Copy the **App key** (not the app secret).
 
-Eine neue App steht bei Dropbox im Status „Development“ und darf so bis zu 500 Konten verbinden; das reicht für den
-eigenen Gebrauch, eine Freigabe („Apply for production“) ist nicht nötig.
+A new app is in "Development" status at Dropbox and may connect up to 500 accounts, which is enough for personal
+use; applying for production is not necessary.
 
 ### 2. config.ini
 
@@ -129,67 +126,65 @@ provider = dropbox
 dropbox_app_key = abcdefghijklmno
 ```
 
-### 3. Auf der Wii koppeln
+### 3. Pair on the Wii
 
-1. **Einstellungen → Cloud-Spielstände → Anbieter: Dropbox → Anmelden.** Die Kopplungsszene zeigt einen QR-Code
-   und darunter die Adresse `http://<wii-ip>:4301/<token>`.
-2. Den QR-Code mit dem Handy scannen (Handy im **selben WLAN** wie die Wii). Die Kopplungsseite öffnet sich; dort
-   auf **Bei Dropbox zulassen** tippen, anmelden und zustimmen. Dropbox zeigt danach einen Code.
-3. Den Code kopieren, auf der Kopplungsseite einfügen und **Code senden**. Die Wii meldet „Angemeldet“.
+1. **Settings → Cloud saves → Provider: Dropbox → Sign in.** The pairing screen shows a QR code and below it the
+   address `http://<wii-ip>:4301/<token>`.
+2. Scan the QR code with your phone (on the **same Wi-Fi** as the Wii). The pairing page opens; tap the button to
+   allow access at Dropbox, sign in and agree. Dropbox then shows a code.
+3. Copy the code, paste it into the pairing page and submit it. The Wii shows "Signed in".
 
-Die Kopplungsseite lebt nur, solange die Szene offen ist (höchstens 5 Minuten), und nimmt genau **eine** Einsendung
-an; danach meldet sie „Diese Seite ist nicht mehr aktiv“. Lehnt Dropbox einen Code ab, zeigt die Szene „Code abgelehnt“ und die
-Seite nimmt einen neuen an.
+The pairing page lives only while the screen is open (at most 5 minutes) and accepts exactly **one** submission;
+afterwards it reports that the page is no longer active. If Dropbox rejects a code, the screen says so and the
+page accepts a new one.
 
-**Ohne Handy im WLAN:** **Y** (bzw. **1**) schaltet auf den direkten QR-Code der Dropbox-Freigabe (geht mit jedem Gerät mit
-Internet, auch über Mobilfunk). Den Code, den Dropbox danach zeigt, gibt man mit **A** über die Bildschirmtastatur
-ein (Ebenen abc / ABC / 123 / # über die Ebenen-Taste, bis 128 Zeichen).
+**Without a phone on the Wi-Fi:** **Y** (or **1**) switches to a direct QR code of the Dropbox approval page
+(works with any device with Internet access, also over mobile data). Enter the code Dropbox shows with **A** on
+the on-screen keyboard (layers abc / ABC / 123 / # via the layer key, up to 128 characters).
 
-Der Code allein ist wertlos: Er passt nur zu dem geheimen PKCE-Schlüssel, der die Wii nie verlässt. Die Seite läuft
-deshalb über einfaches `http://` im Heimnetz; Tokens gehen nie über die Kopplungsseite.
+The code alone is worthless: it only matches the secret PKCE key that never leaves the Wii. That is why the page
+uses plain `http://` on the home network; tokens never pass through the pairing page.
 
-### Was in der Cloud liegt
+### What is stored in the cloud
 
-In der Dropbox unter **Apps → <App-Name>** liegt je Spielstand eine Datei `<einheit>.zip`. Dropbox kennt kein
-Beschreibungsfeld; Gerät, Zeit und Inhalts-Hash stehen nur in `newlauncher-save.ini` im ZIP. Als Revision dient die
-Dropbox-`rev`; ein Upload überschreibt nur, wenn die Datei seit dem letzten Abgleich unverändert ist (sonst
-entscheidet newlauncher neu bzw. fragt).
+Dropbox holds one `<unit>.zip` per save under **Apps → <app name>**. Dropbox has no description field; device,
+time and content hash are only in `newlauncher-save.ini` inside the ZIP. The Dropbox `rev` is the revision; an
+upload overwrites only if the file is unchanged since the last sync (otherwise newlauncher decides again or
+asks).
 
-**Abmelden** widerruft das Token bei Dropbox (Log `NL_CLOUD_UNLINKED revoke=ok`) und löscht es auf der SD.
+**Sign out** revokes the token at Dropbox (log `NL_CLOUD_UNLINKED revoke=ok`) and deletes it from the SD card.
 
-## Anbieter wechseln und „Alle abgleichen“
+## Switching providers and "Sync all"
 
-- **Anbieter wechseln:** Anbieter umstellen (◀▶ in der Zeile „Anbieter“), dann **Anmelden**. Der alte Anbieter wird
-  dabei abgemeldet (Google und Dropbox: Token widerrufen). Direkt nach der Anmeldung gleicht newlauncher **alle** Spielstände der
-  Bibliothek mit dem neuen Anbieter ab: Was nur auf der Wii liegt, wird hochgeladen; was nur in der Cloud liegt, wird
-  geholt (mit Sicherung vorher). Gibt es Spielstände auf beiden Seiten mit verschiedenem Inhalt, fragt ein Dialog
-  einmal für alle: **Wii-Stände nehmen**, **Cloud-Stände nehmen** oder **Beim Spielstart fragen** (Standard; dann
-  fragt das Start-Tor je Spiel).
-- **Alle abgleichen** (Zeile im Cloud-Menü) macht denselben Abgleich jederzeit von Hand. Während er läuft, heißt die
-  Zeile „Abgleich abbrechen“; der Status zeigt „Abgleich 3/12 …“ und am Ende, wie viele Stände geholt und
-  hochgeladen wurden.
+- **Switching:** change the provider (◀▶ in the "Provider" row), then **Sign in**. The old provider is signed
+  out (Google and Dropbox: token revoked). Right after signing in, newlauncher syncs **all** saves of the library
+  with the new provider: saves only on the Wii are uploaded, saves only in the cloud are fetched (with a backup
+  first). If saves exist on both sides with different content, one dialog asks for all of them: **Keep Wii
+  saves**, **Take cloud saves** or **Ask at game start** (default; then each game asks before starting).
+- **Sync all** (row in the cloud menu) runs the same sync by hand at any time. While it runs, the row becomes
+  "Cancel sync"; the status shows the progress and at the end how many saves were pulled and uploaded.
 
-## Fehlersuche
+## Troubleshooting
 
-| Anzeige / Log | Ursache |
+| Message / log | Cause |
 |---|---|
-| Anbieter ausgegraut bzw. beim Umschalten übersprungen, „Keine Client-ID in config.ini“ | `drive_client_id`, `onedrive_client_id` bzw. `dropbox_app_key` fehlt oder ist leer |
-| „Dieser Build hat kein HTTPS“, Log `NL_CLOUD off notls` | Build ohne TLS |
-| „Anmeldung abgelaufen – bitte neu anmelden“, Log `NL_CLOUD <einheit> skip auth` | Refresh-Token ungültig (App noch im Status „Testen“, Zugriff entzogen) |
-| Log `NL_CLOUD <einheit> skip offline` | kein Netz; das Spiel startet ohne Abgleich, der Upload folgt später |
-| Log `NL_CLOUD_LINK failed` | Google: Client-ID/Secret falsch oder Typ nicht „Fernseher und Geräte mit begrenzter Eingabe“; Microsoft: „Öffentliche Clientflows zulassen“ aus oder Kontotyp nicht „persönliche Microsoft-Konten“; Dropbox: App key falsch, „Allow public clients“ aus oder Kopplung abgelaufen (5 Minuten) |
-| „Abgemeldet, Widerruf nicht bestätigt“, Log `NL_CLOUD_UNLINKED revoke=fail` | Tokens auf der SD sind gelöscht, der Anbieter hat den Widerruf aber nicht bestätigt (offline); Zugriff bei Bedarf in den Kontoeinstellungen entziehen |
-| Szene „Code abgelehnt“, Log `NL_CLOUD_LINK badcode` | Dropbox-Code falsch abgetippt, schon benutzt oder abgelaufen; neuen Code über den Link holen |
-| Handy erreicht die Kopplungsseite nicht, Log nur `NL_PAIR listen 4301` | Handy nicht im selben WLAN, Gast-WLAN mit Client-Isolation oder Mobilfunk; **Y** (direkter QR) und **A** (Tastatur) nehmen |
-| Kopplungsseite „nicht mehr aktiv“, Log `NL_PAIR reject` | zweite Einsendung oder Szene schon geschlossen; Anmelden neu starten |
-| Log `NL_CLOUD_SYNCALL offline` | „Alle abgleichen“ ohne Netz; nichts wurde verändert |
+| Provider greyed out or skipped, message about a missing client ID in `config.ini` | `drive_client_id`, `onedrive_client_id` or `dropbox_app_key` missing or empty |
+| "This build has no HTTPS", log `NL_CLOUD off notls` | build without TLS |
+| "Sign-in expired – please sign in again", log `NL_CLOUD <unit> skip auth` | refresh token invalid (app still in "Testing", access revoked) |
+| Log `NL_CLOUD <unit> skip offline` | no network; the game starts without sync, the upload follows later |
+| Log `NL_CLOUD_LINK failed` | Google: wrong client ID/secret or wrong application type; Microsoft: "Allow public client flows" off or wrong account type; Dropbox: wrong app key, "Allow public clients" off or pairing expired (5 minutes) |
+| "Signed out, revocation not confirmed", log `NL_CLOUD_UNLINKED revoke=fail` | tokens on the SD card are deleted, but the provider did not confirm (offline); revoke access in the account settings if needed |
+| "Code rejected", log `NL_CLOUD_LINK badcode` | Dropbox code mistyped, already used or expired; get a new one through the link |
+| Phone cannot reach the pairing page, log only `NL_PAIR listen 4301` | phone not on the same Wi-Fi, guest network with client isolation, or mobile data; use **Y** (direct QR) and **A** (keyboard) |
+| Pairing page "no longer active", log `NL_PAIR reject` | second submission or screen already closed; start the sign-in again |
+| Log `NL_CLOUD_SYNCALL offline` | "Sync all" without network; nothing was changed |
 
-## Tests ohne echtes Konto
+## Testing without a real account
 
 `python tools/dolphin_smoke.py --cloud-fake drive|onedrive|dropbox --cloud-step
-link|push|pull|conflict|refresh|offline|syncall|switch|unlink` startet einen Drive-, Graph- bzw. Dropbox-Fake
-(`tools/cloud_fake.py`) über HTTPS mit der Test-CA und prüft den Ablauf in Dolphin. Die Fake-IDs und das Fake-Secret
-stehen nur im Werkzeug. Bei Dropbox spielt `tools/cloud_smoke.py` das Handy: Es öffnet die Kopplungsseite über
-`127.0.0.1:4301` (Dolphin reicht die Wii-Sockets an den PC durch), folgt dem Link zur Fake-Freigabe und sendet den
-Code. Nur mit Dropbox: `--cloud-step badcode` (erst ein falscher Code, dann der richtige) und `pairtwice` (zweite
-Einsendung → 410).
+link|push|pull|conflict|refresh|offline|syncall|switch|unlink` starts a Drive, Graph or Dropbox fake
+(`tools/cloud_fake.py`) over HTTPS with the test CA and checks the flow in Dolphin. The fake IDs and secret exist
+only in the tool. For Dropbox, `tools/cloud_smoke.py` plays the phone: it opens the pairing page through
+`127.0.0.1:4301` (Dolphin passes Wii sockets through to the PC), follows the link to the fake approval and
+submits the code. Dropbox only: `--cloud-step badcode` (a wrong code first, then the right one) and `pairtwice`
+(second submission → 410).

@@ -1,184 +1,183 @@
-# Hardware-Abnahme M7
+# Hardware acceptance (M7)
 
-Abnahme von newlauncher auf einer echten Wii, gegen die **Release-DOL** `build/wii/newlauncher.dol`.
-Dolphin deckt Grafik, Eingabe und die Startwege gut ab. Zeitverhalten, USB-Anlauf, cIOS, echte
-Emulatoren und Kanäle zeigt nur die Hardware (Spec §10).
+Acceptance of newlauncher on a real Wii against the **release DOL** `build/wii/newlauncher.dol`. Dolphin covers
+graphics, input and the start paths well. Timing, USB spin-up, cIOS, real emulators and channels only show on
+hardware (spec §10).
 
-Jeder Punkt hat einen Schritt und ein erwartetes Ergebnis. In „Ergebnis“ kommt PASS oder FAIL, bei
-FAIL mit einer kurzen Notiz und einer Zeile unter [Befunde](#befunde).
+Each item has a step and an expected result. Enter PASS or FAIL under "Result"; for FAIL add a short note and a
+row under [Findings](#findings).
 
-## Vorbereitung
+## Preparation
 
-1. Bauen: `python tools/build_wii.py`
-2. Release-Karte (die normale SD-Karte mit Homebrew Channel):
+1. Build: `python tools/build_wii.py`
+2. Release card (your normal SD card with the Homebrew Channel):
    ```bash
    python tools/wii_deploy.py E: --perf on
    ```
-   Kopiert `apps/newlauncher/boot.dol` und `meta.xml`. Vorhandene Daten unter `newlauncher/`
-   (`config.ini`, `emulators.ini`, Favoriten, Verlauf, `cache/`) bleiben unverändert. Einzige Ausnahme
-   ist `--perf on`: Es setzt in `config.ini` die Zeile `perf = 1` unter `[debug]`.
-3. Selbsttest-Karte (eine **zweite, leere** SD-Karte, nur für X1 und P3):
+   Copies `apps/newlauncher/boot.dol` and `meta.xml`. Existing data under `newlauncher/` (`config.ini`,
+   `emulators.ini`, favorites, history, `cache/`) stays unchanged. The only exception is `--perf on`: it sets
+   `perf = 1` under `[debug]` in `config.ini`.
+3. Self-test card (a **second, empty** SD card, only for X1 and P3):
    ```bash
    python tools/wii_deploy.py F: --selftest
    ```
-4. Alternativ ohne Kartenwechsel per WLAN (HBC offen, IP aus der HBC-Ecke unten rechts):
+4. Alternatively without swapping cards, over Wi-Fi (HBC open, IP shown in its bottom right corner):
    ```bash
-   python tools/wii_deploy.py --wiiload 192.168.0.42
+   python tools/wii_deploy.py --wiiload <wii-ip>
    ```
-   Für P1/P2 trotzdem einmal `--perf on` auf der Karte setzen: wiiload überträgt nur die DOL.
-5. Nach der Abnahme: `python tools/wii_deploy.py E: --perf off`
+   For P1/P2, still set `--perf on` on the card once: wiiload transfers only the DOL.
+5. Afterwards: `python tools/wii_deploy.py E: --perf off`
 
-## V – Voraussetzungen
+## V – Prerequisites
 
-Nur notieren. Diese Daten braucht M8 (USB-Loader-Start, cIOS) und M9 (Nintendont).
+Only note them down.
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| V1 | Wii-Modell (RVL-001/-101) und Systemmenü-Version (Wii-Optionen, oben rechts) | notiert | |
-| V2 | HBC-Version (HBC, HOME-Taste) | notiert | |
-| V3 | cIOS 249: d2x-Version und Basis-IOS laut d2x-Installer bzw. Anzeige beim Start eines USB-Loaders | notiert | |
-| V4 | Nintendont-Version (Titelbildschirm) | notiert | |
-| V5 | USB-Platte: Modell, Dateisystem, Clustergröße, Sektorgröße. Windows: `fsutil fsinfo ntfsinfo E:` bzw. `fsutil fsinfo sectorinfo E:`; bei FAT32 laut Laufwerkseigenschaften | notiert | |
-| V6 | SD-Karte: Größe, FAT32 | notiert | |
-| V7 | Videoeinstellung im Wii-Menü: 50/60 Hz, 480p, 4:3/16:9 | notiert | |
+| V1 | Wii model (RVL-001/-101) and System Menu version (Wii options, top right) | noted | |
+| V2 | HBC version (in the HBC, HOME button) | noted | |
+| V3 | cIOS 249: d2x version and base IOS according to the d2x installer or a USB loader's start screen | noted | |
+| V4 | Nintendont version (title screen) | noted | |
+| V5 | USB drive: model, file system, cluster size, sector size. Windows: `fsutil fsinfo ntfsinfo E:` or `fsutil fsinfo sectorinfo E:`; for FAT32 see the drive properties | noted | |
+| V6 | SD card: size, FAT32 | noted | |
+| V7 | Video setting in the Wii menu: 50/60 Hz, 480p, 4:3/16:9 | noted | |
 
-## S – Start und Laufwerke
+## S – Start and drives
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| S1 | newlauncher im HBC starten | Splash erscheint sofort, kein schwarzes Bild über ~0,5 s | |
-| S2 | Platte angeschlossen und wach, `library = usb` | Bibliothek erscheint ohne Dialog | |
-| S3 | Platte frisch einstecken bzw. kalt starten | „Warte auf USB …“ mit Countdown, danach Bibliothek | |
-| S4 | Platte abziehen, starten | Dialog nach `usb_timeout` Sekunden; „SD verwenden“ öffnet die SD-Bibliothek | |
-| S5 | HOME → Einstellungen → Bibliotheksgerät: SD, Neustart | Bibliothek von der SD, Hinweis auf Neustart erschien vorher | |
-| S6 | `newlauncher/cache/index.bin` auf dem Bibliotheksgerät löschen, starten | Scan-Fortschritt, danach bedienbar | |
-| S7 | Mit `--perf on`: Platte schlafen lassen bzw. kalt anstecken, `usb_timeout` kleiner als die Anlaufzeit, im Dialog einmal „Erneut versuchen“, Wartezeit mit der Uhr stoppen; danach sauber beenden und `check_perf.py` | `usb_wait_ms` in `NL_PERF summary` ≥ gestoppte Zeit (inkl. Dialog); „Start“ PASS | |
+| S1 | Start newlauncher in the HBC | splash appears at once, no black screen longer than ~0.5 s | |
+| S2 | Drive connected and awake, `library = usb` | library appears without a dialog | |
+| S3 | Plug in the drive fresh, or cold start | "waiting for USB" with countdown, then the library | |
+| S4 | Unplug the drive, start | dialog after `usb_timeout` seconds; "use SD" opens the SD library | |
+| S5 | HOME → Settings → Library device: SD card, restart | library from SD, restart notice appeared before | |
+| S6 | Delete `newlauncher/cache/index.bin` on the library device, start | scan progress, then usable | |
+| S7 | With `--perf on`: let the drive sleep or plug it in cold, `usb_timeout` shorter than spin-up, press "retry" once in the dialog, time the wait; then exit cleanly and run `check_perf.py` | `usb_wait_ms` in `NL_PERF summary` ≥ measured time (including dialog); start budget PASS | |
 
-## D – Darstellung
+## D – Display
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| D1 | Wii-Menü auf 4:3 / 480i | Layout vollständig, nichts abgeschnitten, Kreise rund | |
-| D2 | 16:9 / 480p (Komponentenkabel) | Layout breit, Kreise rund, kein Flimmern | |
-| D3 | PAL50 (falls einstellbar, EURGB60 aus) | Bild stabil, Animationen gleich schnell | |
-| D4 | Theme hell, dunkel, automatisch | Wechsel mit Überblendung, automatisch nach Uhrzeit | |
-| D5 | Titel mit Umlauten ansehen | Schrift scharf, Umlaute korrekt | |
+| D1 | Wii menu set to 4:3 / 480i | layout complete, nothing cut off, circles round | |
+| D2 | 16:9 / 480p (component cable) | wide layout, circles round, no flicker | |
+| D3 | PAL50 (if selectable, EURGB60 off) | stable picture, animations at the same speed | |
+| D4 | Theme light, dark, automatic | switches with a fade, automatic follows the time | |
+| D5 | Look at titles with umlauts | sharp text, umlauts correct | |
 
-## E – Eingabe
+## E – Input
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| E1 | Wiimote auf den Bildschirm richten | Zeiger folgt ohne Zittern, Kacheln reagieren | |
-| E2 | Steuerkreuz der Wiimote | Fokus wandert, Wiederholung beim Halten | |
-| E3 | Classic Controller | Navigation und A/B wie Wiimote | |
-| E4 | GameCube-Controller | Navigation und A/B wie Wiimote | |
-| E5 | vier Wiimotes verbinden, HOME-Menü | Akkustand P1–P4 angezeigt | |
-| E6 | Debug-Overlay ein/aus: Wiimote 1 + 2, GameCube Z + Start | Overlay mit Frame-Statistik erscheint und verschwindet | |
+| E1 | Point the Wii Remote at the screen | pointer follows without jitter, tiles react | |
+| E2 | Wii Remote D-pad | focus moves, repeats while held | |
+| E3 | Classic Controller | navigation and A/B like the Wii Remote | |
+| E4 | GameCube controller | navigation and A/B like the Wii Remote | |
+| E5 | Connect four Wii Remotes, open the HOME menu | battery level P1–P4 shown | |
+| E6 | Toggle the debug overlay: Wii Remote 1 + 2, GameCube Z + Start | overlay with frame statistics appears and disappears | |
 
-## B – Bibliothek
+## B – Library
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| B1 | Spiel favorisieren, ein Spiel starten, zurück | Favorit und „Zuletzt gespielt“ bleiben nach Neustart | |
-| B2 | A–Z-Sprungleiste | Sprung auf den Buchstaben | |
-| B3 | Suche mit Bildschirmtastatur | Treffer während der Eingabe | |
-| B4 | Detailansicht öffnen | Cover, Metadaten, Startmethode | |
-| B5 | HOME → Einstellungen → „Bibliothek neu scannen“ | Toast, neue Spiele erscheinen, UI bleibt bedienbar | |
+| B1 | Favorite a game, start a game, come back | favorite and "recently played" survive a restart | |
+| B2 | A–Z jump bar | jumps to the letter | |
+| B3 | Search with the on-screen keyboard | results while typing | |
+| B4 | Open the detail view | cover, metadata, start method | |
+| B5 | HOME → Settings → "Rescan library" | toast, new games appear, UI stays usable | |
 
-## L – Emulatoren
+## L – Emulators
 
-Risiko Spec §10: das `argv`-Schema der Emulatoren. Je ein ROM aus der eigenen Sammlung muss **direkt im
-Emulator** starten, ohne dessen Dateiauswahl.
+Risk from spec §10: the emulators' `argv` scheme. One ROM of your own each must start **directly in the
+emulator**, without its file browser.
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| L1 | NES-ROM starten (FCE Ultra GX) | Spiel läuft | |
-| L2 | SNES-ROM starten (Snes9x GX) | Spiel läuft | |
-| L3 | GB-ROM starten | Spiel läuft | |
-| L4 | GBC-ROM starten | Spiel läuft | |
-| L5 | GBA-ROM starten (Visual Boy Advance GX) | Spiel läuft | |
-| L6 | N64-ROM mit Not64 starten | Spiel läuft | |
-| L7 | N64-ROM mit Wii64 starten | Spiel läuft | |
-| L8 | Emulator-DOL umbenennen, ROM starten | Preflight-Dialog nennt den fehlenden Emulator, Launcher bleibt bedienbar | |
-| E1 | Emulatoren auf echter Wii installieren/aktualisieren (WLAN): Einstellungen → Emulatoren → „Nach Updates suchen“, einen fehlenden Emulator installieren, danach „Alle aktualisieren“; einmal mitten im Download B drücken | Liste lädt (`NL_EMU_LIST ok`), Installation meldet `NL_EMU_INSTALL … ok`, Zeile zeigt „aktuell“; Abbruch zeigt „Abgebrochen“, alte Version startet weiter, `sd:/newlauncher/tmp/` ist leer | |
+| L1 | Start an NES ROM (FCE Ultra GX) | game runs | |
+| L2 | Start an SNES ROM (Snes9x GX) | game runs | |
+| L3 | Start a GB ROM | game runs | |
+| L4 | Start a GBC ROM | game runs | |
+| L5 | Start a GBA ROM (Visual Boy Advance GX) | game runs | |
+| L6 | Start an N64 ROM with Not64 | game runs | |
+| L7 | Start an N64 ROM with Wii64 | game runs | |
+| L8 | Rename the emulator DOL, start the ROM | preflight dialog names the missing emulator, launcher stays usable | |
+| E1 | Install/update emulators on the real Wii (Wi-Fi): Settings → Emulators → "Check for updates", install a missing one, then "Update all"; press B once during a download | list loads (`NL_EMU_LIST ok`), install logs `NL_EMU_INSTALL … ok`, row shows up to date; cancel is reported, old version still starts, `sd:/newlauncher/tmp/` is empty | |
 
 ## N – N64 Virtual Console
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| N1 | HOME → Einstellungen → „VC-Injects zuordnen“ | Kanalliste mit Bannernamen (Risiko Spec §10) | |
-| N2 | Zuordnung speichern, Neustart | Zuordnung bleibt (`n64_vc.ini`) | |
-| N3 | Inject starten | Kanal startet das Spiel | |
+| N1 | HOME → Settings → "Map VC injects" | channel list with banner names (risk, spec §10) | |
+| N2 | Save a mapping, restart | mapping stays (`n64_vc.ini`) | |
+| N3 | Start the inject | channel starts the game | |
 
 ## G – GameCube
 
-Voraussetzung: Nintendont ab 6.493 unter `sd:/apps/nintendont/boot.dol`, Launcher aus dem HBC-Eintrag gestartet.
+Requirement: Nintendont 6.493 or newer at `sd:/apps/nintendont/boot.dol`, launcher started from its HBC entry.
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| G1 | GC-Spiel von SD starten (`sd:/games/<Titel> [ID6]/game.iso`) | Nintendont startet das Spiel ohne eigenes Menü; Log zeigt `NL_NIN ver=… usb=0` | |
-| G2 | GC-Spiel von USB starten (Bibliotheksgerät USB) | Spiel startet; `NL_NIN … usb=1` | |
-| G3 | Im Spiel auf der Memory Card speichern, Wii neu starten, Spiel erneut starten und laden | Spielstand ist da (emulierte Karte unter `saves/`) | |
-| G4 | Zwei-Disc-Spiel mit `disc2.iso` bis zum Disc-Wechsel spielen | Nintendont wechselt auf Disc 2 – oder „kein Zwei-Disc-Spiel vorhanden“ | |
-| G5 | `sd:/apps/nintendont/boot.dol` umbenennen, GC-Spiel starten | Dialog „Nintendont fehlt“ mit dem Pfad, Launcher bleibt bedienbar | |
-| G6 | Launcher per `wiiload` starten, GC-Spiel starten | Log `NL_AHBPROT on`, Dialog „Kein Hardwarezugriff“ | |
-| G7 | GC-Controller und Wiimote+Classic Controller im Spiel benutzen | beide steuern das Spiel | |
+| G1 | Start a GameCube game from SD (`sd:/games/<Title> [ID6]/game.iso`) | Nintendont starts the game without its own menu; log shows `NL_NIN ver=… usb=0` | |
+| G2 | Start a GameCube game from USB (library device USB) | game starts; `NL_NIN … usb=1` | |
+| G3 | Save to the memory card in game, restart the Wii, start again and load | save is there (emulated card under `saves/`) | |
+| G4 | Play a two-disc game with `disc2.iso` up to the disc change | Nintendont switches to disc 2, or note "no two-disc game available" | |
+| G5 | Rename `sd:/apps/nintendont/boot.dol`, start a GameCube game | dialog reports Nintendont missing with the path, launcher stays usable | |
+| G6 | Start the launcher via `wiiload`, start a GameCube game | log `NL_AHBPROT on`, dialog about missing hardware access | |
+| G7 | Use a GameCube controller and Wii Remote + Classic Controller in game | both control the game | |
 
-## C – Cover
+## C – Covers
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| C1 | HOME → Einstellungen → „Fehlende Cover laden“ (WLAN) | Fortschritt, danach Ergebnisdialog; UI bleibt bedienbar | |
-| C2 | PNG in `covers_src/` legen, Spiel anzeigen | Cover erscheint nach der Umwandlung, `.tex` liegt danach im Cache | |
-| C3 | Schnell durch die ganze Bibliothek scrollen | kein Ruckeln, Cover blenden ein | |
+| C1 | HOME → Settings → "Download missing covers" (Wi-Fi) | progress, then result dialog; UI stays usable | |
+| C2 | Put a PNG into `covers_src/`, show the game | cover appears after conversion, `.tex` is then in the cache | |
+| C3 | Scroll quickly through the whole library | no stutter, covers fade in | |
 
-## A – Audio und Einstellungen
+## A – Audio and settings
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| A1 | `.ogg` in `sd:/newlauncher/music/`, Musik an | Musik läuft nach dem Start | |
-| A2 | Lautstärke ändern | sofort hörbar | |
-| A3 | UI-Sounds aus und wieder an | Klicks verstummen bzw. kommen zurück | |
-| A4 | Sprache DE/EN | Texte wechseln sofort | |
-| A5 | Einstellungen ändern, Neustart | Werte bleiben | |
-| A6 | Spiel starten, während Musik läuft | Musik endet vor dem Spielstart, kein Knacken im Spiel | |
+| A1 | `.ogg` in `sd:/newlauncher/music/`, music on | music plays after start | |
+| A2 | Change the volume | audible at once | |
+| A3 | UI sounds off and on again | clicks stop and return | |
+| A4 | Language German/English | texts change at once | |
+| A5 | Change settings, restart | values stay | |
+| A6 | Start a game while music plays | music ends before the game starts, no click in game | |
 
-## H – HOME-Menü
+## H – HOME menu
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| H1 | HOME → zurück zum HBC | HBC erscheint | |
-| H2 | HOME → Wii-Menü | Wii-Menü erscheint | |
-| H3 | HOME → Ausschalten | Wii geht aus (Standby bzw. aus, je nach WC24-Einstellung) | |
+| H1 | HOME → back to the HBC | HBC appears | |
+| H2 | HOME → Wii menu | Wii menu appears | |
+| H3 | HOME → power off | Wii turns off (standby or off, depending on the WiiConnect24 setting) | |
 
-## X – Absturz
+## X – Crash
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| X1 | Selbsttest-Karte: „newlauncher Selbsttest“ im HBC starten, ohne Eingaben warten | Skript läuft sichtbar ab, danach Absturzbildschirm mit Ausnahme 7 (Foto); RESET führt zum HBC | |
+| X1 | Self-test card: start the self-test in the HBC and wait without input | script runs visibly, then crash screen with exception 7 (photo); RESET returns to the HBC | |
 
 ## P – Performance
 
-Budgets aus Spec §7. Die Messung läuft nur mit `[debug] perf = 1`.
+Budgets from spec §7. Measurement runs only with `[debug] perf = 1`.
 
-| ID | Schritt | Erwartet | Ergebnis |
+| ID | Step | Expected | Result |
 |---|---|---|---|
-| P1 | Release-Karte mit `--perf on`, Cache vorhanden (zweiter Start), Platte wach: starten, 2 min scrollen, „Fehlende Cover laden“, „Bibliothek neu scannen“, ein Spiel starten | Spiel startet | |
-| P2 | `python tools/check_perf.py E:\newlauncher\log.txt F:\newlauncher\log.txt` | Exit 0, Tabelle unten eingefügt | |
-| P3 | Selbsttest-Karte nach X1: `F:\newlauncher\log.txt` | enthält `NL_ALLOC_IDLE 0` und `NL_SELFTEST_OK` | |
+| P1 | Release card with `--perf on`, cache present (second start), drive awake: start, scroll for 2 minutes, "Download missing covers", "Rescan library", start a game | game starts | |
+| P2 | `python tools/check_perf.py E:\newlauncher\log.txt F:\newlauncher\log.txt` | exit 0, table pasted below | |
+| P3 | Self-test card after X1: `F:\newlauncher\log.txt` | contains `NL_ALLOC_IDLE 0` and `NL_SELFTEST_OK` | |
 
-`log.txt` ist ein Ringpuffer mit den letzten 16 KB. In langen Sitzungen fehlen `NL_PERF boot` und
-frühe Fenster. `check_perf.py` urteilt dann aus der letzten `NL_PERF summary` (sie enthält auch
-`busy_slow`, die langsamen Frames während Hintergrundarbeit), markiert fehlende Zeilen als N/A und
-weist auf fehlende Fensterzeilen hin. Die eigenen Log-Schreibvorgänge der Messung (`NL_READY`,
-`NL_COVERS`, `NL_COVER_DL_DONE`) zählen nicht als langsame Frames.
+`log.txt` is a ring buffer with the last 16 KB. Long sessions lose `NL_PERF boot` and early windows.
+`check_perf.py` then judges from the last `NL_PERF summary` (which also contains `busy_slow`, the slow frames
+during background work), marks missing lines as N/A and points out missing window lines. The measurement's own
+log writes (`NL_READY`, `NL_COVERS`, `NL_COVER_DL_DONE`) do not count as slow frames.
 
-Ergebnis von `check_perf.py`:
+Result of `check_perf.py`:
 
-<!-- Tabelle hier einfügen -->
+<!-- paste table here -->
 
-## Befunde
+## Findings
 
-| ID | Beobachtung | Ursache | Fix-Commit | erneut geprüft |
+| ID | Observation | Cause | Fix commit | Rechecked |
 |---|---|---|---|---|
 | | | | | |

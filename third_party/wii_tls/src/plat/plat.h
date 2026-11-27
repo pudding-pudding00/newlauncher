@@ -44,6 +44,10 @@ int      wtls_plat_connect(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms,
 int      wtls_plat_connect_abortable(uint32_t ipv4_be, uint16_t port, uint32_t timeout_ms,
                                      wtls_plat_abort_fn abort_cb, void *abort_ctx,
                                      int *fd_out);                     /* OK | ERR_CONNECT | ERR_TIMEOUT | ERR_CANCELLED */
+/* Non-blocking connect primitives used by wtls_connect_start()/wtls_connect_step(). */
+int      wtls_plat_connect_begin(uint32_t ipv4_be, uint16_t port,
+                                 int *fd_out);                         /* OK | WANT_WRITE | ERR_CONNECT */
+int      wtls_plat_connect_check(int fd, uint32_t ipv4_be, uint16_t port); /* OK | WANT_WRITE | ERR_CONNECT */
 int      wtls_plat_send(int fd, const uint8_t *buf, size_t len);       /* >0 | WANT_WRITE | ERR_IO */
 int      wtls_plat_recv(int fd, uint8_t *buf, size_t len);             /* >0 | 0 (EOF) | WANT_READ | ERR_IO */
 int      wtls_plat_poll(int fd, bool rd, bool wr, uint32_t timeout_ms);/* 1 ready | 0 timeout | ERR_IO */
@@ -93,6 +97,8 @@ bool wtls_plat_ios_connect_in_progress(int32_t r);
 /* One jitter sample: the timebase delta since the previous call, measured
  * across one IOS IPC round trip (see plat_ogc.c for the entropy estimate). */
 uint32_t wtls_plat_jitter_sample(void);
+/* Non-credited auxiliary hardware/network state mixed into conditioned entropy. */
+void wtls_plat_entropy_aux(uint32_t aux[4]);
 #endif
 
 #endif

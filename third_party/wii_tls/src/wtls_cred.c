@@ -17,12 +17,14 @@
 
 /* Parses cert (PEM chain or DER, leaf first) and the private key, checks
  * that the key matches the leaf and fingerprints the leaf DER (SHA-256). */
-wtls_status wtls_client_cred_load(wtls_client_cred **out,
-                                  const uint8_t *cert, size_t cert_len,
-                                  const uint8_t *key, size_t key_len) {
+wtls_status wtls_client_cred_load_ex(wtls_client_cred **out,
+                                     const uint8_t *cert, size_t cert_len,
+                                     const uint8_t *key, size_t key_len,
+                                     const uint8_t *pwd, size_t pwd_len) {
     if (!out) return WTLS_ERR_ARG;
     *out = NULL;
     if (!cert || cert_len == 0 || !key || key_len == 0) return WTLS_ERR_ARG;
+    if (pwd_len > 0 && !pwd) return WTLS_ERR_ARG;
     if (!wtls_core_initialized()) return WTLS_ERR_STATE;
     if (!WTLS_THREAD_GUARD("wtls_client_cred_load")) return WTLS_ERR_STATE;
 
@@ -35,7 +37,7 @@ wtls_status wtls_client_cred_load(wtls_client_cred **out,
      * and as mbedtls_x509_crt_parse requires). */
     int r = mbedtls_x509_crt_parse(&c->chain, cert, cert_len);
     if (r != 0 || !c->chain.raw.p) goto fail_arg;
-    r = mbedtls_pk_parse_key(&c->key, key, key_len, NULL, 0);
+    r = mbedtls_pk_parse_key(&c->key, key, key_len, pwd, pwd_len);
     if (r != 0) goto fail_arg;
     /* The key must match the leaf certificate. mbedtls_pk_check_pair is
      * unusable for this in 4.1.1: an RSA private key parsed by
@@ -70,6 +72,12 @@ fail_arg:
     mbedtls_platform_zeroize(c, sizeof *c);
     mbedtls_free(c);
     return WTLS_ERR_ARG;
+}
+
+wtls_status wtls_client_cred_load(wtls_client_cred **out,
+                                  const uint8_t *cert, size_t cert_len,
+                                  const uint8_t *key, size_t key_len) {
+    return wtls_client_cred_load_ex(out, cert, cert_len, key, key_len, NULL, 0);
 }
 
 void wtls_client_cred_free(wtls_client_cred *cred) {

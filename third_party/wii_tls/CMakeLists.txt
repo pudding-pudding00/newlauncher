@@ -23,8 +23,8 @@ set_property(CACHE WTLS_PLATFORM PROPERTY STRINGS ogc host)
 option(WTLS_BUILD_TESTS "Build libwiitls tests" ${WTLS_BUILD_TESTS_DEFAULT})
 
 # ---------------------------------------------------------------------------
-# Mbed TLS 4.1.1 LTS (release tarball contains all generated files: no Python needed)
-# Crypto tuning knobs (Task 11, measured with bench/). They reach the Mbed TLS /
+# Mbed TLS 4.1.2 LTS (release tarball contains all generated files: no Python needed)
+# Crypto tuning knobs (measured with bench/, see docs/benchmarks.md). They reach the Mbed TLS /
 # TF-PSA-Crypto configs as WTLS_CFG_* defines, so they apply to every target
 # below, including the fetched Mbed TLS.
 option(WTLS_BN_ASM "PPC32 bignum assembly (MBEDTLS_HAVE_ASM)" ON)
@@ -34,6 +34,7 @@ option(WTLS_ACCEL "X25519 with 32-bit limbs (src/accel), hooked into Everest" ON
 option(WTLS_ACCEL_P256 "P-256 verify with 32-bit limbs (src/accel), hooked into the builtin driver" ON)
 option(WTLS_THREAD_CHECK "Debug single-thread affinity checks (always ON in Debug builds)" OFF)
 option(WTLS_BUILD_FUZZ "Build Clang libFuzzer harnesses in tests/fuzz" OFF)
+option(WTLS_BUILD_CURL_SHIM "Build optional libcurl-lite compatibility shim (wiitls_curl)" OFF)
 set(WTLS_OPT O3 CACHE STRING "Optimisation level for library and Mbed TLS: O2 or O3")
 set_property(CACHE WTLS_OPT PROPERTY STRINGS O2 O3)
 if(NOT WTLS_OPT MATCHES "^O[23]$")
@@ -83,8 +84,8 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
     list(APPEND _wtls_mbedtls_extra_args EXCLUDE_FROM_ALL)
 endif()
 FetchContent_Declare(mbedtls
-    URL https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-4.1.1/mbedtls-4.1.1.tar.bz2
-    URL_HASH SHA256=3359a349e23db3d5536fcee032ae7b2ecbfc08972fab643089b5cbf2a375c98c
+    URL https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-4.1.2/mbedtls-4.1.2.tar.bz2
+    URL_HASH SHA256=392215e5e4846df04e2f4c4516079303bd73edde837d8f3e68fb4d4d7ddf0126
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     ${_wtls_mbedtls_extra_args}
 )
@@ -277,23 +278,28 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # ---------------------------------------------------------------------------
+option(WTLS_EMBED_CA "Embed Mozilla CA bundle in .rodata (~200 KiB)" ON)
 # Embedded Mozilla CA bundle: regenerated from data/cacert.pem when Python 3 is
 # available (SHA-256 checked), otherwise the checked-in src/gen/ca_bundle.c is used.
 find_package(Python3 COMPONENTS Interpreter)
-set(WTLS_CA_PEM ${CMAKE_CURRENT_SOURCE_DIR}/data/cacert.pem)
-set(WTLS_CA_GEN ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_ca_bundle.py)
-if(Python3_Interpreter_FOUND)
-    set(WTLS_CA_BUNDLE_C ${CMAKE_BINARY_DIR}/gen/ca_bundle.c)
-    add_custom_command(
-        OUTPUT ${WTLS_CA_BUNDLE_C}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/gen
-        COMMAND ${Python3_EXECUTABLE} ${WTLS_CA_GEN} --pem ${WTLS_CA_PEM}
-                --sha256 ${WTLS_CA_PEM}.sha256 --out ${WTLS_CA_BUNDLE_C}
-        DEPENDS ${WTLS_CA_PEM} ${WTLS_CA_PEM}.sha256 ${WTLS_CA_GEN}
-        COMMENT "Generating CA bundle from data/cacert.pem"
-        VERBATIM)
+if(WTLS_EMBED_CA)
+    set(WTLS_CA_PEM ${CMAKE_CURRENT_SOURCE_DIR}/data/cacert.pem)
+    set(WTLS_CA_GEN ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_ca_bundle.py)
+    if(Python3_Interpreter_FOUND)
+        set(WTLS_CA_BUNDLE_C ${CMAKE_BINARY_DIR}/gen/ca_bundle.c)
+        add_custom_command(
+            OUTPUT ${WTLS_CA_BUNDLE_C}
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/gen
+            COMMAND ${Python3_EXECUTABLE} ${WTLS_CA_GEN} --pem ${WTLS_CA_PEM}
+                    --sha256 ${WTLS_CA_PEM}.sha256 --out ${WTLS_CA_BUNDLE_C}
+            DEPENDS ${WTLS_CA_PEM} ${WTLS_CA_PEM}.sha256 ${WTLS_CA_GEN}
+            COMMENT "Generating CA bundle from data/cacert.pem"
+            VERBATIM)
+    else()
+        set(WTLS_CA_BUNDLE_C ${CMAKE_CURRENT_SOURCE_DIR}/src/gen/ca_bundle.c)
+    endif()
 else()
-    set(WTLS_CA_BUNDLE_C ${CMAKE_CURRENT_SOURCE_DIR}/src/gen/ca_bundle.c)
+    set(WTLS_CA_BUNDLE_C)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -336,6 +342,7 @@ add_library(wiitls STATIC
     src/plat/plat_common.c
     src/plat/plat_${WTLS_PLATFORM}.c
 )
+target_compile_definitions(wiitls PRIVATE WTLS_EMBED_CA=$<BOOL:${WTLS_EMBED_CA}>)
 if(WTLS_ACCEL)
     # Called from Everest's mbedtls_x25519_scalarmult (patched above); the
     # tfpsacrypto -> wiitls link edge below resolves it.
@@ -360,6 +367,11 @@ if(WTLS_GZIP)
     target_include_directories(wiitls PRIVATE ${zlib_SOURCE_DIR})
     target_compile_definitions(wiitls PRIVATE Z_PREFIX WTLS_GZIP=1)
 endif()
+option(WTLS_HTTP2 "HTTP/2 (h2 ALPN) client support" ON)
+if(WTLS_HTTP2)
+    target_sources(wiitls PRIVATE src/http/wtls_hpack.c src/http/wtls_http2.c)
+endif()
+target_compile_definitions(wiitls PRIVATE WTLS_HTTP2=$<BOOL:${WTLS_HTTP2}>)
 set_target_properties(wiitls PROPERTIES OUTPUT_NAME wiitls PREFIX lib)
 include(GNUInstallDirs)
 target_include_directories(wiitls
@@ -411,14 +423,20 @@ set(WTLS_BENCH_WRAP
     mbedtls_x509_crt_parse_der mbedtls_x509_crt_verify_with_ca_cb mbedtls_pk_verify_ext
     mbedtls_pk_parse_subpubkey)
 function(wtls_bench_wrap target)
-    foreach(fn ${WTLS_BENCH_WRAP})
-        target_link_options(${target} PRIVATE "LINKER:--wrap=${fn}")
-    endforeach()
+    if(NOT APPLE)
+        foreach(fn ${WTLS_BENCH_WRAP})
+            target_link_options(${target} PRIVATE "LINKER:--wrap=${fn}")
+        endforeach()
+    endif()
     # bench/p256m_probe.c compiles p256-m itself, for a speed comparison.
     target_sources(${target} PRIVATE ${PROJECT_SOURCE_DIR}/bench/p256m_probe.c)
     target_include_directories(${target} PRIVATE
         ${mbedtls_SOURCE_DIR}/tf-psa-crypto/drivers/p256-m/p256-m)
 endfunction()
+
+if(WTLS_BUILD_CURL_SHIM)
+    add_subdirectory(adapters/curl_lite)
+endif()
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -445,10 +463,12 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
         COMMENT "Generating test certificates"
         VERBATIM)
     add_custom_target(wtls_test_certs DEPENDS ${WTLS_TEST_CERT_DIR}/test-ca.pem)
-    # The checked-in fallback bundle must match data/cacert.pem.
-    add_test(NAME ca_bundle_fallback_current
-             COMMAND ${CMAKE_COMMAND} -E compare_files
-                     ${CMAKE_CURRENT_SOURCE_DIR}/src/gen/ca_bundle.c ${WTLS_CA_BUNDLE_C})
+    if(WTLS_EMBED_CA)
+        # The checked-in fallback bundle must match data/cacert.pem.
+        add_test(NAME ca_bundle_fallback_current
+                 COMMAND ${CMAKE_COMMAND} -E compare_files
+                         ${CMAKE_CURRENT_SOURCE_DIR}/src/gen/ca_bundle.c ${WTLS_CA_BUNDLE_C})
+    endif()
     # Test that needs tests/host/tls_test_server.py; the fixed ports force serial runs.
     function(wtls_host_server_test name)
         add_executable(${name} tests/host/${name}.c ${ARGN})
@@ -478,10 +498,19 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     if(WTLS_GZIP)
         wtls_host_test(test_http_gzip)
     endif()
+    if(WTLS_HTTP2)
+        wtls_host_test(test_hpack)
+    endif()
     wtls_host_test(test_http_fuzz)
     wtls_host_test(test_http_pool)
     if(WTLS_THREAD_CHECK OR CMAKE_BUILD_TYPE STREQUAL "Debug")
         wtls_host_test(test_thread)
+    endif()
+    if(WTLS_BUILD_CURL_SHIM)
+        wtls_host_server_test(test_curl_shim)
+        target_link_libraries(test_curl_shim PRIVATE wiitls::curl)
+        add_dependencies(test_curl_shim wtls_test_certs)
+        set_tests_properties(test_curl_shim PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
     endif()
 
     # Deterministic corpus regression tests for all libFuzzer harnesses (runs on every host build).
@@ -504,6 +533,7 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     wtls_fuzz_corpus_test(fuzz_client_cred client_cred)
     add_dependencies(test_castore wtls_test_certs)
     target_compile_definitions(test_castore PRIVATE
+        WTLS_EMBED_CA=$<BOOL:${WTLS_EMBED_CA}>
         WTLS_TEST_CERT_DIR="${WTLS_TEST_CERT_DIR}"
         WTLS_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/host/fixtures")
     wtls_host_server_test(test_tls tests/common/tls_tests.c)
@@ -514,12 +544,14 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     if(WTLS_GZIP)
         target_compile_definitions(test_http PRIVATE WTLS_GZIP=1)
     endif()
+    target_compile_definitions(test_http PRIVATE WTLS_HTTP2=$<BOOL:${WTLS_HTTP2}>)
     set_tests_properties(test_http PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
     wtls_host_server_test(test_soak tests/common/soak_tests.c)
     add_dependencies(test_soak wtls_test_certs)
     if(WTLS_GZIP)
         target_compile_definitions(test_soak PRIVATE WTLS_GZIP=1)
     endif()
+    target_compile_definitions(test_soak PRIVATE WTLS_HTTP2=$<BOOL:${WTLS_HTTP2}>)
     set_tests_properties(test_soak PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
     # A TLS-only application must not link the HTTP layer.
     if(CMAKE_NM)
@@ -597,12 +629,21 @@ endif()
 # ---------------------------------------------------------------------------
 # Install & find_package(wiitls)
 option(WTLS_INSTALL "Install libwiitls, headers, bundled Mbed TLS archives, and CMake package" ${PROJECT_IS_TOP_LEVEL})
+option(WTLS_INSTALL_ISOLATED_DEPS "Install bundled Mbed TLS under wiitls subdirs (avoids dkp-pacman conflicts)" OFF)
 if(WTLS_INSTALL)
     include(CMakePackageConfigHelpers)
 
     set(_wtls_need_threads FALSE)
     if(WTLS_PLATFORM STREQUAL "host" AND NOT WIN32 AND (WTLS_THREAD_CHECK OR CMAKE_BUILD_TYPE STREQUAL "Debug"))
         set(_wtls_need_threads TRUE)
+    endif()
+
+    if(WTLS_INSTALL_ISOLATED_DEPS)
+        set(_wtls_dep_libdir "${CMAKE_INSTALL_LIBDIR}/wiitls")
+        set(_wtls_dep_incdir "${CMAKE_INSTALL_INCLUDEDIR}/wiitls-deps")
+    else()
+        set(_wtls_dep_libdir "${CMAKE_INSTALL_LIBDIR}")
+        set(_wtls_dep_incdir "${CMAKE_INSTALL_INCLUDEDIR}")
     endif()
 
     install(TARGETS wiitls
@@ -612,19 +653,19 @@ if(WTLS_INSTALL)
         $<TARGET_FILE:mbedtls>
         $<TARGET_FILE:mbedx509>
         $<TARGET_FILE:tfpsacrypto>
-        DESTINATION ${CMAKE_INSTALL_LIBDIR})
+        DESTINATION ${_wtls_dep_libdir})
 
     install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/wiitls
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
     install(FILES
         ${CMAKE_CURRENT_SOURCE_DIR}/config/wtls_mbedtls_config.h
         ${CMAKE_CURRENT_SOURCE_DIR}/config/wtls_crypto_config.h
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+        DESTINATION ${_wtls_dep_incdir})
     install(DIRECTORY
         ${mbedtls_SOURCE_DIR}/include/
         ${mbedtls_SOURCE_DIR}/tf-psa-crypto/include/
         ${mbedtls_SOURCE_DIR}/tf-psa-crypto/drivers/builtin/include/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        DESTINATION ${_wtls_dep_incdir}
         FILES_MATCHING PATTERN "*.h")
 
     install(EXPORT wiitlsTargets
@@ -636,7 +677,7 @@ if(WTLS_INSTALL)
         ${CMAKE_CURRENT_SOURCE_DIR}/cmake/wiitlsConfig.cmake.in
         ${CMAKE_CURRENT_BINARY_DIR}/wiitlsConfig.cmake
         INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/wiitls
-        PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_LIBDIR)
+        PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_LIBDIR _wtls_dep_incdir _wtls_dep_libdir)
     write_basic_package_version_file(
         ${CMAKE_CURRENT_BINARY_DIR}/wiitlsConfigVersion.cmake
         VERSION ${PROJECT_VERSION}
@@ -645,4 +686,20 @@ if(WTLS_INSTALL)
         ${CMAKE_CURRENT_BINARY_DIR}/wiitlsConfig.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/wiitlsConfigVersion.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/wiitls)
+
+    if(WTLS_PLATFORM STREQUAL "ogc")
+        if(WTLS_INSTALL_ISOLATED_DEPS)
+            set(_wtls_pc_extra_cflags "-I\${includedir}/wiitls-deps")
+            set(_wtls_pc_extra_lflags "-L\${libdir}/wiitls")
+        else()
+            set(_wtls_pc_extra_cflags "")
+            set(_wtls_pc_extra_lflags "")
+        endif()
+        configure_file(
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/wiitls.pc.in
+            ${CMAKE_CURRENT_BINARY_DIR}/wiitls.pc
+            @ONLY)
+        install(FILES ${CMAKE_CURRENT_BINARY_DIR}/wiitls.pc
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
+    endif()
 endif()

@@ -19,10 +19,20 @@ typedef uint32_t (*wtls_sample_fn)(void *ctx);
 #define WTLS_JITTER_BITS_PER_SAMPLE 1
 #define WTLS_JITTER_WARMUP 1024
 
+typedef struct {
+    size_t samples;   /* total post-warmup samples tested */
+    unsigned max_rct; /* longest consecutive identical low-byte run seen (< WTLS_RCT_CUTOFF) */
+    unsigned max_apt; /* highest same-byte count in a 512-sample window (< WTLS_APT_CUTOFF) */
+} wtls_jitter_stats;
+
 /* out[i] = low byte of the i-th sample, after RCT/APT health tests that restart
  * on every call. The first call per process first discards WTLS_JITTER_WARMUP
  * samples. Returns WTLS_OK or WTLS_ERR_ENTROPY. */
 int wtls_jitter_collect(wtls_sample_fn fn, void *ctx, uint8_t *out, size_t len);
+
+/* As wtls_jitter_collect(), optionally recording RCT/APT headroom stats. */
+int wtls_jitter_collect_ex(wtls_sample_fn fn, void *ctx, uint8_t *out, size_t len,
+                           wtls_jitter_stats *stats);
 
 /* Full-entropy output: each 32-byte block is SHA-256 over
  * 2*256/WTLS_JITTER_BITS_PER_SAMPLE health-tested raw bytes (SP 800-90C-style

@@ -2,50 +2,107 @@ name: maintenance
 
 on:
   schedule:
-    # Check monthly on the 1st at 04:00 UTC for Mozilla CA bundle & Mbed TLS 4.1.x LTS updates
+    # Monthly on the 1st at 04:00 UTC: CA bundle, Mbed TLS 4.1.x LTS, and zlib
     - cron: '0 4 1 * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
 jobs:
-  ca-bundle-and-mbedtls-check:
+  ca-bundle-and-deps:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Check Mozilla CA bundle update
-        id: ca
+      - name: Check Mozilla CA bundle and open PR if updated
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           curl -fsSL -o /tmp/cacert.pem https://curl.se/ca/cacert.pem
           curl -fsSL -o /tmp/cacert.pem.sha256 https://curl.se/ca/cacert.pem.sha256
           OLD=$(awk '{print $1}' data/cacert.pem.sha256)
           NEW=$(awk '{print $1}' /tmp/cacert.pem.sha256)
-          echo "current=$OLD upstream=$NEW"
+          echo "CA bundle current=$OLD upstream=$NEW"
           if [ "$OLD" != "$NEW" ]; then
             cp /tmp/cacert.pem data/cacert.pem
             cp /tmp/cacert.pem.sha256 data/cacert.pem.sha256
             python3 tools/gen_ca_bundle.py --pem data/cacert.pem \
               --sha256 data/cacert.pem.sha256 --out src/gen/ca_bundle.c
-            echo "updated=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "updated=false" >> "$GITHUB_OUTPUT"
+
+            BRANCH="chore/ca-bundle-update"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git checkout -B "$BRANCH"
+            git add data/cacert.pem data/cacert.pem.sha256 src/gen/ca_bundle.c
+            git commit -m "chore: update Mozilla CA bundle (${NEW:0:12})"
+            git push -f origin "$BRANCH"
+
+            if [ "$(gh pr list --head "$BRANCH" --state open --json number --jq length)" -eq 0 ]; then
+              gh pr create \
+                --head "$BRANCH" \
+                --base main \
+                --title "chore: update Mozilla CA bundle" \
+                --body "Automated monthly CA bundle update from \`https://curl.se/ca/cacert.pem\`.
+
+          - SHA-256: \`$NEW\`
+          - Regenerated: \`src/gen/ca_bundle.c\`
+
+          Please check the diff and trigger/verify CI before merging."
+            fi
+            git checkout main
           fi
 
-      - name: Check latest Mbed TLS 4.1.x LTS release
+      - name: Check Mbed TLS 4.1.x LTS and zlib releases
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          CURRENT=$(sed -n 's/.*mbedtls-\([0-9.]*\)\.tar\.bz2.*/\1/p' CMakeLists.txt | head -1)
-          LATEST=$(curl -fsSL https://api.github.com/repos/Mbed-TLS/mbedtls/releases \
-            | python3 -c "import json,re,sys; tags=[r['tag_name'] for r in json.load(sys.stdin) if re.match(r'^(v|mbedtls-)?4\.1\.\d+$', r['tag_name'])]; print(tags[0] if tags else '')")
-          echo "Mbed TLS current=$CURRENT latest_4_1=$LATEST"
-          if [ -n "$LATEST" ] && [ "${LATEST#mbedtls-}" != "$CURRENT" ] && [ "${LATEST#v}" != "$CURRENT" ]; then
-            echo "::notice::New Mbed TLS 4.1.x release available: $LATEST (current: $CURRENT)"
+          open_issue_if_new() {
+            local title="$1"
+            local body="$2"
+            local count
+            count=$(gh issue list --state open --search "in:title \"$title\"" --json title \
+              | python3 -c "import json,sys; t=sys.argv[1]; print(sum(1 for i in json.load(sys.stdin) if i['title']==t))" "$title")
+            if [ "$count" -eq 0 ]; then
+              gh issue create --title "$title" --body "$body"
+            else
+              echo "Issue already open: $title"
+            fi
+          }
+
+          # Mbed TLS 4.1.x LTS
+          MB_CUR=$(sed -n 's/.*mbedtls-\([0-9.]*\)\.tar\.bz2.*/\1/p' CMakeLists.txt | head -1)
+          MB_TAG=$(curl -fsSL https://api.github.com/repos/Mbed-TLS/mbedtls/releases \
+            | python3 -c "import json,re,sys; tags=[r['tag_name'] for r in json.load(sys.stdin) if not r.get('prerelease') and re.match(r'^(v|mbedtls-)?4\.1\.\d+$', r['tag_name'])]; print(tags[0] if tags else '')")
+          MB_VER="${MB_TAG#mbedtls-}"; MB_VER="${MB_VER#v}"
+          echo "Mbed TLS current=$MB_CUR latest_4_1=$MB_VER"
+          if [ -n "$MB_VER" ] && [ "$MB_VER" != "$MB_CUR" ]; then
+            open_issue_if_new "Update Mbed TLS to $MB_VER" \
+              "A new Mbed TLS 4.1.x LTS release is available: **$MB_VER** (currently **$MB_CUR**).
+
+          Release: https://github.com/Mbed-TLS/mbedtls/releases/tag/$MB_TAG
+
+          Checklist:
+          - [ ] Update \`URL\` and \`URL_HASH\` in \`CMakeLists.txt\`
+          - [ ] Verify all configure-time patch anchors in \`CMakeLists.txt\` still apply
+          - [ ] Run host + sanitizer + fuzz + Wii hardware suites"
           fi
 
-      - name: Upload regenerated CA bundle artifact if updated
-        if: steps.ca.outputs.updated == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: updated-ca-bundle
-          path: |
-            data/cacert.pem
-            data/cacert.pem.sha256
-            src/gen/ca_bundle.c
+          # zlib
+          ZL_CUR=$(sed -n 's/.*zlib-\([0-9.]*\)\.tar\.gz.*/\1/p' CMakeLists.txt | head -1)
+          ZL_TAG=$(curl -fsSL https://api.github.com/repos/madler/zlib/releases/latest \
+            | python3 -c "import json,sys; print(json.load(sys.stdin).get('tag_name',''))")
+          ZL_VER="${ZL_TAG#v}"
+          echo "zlib current=$ZL_CUR latest=$ZL_VER"
+          if [ -n "$ZL_VER" ] && [ "$ZL_VER" != "$ZL_CUR" ]; then
+            open_issue_if_new "Update zlib to $ZL_VER" \
+              "A new zlib release is available: **$ZL_VER** (currently **$ZL_CUR**).
+
+          Release: https://github.com/madler/zlib/releases/tag/$ZL_TAG
+
+          Checklist:
+          - [ ] Update \`URL\` and \`URL_HASH\` in \`CMakeLists.txt\`
+          - [ ] Verify \`wtls_zlib\` source list and \`test_http_gzip\` / \`fuzz_http_gzip\`"
+          fi

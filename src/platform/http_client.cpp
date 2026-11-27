@@ -1,6 +1,5 @@
 #include "platform/http_client.hpp"
 
-#include <charconv>
 #include <cstdio>
 #include <functional>
 #include <span>
@@ -110,9 +109,11 @@ void drainSmallBody(wtls_http_response* res, const volatile bool* cancel) {
 // send == nullptr: GET mit festem User-Agent, Umleitungen folgen, nur 200 liest den Body (httpGet/httpDownload).
 // send gesetzt (httpSend, M27): Methode, Header und Body daraus, keine Umleitung, jeder Status liest den Body, die
 // Antwort-Header landen in respHeaders.
+// reserveBody (optional): reserved once to the announced Content-Length (at most maxBody), so a large body is not
+// copied repeatedly while the vector grows.
 HttpResult wtlsRequest(const Url& url, u32 maxBody, const volatile bool* cancel, const HttpLog& log,
                        const std::function<bool(std::span<const u8>)>& sink, const HttpRequest* send = nullptr,
-                       HttpHeaders* respHeaders = nullptr) {
+                       HttpHeaders* respHeaders = nullptr, std::vector<u8>* reserveBody = nullptr) {
     loadTestCa(log);
     if (isCancelled(cancel)) return {HttpOutcome::Failed, NetError::Other, 0};
 
@@ -156,7 +157,7 @@ HttpResult wtlsRequest(const Url& url, u32 maxBody, const volatile bool* cancel,
         return wtls_http_open(&res, &req);
     };
 
-    // Der Handshake selbst ist nicht unterbrechbar: vor jedem open auf Abbruch prüfen (wie bisher).
+    // abort_cb covers connect, handshake and I/O; only the DNS lookup blocks without a cancel check.
     int st = openOnce();
     if (st != WTLS_OK && tlsClockSuspect(st, wtls_last_verify_flags()) && !g_clockSynced &&
         g_sntpAttempts < kMaxSntpAttempts && !isCancelled(cancel)) {
@@ -179,9 +180,9 @@ HttpResult wtlsRequest(const Url& url, u32 maxBody, const volatile bool* cancel,
     g_lastReused = info.reused_connection;
     g_lastHandshakeMs = info.secure && !info.reused_connection ? static_cast<u32>(info.tls.handshake_ms) : 0;
     if (g_perf && info.secure && !info.reused_connection) {
-        char line[64];
-        std::snprintf(line, sizeof line, "NL_PERF tls heap=%d ms=%u", mallinfo().uordblks - heapBefore,
-                      static_cast<unsigned>(info.tls.handshake_ms));
+        char line[80];
+        std::snprintf(line, sizeof line, "NL_PERF tls heap=%d ms=%u h2=%d", mallinfo().uordblks - heapBefore,
+                      static_cast<unsigned>(info.tls.handshake_ms), info.http2 ? 1 : 0);
         emit(log, line);
     }
     if (info.redirects > 0 && info.url != nullptr) {
@@ -208,6 +209,7 @@ HttpResult wtlsRequest(const Url& url, u32 maxBody, const volatile bool* cancel,
         emit(log, "NL_NET_FAIL other");
         return {HttpOutcome::Failed, NetError::Other, status};
     }
+    if (reserveBody != nullptr && cl > 0) reserveBody->reserve(static_cast<std::size_t>(cl));
 
     u8 buf[4096];
     u64 total = 0;
@@ -423,10 +425,13 @@ HttpResult httpGet(const Url& url, u32 maxBody, std::vector<u8>& body, const vol
                    const HttpLog& log) {
     body.clear();
 #ifdef NL_TLS
-    const HttpResult r = wtlsRequest(url, maxBody, cancel, log, [&](std::span<const u8> data) {
-        body.insert(body.end(), data.begin(), data.end());
-        return true;
-    });
+    const HttpResult r = wtlsRequest(
+        url, maxBody, cancel, log,
+        [&](std::span<const u8> data) {
+            body.insert(body.end(), data.begin(), data.end());
+            return true;
+        },
+        nullptr, nullptr, &body);
     if (r.outcome != HttpOutcome::Ok) body.clear();
     return r;
 #else
@@ -496,18 +501,10 @@ HttpResponse httpSend(const HttpRequest& request, const volatile bool* cancel, c
     const HttpResult r = wtlsRequest(
         *url, request.maxBody, cancel, log,
         [&](std::span<const u8> data) {
-            // Einmal die angekündigte Länge reservieren (höchstens maxBody): ohne das verdoppelt sich der Puffer
-            // beim Wachsen, und ein 16-MiB-Paket bräuchte kurz das Doppelte.
-            if (out.body.empty()) {
-                const std::string_view cl = out.header("Content-Length");
-                u64 n = 0;
-                if (std::from_chars(cl.data(), cl.data() + cl.size(), n).ec == std::errc() && n <= request.maxBody)
-                    out.body.reserve(static_cast<std::size_t>(n));
-            }
             out.body.insert(out.body.end(), data.begin(), data.end());
             return true;
         },
-        &request, &out.headers);
+        &request, &out.headers, &out.body);  // reserving matters here: a 16 MiB package must not briefly need 32
     if (r.outcome == HttpOutcome::Ok || (r.status != 0 && r.error == NetError::Http)) {
         out.status = r.status;
         out.error = NetError::None;

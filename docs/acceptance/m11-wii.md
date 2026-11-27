@@ -26,7 +26,7 @@ oder FAIL; bei FAIL eine kurze Notiz und eine Zeile unter [Befunde](#befunde).
 ## Hardware-Suiten von wii_tls
 
 Die vendorte Kopie unter `third_party/wii_tls` enthält keine Tests (`VENDORED.txt`: `removed=tests,…`).
-Die Suiten laufen deshalb aus einem Checkout des Upstream-Repos `pudding-pudding00/wii_tls`, und zwar auf dem
+Die Suiten laufen deshalb aus einem Checkout des Upstream-Repos `pudding-pudding00/libwiitls`, und zwar auf dem
 Commit aus `VENDORED.txt`. PC und Wii im selben Netz, Homebrew Channel offen, IP aus der HBC-Ecke. Bauen und
 starten (Details im README dort):
 

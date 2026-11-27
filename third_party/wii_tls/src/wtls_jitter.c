@@ -14,8 +14,10 @@ static bool g_warmup_pending = true;
 
 void wtls_jitter_reset_warmup(bool pending) { g_warmup_pending = pending; }
 
-int wtls_jitter_collect(wtls_sample_fn fn, void *ctx, uint8_t *out, size_t len) {
+int wtls_jitter_collect_ex(wtls_sample_fn fn, void *ctx, uint8_t *out, size_t len,
+                           wtls_jitter_stats *stats) {
     if (!fn || (!out && len)) return WTLS_ERR_ARG;
+    if (stats) memset(stats, 0, sizeof *stats);
     if (g_warmup_pending) {
         for (int i = 0; i < WTLS_JITTER_WARMUP; i++) (void)fn(ctx);
         g_warmup_pending = false;
@@ -32,23 +34,34 @@ int wtls_jitter_collect(wtls_sample_fn fn, void *ctx, uint8_t *out, size_t len) 
         uint8_t b = (uint8_t)fn(ctx);
 
         if (i > 0 && b == rct_val) {
-            if (++rct_count >= WTLS_RCT_CUTOFF) return WTLS_ERR_ENTROPY;
+            ++rct_count;
+            if (stats && rct_count > stats->max_rct) stats->max_rct = rct_count;
+            if (rct_count >= WTLS_RCT_CUTOFF) return WTLS_ERR_ENTROPY;
         } else {
             rct_val = b;
             rct_count = 1;
+            if (stats && rct_count > stats->max_rct) stats->max_rct = rct_count;
         }
 
         if (apt_pos == 0) {
             apt_ref = b;
             apt_count = 1;
         } else if (b == apt_ref) {
-            if (++apt_count >= WTLS_APT_CUTOFF) return WTLS_ERR_ENTROPY;
+            ++apt_count;
+            if (stats && apt_count > stats->max_apt) stats->max_apt = apt_count;
+            if (apt_count >= WTLS_APT_CUTOFF) return WTLS_ERR_ENTROPY;
         }
+        if (stats && apt_count > stats->max_apt) stats->max_apt = apt_count;
         if (++apt_pos == WTLS_APT_WINDOW) apt_pos = 0;
+        if (stats) stats->samples++;
 
         out[i] = b;
     }
     return WTLS_OK;
+}
+
+int wtls_jitter_collect(wtls_sample_fn fn, void *ctx, uint8_t *out, size_t len) {
+    return wtls_jitter_collect_ex(fn, ctx, out, len, NULL);
 }
 
 #define RAW_PER_BLOCK (2 * 256 / WTLS_JITTER_BITS_PER_SAMPLE)

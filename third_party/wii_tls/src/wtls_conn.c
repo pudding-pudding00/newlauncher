@@ -155,10 +155,12 @@ static int wait_io(wtls_conn *c, int want, uint64_t deadline) {
 }
 
 static void conn_free(wtls_conn *c) {
+    if (!c) return;
     if (c->cred) wtls_client_cred_release(c->cred);
     mbedtls_ssl_free(&c->ssl);
     mbedtls_ssl_config_free(&c->conf);
     if (c->fd >= 0) wtls_plat_close(c->fd);
+    mbedtls_free(c->preread);
     mbedtls_free(c);
 }
 
@@ -193,12 +195,140 @@ static void store_ticket(wtls_conn *c) {
 
 /* ---- public API --------------------------------------------------------- */
 
-wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port, const wtls_options *opt) {
-    if (!out) return WTLS_ERR_ARG;
+static void prof_handshake_step(wtls_conn *c, int *r_out) {
+    int state = c->ssl.MBEDTLS_PRIVATE(state); /* no public getter */
+    int slot = state >= 0 && state < WTLS_PROF_STATES ? state : WTLS_PROF_STATES - 1;
+    s_step_io_us = 0;
+    uint64_t s0 = wtls_plat_now_us();
+    *r_out = mbedtls_ssl_handshake_step(&c->ssl);
+    wtls_prof_last.step_us[slot] += wtls_plat_now_us() - s0;
+    wtls_prof_last.step_io_us[slot] += s_step_io_us;
+    wtls_prof_last.io_us += s_step_io_us;
+    wtls_prof_last.step_n[slot]++;
+}
+
+static int start_tls_handshake(wtls_conn *c) {
+    if (!c->ip_literal) wtls_dns_commit(c->host, c->ipv4_be, wtls_plat_now_ms());
+    uint64_t p1 = wtls_plat_now_us();
+    wtls_prof_last.connect_us = p1 - c->connect_t0_us;
+    wtls_prof_last.connect_wait_us = wtls_plat_poll_wait_us - c->connect_w0_us;
+    if (!c->no_resumption) offer_ticket(c);
+    c->lookups_before = wtls_castore_lookups;
+    c->handshake_t0_ms = wtls_plat_now_ms();
+    c->stage_deadline_ms = c->handshake_t0_ms + c->handshake_timeout_ms;
+    c->stage = WTLS_CONN_TLS_HANDSHAKE;
+    wtls_prof_last.setup_us += wtls_plat_now_us() - p1;
+    return WTLS_OK;
+}
+
+static int step_tcp_connect(wtls_conn *c) {
+    for (;;) {
+        if (c->abort_cb && c->abort_cb(c->abort_ctx)) {
+            c->aborted = true;
+            c->stage = WTLS_CONN_FAILED;
+            return WTLS_ERR_CANCELLED;
+        }
+        if (c->fd < 0) {
+            if (c->addr_idx >= c->n_addrs) {
+                if (!c->ip_literal && c->dns_from_cache && !c->dns_retried) {
+                    wtls_dns_invalidate(c->host);
+                    c->dns_retried = true;
+                    if (wtls_dns_lookup_list(c->host, c->addrs, &c->n_addrs,
+                                             &c->dns_from_cache, wtls_plat_now_ms()) == WTLS_OK) {
+                        c->addr_idx = 0;
+                        continue;
+                    }
+                    c->stage = WTLS_CONN_FAILED;
+                    return WTLS_ERR_DNS;
+                }
+                c->stage = WTLS_CONN_FAILED;
+                return WTLS_ERR_CONNECT;
+            }
+            uint64_t now = wtls_plat_now_ms();
+            if (now >= c->stage_deadline_ms) {
+                c->stage = WTLS_CONN_FAILED;
+                return WTLS_ERR_TIMEOUT;
+            }
+            uint64_t left = c->stage_deadline_ms - now;
+            size_t rem = c->n_addrs - c->addr_idx;
+            uint32_t slice = (uint32_t)(left / rem);
+            if (slice == 0) slice = 1;
+            c->addr_deadline_ms = now + slice;
+            int st = wtls_plat_connect_begin(c->addrs[c->addr_idx], c->port, &c->fd);
+            if (st == WTLS_OK) {
+                c->ipv4_be = c->addrs[c->addr_idx];
+                return start_tls_handshake(c);
+            }
+            if (st == WTLS_WANT_WRITE) return WTLS_WANT_WRITE;
+            c->fd = -1;
+            c->addr_idx++;
+            continue;
+        }
+        int st = wtls_plat_connect_check(c->fd, c->addrs[c->addr_idx], c->port);
+        if (st == WTLS_OK) {
+            c->ipv4_be = c->addrs[c->addr_idx];
+            return start_tls_handshake(c);
+        }
+        if (st == WTLS_WANT_WRITE) {
+            uint64_t now = wtls_plat_now_ms();
+            if (now >= c->stage_deadline_ms) {
+                wtls_plat_close(c->fd);
+                c->fd = -1;
+                c->stage = WTLS_CONN_FAILED;
+                return WTLS_ERR_TIMEOUT;
+            }
+            if (now >= c->addr_deadline_ms) {
+                wtls_plat_close(c->fd);
+                c->fd = -1;
+                c->addr_idx++;
+                if (c->addr_idx >= c->n_addrs && (c->ip_literal || !c->dns_from_cache || c->dns_retried)) {
+                    c->stage = WTLS_CONN_FAILED;
+                    return WTLS_ERR_TIMEOUT;
+                }
+                continue;
+            }
+            return WTLS_WANT_WRITE;
+        }
+        wtls_plat_close(c->fd);
+        c->fd = -1;
+        c->addr_idx++;
+    }
+}
+
+static int step_tls_handshake(wtls_conn *c) {
+    int r = 0;
+    while (r == 0 && !mbedtls_ssl_is_handshake_over(&c->ssl)) {
+        if (c->abort_cb && c->abort_cb(c->abort_ctx)) {
+            c->aborted = true;
+            c->stage = WTLS_CONN_FAILED;
+            return WTLS_ERR_CANCELLED;
+        }
+        if (wtls_plat_now_ms() >= c->stage_deadline_ms) {
+            c->stage = WTLS_CONN_FAILED;
+            return WTLS_ERR_TIMEOUT;
+        }
+        prof_handshake_step(c, &r);
+    }
+    if (r == 0) {
+        c->handshake_ms = (uint32_t)(wtls_plat_now_ms() - c->handshake_t0_ms);
+        c->stage = WTLS_CONN_READY;
+        return WTLS_OK;
+    }
+    if (r == MBEDTLS_ERR_SSL_WANT_READ) return WTLS_WANT_READ;
+    if (r == MBEDTLS_ERR_SSL_WANT_WRITE) return WTLS_WANT_WRITE;
+    c->stage = WTLS_CONN_FAILED;
+    if (r == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED || cert_rejected(c)) {
+        s_last_verify_flags = mbedtls_ssl_get_verify_result(&c->ssl);
+        return WTLS_ERR_CERT;
+    }
+    return map_mbedtls(c, r);
+}
+
+static wtls_status conn_init_tls(wtls_conn **out, const char *host, uint16_t port,
+                                 const wtls_options *opt, bool resolve_dns) {
     *out = NULL;
     if (!host || port == 0) return WTLS_ERR_ARG;
     if (!wtls_core_initialized()) return WTLS_ERR_STATE;
-    if (!WTLS_THREAD_GUARD("wtls_connect")) return WTLS_ERR_STATE;
     static const wtls_options k_defaults;
     if (!opt) opt = &k_defaults;
     if (opt->n_spki_pins > WTLS_SPKI_MAX_PINS) return WTLS_ERR_ARG;
@@ -209,10 +339,12 @@ wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port, const
     if (opt->abort_cb && opt->abort_cb(opt->abort_ctx)) return WTLS_ERR_CANCELLED;
     if (!opt->insecure_skip_verify && wtls_time_check(wtls_plat_unix_time()) != WTLS_OK)
         return WTLS_ERR_CLOCK;
+    if (wtls_plat_net_changed()) wtls_net_reset();
 
     wtls_conn *c = mbedtls_calloc(1, sizeof *c);
     if (!c) return WTLS_ERR_NOMEM;
     c->fd = -1;
+    c->stage = WTLS_CONN_TCP_CONNECT;
     mbedtls_ssl_init(&c->ssl);
     mbedtls_ssl_config_init(&c->conf);
     memcpy(c->host, name, strlen(name) + 1);
@@ -220,6 +352,8 @@ wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port, const
     /* An unverified session must never be resumed by, or seed, a verified one:
      * resumption skips certificate verification. */
     c->no_resumption = opt->no_resumption || opt->insecure_skip_verify;
+    c->connect_timeout_ms = opt->connect_timeout_ms ? opt->connect_timeout_ms : DEF_CONNECT_MS;
+    c->handshake_timeout_ms = opt->handshake_timeout_ms ? opt->handshake_timeout_ms : DEF_HANDSHAKE_MS;
     c->io_timeout_ms = opt->io_timeout_ms ? opt->io_timeout_ms : DEF_IO_MS;
     c->abort_cb = opt->abort_cb;
     c->abort_ctx = opt->abort_ctx;
@@ -234,28 +368,11 @@ wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port, const
     }
 
     memset(&wtls_prof_last, 0, sizeof wtls_prof_last);
-    uint64_t p0 = wtls_plat_now_us(), w0 = wtls_plat_poll_wait_us;
-    int st = wtls_connect_tcp(
-        name, port, opt->connect_timeout_ms ? opt->connect_timeout_ms : DEF_CONNECT_MS,
-        opt->abort_cb, opt->abort_ctx, &c->fd, &c->ipv4_be, &c->ip_literal);
-    if (st != WTLS_OK) {
-        c->fd = -1;
-        conn_free(c);
-        return (wtls_status)st;
-    }
-    bool literal = c->ip_literal;
-    uint64_t t0 = wtls_plat_now_ms();
-    uint64_t p1 = wtls_plat_now_us();
-    wtls_prof_last.connect_us = p1 - p0;
-    wtls_prof_last.connect_wait_us = wtls_plat_poll_wait_us - w0;
-
+    uint64_t setup0 = wtls_plat_now_us();
     int r = wtls_conf_setup(&c->conf, opt);
     if (r == 0 && opt->client_cred) {
         /* mTLS: present the client chain. The credential is refcounted for
-         * the connection's lifetime (released in conn_free), so the
-         * application may call wtls_client_cred_free() while connections
-         * (including pooled HTTP ones) still use it. mbedtls_ssl_conf_own_cert
-         * keeps the pointers; the reference count keeps the material alive. */
+         * the connection's lifetime (released in conn_free). */
         r = mbedtls_ssl_conf_own_cert(&c->conf,
                                       (mbedtls_x509_crt *)&opt->client_cred->chain,
                                       (mbedtls_pk_context *)&opt->client_cred->key);
@@ -264,66 +381,166 @@ wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port, const
             c->cred = opt->client_cred;
         }
     }
+    c->ip_literal = wtls_plat_parse_ipv4(name, &c->addrs[0]);
+    if (resolve_dns) {
+        if (c->ip_literal) {
+            c->n_addrs = 1;
+        } else if (wtls_dns_lookup_list(name, c->addrs, &c->n_addrs,
+                                        &c->dns_from_cache, wtls_plat_now_ms()) != WTLS_OK) {
+            conn_free(c);
+            return WTLS_ERR_DNS;
+        }
+    }
     if (r == 0) r = mbedtls_ssl_setup(&c->ssl, &c->conf);
-    if (r == 0) r = mbedtls_ssl_set_hostname(&c->ssl, literal ? NULL : c->host);
+    if (r == 0) r = mbedtls_ssl_set_hostname(&c->ssl, c->ip_literal ? NULL : c->host);
     if (r != 0) {
         conn_free(c);
         return r == MBEDTLS_ERR_SSL_ALLOC_FAILED || r == PSA_ERROR_INSUFFICIENT_MEMORY ? WTLS_ERR_NOMEM
                                                                                        : WTLS_ERR_INTERNAL;
     }
-    if ((literal || c->n_spki_pins > 0) && !opt->insecure_skip_verify)
+    if ((c->ip_literal || c->n_spki_pins > 0) && !opt->insecure_skip_verify)
         mbedtls_ssl_set_verify(&c->ssl, verify_cert_cb, c);
     mbedtls_ssl_set_bio(&c->ssl, c, bio_send, bio_recv, NULL);
-    if (!c->no_resumption) offer_ticket(c);
-
-    c->lookups_before = wtls_castore_lookups;
-    uint64_t deadline = t0 + (opt->handshake_timeout_ms ? opt->handshake_timeout_ms : DEF_HANDSHAKE_MS);
-    wtls_prof_last.setup_us = wtls_plat_now_us() - p1;
-    w0 = wtls_plat_poll_wait_us;
-    for (;;) {
-        /* mbedtls_ssl_handshake() is exactly this loop over steps; stepping
-         * here lets wtls_prof time each handshake state. */
-        r = 0;
-        while (r == 0 && !mbedtls_ssl_is_handshake_over(&c->ssl)) {
-            if (c->abort_cb && c->abort_cb(c->abort_ctx)) {
-                conn_free(c);
-                return WTLS_ERR_CANCELLED;
-            }
-            int state = c->ssl.MBEDTLS_PRIVATE(state); /* no public getter */
-            int slot = state >= 0 && state < WTLS_PROF_STATES ? state : WTLS_PROF_STATES - 1;
-            s_step_io_us = 0;
-            uint64_t s0 = wtls_plat_now_us();
-            r = mbedtls_ssl_handshake_step(&c->ssl);
-            wtls_prof_last.step_us[slot] += wtls_plat_now_us() - s0;
-            wtls_prof_last.step_io_us[slot] += s_step_io_us;
-            wtls_prof_last.io_us += s_step_io_us;
-            wtls_prof_last.step_n[slot]++;
-        }
-        if (r == 0) break;
-        if (r == MBEDTLS_ERR_SSL_WANT_READ || r == MBEDTLS_ERR_SSL_WANT_WRITE) {
-            st = wait_io(c, r, deadline);
-            wtls_prof_last.wait_us = wtls_plat_poll_wait_us - w0;
-            if (st == WTLS_OK) continue;
-        } else if (r == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED || cert_rejected(c)) {
-            /* The second case: rejected by the key-usage checks (e.g. a leaf
-             * without serverAuth), which fail as BAD_CERTIFICATE but set flags. */
-            s_last_verify_flags = mbedtls_ssl_get_verify_result(&c->ssl);
-            st = WTLS_ERR_CERT;
-        } else {
-            st = map_mbedtls(c, r);
-        }
-        conn_free(c);
-        return (wtls_status)st;
-    }
-    c->handshake_ms = (uint32_t)(wtls_plat_now_ms() - t0);
+    wtls_prof_last.setup_us = wtls_plat_now_us() - setup0;
     *out = c;
     return WTLS_OK;
 }
 
+static wtls_status conn_drive(wtls_conn **out, wtls_conn *c, wtls_status st) {
+    uint64_t hs_w0 = wtls_plat_poll_wait_us;
+    bool in_hs = c && c->stage == WTLS_CONN_TLS_HANDSHAKE;
+    while (st == WTLS_WANT_READ || st == WTLS_WANT_WRITE) {
+        if (!in_hs && c->stage == WTLS_CONN_TLS_HANDSHAKE) {
+            hs_w0 = wtls_plat_poll_wait_us;
+            in_hs = true;
+        }
+        if (c->stage == WTLS_CONN_TCP_CONNECT) {
+            if (c->abort_cb && c->abort_cb(c->abort_ctx)) {
+                c->aborted = true;
+                st = WTLS_ERR_CANCELLED;
+                break;
+            }
+            uint64_t now = wtls_plat_now_ms();
+            if (now >= c->stage_deadline_ms) {
+                st = WTLS_ERR_TIMEOUT;
+                break;
+            }
+            uint64_t left = c->addr_deadline_ms > now ? c->addr_deadline_ms - now : 1;
+#if defined(WTLS_PLATFORM_OGC)
+            uint32_t slice = left < 5u ? (uint32_t)left : 5u;
+#else
+            uint32_t slice = (c->abort_cb && left > WTLS_POLL_SLICE_MS)
+                                 ? WTLS_POLL_SLICE_MS
+                                 : (left > UINT32_MAX ? UINT32_MAX : (uint32_t)left);
+#endif
+            int pr = wtls_plat_poll(c->fd, false, true, slice);
+            if (pr < 0) {
+                st = WTLS_ERR_IO;
+                break;
+            }
+        } else {
+            int want = st == WTLS_WANT_READ ? MBEDTLS_ERR_SSL_WANT_READ : MBEDTLS_ERR_SSL_WANT_WRITE;
+            int w = wait_io(c, want, c->stage_deadline_ms);
+            wtls_prof_last.wait_us = wtls_plat_poll_wait_us - hs_w0;
+            if (w != WTLS_OK) {
+                st = (wtls_status)w;
+                break;
+            }
+        }
+        st = wtls_connect_step(c);
+        if (in_hs) wtls_prof_last.wait_us = wtls_plat_poll_wait_us - hs_w0;
+    }
+    if (st != WTLS_OK) {
+        conn_free(c);
+        return st;
+    }
+    *out = c;
+    return WTLS_OK;
+}
+
+wtls_status wtls_connect_start(wtls_conn **out, const char *host, uint16_t port, const wtls_options *opt) {
+    if (!out) return WTLS_ERR_ARG;
+    *out = NULL;
+    if (!WTLS_THREAD_GUARD("wtls_connect_start")) return WTLS_ERR_STATE;
+    wtls_conn *c = NULL;
+    wtls_status st = conn_init_tls(&c, host, port, opt, true);
+    if (st != WTLS_OK) return st;
+
+    c->connect_t0_us = wtls_plat_now_us();
+    c->connect_w0_us = wtls_plat_poll_wait_us;
+    c->stage_deadline_ms = wtls_plat_now_ms() + c->connect_timeout_ms;
+
+    st = wtls_connect_step(c);
+    if (st != WTLS_OK && st != WTLS_WANT_READ && st != WTLS_WANT_WRITE) {
+        conn_free(c);
+        return st;
+    }
+    *out = c;
+    return st;
+}
+
+wtls_status wtls_connect_step(wtls_conn *c) {
+    if (!c) return WTLS_ERR_ARG;
+    if (!WTLS_THREAD_GUARD("wtls_connect_step")) return WTLS_ERR_STATE;
+    if (c->stage == WTLS_CONN_READY) return WTLS_OK;
+    if (c->stage == WTLS_CONN_FAILED) return WTLS_ERR_STATE;
+    if (c->stage == WTLS_CONN_TCP_CONNECT) {
+        int st = step_tcp_connect(c);
+        if (st != WTLS_OK || c->stage != WTLS_CONN_TLS_HANDSHAKE) return (wtls_status)st;
+    }
+    return (wtls_status)step_tls_handshake(c);
+}
+
+wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port, const wtls_options *opt) {
+    if (!out) return WTLS_ERR_ARG;
+    *out = NULL;
+    if (!host || port == 0) return WTLS_ERR_ARG;
+    if (!wtls_core_initialized()) return WTLS_ERR_STATE;
+    if (!WTLS_THREAD_GUARD("wtls_connect")) return WTLS_ERR_STATE;
+
+    wtls_conn *c = NULL;
+    wtls_status st = wtls_connect_start(&c, host, port, opt);
+    return conn_drive(out, c, st);
+}
+
+wtls_status wtls_connect_on_fd(wtls_conn **out, int fd, const char *host, uint16_t port,
+                               const wtls_options *opt) {
+    if (!out || fd < 0) {
+        if (fd >= 0) wtls_plat_close(fd);
+        return WTLS_ERR_ARG;
+    }
+    *out = NULL;
+    wtls_conn *c = NULL;
+    wtls_status st = conn_init_tls(&c, host, port, opt, false);
+    if (st != WTLS_OK) {
+        wtls_plat_close(fd);
+        return st;
+    }
+    c->fd = fd;
+    c->connect_t0_us = wtls_plat_now_us();
+    c->connect_w0_us = wtls_plat_poll_wait_us;
+    start_tls_handshake(c);
+    /* Do not touch DNS cache for tunnelled hostnames. */
+    return conn_drive(out, c, wtls_connect_step(c));
+}
+
 int wtls_read(wtls_conn *c, void *buf, size_t len) {
     if (!c || !buf || len == 0) return WTLS_ERR_ARG;
-    if (!WTLS_THREAD_GUARD("wtls_read")) return WTLS_ERR_STATE;
+    if (!WTLS_THREAD_GUARD("wtls_read") || c->stage != WTLS_CONN_READY) return WTLS_ERR_STATE;
     if (len > INT_MAX) len = INT_MAX;
+    if (c->preread_off < c->preread_len) {
+        size_t avail = c->preread_len - c->preread_off;
+        size_t n = avail < len ? avail : len;
+        memcpy(buf, c->preread + c->preread_off, n);
+        c->preread_off += n;
+        if (c->preread_off == c->preread_len) {
+            mbedtls_free(c->preread);
+            c->preread = NULL;
+            c->preread_off = 0;
+            c->preread_len = 0;
+        }
+        return (int)n;
+    }
     uint64_t deadline = wtls_plat_now_ms() + c->io_timeout_ms;
     for (;;) {
         if (c->abort_cb && c->abort_cb(c->abort_ctx)) {
@@ -355,7 +572,7 @@ int wtls_read(wtls_conn *c, void *buf, size_t len) {
 
 int wtls_write(wtls_conn *c, const void *buf, size_t len) {
     if (!c || (!buf && len)) return WTLS_ERR_ARG;
-    if (!WTLS_THREAD_GUARD("wtls_write")) return WTLS_ERR_STATE;
+    if (!WTLS_THREAD_GUARD("wtls_write") || c->stage != WTLS_CONN_READY) return WTLS_ERR_STATE;
     if (c->bio_err) return c->bio_err;
     if (len > INT_MAX) len = INT_MAX;
     const unsigned char *p = buf;
@@ -400,7 +617,7 @@ int wtls_get_fd(const wtls_conn *c) {
 
 wtls_status wtls_get_info(const wtls_conn *c, wtls_conn_info *out) {
     if (!c || !out) return WTLS_ERR_ARG;
-    if (!WTLS_THREAD_GUARD("wtls_get_info")) return WTLS_ERR_STATE;
+    if (!WTLS_THREAD_GUARD("wtls_get_info") || c->stage != WTLS_CONN_READY) return WTLS_ERR_STATE;
     out->tls_version = mbedtls_ssl_get_version(&c->ssl);
     out->ciphersuite = mbedtls_ssl_get_ciphersuite(&c->ssl);
     out->alpn = mbedtls_ssl_get_alpn_protocol(&c->ssl);
@@ -412,7 +629,8 @@ wtls_status wtls_get_info(const wtls_conn *c, wtls_conn_info *out) {
 void wtls_close(wtls_conn *c) {
     if (!c) return;
     if (!WTLS_THREAD_GUARD("wtls_close")) return;
-    if (!c->bio_err && !c->aborted) mbedtls_ssl_close_notify(&c->ssl); /* best effort, one attempt */
+    if (c->stage == WTLS_CONN_READY && !c->bio_err && !c->aborted)
+        mbedtls_ssl_close_notify(&c->ssl); /* best effort, one attempt */
     conn_free(c);
 }
 
@@ -426,5 +644,5 @@ wtls_status wtls_set_nonblocking(wtls_conn *c, bool on) {
 size_t wtls_pending(const wtls_conn *c) {
     if (!c) return 0;
     if (!WTLS_THREAD_GUARD("wtls_pending")) return 0;
-    return mbedtls_ssl_get_bytes_avail(&c->ssl);
+    return (c->preread_len - c->preread_off) + mbedtls_ssl_get_bytes_avail(&c->ssl);
 }

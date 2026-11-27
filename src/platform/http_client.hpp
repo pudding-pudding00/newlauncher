@@ -1,5 +1,5 @@
 #pragma once
-// HTTP/HTTPS-Client über wii_tls (<wiitls/http.h>, ab M11/v0.2.0 mit Keep-Alive-Pool, gzip und Weiterleitungen);
+// HTTP/HTTPS client over libwiitls 1.0.0 (<wiitls/http.h>: HTTP/2 via ALPN, keep-alive pool, gzip/deflate, redirects);
 // ohne NL_TLS Klartext-Sockets mit core/http. Nur im Netz-Thread (NetService) aufrufen; dort laufen net_init und
 // wtls_init, und nur dort dürfen wtls_*-Aufrufe stehen.
 
@@ -47,8 +47,8 @@ bool syncClockOnce(const HttpLog& log = {});
 // Ok nur bei Status 200 mit vollständigem Body (höchstens maxBody Bytes); 404 → NotFound; alles andere Failed.
 // http:// über Klartext, https:// über TLS (ohne NL_TLS: Failed/TlsMissing, kein Rückfall auf HTTP). Klartext:
 // Verbindungsaufbau, Senden und Empfangen je 10 s Timeout. TLS: 8 s Verbindung, 10 s Handshake, 15 s I/O; bei
-// Uhr-Verdacht einmal SNTP und ein zweiter Versuch. cancel (optional) gesetzt → Failed. DNS und der TLS-Handshake
-// sind nicht unterbrechbar.
+// Uhr-Verdacht einmal SNTP und ein zweiter Versuch. cancel (optional) gesetzt → Failed; with TLS it also interrupts
+// connect, handshake and I/O within ~100 ms (abort_cb); only the DNS lookup is not interruptible.
 HttpResult httpGet(const Url& url, u32 maxBody, std::vector<u8>& body, const volatile bool* cancel = nullptr,
                    const HttpLog& log = {});
 

@@ -3,6 +3,7 @@
 #ifndef WTLS_CASTORE_H
 #define WTLS_CASTORE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -16,9 +17,15 @@ typedef struct {
     const uint8_t *der;
 } wtls_ca_entry;
 
+#ifndef WTLS_EMBED_CA
+#define WTLS_EMBED_CA 1
+#endif
+
+#if WTLS_EMBED_CA
 /* Generated from data/cacert.pem (tools/gen_ca_bundle.py), sorted by subject_hash. */
 extern const wtls_ca_entry wtls_ca_bundle[];
 extern const size_t wtls_ca_bundle_count;
+#endif
 
 uint32_t wtls_fnv1a32(const uint8_t *p, size_t n);
 
@@ -29,7 +36,10 @@ int wtls_castore_add(const uint8_t *buf, size_t len);
  * as a heap list owned by the caller; *candidates = NULL and 0 if none. */
 int wtls_castore_ca_cb(void *ctx, const mbedtls_x509_crt *child, mbedtls_x509_crt **candidates);
 
-/* Drops the runtime-added CAs. */
+/* Drops the runtime-added CAs and sets whether the built-in bundle is used. */
+void wtls_castore_reset(bool keep_builtin);
+
+/* Drops the runtime-added CAs and restores default built-in usage (true). */
 void wtls_castore_free(void);
 
 /* Number of callback invocations (used to detect resumed handshakes). */

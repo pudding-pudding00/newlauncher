@@ -4,12 +4,16 @@ on:
   push:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   wii:
     runs-on: ubuntu-latest
     container: devkitpro/devkitppc:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Ensure cmake
         run: command -v cmake || (apt-get update && apt-get install -y cmake)
       - name: Build
@@ -40,7 +44,7 @@ jobs:
   host:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y ninja-build openssl
       - name: Build and test (Release)
@@ -81,7 +85,7 @@ jobs:
   host-asan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install tools
         run: sudo apt-get update && sudo apt-get install -y ninja-build openssl
       - name: Build and test with ASan/UBSan
@@ -97,7 +101,7 @@ jobs:
   fuzz:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Clang and tools
         run: sudo apt-get update && sudo apt-get install -y clang ninja-build openssl
       - name: Build libFuzzer harnesses and run time-boxed regression
@@ -117,7 +121,7 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: msys2/setup-msys2@v2
         with:
           msystem: UCRT64
@@ -134,3 +138,15 @@ jobs:
           cmake -S . -B build-win -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build-win
           ctest --test-dir build-win --output-on-failure
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install tools
+        run: brew install ninja
+      - name: Build and test (macOS)
+        run: |
+          cmake -S . -B build-macos -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-macos
+          ctest --test-dir build-macos --output-on-failure

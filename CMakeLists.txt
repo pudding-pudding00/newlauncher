@@ -195,8 +195,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     # libpng für die Cover (pacman -S ppc-libpng); FreeType bringt sie meist schon mit.
     pkg_check_modules(PNG REQUIRED libpng)
 
-    # HTTPS (HTTP/2 and HTTP/1.1) via libwiitls 1.0.0 (M11, spec v2 4.1, github.com/pudding-pudding00/libwiitls):
-    # vendored into third_party/wii_tls (tools/vendor_wii_tls.py); fetches Mbed TLS 4.1.2 LTS and zlib 1.3.1
+    # HTTPS (HTTP/2 and HTTP/1.1) via libwiitls 1.0.1 (M11, spec v2 4.1, github.com/pudding-pudding00/libwiitls):
+    # vendored into third_party/wii_tls (tools/vendor_wii_tls.py); fetches Mbed TLS 4.1.2 LTS and zlib 1.4
     # (inflate with Z_PREFIX for gzip/deflate) via FetchContent with a pinned SHA256. Without NL_TLS the launcher
     # builds as before with plain HTTP only.
     option(NL_TLS "HTTPS über wii_tls" ON)
@@ -230,7 +230,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         if(TARGET mbedx509)
             target_compile_options(mbedx509 PRIVATE -Wno-format-truncation)
         endif()
-        # zlib 1.3.1 benennt bei Z_PREFIX alle Symbole außer z_errmsg um (upstream in libwiitls 1.0.0 noch offen); ohne Umbenennung kollidiert
+        # zlib 1.4 benennt bei Z_PREFIX alle Symbole außer z_errmsg um (upstream in libwiitls 1.0.1 noch offen); ohne Umbenennung kollidiert
         # wtls_zlib mit dem statischen portlibs-libz (FreeType/libpng). Nur dieses Fremdziel anpassen.
         if(TARGET wtls_zlib)
             target_compile_definitions(wtls_zlib PRIVATE z_errmsg=wtls_z_errmsg)

@@ -9,10 +9,10 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  issues: write
+  issues: read
 
 jobs:
-  ca-bundle-and-deps:
+  ca-bundle:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -55,54 +55,77 @@ jobs:
             git checkout main
           fi
 
-      - name: Check Mbed TLS 4.1.x LTS and zlib releases
+  dependencies:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - dep: mbedtls
+            name: Mbed TLS
+            upstream: Mbed-TLS/mbedtls
+          - dep: zlib
+            name: zlib
+            upstream: madler/zlib
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Open a pull request for a new ${{ matrix.name }} release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          DEP: ${{ matrix.dep }}
+          NAME: ${{ matrix.name }}
+          UPSTREAM: ${{ matrix.upstream }}
         run: |
-          open_issue_if_new() {
-            local title="$1"
-            local body="$2"
-            local count
-            count=$(gh issue list --state open --search "in:title \"$title\"" --json title \
-              | python3 -c "import json,sys; t=sys.argv[1]; print(sum(1 for i in json.load(sys.stdin) if i['title']==t))" "$title")
-            if [ "$count" -eq 0 ]; then
-              gh issue create --title "$title" --body "$body"
-            else
-              echo "Issue already open: $title"
-            fi
-          }
+          CUR=$(python3 tools/update_dep.py current "$DEP")
+          VER=$(gh api "repos/$UPSTREAM/releases?per_page=100" | python3 tools/update_dep.py check "$DEP")
+          echo "$NAME current=$CUR newer=${VER:-none}"
+          [ -n "$VER" ] || exit 0
 
-          # Mbed TLS 4.1.x LTS
-          MB_CUR=$(sed -n 's/.*mbedtls-\([0-9.]*\)\.tar\.bz2.*/\1/p' CMakeLists.txt | head -1)
-          MB_TAG=$(curl -fsSL https://api.github.com/repos/Mbed-TLS/mbedtls/releases \
-            | python3 -c "import json,re,sys; tags=[r['tag_name'] for r in json.load(sys.stdin) if not r.get('prerelease') and re.match(r'^(v|mbedtls-)?4\.1\.\d+$', r['tag_name'])]; print(tags[0] if tags else '')")
-          MB_VER="${MB_TAG#mbedtls-}"; MB_VER="${MB_VER#v}"
-          echo "Mbed TLS current=$MB_CUR latest_4_1=$MB_VER"
-          if [ -n "$MB_VER" ] && [ "$MB_VER" != "$MB_CUR" ]; then
-            open_issue_if_new "Update Mbed TLS to $MB_VER" \
-              "A new Mbed TLS 4.1.x LTS release is available: **$MB_VER** (currently **$MB_CUR**).
-
-          Release: https://github.com/Mbed-TLS/mbedtls/releases/tag/$MB_TAG
-
-          Checklist:
-          - [ ] Update \`URL\` and \`URL_HASH\` in \`CMakeLists.txt\`
-          - [ ] Verify all configure-time patch anchors in \`CMakeLists.txt\` still apply
-          - [ ] Run host + sanitizer + fuzz + Wii hardware suites"
+          # One branch per version: an open pull request keeps any fixes pushed
+          # to it, and a closed one is not reopened.
+          BRANCH="chore/$DEP-$VER"
+          EXISTING=$(gh pr list --head "$BRANCH" --state all --json number --jq length)
+          if [ "$EXISTING" -ne 0 ]; then
+            echo "A pull request for $BRANCH already exists: leaving it alone."
+            exit 0
           fi
 
-          # zlib
-          ZL_CUR=$(sed -n 's/.*zlib-\([0-9.]*\)\.tar\.gz.*/\1/p' CMakeLists.txt | head -1)
-          ZL_TAG=$(curl -fsSL https://api.github.com/repos/madler/zlib/releases/latest \
-            | python3 -c "import json,sys; print(json.load(sys.stdin).get('tag_name',''))")
-          ZL_VER="${ZL_TAG#v}"
-          echo "zlib current=$ZL_CUR latest=$ZL_VER"
-          if [ -n "$ZL_VER" ] && [ "$ZL_VER" != "$ZL_CUR" ]; then
-            open_issue_if_new "Update zlib to $ZL_VER" \
-              "A new zlib release is available: **$ZL_VER** (currently **$ZL_CUR**).
+          URL=$(python3 tools/update_dep.py url "$DEP" "$VER")
+          curl -fsSL -o "$RUNNER_TEMP/dep.tar" "$URL"
+          SHA=$(sha256sum "$RUNNER_TEMP/dep.tar" | cut -d' ' -f1)
+          python3 tools/update_dep.py apply "$DEP" "$VER" --sha256 "$SHA"
 
-          Release: https://github.com/madler/zlib/releases/tag/$ZL_TAG
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git commit -am "chore(deps): update $NAME to $VER"
+          git push -f origin "$BRANCH"
 
-          Checklist:
-          - [ ] Update \`URL\` and \`URL_HASH\` in \`CMakeLists.txt\`
-          - [ ] Verify \`wtls_zlib\` source list and \`test_http_gzip\` / \`fuzz_http_gzip\`"
-          fi
+          TAG=$(basename "${URL%/*}")
+          {
+            echo "Automated update of $NAME from $CUR to **$VER**."
+            echo
+            echo "- Release: https://github.com/$UPSTREAM/releases/tag/$TAG"
+            echo "- Tarball: $URL"
+            echo "- SHA-256 of the downloaded tarball: $SHA"
+            echo
+            echo "CI for this pull request waits for approval: choose **Approve workflows to run**."
+            echo
+            echo "Before merging:"
+            echo "- [ ] Read the upstream release notes and compare the SHA-256 with a published one"
+            echo "- [ ] CI passes (configure-time patch anchors, host, sanitizers, fuzzing, Wii build)"
+            echo "- [ ] Add a CHANGELOG.md entry"
+            echo "- [ ] Run the Wii hardware suites if crypto or I/O behaviour changed"
+            ISSUES=$(gh issue list --state open --limit 100 --json number,title \
+              --jq ".[] | select(.title == \"Update $NAME to $VER\") | .number")
+            for n in $ISSUES; do
+              echo
+              echo "Closes #$n"
+            done
+          } > "$RUNNER_TEMP/body.md"
+
+          gh pr create --head "$BRANCH" --base main \
+            --title "chore(deps): update $NAME to $VER" \
+            --body-file "$RUNNER_TEMP/body.md"

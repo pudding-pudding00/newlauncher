@@ -277,7 +277,7 @@ Copyright 2026 pudding-pudding00. It bundles:
 
 - [Mbed TLS / TF-PSA-Crypto](https://github.com/Mbed-TLS/mbedtls):
   Apache-2.0 (statically linked).
-- [zlib](https://zlib.net/) 1.3.1 inflate (with `WTLS_GZIP`, the default):
+- [zlib](https://zlib.net/) 1.4 inflate (with `WTLS_GZIP`, the default):
   zlib license (compiled into `libwiitls.a`).
 - The Mozilla CA certificate bundle (`data/cacert.pem`,
   `src/gen/ca_bundle.c`): [MPL-2.0](https://www.mozilla.org/MPL/2.0/).

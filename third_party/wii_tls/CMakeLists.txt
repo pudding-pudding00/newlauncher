@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(libwiitls VERSION 1.0.0 LANGUAGES C)
+project(libwiitls VERSION 1.0.1 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -103,8 +103,8 @@ endif()
 option(WTLS_GZIP "gzip Content-Encoding in the HTTP client (zlib inflate, built in)" ON)
 if(WTLS_GZIP)
     FetchContent_Declare(zlib
-        URL https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
-        URL_HASH SHA256=9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23
+        URL https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.gz
+        URL_HASH SHA256=02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
         SOURCE_SUBDIR _wtls_no_cmake # sources only: zlib's own CMakeLists is not used
     )
@@ -452,6 +452,9 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     if(NOT Python3_Interpreter_FOUND)
         message(FATAL_ERROR "Host tests need Python 3 (test servers, certificate generation)")
     endif()
+    # The release check behind .github/workflows/maintenance.yml.
+    add_test(NAME update_dep_tool
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_update_dep.py)
     # Test PKI (tests/host/make_certs.py, OpenSSL CLI) in ${CMAKE_BINARY_DIR}/certs.
     find_program(WTLS_OPENSSL openssl REQUIRED)
     set(WTLS_TEST_CERT_DIR ${CMAKE_BINARY_DIR}/certs)

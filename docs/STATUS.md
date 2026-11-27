@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-11-26. All planned milestones through **M29** (Cloud Saves with Google Drive, OneDrive, and Dropbox + pairing page, QR encoder, extended keyboard, cover ordering/batching, and taskbar pointer UX) are implemented and merged into `main`. Hardware acceptance for M21–M29 is still open. Agent rules live in [AGENTS.md](../AGENTS.md).
+Last updated: 2026-11-27. All planned milestones through **M29** (Cloud Saves with Google Drive, OneDrive, and Dropbox + pairing page, QR encoder, extended keyboard, cover ordering/batching, and taskbar pointer UX) are implemented and merged into `main`. Hardware acceptance for M21–M29 is still open. Agent rules live in [AGENTS.md](../AGENTS.md).
 
 ## Completed Milestones
 
@@ -26,6 +26,7 @@ Last updated: 2026-11-26. All planned milestones through **M29** (Cloud Saves wi
 | M29 | Dropbox (PKCE), LAN pairing page (HTTP port 4301), QR encoder, layered 128-char keyboard | #48, #49 |
 | – | Cover top-to-bottom FIFO loading, 6x `.tex` batching, Favorites/Recent priority; taskbar pointer & placeholder fixes | #50, #51, #52, #53 |
 | – | `wii_tls` switched to the public **libwiitls v1.0.0** (`pudding-pudding00/libwiitls`, Mbed TLS 4.1.2 LTS, HTTP/2) | this PR |
+| – | `wii_tls` updated to **libwiitls v1.0.1** (bundled zlib 1.4 for gzip, no API change) | this PR |
 
 CI (`.github/workflows/build.yml`) builds Wii DOLs with and without TLS and runs all host and Python tool tests.
 
@@ -39,7 +40,7 @@ CI (`.github/workflows/build.yml`) builds Wii DOLs with and without TLS and runs
 
 ### 2. Known Minor Technical Notes
 - **Flaky Dolphin smoke `--remote-check`:** 2 of 11 runs reported `REMOTE KEY (Fokus blieb …)`, likely due to a Dolphin simulated IR pointer event resetting tile focus.
-- **Upstream libwiitls (`z_errmsg`):** `z_errmsg` still collides with zlib 1.3.1 despite `Z_PREFIX` in libwiitls 1.0.0; worked around with `-Dz_errmsg=wtls_z_errmsg` in CMake.
+- **Upstream libwiitls (`z_errmsg`):** `z_errmsg` still collides with zlib despite `Z_PREFIX` in libwiitls 1.0.1 (its bundled zlib 1.4 does not rename it either); worked around with `-Dz_errmsg=wtls_z_errmsg` in CMake.
 - **Side finding (M13):** cIOS slots 248–251 appear as `other` instead of `d2x` in SysInfo because `wii_disc.cpp` cannot read `.app` under stock IOS 58 without ISFS patches; slot 249 is verified d2x.
 - **Deferred / Out-of-scope enhancements:** Parallel cover downloads (would require `wii_tls` changes), `txt1`/`wnd1` banner elements, `.wbf1`/WBFS banner extraction.
 

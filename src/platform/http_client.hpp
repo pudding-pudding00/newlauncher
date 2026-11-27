@@ -1,5 +1,5 @@
 #pragma once
-// HTTP/HTTPS client over libwiitls 1.0.0 (<wiitls/http.h>: HTTP/2 via ALPN, keep-alive pool, gzip/deflate, redirects);
+// HTTP/HTTPS client over libwiitls 1.0.1 (<wiitls/http.h>: HTTP/2 via ALPN, keep-alive pool, gzip/deflate, redirects);
 // ohne NL_TLS Klartext-Sockets mit core/http. Nur im Netz-Thread (NetService) aufrufen; dort laufen net_init und
 // wtls_init, und nur dort dürfen wtls_*-Aufrufe stehen.
 

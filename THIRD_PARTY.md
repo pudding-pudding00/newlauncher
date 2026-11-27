@@ -13,7 +13,7 @@ name, version and license from this table (generated at build time).
 | WiiFlow Lite (Game-Booter) | see `boot/UPSTREAM.md` | GPL-3.0-or-later / GPL-2.0-or-later | https://github.com/Fledge68/WiiFlow_Lite | source in `boot/`, linked into `game_booter.dol` |
 | WiiFlow Lite (NAND-Emulation) | 69c0d4d (`source/channel/nand.cpp`) | Zlib, GPL-3.0-or-later | https://github.com/Fledge68/WiiFlow_Lite | ported to `src/platform/nand_emu.cpp`; `LICENSES/Zlib.txt` |
 | Gecko-Codehandler (Dolphin `docs/codehandler.s`) | da9e932 | MIT | https://github.com/dolphin-emu/dolphin (© 2010–2017 Nuke, brkirch, Y.S, Kenobi, gamemasterplc) | source in `boot/nl/codehandler/`, assembled during the build, in `game_booter.dol`; `LICENSES/MIT.txt` |
-| wii_tls | libwiitls 1.0.0 (14058b6, Release v1.0.0) | Apache-2.0 | https://github.com/pudding-pudding00/libwiitls, vendored under `third_party/wii_tls` (commit in `VENDORED.txt`) | statically linked, only with `NL_TLS=ON`; `LICENSES/Apache-2.0.txt` |
+| wii_tls | libwiitls 1.0.1 (d64f3dd, Release v1.0.1) | Apache-2.0 | https://github.com/pudding-pudding00/libwiitls, vendored under `third_party/wii_tls` (commit in `VENDORED.txt`) | statically linked, only with `NL_TLS=ON`; `LICENSES/Apache-2.0.txt` |
 | Mbed TLS | 4.1.2 LTS | Apache-2.0 | https://github.com/Mbed-TLS/mbedtls (release archive, SHA256 in `third_party/wii_tls/CMakeLists.txt`) | statically linked through wii_tls, only with `NL_TLS=ON`; `LICENSES/Apache-2.0.txt` |
 | Mozilla CA certificates | 2026-11-05 | MPL-2.0 | https://curl.se/docs/caextract.html | embedded unchanged through wii_tls, only with `NL_TLS=ON`; `LICENSES/MPL-2.0.txt` |
 | M PLUS Rounded 1c | 1.059 | OFL-1.1 | https://github.com/google/fonts/tree/main/ofl/mplusrounded1c | embedded Latin-1 subset; `LICENSES/OFL-1.1.txt` |
@@ -22,7 +22,7 @@ name, version and license from this table (generated at build time).
 | libntfs | ae00fc8 (with 4 patches, see `third_party/libntfs/VENDORED.txt`) | GPL-2.0-or-later (used under GPLv3 here); `cache2.c`, `bit_ops.h`: BSD-3-Clause | https://github.com/extremscorner/libntfs | vendored under `third_party/libntfs`, statically linked, only with `NL_FS_NTFS=ON`, read-only; GPLv3 text in `LICENSE`, upstream GPLv2 text in `third_party/libntfs/upstream/LICENSE`, `LICENSES/BSD-3-Clause.txt` |
 | FreeType | 2.14.1 | FTL | https://freetype.org | statically linked; `LICENSES/FTL.txt` (Portions of this software are copyright © The FreeType Project (www.freetype.org). All rights reserved.) |
 | libpng | 1.6.55 | libpng-2.0 | https://www.libpng.org/pub/png/libpng.html | statically linked; `LICENSES/libpng.txt` |
-| zlib | 1.3.1 | Zlib | https://zlib.net | statically linked; `LICENSES/Zlib.txt`; with `NL_TLS=ON` additionally inflate (`Z_PREFIX`) through wii_tls |
+| zlib | 1.3.1 | Zlib | https://zlib.net | statically linked; `LICENSES/Zlib.txt`; with `NL_TLS=ON` additionally inflate (`Z_PREFIX`, zlib 1.4 sources) through wii_tls |
 | bzip2 | 1.0.8 | bzip2-1.0.6 | https://sourceware.org/bzip2/ | statically linked (FreeType); `LICENSES/bzip2.txt` |
 | Brotli | 1.2.0 | MIT | https://github.com/google/brotli | statically linked (FreeType); `LICENSES/MIT.txt` |
 | libogg | 1.3.6 | BSD-3-Clause | https://xiph.org/ogg/ | statically linked; `LICENSES/BSD-3-Clause.txt` |

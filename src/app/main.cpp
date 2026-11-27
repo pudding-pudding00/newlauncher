@@ -1628,11 +1628,14 @@ int main(int argc, char** argv) {
         savesUnit = nl::locateSave(saveFs, *q);
         if (!savesUnit) return v;
         v.location = savesUnit->dir;
-        const auto files = nl::readUnit(saveFs, *savesUnit);
-        if (!files.isOk()) return v;
-        for (const nl::SaveFile& f : files.value()) v.bytes += f.data.size();
-        v.files = static_cast<u32>(files.value().size());
-        v.state = files.value().empty() ? nl::ui::SavesView::State::Empty : nl::ui::SavesView::State::Ok;
+        // Größe und Dateizahl liest der SaveWorker im Hintergrund (readUnit liest alle Dateien): die Szene öffnet sofort
+        // und bleibt busy, bis pumpSaves das Ergebnis einträgt. Läuft gerade ein Auftrag, kommt der Scan danach.
+        v.state = nl::ui::SavesView::State::Ok;
+        v.busy = true;
+        if (!saveWorker.running() && !saveWorker.startScan(*savesUnit)) {
+            v.state = nl::ui::SavesView::State::Unknown;
+            v.busy = false;
+        }
         return v;
     };
     auto openSaves = [&](const nl::Game& g) {
@@ -1675,6 +1678,25 @@ int main(int argc, char** argv) {
         const auto r = saveWorker.poll();
         if (!r) return;
         const std::string unit = savesUnit ? savesUnit->id : std::string("?");
+        if (r->kind == nl::platform::SaveJobResult::Kind::Scan) {
+            const nl::Game* sg = savesScene.game();
+            if (sg == nullptr || !savesUnit) return;
+            if (r->unitId != savesUnit->id) {  // Szene zeigt inzwischen ein anderes Spiel: neu vermessen
+                savesScene.setView(savesViewFor(*sg));
+                return;
+            }
+            nl::ui::SavesView v = savesScene.view();
+            v.busy = false;
+            if (r->ok) {
+                v.bytes = r->bytes;
+                v.files = r->files;
+                v.state = r->files == 0 ? nl::ui::SavesView::State::Empty : nl::ui::SavesView::State::Ok;
+            } else {
+                v.state = nl::ui::SavesView::State::Unknown;
+            }
+            savesScene.setView(std::move(v));
+            return;
+        }
         if (r->kind == nl::platform::SaveJobResult::Kind::Backup)
             nl::log::line("NL_SAVE_BACKUP %s %s %s", !r->ok ? "fail" : r->backup.empty ? "empty" : "ok", unit.c_str(),
                           r->ok ? r->backup.zipPath.c_str() : "");  // Pfad für den Smoke (Dolphin schreibt nicht zurück)
@@ -3338,6 +3360,7 @@ int main(int argc, char** argv) {
                 for (const nl::Game& g : store.games())
                     if (g.key != nullptr && key == g.key) {
                         openSaves(g);
+                        saveWorker.join();  // Test: den Hintergrund-Scan abwarten, damit der Auftrag danach starten darf
                         return &g;
                     }
                 nl::log::line("NL_WARN Spielstand %s fehlt", key.c_str());

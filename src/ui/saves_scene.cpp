@@ -100,6 +100,7 @@ const char* SavesScene::stateText() const {
         case SavesView::State::Empty: return tr(Str::SavesEmpty);
         case SavesView::State::Ok: break;
     }
+    if (view_.busy && view_.files == 0) return "…";  // Größe wird noch im Hintergrund gelesen
     std::snprintf(stateText_, sizeof stateText_, tr(Str::SavesSize), formatBytes(view_.bytes).c_str(),
                   static_cast<unsigned>(view_.files));
     return stateText_;

@@ -15,10 +15,13 @@
 namespace nl::platform {
 
 struct SaveJobResult {
-    enum class Kind : u8 { Backup, Restore } kind = Kind::Backup;
+    enum class Kind : u8 { Backup, Restore, Scan } kind = Kind::Backup;
     bool ok = false;
     std::string detail;  // Fehlertext bei !ok, sonst leer
     BackupInfo backup;   // nur Backup
+    std::string unitId;  // nur Scan: Einheit, die vermessen wurde
+    u64 bytes = 0;       // nur Scan
+    u32 files = 0;       // nur Scan
 };
 
 class SaveWorker {
@@ -31,6 +34,7 @@ public:
 
     bool startBackup(SaveUnit u, std::string title);  // false = läuft schon / Thread startet nicht
     bool startRestore(SaveUnit u, std::string zipPath, std::string title);
+    bool startScan(SaveUnit u);  // Größe und Dateizahl im Hintergrund (liest die ganze Einheit, darf den Haupt-Thread nicht blockieren)
     bool running() const { return running_; }
     std::optional<SaveJobResult> poll();  // genau einmal nach dem Ende
     void join();                          // vor dem Aushängen der Laufwerke

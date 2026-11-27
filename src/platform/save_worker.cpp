@@ -55,6 +55,15 @@ bool SaveWorker::startRestore(SaveUnit u, std::string zipPath, std::string title
     return launch(SaveJobResult::Kind::Restore);
 }
 
+bool SaveWorker::startScan(SaveUnit u) {
+    if (running_) return false;
+    join();
+    unit_ = std::move(u);
+    title_.clear();
+    zipPath_.clear();
+    return launch(SaveJobResult::Kind::Scan);
+}
+
 void SaveWorker::join() {
     if (thread_ == LWP_THREAD_NULL) return;
     LWP_JoinThread(thread_, nullptr);
@@ -66,7 +75,17 @@ void* SaveWorker::entry(void* arg) {
     auto* self = static_cast<SaveWorker*>(arg);
     SaveJobResult r;
     r.kind = self->kind_;
-    if (self->kind_ == SaveJobResult::Kind::Backup) {
+    if (self->kind_ == SaveJobResult::Kind::Scan) {
+        r.unitId = self->unit_.id;
+        const auto files = readUnit(self->fs_, self->unit_);
+        r.ok = files.isOk();
+        if (files.isOk()) {
+            for (const SaveFile& f : files.value()) r.bytes += f.data.size();
+            r.files = static_cast<u32>(files.value().size());
+        } else {
+            r.detail = files.error().context;
+        }
+    } else if (self->kind_ == SaveJobResult::Kind::Backup) {
         auto b = backupUnit(self->fs_, self->dataDir_, self->unit_, self->title_, self->device_, nowUnix());
         r.ok = b.isOk();
         if (b.isOk())

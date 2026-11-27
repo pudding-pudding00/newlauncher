@@ -1,5 +1,5 @@
 // Ersatz für WiiFlows source/defines.h (siehe boot/UPSTREAM.md): der Booter braucht daraus nur den
-// Patcher-Namen, den patchcode.c an Wiimmfi meldet. NL_VERSION kommt aus CMake (PROJECT_VERSION).
+// Patcher-Namen, den patchcode.c an Wiimmfi meldet. NL_VERSION kommt aus CMake (NL_APP_VERSION, Standard PROJECT_VERSION).
 #ifndef NL_BOOTER_DEFINES_H
 #define NL_BOOTER_DEFINES_H
 

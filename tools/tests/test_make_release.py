@@ -77,6 +77,36 @@ class MakeReleaseTest(unittest.TestCase):
         rc = make_release.main(["--out", str(self.root / "x.zip"), "--dol", str(self.dol), "--root", str(self.root)])
         self.assertEqual(rc, 1)
 
+    def test_meta_xml_carries_the_release_version(self):
+        (self.root / "dist/apps/newlauncher/meta.xml").write_text(
+            '<app version="1">\n  <version>0.0.1</version>\n</app>\n', encoding="utf-8")
+        out = self.root / "out/nl.zip"
+        rc = make_release.main(["--out", str(out), "--dol", str(self.dol), "--root", str(self.root),
+                                "--version", "0.0.3"])
+        self.assertEqual(rc, 0)
+        with zipfile.ZipFile(out) as z:
+            meta = z.read("apps/newlauncher/meta.xml").decode("utf-8")
+        self.assertIn("<version>0.0.3</version>", meta)
+        self.assertNotIn("<version>0.0.1</version>", meta)
+
+    def test_meta_with_version_only_replaces_the_version_element(self):
+        self.assertEqual(make_release.meta_with_version("<app><version>1.0</version></app>", "2.0"),
+                         "<app><version>2.0</version></app>")
+        self.assertEqual(make_release.meta_with_version("<app/>", "2.0"), "<app/>")
+
+    def test_update_ini_can_point_at_an_absolute_zip_url(self):
+        out = self.root / "out/newlauncher-0.0.3.zip"
+        rc = make_release.main(["--out", str(out), "--dol", str(self.dol), "--root", str(self.root),
+                                "--version", "0.0.3", "--zip-base-url", "https://example.invalid/dl/dev-0.0.3"])
+        self.assertEqual(rc, 0)
+        ini = (out.parent / "update.ini").read_text(encoding="utf-8")
+        self.assertIn("zip = https://example.invalid/dl/dev-0.0.3/newlauncher-0.0.3.zip\n", ini)
+
+    def test_zip_base_url_must_be_https(self):
+        rc = make_release.main(["--out", str(self.root / "x.zip"), "--dol", str(self.dol), "--root", str(self.root),
+                                "--zip-base-url", "http://example.invalid/dl"])
+        self.assertEqual(rc, 1)
+
     def test_repo_notices_contain_apache(self):
         self.assertIn("Apache License", notices.third_party_text(notices.REPO_ROOT))
 

@@ -28,12 +28,12 @@ Last updated: 2026-11-27. All planned milestones through **M29** (Cloud Saves wi
 | – | `wii_tls` switched to the public **libwiitls v1.0.0** (`pudding-pudding00/libwiitls`, Mbed TLS 4.1.2 LTS, HTTP/2) | this PR |
 | – | `wii_tls` updated to **libwiitls v1.0.1** (bundled zlib 1.4 for gzip, no API change) | this PR |
 
-CI (`.github/workflows/build.yml`) builds Wii DOLs with and without TLS and runs all host and Python tool tests.
+CI (`.github/workflows/build.yml`) builds Wii DOLs with and without TLS and runs all host and Python tool tests. Every merge into `main` publishes a development release `dev-0.0.N` (`.github/workflows/dev-release.yml`, numbered from 0.0.1).
 
 ## Open Items
 
 ### 1. Hardware Acceptance on Real Wii
-- **M20:** R1–R6, F1, U2 **passed** ([acceptance/m20-wii.md](acceptance/m20-wii.md)). **U1** (GitHub Release self-update) awaits the first published release.
+- **M20:** R1–R6, F1, U2 **passed** ([acceptance/m20-wii.md](acceptance/m20-wii.md)). **U1** (GitHub Release self-update) can now run against the development releases (`dev-0.0.N`); not yet checked on the Wii.
 - **M11–M19, M21–M29, and v1/M7 ([hardware-acceptance.md](hardware-acceptance.md)):** Formal checklists remain open (unchecked).
 - **M26 Spike S1 (real hardware, read-only check done):** Opening the Save Manager scene on a Wii game (`RUUE01`) under stock IOS 58 with AHBPROT off succeeded (`nand:/title/00010000/.../data` opened without "NAND locked"). Actual NAND write/restore remains untested on hardware (ask user and recommend BootMii NAND backup first).
 - **M27–M29 Cloud:** Requires user-provided OAuth app credentials in `sd:/newlauncher/config.ini` (see [cloud-setup.md](cloud-setup.md)).

@@ -58,4 +58,14 @@ int wtls_hpack_encode_request(const char *method, const wtls_url *u, const wtls_
 int wtls_hpack_decode_head(wtls_hpack_ctx *ctx, const uint8_t *block, size_t block_len,
                            wtls_http_head *head, char **arena_out);
 
+
+/**
+ * Decodes a trailer block (RFC 9113 8.1: no pseudo-header fields) and discards it. Needed so that the shared
+ * dynamic table stays in step with the server's even when a trailer adds entries.
+ */
+int wtls_hpack_decode_trailers(wtls_hpack_ctx *ctx, const uint8_t *block, size_t block_len);
+
+/** Decodes any block (head or trailers of a stream nobody waits for any more) and drops it; the table advances. */
+int wtls_hpack_decode_discard(wtls_hpack_ctx *ctx, const uint8_t *block, size_t block_len);
+
 #endif

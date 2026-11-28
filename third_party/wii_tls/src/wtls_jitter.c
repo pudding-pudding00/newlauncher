@@ -10,18 +10,15 @@
 
 #include "wtls_internal.h"
 
-static bool g_warmup_pending = true;
+static unsigned g_warmup_left = WTLS_JITTER_WARMUP;
 
-void wtls_jitter_reset_warmup(bool pending) { g_warmup_pending = pending; }
+void wtls_jitter_reset_warmup(bool pending) { g_warmup_left = pending ? WTLS_JITTER_WARMUP : 0; }
 
 int wtls_jitter_collect_ex(wtls_sample_fn fn, void *ctx, uint8_t *out, size_t len,
                            wtls_jitter_stats *stats) {
     if (!fn || (!out && len)) return WTLS_ERR_ARG;
     if (stats) memset(stats, 0, sizeof *stats);
-    if (g_warmup_pending) {
-        for (int i = 0; i < WTLS_JITTER_WARMUP; i++) (void)fn(ctx);
-        g_warmup_pending = false;
-    }
+    for (; g_warmup_left > 0; g_warmup_left--) (void)fn(ctx);
 
     /* Repetition Count Test */
     uint8_t rct_val = 0;
@@ -64,25 +61,53 @@ int wtls_jitter_collect(wtls_sample_fn fn, void *ctx, uint8_t *out, size_t len) 
     return wtls_jitter_collect_ex(fn, ctx, out, len, NULL);
 }
 
-#define RAW_PER_BLOCK (2 * 256 / WTLS_JITTER_BITS_PER_SAMPLE)
+void wtls_jitter_block_clear(wtls_jitter_block *b) { mbedtls_platform_zeroize(b, sizeof *b); }
+
+/* The per-sample tests of wtls_jitter_collect_ex(), with their state in b so
+ * a block can span calls; b->n == 0 starts them afresh, as a new call does. */
+int wtls_jitter_block_step(wtls_jitter_block *b, wtls_sample_fn fn, void *ctx,
+                           size_t max_samples, uint8_t out[32]) {
+    if (!b || !fn || !out) return WTLS_ERR_ARG;
+    for (; g_warmup_left > 0 && max_samples > 0; g_warmup_left--, max_samples--) (void)fn(ctx);
+    for (; b->n < sizeof b->raw && max_samples > 0; max_samples--) {
+        uint8_t v = (uint8_t)fn(ctx);
+        if (b->n > 0 && v == b->rct_val) {
+            if (++b->rct_count >= WTLS_RCT_CUTOFF) goto fail;
+        } else {
+            b->rct_val = v;
+            b->rct_count = 1;
+        }
+        if (b->apt_pos == 0) {
+            b->apt_ref = v;
+            b->apt_count = 1;
+        } else if (v == b->apt_ref && ++b->apt_count >= WTLS_APT_CUTOFF) {
+            goto fail;
+        }
+        if (++b->apt_pos == WTLS_APT_WINDOW) b->apt_pos = 0;
+        b->raw[b->n++] = v;
+    }
+    if (b->n < sizeof b->raw) return WTLS_WANT_READ;
+    int r = mbedtls_sha256(b->raw, sizeof b->raw, out, 0);
+    wtls_jitter_block_clear(b);
+    return r == 0 ? WTLS_OK : WTLS_ERR_ENTROPY;
+fail:
+    wtls_jitter_block_clear(b);
+    return WTLS_ERR_ENTROPY;
+}
 
 int wtls_jitter_conditioned(wtls_sample_fn fn, void *ctx, uint8_t *out, size_t len) {
-    static uint8_t raw[RAW_PER_BLOCK];
+    static wtls_jitter_block blk;
     uint8_t digest[32];
     int ret = WTLS_OK;
+    wtls_jitter_block_clear(&blk);
     while (len > 0) {
-        ret = wtls_jitter_collect(fn, ctx, raw, sizeof raw);
+        ret = wtls_jitter_block_step(&blk, fn, ctx, SIZE_MAX, digest);
         if (ret != WTLS_OK) break;
-        if (mbedtls_sha256(raw, sizeof raw, digest, 0) != 0) {
-            ret = WTLS_ERR_ENTROPY;
-            break;
-        }
         size_t n = len < sizeof digest ? len : sizeof digest;
         memcpy(out, digest, n);
         out += n;
         len -= n;
     }
-    mbedtls_platform_zeroize(raw, sizeof raw);
     mbedtls_platform_zeroize(digest, sizeof digest);
     return ret;
 }

@@ -8,11 +8,18 @@
 #include <mbedtls/ssl.h>
 #include <wiitls/wiitls.h>
 
+#define WTLS_PINS_TOTAL (WTLS_SPKI_MAX_PINS + WTLS_SPKI_MAX_PINS_EXT)
+
+/* Validates the pin fields of opt and flattens spki_pins + spki_pins_ext into out;
+ * *n = the total. WTLS_OK or WTLS_ERR_ARG. */
+int wtls_pins_collect(const wtls_options *opt, uint8_t out[WTLS_PINS_TOTAL][WTLS_SPKI_SHA256_LEN], uint8_t *n);
+
 typedef enum {
     WTLS_CONN_TCP_CONNECT = 0,
     WTLS_CONN_TLS_HANDSHAKE,
     WTLS_CONN_READY,
-    WTLS_CONN_FAILED
+    WTLS_CONN_FAILED,
+    WTLS_CONN_DNS /* host name lookup running on a helper thread */
 } wtls_conn_stage;
 
 struct wtls_conn {
@@ -21,6 +28,7 @@ struct wtls_conn {
     int fd;
     wtls_conn_stage stage;
     bool nonblocking;
+    size_t write_pending; /* plaintext bytes of an application record that is not completely sent yet */
     uint32_t connect_timeout_ms;
     uint32_t handshake_timeout_ms;
     uint32_t io_timeout_ms;
@@ -33,6 +41,9 @@ struct wtls_conn {
     size_t n_addrs;
     size_t addr_idx;
     bool dns_from_cache;
+    int dns_job;             /* WTLS_CONN_DNS: the lookup job */
+    uint64_t dns_deadline_ms; /* 0: none */
+    bool async_dns;          /* resolve on a helper thread */
     bool dns_retried;
     char host[256];          /* normalized: lower case, no trailing dot */
     uint16_t port;
@@ -43,7 +54,7 @@ struct wtls_conn {
     uint32_t ipv4_be;
     bool no_resumption;
     const wtls_client_cred *cred; /* NULL, or held for the connection's lifetime */
-    uint8_t spki_pins[WTLS_SPKI_MAX_PINS][WTLS_SPKI_SHA256_LEN];
+    uint8_t spki_pins[WTLS_PINS_TOTAL][WTLS_SPKI_SHA256_LEN];
     uint8_t n_spki_pins;
     bool pin_matched;
     bool has_id;

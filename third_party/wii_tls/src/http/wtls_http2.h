@@ -16,6 +16,26 @@
 typedef struct wtls_h2_conn wtls_h2_conn;
 
 /**
+ * Byte transport under an HTTP/2 connection. The TLS transport is built in;
+ * wtls_h2_create_io() takes another one so the frame engine can be driven by
+ * the fuzzers without a socket.
+ */
+typedef struct {
+    /** Blocking read of >= 1 byte. @p max_wait_ms 0 = the transport's own I/O timeout, otherwise
+     *  wait at most that long. Returns > 0 bytes or a negative wtls_status (WTLS_ERR_CLOSED = EOF). */
+    int (*read)(void *ctx, void *buf, size_t len, uint32_t max_wait_ms);
+    /** Writes all of buf or fails: WTLS_OK or a negative wtls_status. */
+    int (*write)(void *ctx, const void *buf, size_t len);
+    /** True when a read would return data without waiting (idle liveness check). */
+    bool (*readable)(void *ctx);
+    /** One read that never waits: > 0 bytes, WTLS_WANT_READ, or <= 0 on failure. */
+    int (*read_nowait)(void *ctx, void *buf, size_t len);
+} wtls_h2_io;
+
+/** Like wtls_h2_create() over a caller-supplied transport (which must outlive the connection). */
+int wtls_h2_create_io(const wtls_h2_io *io, void *io_ctx, wtls_h2_conn **out);
+
+/**
  * Allocates an HTTP/2 connection over an established TLS session (ALPN "h2"),
  * sending the RFC 9113 client connection preface, SETTINGS, and connection WINDOW_UPDATE.
  */

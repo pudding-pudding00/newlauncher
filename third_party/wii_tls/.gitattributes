@@ -1,3 +1,4 @@
 * text=auto eol=lf
 *.der binary
 *.pem text eol=lf
+tests/fuzz/corpus/** binary

@@ -13,6 +13,28 @@ int64_t wtls_plat_unix_time(void) { return (int64_t)time(NULL) + g_unix_offset; 
 
 void wtls_plat_set_unix_time_offset(int64_t delta_s) { g_unix_offset = delta_s; }
 
+int64_t wtls_plat_unix_time_offset(void) { return g_unix_offset; }
+
+int wtls_plat_poll_many(const int *fds, const uint8_t *want, size_t n, uint32_t timeout_ms, uint8_t *ready) {
+    uint64_t end = wtls_plat_now_ms() + timeout_ms;
+    for (;;) {
+        int count = 0;
+        for (size_t i = 0; i < n; i++) {
+            ready[i] = 0;
+            if (fds[i] < 0) continue;
+            if (wtls_plat_poll(fds[i], (want[i] & 1u) != 0, (want[i] & 2u) != 0, 0) != 0) { /* ready, or failed */
+                ready[i] = 1;
+                count++;
+            }
+        }
+        if (count) return count;
+        uint64_t now = wtls_plat_now_ms();
+        if (now >= end) return 0;
+        uint64_t left = end - now;
+        wtls_plat_sleep_ms(left < 2 ? (uint32_t)left : 2u);
+    }
+}
+
 bool wtls_plat_parse_ipv4(const char *s, uint32_t *ipv4_be) {
     uint8_t b[4];
     if (!s) return false;

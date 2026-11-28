@@ -1,4 +1,5 @@
 /* HTTP/2 client connection and sequential stream engine (RFC 9113). */
+#include "wtls_mem.h"
 #include "http/wtls_http2.h"
 
 #include <limits.h>
@@ -44,7 +45,8 @@ enum {
 };
 
 struct wtls_h2_conn {
-    wtls_conn *tls;
+    wtls_h2_io io;
+    void *io_ctx;
     wtls_hpack_ctx hpack;
     uint32_t next_stream_id;
     uint32_t cur_stream_id;
@@ -61,7 +63,12 @@ struct wtls_h2_conn {
     uint8_t *rx_buf;
     size_t rx_off;
     size_t rx_end;
+    /* Outgoing frames gathered until the next read (see send_frame). */
+    uint8_t *tx_buf;
+    size_t tx_len;
 };
+
+#define H2_TX_CAP (H2_FRAME_HDR + H2_MAX_FRAME_CAP)
 
 static uint32_t read_u24(const uint8_t *p) {
     return ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | (uint32_t)p[2];
@@ -99,36 +106,37 @@ static void write_frame_hdr(uint8_t *dst, uint32_t len, uint8_t type, uint8_t fl
 }
 
 static int h2_write_all(wtls_h2_conn *c, const void *buf, size_t len) {
-    const uint8_t *p = buf;
-    while (len) {
-        int k = wtls_write(c->tls, p, len);
-        if (k <= 0) {
-            c->broken = true;
-            return k == WTLS_ERR_CLOSED || k == 0 ? WTLS_ERR_IO : k;
-        }
-        p += k;
-        len -= (size_t)k;
+    int st = c->io.write(c->io_ctx, buf, len);
+    if (st != WTLS_OK) {
+        c->broken = true;
+        return st == WTLS_ERR_CLOSED ? WTLS_ERR_IO : st;
     }
     return WTLS_OK;
 }
 
+/* Sends the gathered frames in one write. */
+static int h2_flush(wtls_h2_conn *c) {
+    if (!c->tx_len) return WTLS_OK;
+    size_t n = c->tx_len;
+    c->tx_len = 0;
+    return h2_write_all(c, c->tx_buf, n);
+}
+
 static int h2_read_exact(wtls_h2_conn *c, void *buf, size_t len, uint64_t has_deadline, uint64_t deadline) {
+    int fst = h2_flush(c); /* whatever we owe the peer must leave before we wait for it */
+    if (fst != WTLS_OK) return fst;
     uint8_t *p = buf;
-    uint32_t saved_to = c->tls->io_timeout_ms;
     while (len) {
+        uint32_t max_wait = 0;
         if (has_deadline) {
             uint64_t now = wtls_plat_now_ms();
-            if (now >= deadline) {
-                c->tls->io_timeout_ms = saved_to;
-                return WTLS_ERR_TIMEOUT;
-            }
+            if (now >= deadline) return WTLS_ERR_TIMEOUT;
             uint64_t left = deadline - now;
-            if (left < c->tls->io_timeout_ms) c->tls->io_timeout_ms = (uint32_t)left;
+            max_wait = left > UINT32_MAX ? UINT32_MAX : (uint32_t)left;
         }
-        int k = wtls_read(c->tls, p, len);
-        c->tls->io_timeout_ms = saved_to;
+        int k = c->io.read(c->io_ctx, p, len, max_wait);
         if (k <= 0) {
-            if (k == WTLS_ERR_CLOSED) k = WTLS_ERR_IO;
+            if (k == WTLS_ERR_CLOSED || k == 0) k = WTLS_ERR_IO;
             c->broken = true;
             return k;
         }
@@ -138,13 +146,22 @@ static int h2_read_exact(wtls_h2_conn *c, void *buf, size_t len, uint64_t has_de
     return WTLS_OK;
 }
 
+/* Queues a frame; frames leave together on the next read (h2_read_exact), when the
+ * buffer fills, or at the end of wtls_h2_alive. The Wii cannot disable Nagle (IOS
+ * rejects TCP_NODELAY), so a frame header and its payload written separately, or two
+ * small frames in a row, waited for the server's delayed ACK: ~60 ms per request.
+ * Every frame fits (len <= peer_max_frame <= H2_MAX_FRAME_CAP), so none is split. */
 static int send_frame(wtls_h2_conn *c, uint8_t type, uint8_t flags, uint32_t stream,
                       const void *payload, size_t len) {
-    uint8_t hdr[H2_FRAME_HDR];
-    write_frame_hdr(hdr, (uint32_t)len, type, flags, stream);
-    int st = h2_write_all(c, hdr, sizeof hdr);
-    if (st == WTLS_OK && len) st = h2_write_all(c, payload, len);
-    return st;
+    if (len > H2_MAX_FRAME_CAP) return WTLS_ERR_ARG;
+    if (c->tx_len + H2_FRAME_HDR + len > H2_TX_CAP) {
+        int st = h2_flush(c);
+        if (st != WTLS_OK) return st;
+    }
+    write_frame_hdr(c->tx_buf + c->tx_len, (uint32_t)len, type, flags, stream);
+    if (len) memcpy(c->tx_buf + c->tx_len + H2_FRAME_HDR, payload, len);
+    c->tx_len += H2_FRAME_HDR + len;
+    return WTLS_OK;
 }
 
 static int send_window_update(wtls_h2_conn *c, uint32_t stream, uint32_t inc) {
@@ -257,8 +274,10 @@ static int handle_common_frame(wtls_h2_conn *c, const h2_frame *f) {
     }
 }
 
+/* A header block (HEADERS + CONTINUATION) of the current stream: the response head, or with trailers set the
+ * trailers, which are decoded and dropped (the shared dynamic table must see their entries). */
 static int decode_headers_sequence(wtls_h2_conn *c, const h2_frame *first, bool use_deadline,
-                                   uint64_t deadline, wtls_http_head *head_out, char **arena_out) {
+                                   uint64_t deadline, wtls_http_head *head_out, char **arena_out, bool trailers) {
     if (first->stream != c->cur_stream_id || first->stream == 0) return WTLS_ERR_HTTP;
     size_t off = 0;
     size_t pad = 0;
@@ -274,7 +293,7 @@ static int decode_headers_sequence(wtls_h2_conn *c, const h2_frame *first, bool 
     size_t frag_len = first->len - off - pad;
     if (frag_len > WTLS_HTTP_MAX_HEAD) return WTLS_ERR_HTTP_LIMIT;
 
-    uint8_t *blk = malloc(frag_len ? frag_len : 1);
+    uint8_t *blk = wtls_malloc(frag_len ? frag_len : 1);
     if (!blk) return WTLS_ERR_NOMEM;
     if (frag_len) memcpy(blk, first->payload + off, frag_len);
     size_t blk_len = frag_len;
@@ -295,7 +314,7 @@ static int decode_headers_sequence(wtls_h2_conn *c, const h2_frame *first, bool 
             break;
         }
         if (cont.len) {
-            uint8_t *nb = realloc(blk, blk_len + cont.len);
+            uint8_t *nb = wtls_realloc(blk, blk_len + cont.len);
             if (!nb) {
                 st = WTLS_ERR_NOMEM;
                 break;
@@ -306,12 +325,19 @@ static int decode_headers_sequence(wtls_h2_conn *c, const h2_frame *first, bool 
         }
         if (cont.flags & H2_FLAG_END_HEADERS) end_headers = true;
     }
+    if (st == WTLS_OK && trailers) {
+        st = end_stream ? wtls_hpack_decode_trailers(&c->hpack, blk, blk_len) : WTLS_ERR_HTTP;
+        wtls_free(blk);
+        if (st != WTLS_OK) return st;
+        c->stream_remote_eof = true;
+        return WTLS_OK;
+    }
     if (st == WTLS_OK) st = wtls_hpack_decode_head(&c->hpack, blk, blk_len, head_out, arena_out);
-    free(blk);
+    wtls_free(blk);
     if (st != WTLS_OK) return st;
     if (head_out->status >= 100 && head_out->status < 200) {
         if (end_stream) {
-            free(*arena_out);
+            wtls_free(*arena_out);
             *arena_out = NULL;
             return WTLS_ERR_HTTP;
         }
@@ -357,17 +383,62 @@ static int extract_data_frame(wtls_h2_conn *c, const h2_frame *f, size_t *data_o
 
 /* ---- Public internal API -------------------------------------------------- */
 
+/* The TLS transport: wtls_read/wtls_write on the connection. */
+static int tls_io_read(void *ctx, void *buf, size_t len, uint32_t max_wait_ms) {
+    wtls_conn *tls = ctx;
+    uint32_t saved_to = tls->io_timeout_ms;
+    if (max_wait_ms && max_wait_ms < saved_to) tls->io_timeout_ms = max_wait_ms;
+    int k = wtls_read(tls, buf, len);
+    tls->io_timeout_ms = saved_to;
+    return k;
+}
+
+static int tls_io_write(void *ctx, const void *buf, size_t len) {
+    const uint8_t *p = buf;
+    while (len) {
+        int k = wtls_write(ctx, p, len);
+        if (k <= 0) return k == 0 ? WTLS_ERR_IO : k;
+        p += k;
+        len -= (size_t)k;
+    }
+    return WTLS_OK;
+}
+
+static bool tls_io_readable(void *ctx) {
+    wtls_conn *tls = ctx;
+    return wtls_pending(tls) || wtls_plat_poll(tls->fd, true, false, 0) != 0;
+}
+
+static int tls_io_read_nowait(void *ctx, void *buf, size_t len) {
+    wtls_conn *tls = ctx;
+    if (wtls_set_nonblocking(tls, true) != WTLS_OK) return WTLS_ERR_IO;
+    int k = wtls_read(tls, buf, len);
+    wtls_set_nonblocking(tls, false);
+    return k;
+}
+
+static const wtls_h2_io k_tls_io = {tls_io_read, tls_io_write, tls_io_readable, tls_io_read_nowait};
+
 int wtls_h2_create(wtls_conn *tls, wtls_h2_conn **out) {
     if (!tls || !out) return WTLS_ERR_ARG;
+    return wtls_h2_create_io(&k_tls_io, tls, out);
+}
+
+int wtls_h2_create_io(const wtls_h2_io *io, void *io_ctx, wtls_h2_conn **out) {
+    if (!io || !io->read || !io->write || !io->readable || !io->read_nowait || !out) return WTLS_ERR_ARG;
     *out = NULL;
-    wtls_h2_conn *c = calloc(1, sizeof *c);
+    wtls_h2_conn *c = wtls_calloc(1, sizeof *c);
     if (!c) return WTLS_ERR_NOMEM;
-    c->rx_buf = malloc(H2_MAX_FRAME_CAP);
-    if (!c->rx_buf) {
-        free(c);
+    c->rx_buf = wtls_malloc(H2_MAX_FRAME_CAP);
+    c->tx_buf = wtls_malloc(H2_TX_CAP);
+    if (!c->rx_buf || !c->tx_buf) {
+        wtls_free(c->rx_buf);
+        wtls_free(c->tx_buf);
+        wtls_free(c);
         return WTLS_ERR_NOMEM;
     }
-    c->tls = tls;
+    c->io = *io;
+    c->io_ctx = io_ctx;
     wtls_hpack_init(&c->hpack, WTLS_HPACK_DEFAULT_TABLE);
     c->next_stream_id = 1u;
     c->peer_initial_win = H2_DEF_WINDOW;
@@ -403,24 +474,31 @@ int wtls_h2_create(wtls_conn *tls, wtls_h2_conn **out) {
 void wtls_h2_free(wtls_h2_conn *c) {
     if (!c) return;
     wtls_hpack_free(&c->hpack);
-    free(c->rx_buf);
-    free(c);
+    wtls_free(c->rx_buf);
+    wtls_free(c->tx_buf);
+    wtls_free(c);
 }
 
 bool wtls_h2_reusable(const wtls_h2_conn *c) {
     return c && !c->goaway_recv && !c->broken && c->next_stream_id <= 0x7fffffffu;
 }
 
+static bool alive_scan(wtls_h2_conn *c);
+
 bool wtls_h2_alive(wtls_h2_conn *c) {
     if (!wtls_h2_reusable(c)) return false;
     c->cur_stream_id = 0;
+    bool ok = alive_scan(c);
+    /* ACKs queued by the scan must not wait for the next request. */
+    if (h2_flush(c) != WTLS_OK) return false;
+    return ok && wtls_h2_reusable(c);
+}
+
+static bool alive_scan(wtls_h2_conn *c) {
     for (;;) {
-        if (!wtls_pending(c->tls) && wtls_plat_poll(c->tls->fd, true, false, 0) == 0)
-            return wtls_h2_reusable(c);
+        if (!c->io.readable(c->io_ctx)) return wtls_h2_reusable(c);
         uint8_t hdr[H2_FRAME_HDR];
-        if (wtls_set_nonblocking(c->tls, true) != WTLS_OK) return false;
-        int k = wtls_read(c->tls, hdr, sizeof hdr);
-        wtls_set_nonblocking(c->tls, false);
+        int k = c->io.read_nowait(c->io_ctx, hdr, sizeof hdr);
         if (k == WTLS_WANT_READ) return wtls_h2_reusable(c);
         if (k <= 0) return false;
         size_t got = (size_t)k;
@@ -480,7 +558,7 @@ int wtls_h2_send_headers(wtls_h2_conn *c, const char *method, const wtls_url *u,
         off += chunk;
         first = false;
     }
-    free(blk);
+    wtls_free(blk);
     return st;
 }
 
@@ -498,7 +576,7 @@ int wtls_h2_send_data(wtls_h2_conn *c, const uint8_t *data, size_t len, bool end
                 if (f.type == H2_HEADERS && f.stream == c->cur_stream_id && head_out && arena_out) {
                     wtls_http_head tmp;
                     char *arena = NULL;
-                    st = decode_headers_sequence(c, &f, false, 0, &tmp, &arena);
+                    st = decode_headers_sequence(c, &f, false, 0, &tmp, &arena, false);
                     if (st != WTLS_OK) {
                         c->broken = true;
                         return st;
@@ -510,7 +588,7 @@ int wtls_h2_send_data(wtls_h2_conn *c, const uint8_t *data, size_t len, bool end
                         if (early_final) *early_final = true;
                         return WTLS_OK;
                     }
-                    free(arena);
+                    wtls_free(arena);
                     continue;
                 }
                 st = handle_common_frame(c, &f);
@@ -546,13 +624,13 @@ int wtls_h2_wait_continue(wtls_h2_conn *c, uint32_t continue_timeout_ms, uint32_
         if (f.type == H2_HEADERS && f.stream == c->cur_stream_id) {
             wtls_http_head tmp;
             char *arena = NULL;
-            st = decode_headers_sequence(c, &f, true, dl_hdr, &tmp, &arena);
+            st = decode_headers_sequence(c, &f, true, dl_hdr, &tmp, &arena, false);
             if (st != WTLS_OK) {
                 c->broken = true;
                 return st;
             }
             if (tmp.status == 100) {
-                free(arena);
+                wtls_free(arena);
                 return WTLS_OK;
             }
             if (tmp.status >= 200) {
@@ -562,7 +640,7 @@ int wtls_h2_wait_continue(wtls_h2_conn *c, uint32_t continue_timeout_ms, uint32_
                 *early_final = true;
                 return WTLS_OK;
             }
-            free(arena);
+            wtls_free(arena);
             continue;
         }
         st = handle_common_frame(c, &f);
@@ -581,14 +659,14 @@ int wtls_h2_read_head(wtls_h2_conn *c, uint32_t header_timeout_ms, wtls_http_hea
         if (f.type == H2_HEADERS && f.stream == c->cur_stream_id) {
             wtls_http_head tmp;
             char *arena = NULL;
-            st = decode_headers_sequence(c, &f, true, dl, &tmp, &arena);
+            st = decode_headers_sequence(c, &f, true, dl, &tmp, &arena, false);
             if (st != WTLS_OK) {
                 c->broken = true;
                 return st;
             }
             if (got_head) *got_head = true;
             if (tmp.status < 200) {
-                free(arena);
+                wtls_free(arena);
                 dl = wtls_plat_now_ms() + header_timeout_ms;
                 continue;
             }
@@ -649,22 +727,11 @@ int wtls_h2_read_data(wtls_h2_conn *c, void *buf, size_t len, bool *eof_out) {
         }
         if (f.type == H2_HEADERS && f.stream == c->cur_stream_id) {
             /* Trailers (END_STREAM) on an open response stream */
-            if (!(f.flags & H2_FLAG_END_STREAM)) {
+            st = decode_headers_sequence(c, &f, false, 0, NULL, NULL, true);
+            if (st != WTLS_OK) {
                 c->broken = true;
-                return WTLS_ERR_HTTP;
+                return st;
             }
-            bool end_hdrs = (f.flags & H2_FLAG_END_HEADERS) != 0;
-            while (!end_hdrs) {
-                h2_frame cont;
-                st = read_frame(c, &cont, false, 0);
-                if (st != WTLS_OK) return st;
-                if (cont.type != H2_CONTINUATION || cont.stream != c->cur_stream_id) {
-                    c->broken = true;
-                    return WTLS_ERR_HTTP;
-                }
-                if (cont.flags & H2_FLAG_END_HEADERS) end_hdrs = true;
-            }
-            c->stream_remote_eof = true;
             *eof_out = true;
             return 0;
         }

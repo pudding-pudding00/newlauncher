@@ -95,4 +95,7 @@ void wtls_http_pool_flush(void) {
         s_n--;
         close_entry(c);
     }
+#if WTLS_HTTP2
+    wtls_http_h2s_flush();
+#endif
 }

@@ -50,4 +50,24 @@ bool wtls_http_is_token(const char *s);
 /* ASCII case-insensitive equality. */
 bool wtls_http_ieq(const char *a, const char *b);
 
+
+/* The Accept-Encoding value for the decoders compiled in (WTLS_GZIP, WTLS_BROTLI, WTLS_ZSTD). */
+#if WTLS_GZIP && WTLS_BROTLI && WTLS_ZSTD
+#define WTLS_ACCEPT_ENCODING "gzip, deflate, br, zstd"
+#elif WTLS_GZIP && WTLS_BROTLI
+#define WTLS_ACCEPT_ENCODING "gzip, deflate, br"
+#elif WTLS_GZIP && WTLS_ZSTD
+#define WTLS_ACCEPT_ENCODING "gzip, deflate, zstd"
+#elif WTLS_GZIP
+#define WTLS_ACCEPT_ENCODING "gzip, deflate"
+#elif WTLS_BROTLI && WTLS_ZSTD
+#define WTLS_ACCEPT_ENCODING "br, zstd"
+#elif WTLS_BROTLI
+#define WTLS_ACCEPT_ENCODING "br"
+#elif WTLS_ZSTD
+#define WTLS_ACCEPT_ENCODING "zstd"
+#else
+#define WTLS_ACCEPT_ENCODING "identity"
+#endif
+
 #endif

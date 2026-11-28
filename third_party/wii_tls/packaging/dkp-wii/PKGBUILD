@@ -1,6 +1,6 @@
 # Maintainer: pudding-pudding00
 pkgname=wii-libwiitls
-pkgver=1.0.1
+pkgver=1.1.1
 pkgrel=1
 pkgdesc='Modern TLS 1.3/1.2, HTTP/2 and HTTP/1.1 client library for Nintendo Wii homebrew'
 arch=('any')

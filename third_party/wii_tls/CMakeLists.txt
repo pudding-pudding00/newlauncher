@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(libwiitls VERSION 1.0.1 LANGUAGES C)
+project(libwiitls VERSION 1.1.1 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -32,6 +32,14 @@ option(WTLS_P256M "p256-m driver for P-256 (fails to build with 4.1.1 + PK)" OFF
 option(WTLS_EVEREST "X25519 via Everest/HACL* (MBEDTLS_ECDH_VARIANT_EVEREST_ENABLED)" ON)
 option(WTLS_ACCEL "X25519 with 32-bit limbs (src/accel), hooked into Everest" ON)
 option(WTLS_ACCEL_P256 "P-256 verify with 32-bit limbs (src/accel), hooked into the builtin driver" ON)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(_wtls_keylog_default ON)
+else()
+    set(_wtls_keylog_default OFF)
+endif()
+option(WTLS_KEYLOG "TLS key log export (wtls_set_keylog_cb); debugging only, OFF in release builds" ${_wtls_keylog_default})
+option(WTLS_DOLPHIN_DEV_ENTROPY "Debugging only, never in release packages: let wtls_init() run in Dolphin, whose jitter has no entropy (predictable keys; docs/dolphin.md)" OFF)
+option(WTLS_WEBSOCKET "WebSocket client (<wiitls/websocket.h>); OFF keeps the symbols but they return WTLS_ERR_UNSUPPORTED" ON)
 option(WTLS_THREAD_CHECK "Debug single-thread affinity checks (always ON in Debug builds)" OFF)
 option(WTLS_BUILD_FUZZ "Build Clang libFuzzer harnesses in tests/fuzz" OFF)
 option(WTLS_BUILD_CURL_SHIM "Build optional libcurl-lite compatibility shim (wiitls_curl)" OFF)
@@ -62,10 +70,40 @@ endif()
 if(WTLS_ACCEL_P256)
     add_compile_definitions(WTLS_ACCEL_P256)
 endif()
+# Record buffer sizes (see config/wtls_mbedtls_config.h). Each connection holds one
+# receive and one send buffer of this many bytes plus overhead.
+set(WTLS_SSL_OUT_CONTENT_LEN 16384 CACHE STRING "Send record buffer (plaintext bytes, 1024..16384); smaller saves RAM per connection, always safe")
+set(WTLS_SSL_IN_CONTENT_LEN 16384 CACHE STRING "Receive record buffer (512..16384); below 16384 only works with servers that honour record_size_limit (TLS 1.3) or max_fragment_length (TLS 1.2)")
+foreach(_wtls_len WTLS_SSL_OUT_CONTENT_LEN WTLS_SSL_IN_CONTENT_LEN)
+    if(NOT ${_wtls_len} MATCHES "^[0-9]+$" OR ${_wtls_len} GREATER 16384 OR ${_wtls_len} LESS 512)
+        message(FATAL_ERROR "${_wtls_len} must be an integer between 512 and 16384")
+    endif()
+endforeach()
+if(WTLS_SSL_IN_CONTENT_LEN LESS 16384)
+    message(WARNING "WTLS_SSL_IN_CONTENT_LEN=${WTLS_SSL_IN_CONTENT_LEN}: servers that ignore record_size_limit / max_fragment_length will fail with large records")
+endif()
+add_compile_definitions(WTLS_SSL_IN_CONTENT_LEN=${WTLS_SSL_IN_CONTENT_LEN} WTLS_SSL_OUT_CONTENT_LEN=${WTLS_SSL_OUT_CONTENT_LEN})
 if(WTLS_THREAD_CHECK OR CMAKE_BUILD_TYPE STREQUAL "Debug")
     add_compile_definitions(WTLS_THREAD_CHECK=1)
 endif()
 add_compile_options(-${WTLS_OPT}) # after CMAKE_C_FLAGS_<CONFIG>: the last -O wins (Mbed TLS: below)
+
+# ---------------------------------------------------------------------------
+# Reproducible builds: the same sources, compiler and options give byte-identical
+# archives in any directory. The build time comes from SOURCE_DATE_EPOCH
+# (string(TIMESTAMP) honours it), paths are mapped out of the objects, and the
+# archives carry no timestamps or owners.
+option(WTLS_REPRODUCIBLE "Byte-identical builds: map source/build paths out of objects, deterministic archives (set SOURCE_DATE_EPOCH too)" OFF)
+
+if(WTLS_REPRODUCIBLE)
+    add_compile_options(-ffile-prefix-map=${CMAKE_SOURCE_DIR}=. -ffile-prefix-map=${CMAKE_BINARY_DIR}=.)
+    set(CMAKE_C_ARCHIVE_CREATE "<CMAKE_AR> qcD <TARGET> <LINK_FLAGS> <OBJECTS>")
+    set(CMAKE_C_ARCHIVE_APPEND "<CMAKE_AR> qD <TARGET> <LINK_FLAGS> <OBJECTS>")
+    set(CMAKE_C_ARCHIVE_FINISH "<CMAKE_RANLIB> -D <TARGET>")
+    if(NOT DEFINED ENV{SOURCE_DATE_EPOCH})
+        message(WARNING "WTLS_REPRODUCIBLE=ON without SOURCE_DATE_EPOCH: the build time is embedded and will differ")
+    endif()
+endif()
 
 include(FetchContent)
 set(ENABLE_PROGRAMS OFF CACHE BOOL "" FORCE)
@@ -119,6 +157,49 @@ if(WTLS_GZIP)
     target_include_directories(wtls_zlib PUBLIC ${zlib_SOURCE_DIR})
     target_compile_definitions(wtls_zlib PUBLIC Z_PREFIX)
     target_compile_options(wtls_zlib PRIVATE -w)
+endif()
+# Optional Content-Encoding decoders, off by default (code size, extra symbols: Brotli*/ZSTD_* are
+# not prefixed, so do not enable them if your application links libbrotli / libzstd itself).
+# Sources only, like zlib. Brotli comes from the PyPI sdist of the Brotli package (an immutable file
+# with a published hash; the upstream tag archive has no stable checksum); zstd from its release.
+option(WTLS_BROTLI "Content-Encoding: br in the HTTP client (Brotli decoder, adds about 130 KiB with its dictionary)" OFF)
+option(WTLS_ZSTD "Content-Encoding: zstd in the HTTP client (zstd decoder, about 60 KiB)" OFF)
+set(WTLS_BROTLI_MAX_LGWIN 22 CACHE STRING "Largest Brotli window the decoder accepts, as log2 of bytes (10..24); the decoder may allocate that much")
+set(WTLS_ZSTD_MAX_WINDOW_LOG 23 CACHE STRING "Largest zstd window the decoder accepts, as log2 of bytes (10..27); RFC 9659 caps HTTP at 23 (8 MiB)")
+if(WTLS_BROTLI)
+    FetchContent_Declare(brotli
+        URL https://files.pythonhosted.org/packages/2f/c2/f9e977608bdf958650638c3f1e28f85a1b075f075ebbe77db8555463787b/Brotli-1.1.0.tar.gz
+        URL_HASH SHA256=81de08ac11bcb85841e440c13611c00b67d3bf82698314928d0b676362546724
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        SOURCE_SUBDIR _wtls_no_cmake
+    )
+    FetchContent_MakeAvailable(brotli)
+    add_library(wtls_brotli OBJECT
+        ${brotli_SOURCE_DIR}/c/dec/bit_reader.c ${brotli_SOURCE_DIR}/c/dec/decode.c
+        ${brotli_SOURCE_DIR}/c/dec/huffman.c ${brotli_SOURCE_DIR}/c/dec/state.c
+        ${brotli_SOURCE_DIR}/c/common/constants.c ${brotli_SOURCE_DIR}/c/common/context.c
+        ${brotli_SOURCE_DIR}/c/common/dictionary.c ${brotli_SOURCE_DIR}/c/common/platform.c
+        ${brotli_SOURCE_DIR}/c/common/shared_dictionary.c ${brotli_SOURCE_DIR}/c/common/transform.c)
+    target_include_directories(wtls_brotli PUBLIC ${brotli_SOURCE_DIR}/c/include)
+    target_compile_options(wtls_brotli PRIVATE -w)
+endif()
+if(WTLS_ZSTD)
+    FetchContent_Declare(zstd
+        URL https://github.com/facebook/zstd/releases/download/v1.5.6/zstd-1.5.6.tar.gz
+        URL_HASH SHA256=8c29e06cf42aacc1eafc4077ae2ec6c6fcb96a626157e0593d5e82a34fd403c1
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        SOURCE_SUBDIR _wtls_no_cmake
+    )
+    FetchContent_MakeAvailable(zstd)
+    add_library(wtls_zstd OBJECT
+        ${zstd_SOURCE_DIR}/lib/common/entropy_common.c ${zstd_SOURCE_DIR}/lib/common/error_private.c
+        ${zstd_SOURCE_DIR}/lib/common/fse_decompress.c ${zstd_SOURCE_DIR}/lib/common/zstd_common.c
+        ${zstd_SOURCE_DIR}/lib/common/xxhash.c
+        ${zstd_SOURCE_DIR}/lib/decompress/huf_decompress.c ${zstd_SOURCE_DIR}/lib/decompress/zstd_ddict.c
+        ${zstd_SOURCE_DIR}/lib/decompress/zstd_decompress.c ${zstd_SOURCE_DIR}/lib/decompress/zstd_decompress_block.c)
+    target_include_directories(wtls_zstd PUBLIC ${zstd_SOURCE_DIR}/lib)
+    target_compile_definitions(wtls_zstd PUBLIC ZSTD_STATIC_LINKING_ONLY PRIVATE ZSTD_DISABLE_ASM=1 ZSTD_LEGACY_SUPPORT=0 DYNAMIC_BMI2=0)
+    target_compile_options(wtls_zstd PRIVATE -w)
 endif()
 # Mbed TLS adds its own $<$<CONFIG:Release>:-O2> per target, after the global
 # options: repeat WTLS_OPT on each target so it comes last and wins.
@@ -331,6 +412,11 @@ add_library(wiitls STATIC
     src/wtls_conn.c
     src/wtls_scache.c
     src/wtls_dns.c
+    src/wtls_log.c
+    src/wtls_mem.c
+    src/wtls_sig.c
+    src/wtls_castore_file.c
+    src/wtls_keylog.c
     src/http/wtls_url.c
     src/http/wtls_http_req.c
     src/http/wtls_http_parse.c
@@ -338,11 +424,16 @@ add_library(wiitls STATIC
     src/http/wtls_http_util.c
     src/http/wtls_http.c
     src/http/wtls_http_pool.c
+    src/http/wtls_http_download.c
+    src/http/wtls_cookie.c
+    src/ws/wtls_ws_frame.c
+    src/ws/wtls_ws.c
     ${WTLS_CA_BUNDLE_C}
     src/plat/plat_common.c
     src/plat/plat_${WTLS_PLATFORM}.c
 )
-target_compile_definitions(wiitls PRIVATE WTLS_EMBED_CA=$<BOOL:${WTLS_EMBED_CA}>)
+target_compile_definitions(wiitls PRIVATE WTLS_EMBED_CA=$<BOOL:${WTLS_EMBED_CA}> WTLS_KEYLOG=$<BOOL:${WTLS_KEYLOG}> WTLS_WEBSOCKET=$<BOOL:${WTLS_WEBSOCKET}>
+                                          WTLS_DOLPHIN_DEV_ENTROPY=$<BOOL:${WTLS_DOLPHIN_DEV_ENTROPY}>)
 if(WTLS_ACCEL)
     # Called from Everest's mbedtls_x25519_scalarmult (patched above); the
     # tfpsacrypto -> wiitls link edge below resolves it.
@@ -362,14 +453,37 @@ if(WTLS_ACCEL_P256)
     # tfpsacrypto -> wiitls link edge resolves it.
     target_sources(wiitls PRIVATE src/accel/p256_verify.c)
 endif()
+if(WTLS_GZIP OR WTLS_BROTLI OR WTLS_ZSTD)
+    target_sources(wiitls PRIVATE src/http/wtls_http_codec.c)
+    target_compile_definitions(wiitls PRIVATE WTLS_CODECS=1)
+endif()
+if(WTLS_BROTLI)
+    target_sources(wiitls PRIVATE src/http/wtls_http_br.c $<TARGET_OBJECTS:wtls_brotli>)
+    target_include_directories(wiitls PRIVATE ${brotli_SOURCE_DIR}/c/include)
+    target_compile_definitions(wiitls PRIVATE WTLS_BROTLI=1 WTLS_BROTLI_MAX_LGWIN=${WTLS_BROTLI_MAX_LGWIN})
+endif()
+if(WTLS_ZSTD)
+    target_sources(wiitls PRIVATE src/http/wtls_http_zstd.c $<TARGET_OBJECTS:wtls_zstd>)
+    target_include_directories(wiitls PRIVATE ${zstd_SOURCE_DIR}/lib)
+    target_compile_definitions(wiitls PRIVATE WTLS_ZSTD=1 ZSTD_STATIC_LINKING_ONLY WTLS_ZSTD_MAX_WINDOW_LOG=${WTLS_ZSTD_MAX_WINDOW_LOG})
+endif()
 if(WTLS_GZIP)
     target_sources(wiitls PRIVATE src/http/wtls_http_gzip.c $<TARGET_OBJECTS:wtls_zlib>)
     target_include_directories(wiitls PRIVATE ${zlib_SOURCE_DIR})
     target_compile_definitions(wiitls PRIVATE Z_PREFIX WTLS_GZIP=1)
 endif()
 option(WTLS_HTTP2 "HTTP/2 (h2 ALPN) client support" ON)
+set(WTLS_H2_MAX_STREAMS 4 CACHE STRING "HTTP/2 streams of one connection open at once in wtls_http_start (1..64)")
+set(WTLS_H2_STREAM_WINDOW 32768 CACHE STRING "Receive buffer and flow-control window of each such stream in bytes (16384..1048576); memory is streams x window per connection")
+if(WTLS_H2_MAX_STREAMS LESS 1 OR WTLS_H2_MAX_STREAMS GREATER 64)
+    message(FATAL_ERROR "WTLS_H2_MAX_STREAMS must be 1..64")
+endif()
+if(WTLS_H2_STREAM_WINDOW LESS 16384 OR WTLS_H2_STREAM_WINDOW GREATER 1048576)
+    message(FATAL_ERROR "WTLS_H2_STREAM_WINDOW must be 16384..1048576")
+endif()
 if(WTLS_HTTP2)
-    target_sources(wiitls PRIVATE src/http/wtls_hpack.c src/http/wtls_http2.c)
+    target_sources(wiitls PRIVATE src/http/wtls_hpack.c src/http/wtls_http2.c src/http/wtls_h2s.c)
+    target_compile_definitions(wiitls PRIVATE WTLS_H2_MAX_STREAMS=${WTLS_H2_MAX_STREAMS} WTLS_H2_STREAM_WINDOW=${WTLS_H2_STREAM_WINDOW})
 endif()
 target_compile_definitions(wiitls PRIVATE WTLS_HTTP2=$<BOOL:${WTLS_HTTP2}>)
 set_target_properties(wiitls PROPERTIES OUTPUT_NAME wiitls PREFIX lib)
@@ -385,6 +499,10 @@ target_link_libraries(wiitls
         $<BUILD_INTERFACE:mbedtls>
         $<BUILD_INTERFACE:mbedx509>
         $<BUILD_INTERFACE:tfpsacrypto>)
+if(WTLS_PLATFORM STREQUAL "host" AND NOT WIN32)
+    find_package(Threads REQUIRED)
+    target_link_libraries(wiitls PUBLIC Threads::Threads) # helper thread for asynchronous DNS
+endif()
 add_library(wiitls::wiitls ALIAS wiitls)
 # tfpsacrypto calls back into libwiitls (mbedtls_platform_get_entropy): close the
 # static-link cycle so linkers that do not rescan archives still resolve it.
@@ -453,6 +571,10 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
         message(FATAL_ERROR "Host tests need Python 3 (test servers, certificate generation)")
     endif()
     # The release check behind .github/workflows/maintenance.yml.
+    add_test(NAME gen_sbom_tool
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_gen_sbom.py)
+    add_test(NAME deterministic_zip_tool
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_deterministic_zip.py)
     add_test(NAME update_dep_tool
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/tools/test_update_dep.py)
     # Test PKI (tests/host/make_certs.py, OpenSSL CLI) in ${CMAKE_BINARY_DIR}/certs.
@@ -486,10 +608,20 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     endfunction()
 
     wtls_host_test(test_smoke)
+    wtls_host_test(test_abi)
+    wtls_host_test(test_ws_frame)
+    wtls_host_test(test_sig tests/common/sig_tests.c)
     wtls_host_test(test_jitter)
+    wtls_host_test(test_init_step)
+    target_compile_definitions(test_init_step PRIVATE WTLS_DOLPHIN_DEV_ENTROPY=$<BOOL:${WTLS_DOLPHIN_DEV_ENTROPY}>)
     wtls_host_test(test_time)
     wtls_host_server_test(test_plat tests/common/plat_tests.c)
     wtls_host_test(test_castore)
+    wtls_host_test(test_castore_file)
+    target_compile_definitions(test_castore_file PRIVATE
+        WTLS_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/host/fixtures"
+        WTLS_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
+        WTLS_EMBED_CA=$<BOOL:${WTLS_EMBED_CA}>)
     wtls_host_test(test_scache)
     wtls_host_test(test_dns)
     wtls_host_test(test_crypto tests/common/crypto_tests.c)
@@ -498,11 +630,14 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     wtls_host_test(test_http_parse)
     wtls_host_test(test_http_chunked)
     wtls_host_test(test_http_util)
+    wtls_host_test(test_cookie)
     if(WTLS_GZIP)
         wtls_host_test(test_http_gzip)
     endif()
     if(WTLS_HTTP2)
         wtls_host_test(test_hpack)
+        wtls_host_test(test_h2s)
+        wtls_host_test(test_h2_engine)
     endif()
     wtls_host_test(test_http_fuzz)
     wtls_host_test(test_http_pool)
@@ -534,6 +669,25 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
         wtls_fuzz_corpus_test(fuzz_http_gzip http_gzip)
     endif()
     wtls_fuzz_corpus_test(fuzz_client_cred client_cred)
+    if(WTLS_BROTLI)
+        wtls_fuzz_corpus_test(fuzz_http_br http_br)
+    endif()
+    if(WTLS_ZSTD)
+        wtls_fuzz_corpus_test(fuzz_http_zstd http_zstd)
+    endif()
+    if(WTLS_HTTP2)
+        wtls_fuzz_corpus_test(fuzz_hpack hpack)
+        wtls_fuzz_corpus_test(fuzz_h2_frames h2_frames)
+        wtls_fuzz_corpus_test(fuzz_h2s_frames h2s_frames)
+    endif()
+    wtls_fuzz_corpus_test(fuzz_ws_frame ws_frame)
+    wtls_fuzz_corpus_test(fuzz_set_cookie set_cookie)
+    if(WTLS_ACCEL)
+        wtls_fuzz_corpus_test(fuzz_x25519_diff x25519_diff)
+    endif()
+    if(WTLS_ACCEL_P256)
+        wtls_fuzz_corpus_test(fuzz_p256_verify_diff p256_verify_diff)
+    endif()
     add_dependencies(test_castore wtls_test_certs)
     target_compile_definitions(test_castore PRIVATE
         WTLS_EMBED_CA=$<BOOL:${WTLS_EMBED_CA}>
@@ -542,10 +696,39 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
     wtls_host_server_test(test_tls tests/common/tls_tests.c)
     add_dependencies(test_tls wtls_test_certs)
     set_tests_properties(test_tls PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
+    wtls_host_server_test(test_log tests/common/log_tests.c)
+    add_dependencies(test_log wtls_test_certs)
+    target_compile_definitions(test_log PRIVATE WTLS_KEYLOG=$<BOOL:${WTLS_KEYLOG}>)
+    set_tests_properties(test_log PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
+    wtls_host_server_test(test_alloc tests/common/alloc_tests.c)
+    add_dependencies(test_alloc wtls_test_certs)
+    if(WTLS_GZIP)
+        target_compile_definitions(test_alloc PRIVATE WTLS_GZIP=1)
+    endif()
+    set_tests_properties(test_alloc PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
+    wtls_host_server_test(test_download tests/common/download_tests.c)
+    add_dependencies(test_download wtls_test_certs)
+    set_tests_properties(test_download PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
+    wtls_host_server_test(test_ws tests/common/ws_tests.c)
+    add_dependencies(test_ws wtls_test_certs)
+    set_tests_properties(test_ws PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
+    wtls_host_server_test(test_http_async tests/common/http_async_tests.c)
+    add_dependencies(test_http_async wtls_test_certs)
+    if(WTLS_GZIP)
+        target_compile_definitions(test_http_async PRIVATE WTLS_GZIP=1)
+    endif()
+    target_compile_definitions(test_http_async PRIVATE WTLS_HTTP2=$<BOOL:${WTLS_HTTP2}> WTLS_H2_MAX_STREAMS=${WTLS_H2_MAX_STREAMS})
+    set_tests_properties(test_http_async PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
     wtls_host_server_test(test_http tests/common/http_tests.c)
     add_dependencies(test_http wtls_test_certs)
     if(WTLS_GZIP)
         target_compile_definitions(test_http PRIVATE WTLS_GZIP=1)
+    endif()
+    if(WTLS_BROTLI)
+        target_compile_definitions(test_http PRIVATE WTLS_BROTLI=1)
+    endif()
+    if(WTLS_ZSTD)
+        target_compile_definitions(test_http PRIVATE WTLS_ZSTD=1)
     endif()
     target_compile_definitions(test_http PRIVATE WTLS_HTTP2=$<BOOL:${WTLS_HTTP2}>)
     set_tests_properties(test_http PROPERTIES ENVIRONMENT "WTLS_TEST_CERT_DIR=${WTLS_TEST_CERT_DIR}")
@@ -561,6 +744,18 @@ if(WTLS_BUILD_TESTS AND WTLS_PLATFORM STREQUAL "host")
         add_test(NAME http_not_linked_into_tls_only
                  COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DFILE=$<TARGET_FILE:test_tls> -DPATTERN=wtls_http_
                          -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_no_symbol.cmake)
+        # Release builds must contain no key log export code.
+        if(NOT WTLS_KEYLOG)
+            add_test(NAME keylog_not_in_release
+                     COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DFILE=$<TARGET_FILE:test_log> -DPATTERN=keylog_export
+                             -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_no_symbol.cmake)
+        endif()
+        # Release builds must refuse Dolphin's entropy-free jitter.
+        if(NOT WTLS_DOLPHIN_DEV_ENTROPY)
+            add_test(NAME dolphin_dev_entropy_not_in_release
+                     COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} -DFILE=$<TARGET_FILE:wiitls> -DPATTERN=dolphin_dev_entropy
+                             -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_no_symbol.cmake)
+        endif()
         # An application without client certificates must not link the
         # credential parsing (mbedtls_pk_parse_key and friends).
         add_test(NAME cred_parse_not_linked_without_mtls
@@ -604,6 +799,16 @@ if(WTLS_BUILD_FUZZ)
     if(WTLS_GZIP)
         list(APPEND _wtls_fuzz_targets fuzz_http_gzip)
     endif()
+    list(APPEND _wtls_fuzz_targets fuzz_x25519_diff fuzz_p256_verify_diff fuzz_ws_frame fuzz_set_cookie)
+    if(WTLS_HTTP2)
+        list(APPEND _wtls_fuzz_targets fuzz_hpack fuzz_h2_frames fuzz_h2s_frames)
+    endif()
+    if(WTLS_BROTLI)
+        list(APPEND _wtls_fuzz_targets fuzz_http_br)
+    endif()
+    if(WTLS_ZSTD)
+        list(APPEND _wtls_fuzz_targets fuzz_http_zstd)
+    endif()
     foreach(ft ${_wtls_fuzz_targets})
         add_executable(${ft} tests/fuzz/${ft}.c)
         target_include_directories(${ft} PRIVATE src)
@@ -637,7 +842,7 @@ if(WTLS_INSTALL)
     include(CMakePackageConfigHelpers)
 
     set(_wtls_need_threads FALSE)
-    if(WTLS_PLATFORM STREQUAL "host" AND NOT WIN32 AND (WTLS_THREAD_CHECK OR CMAKE_BUILD_TYPE STREQUAL "Debug"))
+    if(WTLS_PLATFORM STREQUAL "host" AND NOT WIN32) # asynchronous DNS helper thread (and the thread check in Debug)
         set(_wtls_need_threads TRUE)
     endif()
 

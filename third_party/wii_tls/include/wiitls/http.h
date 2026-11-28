@@ -21,6 +21,18 @@
 extern "C" {
 #endif
 
+/** Opaque in-memory cookie jar, see wtls_http_request::cookie_jar. */
+typedef struct wtls_cookie_jar wtls_cookie_jar;
+
+/** Creates a jar holding at most @p max_cookies cookies (0 => 64; the oldest is evicted). NULL on no memory. */
+wtls_cookie_jar *wtls_cookie_jar_new(size_t max_cookies);
+/** Frees the jar and every cookie in it. NULL is allowed. */
+void wtls_cookie_jar_free(wtls_cookie_jar *jar);
+/** Drops all cookies (log out). */
+void wtls_cookie_jar_clear(wtls_cookie_jar *jar);
+/** Number of cookies currently stored. */
+size_t wtls_cookie_jar_count(const wtls_cookie_jar *jar);
+
 /** One request header field. */
 typedef struct {
     const char *name;  /**< RFC 9110 token; Host, Content-Length, Transfer-Encoding and Connection are refused */
@@ -80,9 +92,32 @@ typedef struct {
                                             Connection: Upgrade when an Upgrade header is present */
     bool expect_100_continue;          /**< send Expect: 100-continue and wait up to 1000 ms for 100 Continue
                                             before sending the request body (useful with body_cb) */
-    const char *proxy_url;             /**< optional "http://host[:port]" HTTP proxy (uses absolute-form
-                                            for http:// and CONNECT tunnel for https://; bypasses pool) */
+    const char *proxy_url;             /**< optional proxy: "http://[user:pass@]host[:port]" (absolute-form for
+                                            http://, CONNECT tunnel for https://; user and password are
+                                            percent-decoded and sent as Basic Proxy-Authorization),
+                                            "socks5h://[user:pass@]host[:port]" (the proxy resolves host names)
+                                            or "socks5://..." (resolved here, IPv4 only; default port 1080).
+                                            Bypasses the keep-alive pool. */
     bool no_h2;                        /**< disable HTTP/2 ALPN ("h2") and force HTTP/1.1 */
+    wtls_cookie_jar *cookie_jar;       /**< (1.1) optional: Set-Cookie fields of every response, including each
+                                            redirect hop, are stored, and matching cookies are sent as Cookie
+                                            (RFC 6265: Domain, Path, Secure, Expires/Max-Age; HttpOnly is kept
+                                            but means nothing without scripts). A Cookie header you pass in
+                                            @c headers wins: then the jar is not consulted for that request.
+                                            Domain cookies need a dot in the domain; there is no public suffix
+                                            list, so "co.uk" is accepted. Not shared between jars or threads. */
+    uint32_t total_timeout_ms;         /**< (1.1) 0 => none. One budget for the whole call: connect, handshake, request,
+                                            redirects, retries and every later wtls_http_read() until the body
+                                            ends. The per-stage timeouts are cut down to what is left; expiry is
+                                            WTLS_ERR_TIMEOUT. Host name resolution is not interruptible. */
+    uint8_t max_retries;               /**< (1.1) 0 => none (the one retry on a stale pooled socket stays). Up to this
+                                            many more attempts after WTLS_ERR_DNS / _CONNECT / _TIMEOUT / _IO before
+                                            the response head arrived, for idempotent methods without body_cb only */
+    uint32_t retry_backoff_ms;         /**< (1.1) 0 => 500. The wait before retry n is this << n, +/-25 %, within
+                                            total_timeout_ms (WTLS_ERR_TIMEOUT if it no longer fits) */
+    bool retry_on_503;                 /**< (1.1) with max_retries: also retry status 429 and 503, waiting the
+                                            Retry-After seconds (at most 60) if the server gave them; when the
+                                            attempts or the budget run out the last response is returned */
 } wtls_http_request;
 
 /** Opaque response handle. */
@@ -98,6 +133,8 @@ typedef struct {
     wtls_conn_info tls;     /**< as wtls_get_info(); all zero when !secure */
     bool deflate;           /**< the body is being decompressed from deflate */
     bool http2;             /**< response arrived over HTTP/2 (ALPN "h2") */
+    bool br;                /**< (1.1) the body is being decompressed from Brotli (WTLS_BROTLI builds) */
+    bool zstd;              /**< (1.1) the body is being decompressed from zstd (WTLS_ZSTD builds) */
 } wtls_http_info;
 
 /**
@@ -110,6 +147,67 @@ typedef struct {
  *         WTLS_ERR_IO, WTLS_ERR_HTTP, WTLS_ERR_HTTP_LIMIT, WTLS_ERR_HTTP_REDIRECT.
  */
 wtls_status wtls_http_open(wtls_http_response **out, const wtls_http_request *req);
+
+/**
+ * Starts a request without blocking (HTTP/1.1 or HTTP/2 over https://, HTTP/1.1 over http://). Like
+ * wtls_http_open(), but the connect, the TLS handshake, the sending of the
+ * request and the wait for the response head all happen in later calls of
+ * wtls_http_step(). Needs a thread that serves other work meanwhile: the UI
+ * thread of an application with a single network thread, or a loop over several
+ * requests.
+ *
+ * On WTLS_WANT_READ / WTLS_WANT_WRITE @p *out is set: wait on
+ * wtls_http_get_fd() (or with wtls_http_wait()) and call wtls_http_step()
+ * again. Any other return is final: WTLS_OK means the response head is already
+ * complete (*out is ready for wtls_http_read()), an error leaves *out NULL. After
+ * a later error from wtls_http_step() release the response with
+ * wtls_http_close(). Cancel by calling wtls_http_close() at any time: nothing
+ * leaks and a half-used connection is never pooled.
+ *
+ * @p req and everything it points to (URL, headers, body, callbacks, tls) must
+ * stay valid until the head is complete or the call failed; body_cb is called
+ * from within wtls_http_step() and must not block. Not supported (WTLS_ERR_UNSUPPORTED):
+ * proxy_url, expect_100_continue and allow_upgrade. On the Wii the host name lookup and a send larger than IOS's
+ * socket buffer space can still block briefly (docs/usage.md). https:// requests negotiate HTTP/2: the connection
+ * is shared with other requests started this way to the same host, each on a stream of its own (see
+ * docs/usage.md); wtls_http_pool_flush() closes the idle sessions and retires the busy ones.
+ * Redirects, cookies, total_timeout_ms, retries (without sleeping: the wait
+ * between two attempts is a step that returns WTLS_WANT_READ with a
+ * descriptor of -1), gzip/deflate (and br/zstd if built in) and the keep-alive
+ * pool work as in wtls_http_open(); a redirect body that has not already
+ * arrived is not drained, so that connection is not reused.
+ */
+wtls_status wtls_http_start(wtls_http_response **out, const wtls_http_request *req);
+
+/**
+ * Advances a response started with wtls_http_start().
+ *
+ * @return WTLS_OK (the head is complete; also on every later call),
+ *         WTLS_WANT_READ / WTLS_WANT_WRITE (wait for the descriptor), or the
+ *         error that ended the request (sticky; wtls_http_close() the response).
+ */
+wtls_status wtls_http_step(wtls_http_response *r);
+
+/**
+ * The descriptor to wait on for the next step or read (with net_poll() or
+ * select()), or -1 when there is nothing to wait on right now: a host
+ * name is being resolved or a retry is waiting for its backoff (call
+ * wtls_http_step() again after a few milliseconds), or the response is
+ * closed. Check wtls_http_pending() first for body bytes.
+ */
+int wtls_http_get_fd(const wtls_http_response *r);
+
+/** True if wtls_http_read() can deliver bytes (or the end) without touching the socket. */
+bool wtls_http_pending(const wtls_http_response *r);
+
+/**
+ * Waits until at least one of the @p n responses (NULL entries are skipped, n <= 64)
+ * can make progress, at most @p timeout_ms. Responses without a descriptor
+ * (name lookup, backoff) count as ready after a short pause. Returns how many
+ * can progress (0 = timeout). It is a convenience over net_poll(): the library
+ * does not remember which response was ready, so step or read all of them.
+ */
+int wtls_http_wait(wtls_http_response *const *rs, size_t n, uint32_t timeout_ms);
 
 /** Status code 100..599, or 0 for NULL. */
 int wtls_http_status(const wtls_http_response *r);
@@ -127,6 +225,9 @@ int64_t wtls_http_content_length(const wtls_http_response *r);
  * Reads body bytes. Unlike wtls_read(), the end of the body is a normal
  * event here: returns > 0 bytes, 0 at the end of the body (again on every
  * later call), or a negative wtls_status (WTLS_ERR_IO: truncated body).
+ * On a response from wtls_http_start() it never waits: WTLS_WANT_READ means
+ * no byte is available yet (wait on wtls_http_get_fd()); that is not an error
+ * and nothing is lost. The I/O timeout then limits the wait without any byte.
  */
 int wtls_http_read(wtls_http_response *r, void *buf, size_t len);
 
@@ -296,6 +397,77 @@ wtls_status wtls_http_format_range(uint64_t start, uint64_t end, bool has_end,
  */
 wtls_status wtls_http_check_resume(const wtls_http_response *r, uint64_t resume_from,
                                    uint64_t *append_offset, int64_t *total_len);
+
+/**
+ * Builds the value of an Authorization header, "Basic <base64(user:pass)>"
+ * (RFC 7617), for wtls_http_request::headers. Pass @p out = NULL (with @p out_len)
+ * to learn the length without the NUL; otherwise @p out_size must hold it plus one.
+ * @p user must not contain ':' and neither string any control character. The
+ * client never logs it and strips Authorization when a redirect leaves the origin.
+ *
+ * @return WTLS_OK, WTLS_ERR_ARG, or WTLS_ERR_HTTP_LIMIT (too long or @p out_size too small).
+ */
+wtls_status wtls_http_basic_auth(const char *user, const char *pass, char *out, size_t out_size,
+                                 size_t *out_len);
+
+/**
+ * Builds "Bearer <token>" (RFC 6750); the token must be a b64token (letters,
+ * digits and - . _ ~ + /, optionally ending in '='). Buffer rules as for
+ * wtls_http_basic_auth().
+ */
+wtls_status wtls_http_bearer_auth(const char *token, char *out, size_t out_size, size_t *out_len);
+
+/** Options of wtls_http_download(). Zero-initialise; new fields are appended. */
+typedef struct {
+    const uint8_t *sha256;      /**< optional expected SHA-256 of the whole file (32 bytes) */
+    const uint8_t *sig;         /**< optional ECDSA P-256 signature over the file (see <wiitls/sig.h>) */
+    size_t sig_len;
+    int sig_format;             /**< a wtls_sig_format value (0 = raw r||s, 1 = DER) */
+    const uint8_t *sig_pubkey;  /**< required with sig: 65-byte point or SPKI */
+    size_t sig_pubkey_len;
+    bool no_resume;             /**< discard a leftover <path>.part and start over */
+    uint32_t sync_every_bytes;  /**< 0 => 262144: flush + fsync the .part file at this spacing */
+    uint64_t max_size;          /**< 0 => unlimited; a larger file is WTLS_ERR_HTTP_LIMIT */
+} wtls_http_download_opts;
+
+/** Result of wtls_http_download(). */
+typedef struct {
+    int status;            /**< last HTTP status */
+    uint64_t size;         /**< size of the finished file */
+    uint64_t resumed_from; /**< bytes taken over from an earlier attempt (0 = from the start) */
+    uint8_t sha256[32];    /**< SHA-256 of the finished file */
+} wtls_http_download_result;
+
+/**
+ * Downloads req->url to @p path through "<path>.part" (and a small
+ * "<path>.part.meta" with the validators), resuming an interrupted attempt with
+ * Range / If-Range, and replaces @p path only when the file is complete and
+ * verified. Needs wtls_init(); includes the HTTP client's rules otherwise.
+ *
+ * - Only plain GET requests: method must be NULL or "GET", no body. gzip is
+ *   never requested, and req->progress_cb is called with the total progress
+ *   including the resumed part.
+ * - A resume is only attempted when the server gave a validator (strong ETag
+ *   or Last-Modified); if the file changed, the server ignores Range, or the
+ *   .part file does not fit, the download restarts from byte 0.
+ * - On errors the .part file stays for a later resume, except WTLS_ERR_INTEGRITY
+ *   (digest or signature wrong): both temporary files are deleted and @p path
+ *   is untouched.
+ * - Power loss during the final replacement: call wtls_http_download_recover().
+ *   (wtls_http_download() calls it first as well.)
+ *
+ * @return WTLS_OK, WTLS_ERR_FILE, WTLS_ERR_INTEGRITY, WTLS_ERR_HTTP (status
+ *         not 2xx), WTLS_ERR_HTTP_LIMIT, WTLS_ERR_IO (truncated body), WTLS_ERR_ARG,
+ *         or any error of wtls_http_open().
+ */
+wtls_status wtls_http_download(const wtls_http_request *req, const char *path,
+                               const wtls_http_download_opts *opt, wtls_http_download_result *out);
+
+/**
+ * Repairs an interrupted replacement: if "<path>.old" exists and @p path does
+ * not, the old file comes back; if both exist, "<path>.old" is deleted.
+ */
+wtls_status wtls_http_download_recover(const char *path);
 
 #ifdef __cplusplus
 }

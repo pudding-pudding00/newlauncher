@@ -12,6 +12,7 @@ kommen als Assets ins GitHub-Release; newlauncher liest .../releases/latest/down
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import sys
 import tempfile
@@ -43,12 +44,26 @@ def meta_with_version(meta_xml: str, version: str) -> str:
 def write_update_ini(zip_path: Path, version: str, zip_base_url: str | None = None) -> Path:
     with zipfile.ZipFile(zip_path) as z:
         unzipped = sum(i.file_size for i in z.infolist())
+    sha256 = hashlib.sha256(zip_path.read_bytes()).hexdigest()
     ini = zip_path.parent / "update.ini"
     zip_ref = f"{zip_base_url.rstrip('/')}/{zip_path.name}" if zip_base_url else zip_path.name
     lines = ["[update]", f"version = {version}", f"zip = {zip_ref}",
-             f"zip_size = {zip_path.stat().st_size}", f"unzipped_size = {unzipped}", ""]
+             f"zip_size = {zip_path.stat().st_size}", f"unzipped_size = {unzipped}",
+             f"sha256 = {sha256}", ""]
     ini.write_bytes("\n".join(lines).encode("utf-8"))
     return ini
+
+
+def _check_release_dol_safe(dol: Path) -> str | None:
+    if "wii-dolphin" in dol.resolve().parts:
+        return "Refusing to package dev-only Dolphin TLS DOL (build/wii-dolphin)"
+    cache = dol.parent / "CMakeCache.txt"
+    if cache.is_file():
+        text = cache.read_text(encoding="utf-8", errors="replace")
+        for flag in ("WTLS_DOLPHIN_DEV_ENTROPY:BOOL=ON", "WTLS_KEYLOG:BOOL=ON"):
+            if flag in text:
+                return f"Refusing to package DOL built with {flag}"
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -68,10 +83,17 @@ def main(argv: list[str] | None = None) -> int:
     if not dol.is_file():
         print(f"DOL nicht gefunden: {dol} (python tools/build_wii.py)")
         return 1
+    guard_err = _check_release_dol_safe(dol)
+    if guard_err:
+        print(guard_err)
+        return 1
     dist_app = args.root / "dist" / APP
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp, zipfile.ZipFile(args.out, "w", zipfile.ZIP_DEFLATED) as z:
         z.write(dol, f"{APP}/boot.dol")
+        fwd = dol.parent / "forwarder.dol"
+        if fwd.is_file():
+            z.write(fwd, f"{APP}/forwarder.dol")
         meta = dist_app / "meta.xml"
         if meta.is_file():
             z.writestr(f"{APP}/meta.xml", meta_with_version(meta.read_text(encoding="utf-8"), version))

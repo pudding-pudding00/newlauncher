@@ -2,7 +2,12 @@ name: ci
 
 on:
   push:
+    branches: ['**'] # tags are tested by the release workflow, which calls this one
   pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -52,6 +57,16 @@ jobs:
           cmake -S . -B build-host -G Ninja -DCMAKE_C_COMPILER=gcc -DCMAKE_BUILD_TYPE=Release
           cmake --build build-host
           ctest --test-dir build-host --output-on-failure
+      - name: Build and test (small send buffer)
+        run: |
+          cmake -S . -B build-small -G Ninja -DCMAKE_C_COMPILER=gcc -DCMAKE_BUILD_TYPE=Release -DWTLS_SSL_OUT_CONTENT_LEN=2048
+          cmake --build build-small
+          ctest --test-dir build-small --output-on-failure
+      - name: Build and test (Brotli + zstd decoders)
+        run: |
+          cmake -S . -B build-codec -G Ninja -DCMAKE_C_COMPILER=gcc -DCMAKE_BUILD_TYPE=Release -DWTLS_BROTLI=ON -DWTLS_ZSTD=ON
+          cmake --build build-codec
+          ctest --test-dir build-codec --output-on-failure
       - name: Build and test (Debug + Thread Guard)
         run: |
           cmake -S . -B build-debug -G Ninja -DCMAKE_C_COMPILER=gcc -DCMAKE_BUILD_TYPE=Debug
@@ -98,6 +113,20 @@ jobs:
           cmake --build build-asan
           ctest --test-dir build-asan --output-on-failure
 
+  big-endian:
+    # The Wii is big-endian: the crypto accelerators, framing code and parsers run under qemu-user as 32-bit PowerPC BE.
+    # Tests that need the network test server are left out (they run on the host jobs and on the Wii).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build openssl gcc-powerpc-linux-gnu qemu-user
+      - name: Build and test (powerpc, big-endian, qemu-user)
+        run: |
+          cmake -S . -B build-be -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-ppc-be-qemu.cmake -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-be
+          ctest --test-dir build-be --output-on-failure -R "^test_(smoke|abi|ws_frame|sig|crypto|hpack|h2s|http_url|http_req|http_parse|http_chunked|http_util|cookie|http_gzip|castore|castore_file|scache|dns|jitter|time|http_pool|http_fuzz|fuzz_.*)$"
+
   fuzz:
     runs-on: ubuntu-latest
     steps:
@@ -109,7 +138,7 @@ jobs:
           ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
           UBSAN_OPTIONS: print_stacktrace=1
         run: |
-          cmake -S . -B build-fuzz -G Ninja -DCMAKE_C_COMPILER=clang -DWTLS_BUILD_FUZZ=ON -DWTLS_BUILD_TESTS=OFF
+          cmake -S . -B build-fuzz -G Ninja -DCMAKE_C_COMPILER=clang -DWTLS_BUILD_FUZZ=ON -DWTLS_BUILD_TESTS=OFF -DWTLS_BROTLI=ON -DWTLS_ZSTD=ON
           cmake --build build-fuzz
           ./build-fuzz/fuzz_http_parse    tests/fuzz/corpus/http_parse    -max_total_time=10
           ./build-fuzz/fuzz_http_chunked  tests/fuzz/corpus/http_chunked  -max_total_time=10
@@ -117,6 +146,31 @@ jobs:
           ./build-fuzz/fuzz_content_range tests/fuzz/corpus/content_range -max_total_time=10
           ./build-fuzz/fuzz_http_gzip     tests/fuzz/corpus/http_gzip     -max_total_time=10
           ./build-fuzz/fuzz_client_cred   tests/fuzz/corpus/client_cred   -max_total_time=10
+          ./build-fuzz/fuzz_http_br         tests/fuzz/corpus/http_br         -max_total_time=20
+          ./build-fuzz/fuzz_http_zstd       tests/fuzz/corpus/http_zstd       -max_total_time=20
+          ./build-fuzz/fuzz_set_cookie      tests/fuzz/corpus/set_cookie      -max_total_time=20
+          ./build-fuzz/fuzz_ws_frame        tests/fuzz/corpus/ws_frame        -max_total_time=20
+          ./build-fuzz/fuzz_hpack           tests/fuzz/corpus/hpack           -max_total_time=30
+          ./build-fuzz/fuzz_h2_frames       tests/fuzz/corpus/h2_frames       -max_total_time=30
+          ./build-fuzz/fuzz_x25519_diff     tests/fuzz/corpus/x25519_diff     -max_total_time=30
+          ./build-fuzz/fuzz_p256_verify_diff tests/fuzz/corpus/p256_verify_diff -max_total_time=30
+
+  reproducible:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Build twice in different directories and compare
+        env:
+          SOURCE_DATE_EPOCH: "1790000000"
+        run: |
+          for d in /tmp/repro-a /tmp/repro-b; do
+            cmake -S . -B $d -G Ninja -DCMAKE_C_COMPILER=gcc -DCMAKE_BUILD_TYPE=Release -DWTLS_REPRODUCIBLE=ON -DWTLS_BUILD_TESTS=OFF
+            cmake --build $d
+          done
+          cd /tmp/repro-a && sha256sum libwiitls.a _deps/mbedtls-build/library/libmbedtls.a _deps/mbedtls-build/library/libmbedx509.a _deps/mbedtls-build/tf-psa-crypto/core/libtfpsacrypto.a > /tmp/a.sums
+          cd /tmp/repro-b && sha256sum -c /tmp/a.sums
 
   windows:
     runs-on: windows-latest

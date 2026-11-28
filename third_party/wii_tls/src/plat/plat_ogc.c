@@ -1,12 +1,14 @@
 /* Wii platform layer: libogc net_* (IOS /dev/net/ip/top) and the timebase. */
 #include "plat.h"
 
+#include <malloc.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include <gccore.h>
 #include <network.h>
+#include <ogc/cond.h>
 #include <ogc/ipc.h>
 #include <ogc/lwp.h>
 #include <ogc/lwp_watchdog.h>
@@ -44,6 +46,84 @@ int wtls_plat_os_entropy(uint8_t *out, size_t len) {
 /* MBEDTLS_PLATFORM_MS_TIME_ALT: monotonic milliseconds from the timebase. */
 mbedtls_ms_time_t mbedtls_ms_time(void) {
     return (mbedtls_ms_time_t)ticks_to_millisecs(gettime());
+}
+
+void wtls_plat_sleep_ms(uint32_t ms) { usleep((useconds_t)ms * 1000u); }
+
+/* Helper calls (the DNS lookups of async_dns) run on one resolver thread. A libogc thread cannot be detached:
+ * a finished one keeps its stack until someone joins it. So a single worker, started on first use, takes the
+ * queued calls one after another and lives as long as the program. net_gethostbyname() is serialized anyway
+ * (g_dns_mutex). A lookup that hangs in IOS holds up the ones queued behind it; their callers still see their
+ * own timeout or abort, since wtls_dns only polls the job. */
+#define ASYNC_QUEUE 8u        /* >= WTLS_DNS_JOBS: every busy job slot has at most one entry */
+#define ASYNC_STACK (16u * 1024u)
+#define ASYNC_PRIO 80         /* above the usual network thread (64): it only runs to start a call */
+
+static mutex_t s_async_mutex = LWP_MUTEX_NULL;
+static cond_t s_async_cond = LWP_COND_NULL;
+static lwp_t s_async_thread = LWP_THREAD_NULL;
+static void *s_async_stack;
+static struct {
+    void (*fn)(void *);
+    void *arg;
+} s_async_q[ASYNC_QUEUE];
+static unsigned s_async_head, s_async_len;
+
+static void *async_main(void *unused) {
+    (void)unused;
+    LWP_MutexLock(s_async_mutex);
+    for (;;) {
+        while (s_async_len == 0) LWP_CondWait(s_async_cond, s_async_mutex);
+        void (*fn)(void *) = s_async_q[s_async_head].fn;
+        void *arg = s_async_q[s_async_head].arg;
+        s_async_head = (s_async_head + 1u) % ASYNC_QUEUE;
+        s_async_len--;
+        LWP_MutexUnlock(s_async_mutex);
+        fn(arg); /* takes the same lock itself (wtls_plat_async_lock) */
+        LWP_MutexLock(s_async_mutex);
+    }
+    return NULL;
+}
+
+/* Only the API thread calls these before the worker exists, so lazy set-up needs no lock of its own. */
+static bool async_mutex_ready(void) {
+    return s_async_mutex != LWP_MUTEX_NULL || LWP_MutexInit(&s_async_mutex, false) >= 0;
+}
+
+static bool async_worker_ready(void) {
+    if (s_async_thread != LWP_THREAD_NULL) return true;
+    if (!async_mutex_ready()) return false;
+    if (s_async_cond == LWP_COND_NULL && LWP_CondInit(&s_async_cond) < 0) return false;
+    if (!s_async_stack && !(s_async_stack = memalign(32, ASYNC_STACK))) return false;
+    lwp_t t;
+    if (LWP_CreateThread(&t, async_main, NULL, s_async_stack, ASYNC_STACK, ASYNC_PRIO) < 0) return false;
+    s_async_thread = t;
+    return true;
+}
+
+int wtls_plat_async_run(void (*fn)(void *), void *arg) {
+    if (!fn) return WTLS_ERR_ARG;
+    if (!async_worker_ready()) return WTLS_ERR_UNSUPPORTED; /* the caller then resolves inline */
+    int rc = WTLS_OK;
+    LWP_MutexLock(s_async_mutex);
+    if (s_async_len == ASYNC_QUEUE) {
+        rc = WTLS_ERR_UNSUPPORTED;
+    } else {
+        unsigned tail = (s_async_head + s_async_len) % ASYNC_QUEUE;
+        s_async_q[tail].fn = fn;
+        s_async_q[tail].arg = arg;
+        s_async_len++;
+        LWP_CondSignal(s_async_cond);
+    }
+    LWP_MutexUnlock(s_async_mutex);
+    return rc;
+}
+
+void wtls_plat_async_lock(void) {
+    if (async_mutex_ready()) LWP_MutexLock(s_async_mutex);
+}
+void wtls_plat_async_unlock(void) {
+    if (s_async_mutex != LWP_MUTEX_NULL) LWP_MutexUnlock(s_async_mutex);
 }
 
 uint64_t wtls_plat_now_ms(void) { return (uint64_t)ticks_to_millisecs(gettime()); }
@@ -351,6 +431,20 @@ uint32_t wtls_plat_jitter_sample(void) {
     prev = now;
     return d;
 }
+
+/* Dolphin emulates a /dev/dolphin device that real IOS has not got. Cached:
+ * the answer cannot change while running. */
+bool wtls_plat_is_dolphin(void) {
+    static int s_state = -1;
+    if (s_state < 0) {
+        s32 fd = IOS_Open("/dev/dolphin", 0);
+        if (fd >= 0) IOS_Close(fd);
+        s_state = fd >= 0;
+    }
+    return s_state == 1;
+}
+
+bool wtls_plat_entropy_emulated(void) { return wtls_plat_is_dolphin(); }
 
 void wtls_plat_entropy_aux(uint32_t aux[4]) {
     u64 tb = gettime();

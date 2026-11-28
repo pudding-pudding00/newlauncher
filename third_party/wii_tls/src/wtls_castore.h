@@ -36,7 +36,14 @@ int wtls_castore_add(const uint8_t *buf, size_t len);
  * as a heap list owned by the caller; *candidates = NULL and 0 if none. */
 int wtls_castore_ca_cb(void *ctx, const mbedtls_x509_crt *child, mbedtls_x509_crt **candidates);
 
-/* Drops the runtime-added CAs and sets whether the built-in bundle is used. */
+/* A bundle loaded from a file: DER certificates in one blob, indexed like the
+ * embedded bundle (sorted by subject_hash). Takes ownership of blob and
+ * entries (wtls_malloc'd; entries[i].der points into blob); replaces the
+ * previously set file bundle. Dropped by wtls_castore_reset(). */
+void wtls_castore_set_file_bundle(uint8_t *blob, wtls_ca_entry *entries, size_t count);
+
+/* Drops the runtime-added CAs (and the file bundle) and sets whether the
+ * built-in bundle is used. */
 void wtls_castore_reset(bool keep_builtin);
 
 /* Drops the runtime-added CAs and restores default built-in usage (true). */

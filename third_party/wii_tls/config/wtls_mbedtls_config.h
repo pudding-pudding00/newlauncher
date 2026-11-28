@@ -666,7 +666,12 @@
  *
  * Uncomment this macro to enable support for the record_size_limit extension
  */
-//#define MBEDTLS_SSL_RECORD_SIZE_LIMIT
+/* libwiitls: with a receive buffer below 16 KiB the client must tell the server
+ * (RFC 8449 record_size_limit for TLS 1.3; max_fragment_length for TLS 1.2, see
+ * wtls_conf_setup()). With the default 16 KiB nothing is sent: 1.0 behaviour. */
+#if WTLS_SSL_IN_CONTENT_LEN < 16384
+#define MBEDTLS_SSL_RECORD_SIZE_LIMIT
+#endif
 
 /**
  * \def MBEDTLS_SSL_KEYING_MATERIAL_EXPORT
@@ -937,7 +942,10 @@
  *
  * Uncomment to set the maximum plaintext size of the incoming I/O buffer.
  */
-#define MBEDTLS_SSL_IN_CONTENT_LEN 16384
+#if !defined(WTLS_SSL_IN_CONTENT_LEN)
+#define WTLS_SSL_IN_CONTENT_LEN 16384 /* the TLS maximum: always safe */
+#endif
+#define MBEDTLS_SSL_IN_CONTENT_LEN WTLS_SSL_IN_CONTENT_LEN
 
 /**
  * \def MBEDTLS_SSL_MAX_EARLY_DATA_SIZE
@@ -970,7 +978,10 @@
  *
  * Uncomment to set the maximum plaintext size of the outgoing I/O buffer.
  */
-#define MBEDTLS_SSL_OUT_CONTENT_LEN 16384
+#if !defined(WTLS_SSL_OUT_CONTENT_LEN)
+#define WTLS_SSL_OUT_CONTENT_LEN 16384
+#endif
+#define MBEDTLS_SSL_OUT_CONTENT_LEN WTLS_SSL_OUT_CONTENT_LEN
 
 /**
  * \def MBEDTLS_SSL_TLS1_3_DEFAULT_NEW_SESSION_TICKETS

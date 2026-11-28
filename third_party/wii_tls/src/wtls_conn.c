@@ -7,6 +7,7 @@
 #include <mbedtls/error.h>
 #include <mbedtls/platform.h>
 #include <mbedtls/x509.h>
+#include <mbedtls/x509_crt.h>
 #include <psa/crypto.h>
 
 #include "plat/plat.h"
@@ -15,6 +16,7 @@
 #include "wtls_dns.h"
 #include "wtls_scache.h"
 #include "wtls_internal.h"
+#include "wtls_log.h"
 #include "wtls_prof.h"
 #include "wtls_time.h"
 
@@ -156,6 +158,7 @@ static int wait_io(wtls_conn *c, int want, uint64_t deadline) {
 
 static void conn_free(wtls_conn *c) {
     if (!c) return;
+    if (c->dns_job >= 0) wtls_dns_job_cancel(c->dns_job);
     if (c->cred) wtls_client_cred_release(c->cred);
     mbedtls_ssl_free(&c->ssl);
     mbedtls_ssl_config_free(&c->conf);
@@ -218,6 +221,37 @@ static int start_tls_handshake(wtls_conn *c) {
     c->stage_deadline_ms = c->handshake_t0_ms + c->handshake_timeout_ms;
     c->stage = WTLS_CONN_TLS_HANDSHAKE;
     wtls_prof_last.setup_us += wtls_plat_now_us() - p1;
+    return WTLS_OK;
+}
+
+/* The helper thread's lookup: WTLS_OK once the addresses are in (the TCP connect stage starts), WTLS_WANT_READ while
+ * it runs (wtls_get_fd() is -1), or the error. */
+static int step_dns(wtls_conn *c) {
+    if (c->abort_cb && c->abort_cb(c->abort_ctx)) {
+        wtls_dns_job_cancel(c->dns_job);
+        c->dns_job = -1;
+        c->aborted = true;
+        c->stage = WTLS_CONN_FAILED;
+        return WTLS_ERR_CANCELLED;
+    }
+    int r = wtls_dns_job_poll(c->dns_job, c->addrs, &c->n_addrs);
+    if (r == WTLS_WANT_READ) {
+        if (c->dns_deadline_ms && wtls_plat_now_ms() >= c->dns_deadline_ms) {
+            wtls_dns_job_cancel(c->dns_job);
+            c->dns_job = -1;
+            c->stage = WTLS_CONN_FAILED;
+            return WTLS_ERR_TIMEOUT;
+        }
+        return WTLS_WANT_READ;
+    }
+    c->dns_job = -1;
+    if (r != WTLS_OK) {
+        c->stage = WTLS_CONN_FAILED;
+        return WTLS_ERR_DNS;
+    }
+    c->dns_from_cache = false;
+    c->stage = WTLS_CONN_TCP_CONNECT;
+    c->stage_deadline_ms = wtls_plat_now_ms() + c->connect_timeout_ms; /* the connect budget starts when the address is known */
     return WTLS_OK;
 }
 
@@ -312,6 +346,9 @@ static int step_tls_handshake(wtls_conn *c) {
     if (r == 0) {
         c->handshake_ms = (uint32_t)(wtls_plat_now_ms() - c->handshake_t0_ms);
         c->stage = WTLS_CONN_READY;
+        WTLS_LOG(WTLS_LOG_INFO, WTLS_LOG_CAT_HANDSHAKE, "%s: %s %s, %u ms", c->host,
+                 mbedtls_ssl_get_version(&c->ssl), mbedtls_ssl_get_ciphersuite(&c->ssl),
+                 (unsigned)c->handshake_ms);
         return WTLS_OK;
     }
     if (r == MBEDTLS_ERR_SSL_WANT_READ) return WTLS_WANT_READ;
@@ -319,19 +356,32 @@ static int step_tls_handshake(wtls_conn *c) {
     c->stage = WTLS_CONN_FAILED;
     if (r == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED || cert_rejected(c)) {
         s_last_verify_flags = mbedtls_ssl_get_verify_result(&c->ssl);
+        if (wtls_log_enabled(WTLS_LOG_ERROR, WTLS_LOG_CAT_CERT)) {
+            char info[192];
+            int n = mbedtls_x509_crt_verify_info(info, sizeof info, "", s_last_verify_flags);
+            if (n > 0 && info[n - 1] == '\n') info[n - 1] = '\0';
+            for (char *q = info; *q; q++)
+                if (*q == '\n') *q = ';';
+            wtls_log(WTLS_LOG_ERROR, WTLS_LOG_CAT_CERT, "%s: certificate rejected (flags 0x%x): %s",
+                     c->host, (unsigned)s_last_verify_flags, n > 0 ? info : "no details");
+        }
         return WTLS_ERR_CERT;
     }
+    WTLS_LOG(WTLS_LOG_ERROR, WTLS_LOG_CAT_HANDSHAKE, "%s: handshake failed (mbedtls -0x%04x)", c->host,
+             (unsigned)-r);
     return map_mbedtls(c, r);
 }
 
 static wtls_status conn_init_tls(wtls_conn **out, const char *host, uint16_t port,
-                                 const wtls_options *opt, bool resolve_dns) {
+                                 const wtls_options *opt, bool resolve_dns, bool async_dns) {
     *out = NULL;
     if (!host || port == 0) return WTLS_ERR_ARG;
     if (!wtls_core_initialized()) return WTLS_ERR_STATE;
     static const wtls_options k_defaults;
     if (!opt) opt = &k_defaults;
-    if (opt->n_spki_pins > WTLS_SPKI_MAX_PINS) return WTLS_ERR_ARG;
+    uint8_t pins[WTLS_PINS_TOTAL][WTLS_SPKI_SHA256_LEN];
+    uint8_t n_pins = 0;
+    if (wtls_pins_collect(opt, pins, &n_pins) != WTLS_OK) return WTLS_ERR_ARG;
 
     char name[256];
     if (!normalize_host(host, name)) return WTLS_ERR_ARG;
@@ -344,6 +394,7 @@ static wtls_status conn_init_tls(wtls_conn **out, const char *host, uint16_t por
     wtls_conn *c = mbedtls_calloc(1, sizeof *c);
     if (!c) return WTLS_ERR_NOMEM;
     c->fd = -1;
+    c->dns_job = -1;
     c->stage = WTLS_CONN_TCP_CONNECT;
     mbedtls_ssl_init(&c->ssl);
     mbedtls_ssl_config_init(&c->conf);
@@ -357,9 +408,9 @@ static wtls_status conn_init_tls(wtls_conn **out, const char *host, uint16_t por
     c->io_timeout_ms = opt->io_timeout_ms ? opt->io_timeout_ms : DEF_IO_MS;
     c->abort_cb = opt->abort_cb;
     c->abort_ctx = opt->abort_ctx;
-    if (!opt->insecure_skip_verify && opt->n_spki_pins > 0) {
-        c->n_spki_pins = opt->n_spki_pins;
-        memcpy(c->spki_pins, opt->spki_pins, (size_t)opt->n_spki_pins * WTLS_SPKI_SHA256_LEN);
+    if (!opt->insecure_skip_verify && n_pins > 0) {
+        c->n_spki_pins = n_pins;
+        memcpy(c->spki_pins, pins, (size_t)n_pins * WTLS_SPKI_SHA256_LEN);
     }
     int id_rc = wtls_conn_identity_fp(opt, &c->has_id, c->id_fp);
     if (id_rc != WTLS_OK) {
@@ -385,6 +436,18 @@ static wtls_status conn_init_tls(wtls_conn **out, const char *host, uint16_t por
     if (resolve_dns) {
         if (c->ip_literal) {
             c->n_addrs = 1;
+        } else if (async_dns) {
+            c->async_dns = true;
+            c->dns_job = -1;
+            int dr = wtls_dns_lookup_begin(name, &c->dns_job, c->addrs, &c->n_addrs, &c->dns_from_cache,
+                                           wtls_plat_now_ms());
+            if (dr == WTLS_WANT_READ) {
+                c->stage = WTLS_CONN_DNS;
+                if (opt->dns_timeout_ms) c->dns_deadline_ms = wtls_plat_now_ms() + opt->dns_timeout_ms;
+            } else if (dr != WTLS_OK) {
+                conn_free(c);
+                return dr == WTLS_ERR_NOMEM ? WTLS_ERR_NOMEM : WTLS_ERR_DNS;
+            }
         } else if (wtls_dns_lookup_list(name, c->addrs, &c->n_addrs,
                                         &c->dns_from_cache, wtls_plat_now_ms()) != WTLS_OK) {
             conn_free(c);
@@ -401,6 +464,9 @@ static wtls_status conn_init_tls(wtls_conn **out, const char *host, uint16_t por
     if ((c->ip_literal || c->n_spki_pins > 0) && !opt->insecure_skip_verify)
         mbedtls_ssl_set_verify(&c->ssl, verify_cert_cb, c);
     mbedtls_ssl_set_bio(&c->ssl, c, bio_send, bio_recv, NULL);
+    wtls_keylog_attach(&c->ssl);
+    WTLS_LOG(WTLS_LOG_DEBUG, WTLS_LOG_CAT_PLATFORM, "connect %s:%u%s", c->host, (unsigned)c->port,
+             c->dns_from_cache ? " (DNS cached)" : "");
     wtls_prof_last.setup_us = wtls_plat_now_us() - setup0;
     *out = c;
     return WTLS_OK;
@@ -414,7 +480,9 @@ static wtls_status conn_drive(wtls_conn **out, wtls_conn *c, wtls_status st) {
             hs_w0 = wtls_plat_poll_wait_us;
             in_hs = true;
         }
-        if (c->stage == WTLS_CONN_TCP_CONNECT) {
+        if (c->stage == WTLS_CONN_DNS) {
+            wtls_plat_sleep_ms(2); /* the lookup runs on its own thread; step_dns() checks abort_cb and the DNS timeout */
+        } else if (c->stage == WTLS_CONN_TCP_CONNECT) {
             if (c->abort_cb && c->abort_cb(c->abort_ctx)) {
                 c->aborted = true;
                 st = WTLS_ERR_CANCELLED;
@@ -458,12 +526,13 @@ static wtls_status conn_drive(wtls_conn **out, wtls_conn *c, wtls_status st) {
     return WTLS_OK;
 }
 
-wtls_status wtls_connect_start(wtls_conn **out, const char *host, uint16_t port, const wtls_options *opt) {
+static wtls_status connect_start_ex(wtls_conn **out, const char *host, uint16_t port, const wtls_options *opt,
+                                    bool force_async) {
     if (!out) return WTLS_ERR_ARG;
     *out = NULL;
     if (!WTLS_THREAD_GUARD("wtls_connect_start")) return WTLS_ERR_STATE;
     wtls_conn *c = NULL;
-    wtls_status st = conn_init_tls(&c, host, port, opt, true);
+    wtls_status st = conn_init_tls(&c, host, port, opt, true, force_async || (opt && opt->async_dns));
     if (st != WTLS_OK) return st;
 
     c->connect_t0_us = wtls_plat_now_us();
@@ -479,11 +548,19 @@ wtls_status wtls_connect_start(wtls_conn **out, const char *host, uint16_t port,
     return st;
 }
 
+wtls_status wtls_connect_start(wtls_conn **out, const char *host, uint16_t port, const wtls_options *opt) {
+    return connect_start_ex(out, host, port, opt, false);
+}
+
 wtls_status wtls_connect_step(wtls_conn *c) {
     if (!c) return WTLS_ERR_ARG;
     if (!WTLS_THREAD_GUARD("wtls_connect_step")) return WTLS_ERR_STATE;
     if (c->stage == WTLS_CONN_READY) return WTLS_OK;
     if (c->stage == WTLS_CONN_FAILED) return WTLS_ERR_STATE;
+    if (c->stage == WTLS_CONN_DNS) {
+        int st = step_dns(c);
+        if (st != WTLS_OK) return (wtls_status)st;
+    }
     if (c->stage == WTLS_CONN_TCP_CONNECT) {
         int st = step_tcp_connect(c);
         if (st != WTLS_OK || c->stage != WTLS_CONN_TLS_HANDSHAKE) return (wtls_status)st;
@@ -499,7 +576,7 @@ wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port, const
     if (!WTLS_THREAD_GUARD("wtls_connect")) return WTLS_ERR_STATE;
 
     wtls_conn *c = NULL;
-    wtls_status st = wtls_connect_start(&c, host, port, opt);
+    wtls_status st = connect_start_ex(&c, host, port, opt, true);
     return conn_drive(out, c, st);
 }
 
@@ -511,7 +588,7 @@ wtls_status wtls_connect_on_fd(wtls_conn **out, int fd, const char *host, uint16
     }
     *out = NULL;
     wtls_conn *c = NULL;
-    wtls_status st = conn_init_tls(&c, host, port, opt, false);
+    wtls_status st = conn_init_tls(&c, host, port, opt, false, false);
     if (st != WTLS_OK) {
         wtls_plat_close(fd);
         return st;
@@ -570,6 +647,34 @@ int wtls_read(wtls_conn *c, void *buf, size_t len) {
     }
 }
 
+/* mbedtls_ssl_write() with the retry after WANT_WRITE made safe for a full-duplex caller. Mbed TLS keeps only
+ * the unsent ciphertext and expects the same call again; but a read in between may send it (processing a TLS 1.3
+ * NewSessionTicket runs a handshake step, which flushes the output). The retry would then find nothing pending and
+ * encrypt the same data a second time. So remember what is pending, and count it once it is gone. */
+static int write_record(wtls_conn *c, const unsigned char *p, size_t len) {
+    if (!mbedtls_ssl_is_handshake_over(&c->ssl)) { /* a ticket in progress: finish it first, as ssl_write would */
+        int r = mbedtls_ssl_handshake(&c->ssl);
+        if (r != 0) return r;
+    }
+    if (c->write_pending && c->ssl.MBEDTLS_PRIVATE(out_left) == 0) { /* no public getter */
+        size_t n = c->write_pending < len ? c->write_pending : len;
+        c->write_pending = 0;
+        return (int)n;
+    }
+    /* The retry of a pending record: Mbed TLS reports the length it is given (up to a record), not what that record
+     * carried, so pass no more than the record held. */
+    if (c->write_pending && len > c->write_pending) len = c->write_pending;
+    int r = mbedtls_ssl_write(&c->ssl, p, len);
+    if (r > 0) {
+        c->write_pending = 0;
+    } else if ((r == MBEDTLS_ERR_SSL_WANT_READ || r == MBEDTLS_ERR_SSL_WANT_WRITE) && !c->write_pending &&
+               c->ssl.MBEDTLS_PRIVATE(out_left) != 0) {
+        int max = mbedtls_ssl_get_max_out_record_payload(&c->ssl);
+        c->write_pending = max > 0 && (size_t)max < len ? (size_t)max : len;
+    }
+    return r;
+}
+
 int wtls_write(wtls_conn *c, const void *buf, size_t len) {
     if (!c || (!buf && len)) return WTLS_ERR_ARG;
     if (!WTLS_THREAD_GUARD("wtls_write") || c->stage != WTLS_CONN_READY) return WTLS_ERR_STATE;
@@ -583,7 +688,7 @@ int wtls_write(wtls_conn *c, const void *buf, size_t len) {
             c->aborted = true;
             return off ? (int)off : WTLS_ERR_CANCELLED;
         }
-        int r = mbedtls_ssl_write(&c->ssl, p + off, len - off);
+        int r = write_record(c, p + off, len - off);
         if (r > 0) {
             off += (size_t)r;
             continue;

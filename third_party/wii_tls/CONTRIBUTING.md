@@ -69,7 +69,7 @@ CI runs all of this except the hardware tests on every push.
 - Secrets are wiped with `mbedtls_platform_zeroize()`. Code that handles
   secret data must stay constant-time (`tools/check_ct.cmake` checks the
   X25519 code).
-- Generated files (`src/gen/ca_bundle.c`, `src/accel/*.inc`) are regenerated
+- Generated files (`src/gen/ca_bundle.c`, `src/accel/*.inc`, `tests/common/wycheproof_*.inc`) are regenerated
   with the scripts in `tools/`, never edited by hand.
 - Add tests for bug fixes and new features: `tests/common/` is shared by the
   host and Wii runners.
@@ -79,16 +79,23 @@ CI runs all of this except the hardware tests on every push.
 
 ## Releasing (maintainers)
 
+When bumping the Mbed TLS LTS release, check the configure-time patches first
+([docs/mbedtls-patches.md](docs/mbedtls-patches.md)); how the release is built, signed and
+verified is described in [docs/releasing.md](docs/releasing.md).
+
 1. Update the version in `CMakeLists.txt` (`project(libwiitls VERSION …)`) and
    `include/wiitls/wiitls.h` (`WTLS_VERSION` and `WTLS_VERSION_*`; the
    configure step checks that they match).
 2. Move the `[Unreleased]` entries in `CHANGELOG.md` to a new version section
    and update the compare links at the bottom.
-3. Run the hardware matrix (`--suite all`, `wtls_bench.dol`) on a Wii.
-4. Commit, tag `vX.Y.Z` and push the tag. The `release` workflow builds the
-   package with `tools/make_release.sh`, and creates a **draft** GitHub
-   release with the zip, `SHA256SUMS` and the changelog section as notes.
-5. Review the draft, add highlights and the hardware results, publish.
+3. Run the hardware matrix (`--suite all`, `wtls_bench.dol`) on a Wii. Do
+   this and check the changelog section **before** tagging: pushing the tag
+   publishes the release.
+4. Commit, tag `vX.Y.Z` and push the tag. The `release` workflow runs all CI
+   jobs on the tag, builds the package with `tools/make_release.sh`, and
+   publishes the GitHub release with the zip, `SHA256SUMS` and the changelog
+   section as notes. If any job fails, nothing is published.
+5. Add highlights and the hardware results to the published release notes.
 
 ## License
 

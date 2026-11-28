@@ -39,6 +39,26 @@ int wtls_jitter_collect_ex(wtls_sample_fn fn, void *ctx, uint8_t *out, size_t le
  * 2x input). Returns WTLS_OK or WTLS_ERR_ENTROPY. */
 int wtls_jitter_conditioned(wtls_sample_fn fn, void *ctx, uint8_t *out, size_t len);
 
+#define WTLS_JITTER_RAW_PER_BLOCK (2 * 256 / WTLS_JITTER_BITS_PER_SAMPLE)
+
+/* One conditioned block collected in pieces: the same warm-up, raw samples,
+ * health tests (restarted per block) and SHA-256 as wtls_jitter_conditioned(). */
+typedef struct {
+    uint8_t raw[WTLS_JITTER_RAW_PER_BLOCK];
+    size_t n; /* raw samples collected so far */
+    uint8_t rct_val, apt_ref;
+    unsigned rct_count, apt_count, apt_pos;
+} wtls_jitter_block;
+
+/* Takes at most max_samples samples (pending warm-up first). WTLS_OK: the
+ * block is complete, out[0..31] written, b ready for the next block.
+ * WTLS_WANT_READ: call again. WTLS_ERR_ENTROPY: health test failed, b wiped. */
+int wtls_jitter_block_step(wtls_jitter_block *b, wtls_sample_fn fn, void *ctx,
+                           size_t max_samples, uint8_t out[32]);
+
+/* Wipes a partial block. */
+void wtls_jitter_block_clear(wtls_jitter_block *b);
+
 /* Test hook: pending=true makes the next call run the warm-up again,
  * pending=false skips it. */
 void wtls_jitter_reset_warmup(bool pending);

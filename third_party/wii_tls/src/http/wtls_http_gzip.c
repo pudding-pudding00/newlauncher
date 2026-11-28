@@ -1,4 +1,5 @@
 /* Streaming gzip decoder over zlib inflate (built with Z_PREFIX). */
+#include "wtls_mem.h"
 #include "http/wtls_http_gzip.h"
 
 #include <stdbool.h>
@@ -7,6 +8,7 @@
 #include <zlib.h>
 
 struct wtls_gzip {
+    const wtls_codec *vt;
     z_stream z;
     bool deflate;    /* false: gzip (multi-member), true: zlib deflate (single stream) */
     bool in_member;  /* input taken since the last member ended: the end of input here is a cut */
@@ -14,12 +16,27 @@ struct wtls_gzip {
     bool ended;      /* deflate: Z_STREAM_END reached */
 };
 
+static voidpf zalloc_hook(voidpf opaque, uInt items, uInt size) {
+    (void)opaque;
+    return wtls_calloc(items, size);
+}
+
+static void zfree_hook(voidpf opaque, voidpf p) {
+    (void)opaque;
+    wtls_free(p);
+}
+
+static const wtls_codec k_gzip_codec;
+
 static wtls_gzip *alloc_inflate(int window_bits, bool deflate) {
-    wtls_gzip *g = calloc(1, sizeof *g);
+    wtls_gzip *g = wtls_calloc(1, sizeof *g);
     if (!g) return NULL;
+    g->vt = &k_gzip_codec;
     g->deflate = deflate;
+    g->z.zalloc = zalloc_hook;
+    g->z.zfree = zfree_hook;
     if (inflateInit2(&g->z, window_bits) != Z_OK) {
-        free(g);
+        wtls_free(g);
         return NULL;
     }
     return g;
@@ -29,7 +46,7 @@ wtls_gzip *wtls_gzip_new(void) { return alloc_inflate(16 + MAX_WBITS, false); }
 
 wtls_gzip *wtls_deflate_new(void) { return alloc_inflate(MAX_WBITS, true); }
 
-int wtls_gzip_inflate(wtls_gzip *g, const uint8_t *in, size_t in_len, size_t *used, uint8_t *out, size_t out_cap,
+static int gz_inflate(wtls_gzip *g, const uint8_t *in, size_t in_len, size_t *used, uint8_t *out, size_t out_cap,
                       size_t *produced) {
     if (used) *used = 0;
     if (produced) *produced = 0;
@@ -78,13 +95,11 @@ int wtls_gzip_inflate(wtls_gzip *g, const uint8_t *in, size_t in_len, size_t *us
     }
 }
 
-int wtls_gzip_finish(const wtls_gzip *g) {
-    if (!g) return WTLS_ERR_ARG;
-    return g->in_member ? WTLS_ERR_IO : WTLS_OK;
+static int gz_finish(const wtls_gzip *g) { return g->in_member ? WTLS_ERR_IO : WTLS_OK; }
+
+static void gz_destroy(wtls_gzip *g) {
+    inflateEnd(&g->z);
+    wtls_free(g);
 }
 
-void wtls_gzip_free(wtls_gzip *g) {
-    if (!g) return;
-    inflateEnd(&g->z);
-    free(g);
-}
+static const wtls_codec k_gzip_codec = {gz_inflate, gz_finish, gz_destroy};

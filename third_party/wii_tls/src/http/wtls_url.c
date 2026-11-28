@@ -1,4 +1,5 @@
 /* URL parsing and reference resolution (RFC 3986) for the HTTP client. */
+#include "wtls_mem.h"
 #include "http/wtls_url.h"
 
 #include <ctype.h>
@@ -146,12 +147,12 @@ static size_t remove_dots(char *in, size_t n, char *out) {
 
 /* a followed by b, through remove_dots, appended to buf at *len. */
 static int put_path(char *buf, size_t *len, const char *a, size_t an, const char *b, size_t bn) {
-    char *scratch = malloc(an + bn + 1);
+    char *scratch = wtls_malloc(an + bn + 1);
     if (!scratch) return WTLS_ERR_NOMEM;
     memcpy(scratch, a, an);
     memcpy(scratch + an, b, bn);
     *len += remove_dots(scratch, an + bn, buf + *len);
-    free(scratch);
+    wtls_free(scratch);
     return WTLS_OK;
 }
 
@@ -168,7 +169,7 @@ int wtls_url_resolve(const char *base, const char *ref, char **out) {
     split(ref, &R);
     if (!B.scheme.defined || !B.authority.defined) return WTLS_ERR_ARG;
 
-    char *buf = malloc(strlen(base) + strlen(ref) + 8);
+    char *buf = wtls_malloc(strlen(base) + strlen(ref) + 8);
     if (!buf) return WTLS_ERR_NOMEM;
     size_t len = 0;
     const part *scheme = R.scheme.defined ? &R.scheme : &B.scheme;
@@ -202,7 +203,7 @@ int wtls_url_resolve(const char *base, const char *ref, char **out) {
         }
     }
     if (rc != WTLS_OK) {
-        free(buf);
+        wtls_free(buf);
         return rc;
     }
     if (query->defined) {

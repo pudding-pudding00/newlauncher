@@ -14,6 +14,7 @@ const char *wtls_strerror(int status) {
     case WTLS_ERR_STATE:     return "invalid state";
     case WTLS_ERR_NOMEM:     return "out of memory";
     case WTLS_ERR_CANCELLED: return "operation cancelled";
+    case WTLS_ERR_UNSUPPORTED: return "feature not compiled in";
     case WTLS_ERR_ENTROPY:   return "entropy source failed";
     case WTLS_ERR_CLOCK:     return "system clock is not plausible (set the Wii clock or sync via SNTP)";
     case WTLS_ERR_NET:       return "network not initialised";
@@ -27,6 +28,9 @@ const char *wtls_strerror(int status) {
     case WTLS_ERR_HTTP:      return "malformed HTTP response";
     case WTLS_ERR_HTTP_LIMIT: return "HTTP limit exceeded";
     case WTLS_ERR_HTTP_REDIRECT: return "HTTP redirect refused or too many redirects";
+    case WTLS_ERR_WS:        return "WebSocket protocol error";
+    case WTLS_ERR_FILE:      return "file I/O error";
+    case WTLS_ERR_INTEGRITY: return "integrity check failed (digest or signature)";
     case WTLS_ERR_INTERNAL:  return "internal error";
     default:                 return "unknown error";
     }
@@ -42,6 +46,8 @@ const char *wtls_strerror(int status) {
 #include "wtls_castore.h"
 #include "wtls_cred.h"
 #include "wtls_dns.h"
+#include "wtls_entropy.h"
+#include "wtls_log.h"
 #include "wtls_scache.h"
 #include "wtls_time.h"
 
@@ -84,18 +90,55 @@ static const uint16_t k_groups[] = {
 
 bool wtls_core_initialized(void) { return s_initialized; }
 
+static bool s_init_started; /* wtls_init_start() called, not finished yet */
+
+/* Shared by wtls_init() and wtls_init_step(): psa_crypto_init() takes the
+ * entropy from the pool first, the rest inline (same conditioning). */
+static wtls_status init_finish(void) {
+    int r = wtls_plat_init();
+    if (r != WTLS_OK) return (wtls_status)r;
+    if (psa_crypto_init() != PSA_SUCCESS) {
+        s_init_started = false;
+        wtls_entropy_pool_clear();
+        return WTLS_ERR_ENTROPY;
+    }
+    mbedtls_platform_set_time(wtls_mbedtls_time);
+    s_initialized = true;
+    s_init_started = false;
+    wtls_plat_thread_bind();
+    return WTLS_OK;
+}
+
 wtls_status wtls_init(void) {
     if (s_initialized) {
         if (!WTLS_THREAD_GUARD("wtls_init")) return WTLS_ERR_STATE;
         return WTLS_OK;
     }
-    int r = wtls_plat_init();
-    if (r != WTLS_OK) return (wtls_status)r;
-    if (psa_crypto_init() != PSA_SUCCESS) return WTLS_ERR_ENTROPY;
-    mbedtls_platform_set_time(wtls_mbedtls_time);
-    s_initialized = true;
-    wtls_plat_thread_bind();
-    return WTLS_OK;
+    return init_finish();
+}
+
+wtls_status wtls_init_start(void) {
+    if (s_initialized) {
+        if (!WTLS_THREAD_GUARD("wtls_init_start")) return WTLS_ERR_STATE;
+        return WTLS_OK;
+    }
+    s_init_started = true;
+    return WTLS_WANT_READ;
+}
+
+wtls_status wtls_init_step(uint32_t budget_ms) {
+    if (s_initialized) {
+        if (!WTLS_THREAD_GUARD("wtls_init_step")) return WTLS_ERR_STATE;
+        return WTLS_OK;
+    }
+    if (!s_init_started) return WTLS_ERR_STATE;
+    int r = wtls_entropy_pool_fill(budget_ms);
+    if (r == WTLS_WANT_READ) return WTLS_WANT_READ;
+    if (r != WTLS_OK) {
+        s_init_started = false;
+        return WTLS_ERR_ENTROPY;
+    }
+    return init_finish();
 }
 
 void (*wtls_shutdown_hook)(void);
@@ -109,6 +152,7 @@ void wtls_net_reset(void) {
         hook();
     }
     wtls_dns_clear();
+    WTLS_LOG(WTLS_LOG_INFO, WTLS_LOG_CAT_PLATFORM, "network reset: DNS cache and idle connections dropped");
 }
 
 void wtls_shutdown(void) {
@@ -119,8 +163,10 @@ void wtls_shutdown(void) {
     wtls_castore_free();
     wtls_scache_clear(); /* holds resumption secrets */
     mbedtls_psa_crypto_free();
+    wtls_entropy_pool_clear();
     wtls_plat_thread_unbind();
     s_initialized = false;
+    s_init_started = false;
 }
 
 wtls_status wtls_add_trusted_ca(const uint8_t *buf, size_t len) {
@@ -198,11 +244,26 @@ int wtls_connect_tcp(const char *host, uint16_t port, uint32_t timeout_ms,
     return st;
 }
 
+int wtls_pins_collect(const wtls_options *opt, uint8_t out[WTLS_PINS_TOTAL][WTLS_SPKI_SHA256_LEN], uint8_t *n) {
+    *n = 0;
+    if (!opt) return WTLS_OK;
+    if (opt->n_spki_pins > WTLS_SPKI_MAX_PINS || opt->n_spki_pins_ext > WTLS_SPKI_MAX_PINS_EXT ||
+        (opt->n_spki_pins_ext && !opt->spki_pins_ext))
+        return WTLS_ERR_ARG;
+    if (opt->n_spki_pins) memcpy(out, opt->spki_pins, (size_t)opt->n_spki_pins * WTLS_SPKI_SHA256_LEN);
+    if (opt->n_spki_pins_ext)
+        memcpy(out[opt->n_spki_pins], opt->spki_pins_ext, (size_t)opt->n_spki_pins_ext * WTLS_SPKI_SHA256_LEN);
+    *n = (uint8_t)(opt->n_spki_pins + opt->n_spki_pins_ext);
+    return WTLS_OK;
+}
+
 int wtls_conn_identity_fp(const wtls_options *opt, bool *has_id, uint8_t fp[32]) {
     *has_id = false;
     if (!opt) return WTLS_OK;
-    if (opt->n_spki_pins > WTLS_SPKI_MAX_PINS) return WTLS_ERR_ARG;
-    bool use_pins = !opt->insecure_skip_verify && opt->n_spki_pins > 0;
+    uint8_t pins[WTLS_PINS_TOTAL][WTLS_SPKI_SHA256_LEN];
+    uint8_t n_pins = 0;
+    if (wtls_pins_collect(opt, pins, &n_pins) != WTLS_OK) return WTLS_ERR_ARG;
+    bool use_pins = !opt->insecure_skip_verify && n_pins > 0;
     if (!opt->client_cred && !use_pins) return WTLS_OK;
     if (opt->client_cred && !use_pins) {
         memcpy(fp, opt->client_cred->fp, 32);
@@ -211,13 +272,12 @@ int wtls_conn_identity_fp(const wtls_options *opt, bool *has_id, uint8_t fp[32])
     }
     psa_hash_operation_t op = PSA_HASH_OPERATION_INIT;
     if (psa_hash_setup(&op, PSA_ALG_SHA_256) != PSA_SUCCESS) return WTLS_ERR_INTERNAL;
-    uint8_t tag[2] = {opt->client_cred ? 1u : 0u, opt->n_spki_pins};
+    uint8_t tag[2] = {opt->client_cred ? 1u : 0u, n_pins};
     psa_status_t pst = psa_hash_update(&op, tag, sizeof tag);
     if (pst == PSA_SUCCESS && opt->client_cred)
         pst = psa_hash_update(&op, opt->client_cred->fp, sizeof opt->client_cred->fp);
     if (pst == PSA_SUCCESS)
-        pst = psa_hash_update(&op, (const uint8_t *)opt->spki_pins,
-                              (size_t)opt->n_spki_pins * WTLS_SPKI_SHA256_LEN);
+        pst = psa_hash_update(&op, (const uint8_t *)pins, (size_t)n_pins * WTLS_SPKI_SHA256_LEN);
     size_t hlen = 0;
     if (pst == PSA_SUCCESS) pst = psa_hash_finish(&op, fp, 32, &hlen);
     if (pst != PSA_SUCCESS || hlen != 32) {
@@ -245,5 +305,17 @@ int wtls_conf_setup(mbedtls_ssl_config *conf, const wtls_options *opt) {
         r = mbedtls_ssl_conf_alpn_protocols(conf, (const char **)opt->alpn);
         if (r != 0) return r;
     }
+#if WTLS_SSL_IN_CONTENT_LEN < 16384
+    /* TLS 1.3 gets the record_size_limit extension from the build option; TLS 1.2 has
+     * max_fragment_length, which only knows 512, 1024, 2048 and 4096. */
+    {
+        unsigned char mfl = WTLS_SSL_IN_CONTENT_LEN >= 4096   ? MBEDTLS_SSL_MAX_FRAG_LEN_4096
+                            : WTLS_SSL_IN_CONTENT_LEN >= 2048 ? MBEDTLS_SSL_MAX_FRAG_LEN_2048
+                            : WTLS_SSL_IN_CONTENT_LEN >= 1024 ? MBEDTLS_SSL_MAX_FRAG_LEN_1024
+                                                              : MBEDTLS_SSL_MAX_FRAG_LEN_512;
+        r = mbedtls_ssl_conf_max_frag_len(conf, mfl);
+        if (r != 0) return r;
+    }
+#endif
     return 0;
 }

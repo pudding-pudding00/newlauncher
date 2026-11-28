@@ -60,4 +60,10 @@ std::optional<WiiParental> readWiiParental() {
     return pc;
 }
 
+void writePriiloaderSystemMenuMagic() {
+    auto* magic = reinterpret_cast<volatile u32*>(0x8132FFFB);
+    *magic = 0x50756E65u;  // "Pune"
+    DCFlushRange(reinterpret_cast<void*>(0x8132FFE0), 64);
+}
+
 }  // namespace nl::platform

@@ -14,7 +14,10 @@
 namespace nl {
 
 inline constexpr u32 kChannelTitleType = 0x00010001;
+inline constexpr u32 kSelfChannelLow = 0x554E4C41u;  // "UNLA"
+inline constexpr u64 kSelfChannelTitleId = 0x00010001554E4C41ull;
 bool isChannelTitle(u64 titleId);  // obere 32 Bit == kChannelTitleType
+inline bool isSelfChannelTitle(u64 titleId) { return titleId == kSelfChannelTitleId; }
 
 struct TmdContent {
     u32 id = 0;

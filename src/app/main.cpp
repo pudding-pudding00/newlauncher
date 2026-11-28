@@ -3191,6 +3191,11 @@ int main(int argc, char** argv) {
                 if (data.writable) nl::log::flushLogFile(fs, logPath);
                 input.shutdown();
                 nl::platform::unmountAll();
+                if (cmd == nl::ui::AppCommand::WiiMenu) {
+                    nl::launch::clearReturnStubParams();
+                    nl::platform::writePriiloaderSystemMenuMagic();
+                    nl::log::line("NL_EXIT_MENU priiloader_magic=1");
+                }
                 SYS_ResetSystem(cmd == nl::ui::AppCommand::WiiMenu ? SYS_RETURNTOMENU : SYS_POWEROFF, 0, 0);
                 break;
             case nl::ui::AppCommand::Launch:

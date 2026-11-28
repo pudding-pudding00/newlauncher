@@ -34,7 +34,7 @@ Execute Stages 1–5 completely on PC + Dolphin (each as its own PR merged once 
 | **Stage 2** | **M31 — Remote App Loader (`wiiload` v0.5: `.dol`, `.elf`, `.zip`)** | `feat/m31-wiiload` | [Spec](../specs/2026-11-28-m31-wiiload-remote-exec-design.md) · [Plan](2026-11-28-m31-wiiload-remote-exec.md) | None | **No** (all tasks `[HOST]`/`[BUILD]`/`[DOLPHIN]` done here) |
 | **Stage 3** | **M32 — Network File Transfer (Passive FTP, port `21`)** | `feat/m32-ftp-transfer` | [Spec](../specs/2026-11-28-m32-ftp-transfer-design.md) · [Plan](2026-11-28-m32-ftp-transfer.md) | None | **No** (all tasks `[HOST]`/`[BUILD]`/`[DOLPHIN]` done here) |
 | **Stage 4** | **M30 — System Menu Channel (`UNLA`) & Priiloader Autostart** | `feat/m30-channel-autostart` | [Spec](../specs/2026-11-28-m30-channel-autostart-design.md) · [Plan](2026-11-28-m30-channel-autostart.md) | None | **No** (all PC/Dolphin tasks done here; NAND/WAD install deferred to Stage 6) |
-| **Stage 5** | **M33 — `libwiitls v1.1.0` Upgrade & Beneficial Features** | `feat/m33-libwiitls-1.1` | [Spec](../specs/2026-11-28-m33-libwiitls-1.1-design.md) · [Plan](2026-11-28-m33-libwiitls-1.1.md) | Upstream tag `v1.1.0` in `pudding-pudding00/libwiitls` *(may be moved ahead of Stage 2–4 once tagged)* | **No** (all `[HOST]`/`[BUILD]`/`[DOLPHIN]` done here; real Wii TLS bench deferred to Stage 6) |
+| **Stage 5** | **M33 — `libwiitls v1.1.1` Upgrade & Beneficial Features** | `feat/m33-libwiitls-1.1` | [Spec](../specs/2026-11-28-m33-libwiitls-1.1-design.md) · [Plan](2026-11-28-m33-libwiitls-1.1.md) | Upstream tag `v1.1.1` in `pudding-pudding00/libwiitls` *(may be moved ahead of Stage 2–4 once tagged)* | **No** (all `[HOST]`/`[BUILD]`/`[DOLPHIN]` done here; real Wii TLS bench deferred to Stage 6) |
 | **Stage 6** | **Consolidated `[WII-HW]` Hardware Acceptance Pass** | `docs/m30-m33-hw-acceptance` | `docs/acceptance/m30-wii.md`–`m33-wii.md` | Stages 1–5 merged & green; **explicit user permission** for SD + NAND writes | **Yes (Single Session)** |
 
 ---
@@ -52,7 +52,7 @@ Execute Stage 6 **only after Stages 1–5 are complete and green in CI + Dolphin
    - Deploy `boot.dol`, `forwarder.dol`, `meta.xml`, `icon.png`.
 3. **Run Acceptance Checklists in Low-Risk → High-Risk Order:**
    - **First (Read-only / RAM / SD only — zero NAND writes):**
-     - `docs/acceptance/m33-wii.md`: Verify production `libwiitls 1.1.0` real IOS entropy init, HTTP/2 cover speedup (`[debug] perf=1`), DNS cancel, SNTP offset cache on second boot, interrupted download resume, and cloud sync.
+     - `docs/acceptance/m33-wii.md`: Verify production `libwiitls 1.1.1` real IOS entropy init, HTTP/2 cover speedup (`[debug] perf=1`), DNS cancel, SNTP offset cache on second boot, interrupted download resume, and cloud sync.
      - `docs/acceptance/m31-wii.md`: Push `.dol`, `.elf`, and `.zip` over LAN to port `4299` (`wiiload` + `tools/wii_deploy.py --wiiload <wii-ip>`), confirm dialog & Parental PIN gate, verify `exit()` returns to newlauncher via `return_stub`.
      - `docs/acceptance/m32-wii.md`: Open Transfer scene, connect via FileZilla/WinSCP on port `21`, test SD FAT32 + USB FAT32 (large file transfer, RAM stability) + USB NTFS read-only rejection + post-transfer library rescan.
    - **Last (NAND / Boot Changes — only after user confirmation & BootMii backup):**

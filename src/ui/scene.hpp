@@ -82,6 +82,8 @@ enum class AppCommand : u8 {
     CloudEnterCode,   // Kopplungsszene (M29): A öffnet die Tastatur für den Dropbox-Code
     CloudSkip,        // Abgleich-Szene: ohne Abgleich spielen
     CloudConflict,    // ChoiceDialog des Konflikts geschlossen: 0 = Wii, 1 = Cloud, sonst Abbruch
+    OpenTransfer,     // M32: open foreground File Transfer (FTP) scene
+    CloseTransfer,    // M32: close TransferScene and stop FTP server
 };
 const char* appCommandName(AppCommand c);
 

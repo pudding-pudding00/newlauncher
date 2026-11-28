@@ -98,6 +98,8 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     const std::string_view sw = trim(ini.get("debug", "cloud_switch"));
     if (sw == "wii" || sw == "cloud" || sw == "ask") c.debugCloudSwitch = std::string(sw);
     c.debugCloudUnlink = parseIntIn(ini.get("debug", "cloud_unlink"), 0, 1, 0) == 1;
+    c.debugFtpPort = static_cast<u16>(parseIntIn(ini.get("debug", "ftp_port"), 1, 65535, 0));
+    c.debugFtpPass = std::string(trim(ini.get("debug", "ftp_pass")));
 }
 
 Config configFromIni(const IniDoc& ini, bool tls) {
@@ -168,6 +170,15 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     const std::string_view ios = ini.get("wii", "ios");
     c.wiiIos = parseIosValue(ios);
     if (isBadIosValue(ios)) c.badKeys.emplace_back("wii.ios");
+    const std::string_view ftpPortStr = trim(ini.get("network", "ftp_port"));
+    if (!ftpPortStr.empty()) {
+        const int p = parseIntIn(ftpPortStr, 1, 65535, -1);
+        if (p < 0) c.badKeys.emplace_back("network.ftp_port");
+        else c.ftpPort = static_cast<u16>(p);
+    }
+    const std::string_view ftpUserStr = trim(ini.get("network", "ftp_user"));
+    if (!ftpUserStr.empty() && ftpUserStr.size() <= 32) c.ftpUser = std::string(ftpUserStr);
+    c.ftpPassHash = std::string(trim(ini.get("network", "ftp_pass_hash")));
     applyDebugIni(c, ini);
     return c;
 }
@@ -217,6 +228,8 @@ std::vector<IniValue> configValues(const Config& c) {
     for (auto& [key, value] : parentalIniValues(c.parental)) v.push_back({"parental", std::move(key), std::move(value)});
     if (!c.emuNandPath.empty()) v.push_back({"emunand", "path", c.emuNandPath});
     v.push_back({"cloud", "provider", std::string(providerName(c.cloudProvider))});
+    v.push_back({"network", "ftp_port", std::to_string(c.ftpPort)});
+    v.push_back({"network", "ftp_user", c.ftpUser});
     return v;
 }
 

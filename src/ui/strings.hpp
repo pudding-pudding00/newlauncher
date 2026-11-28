@@ -473,7 +473,18 @@
       "EmuNAND needs FAT32.\nThe EmuNAND must be on the SD card or a primary FAT32 partition (%s).") \
     X(OptNotOnVWii, "Auf vWii nicht verfügbar", "Not available on vWii") \
     X(OptionsHelpVWii, "◀▶ Ändern · B Speichern · vWii: Wiimote + Classic / HID-Controller", \
-      "◀▶ Change · B Save · vWii: Wiimote + Classic / HID controller")
+      "◀▶ Change · B Save · vWii: Wiimote + Classic / HID controller") \
+    X(TransferSetting, "Dateiübertragung (FTP)", "File Transfer (FTP)") \
+    X(TransferTitle, "Dateiübertragung (FTP)", "File Transfer (FTP)") \
+    X(TransferAddress, "Adresse: %s", "Address: %s") \
+    X(TransferUserPin, "Benutzer: %s · PIN: %s", "User: %s · PIN: %s") \
+    X(TransferUserCustom, "Benutzer: %s · eigenes Passwort", "User: %s · custom password") \
+    X(TransferMounts, "Laufwerke: %s", "Drives: %s") \
+    X(TransferIdle, "Warte auf FTP-Verbindung (Passivmodus) …", "Waiting for FTP connection (passive mode) …") \
+    X(TransferConnected, "Verbunden: %s", "Connected: %s") \
+    X(TransferActive, "%s: %s (%u KB)", "%s: %s (%u KB)") \
+    X(TransferNoNet, "Kein Netzwerk verfügbar.", "No network available.") \
+    X(TransferHelp, "B Beenden", "B Stop & Close")
 // clang-format on
 
 namespace nl::ui {

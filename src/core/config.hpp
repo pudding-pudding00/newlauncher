@@ -58,6 +58,9 @@ struct Config {
     std::string deviceName;  // [general] device_name (M26): Gerätename in Spielstand-Paketen, leer = "Wii"
     std::string emuNandPath;                 // [emunand] path (M19): z. B. "usb:/nands/emu1", leer = aus
     CloudProviderId cloudProvider = CloudProviderId::None;  // [cloud] provider (M27)
+    u16 ftpPort = 21;                                       // [network] ftp_port = 1..65535 (M32)
+    std::string ftpUser = "wii";                            // [network] ftp_user (M32)
+    std::string ftpPassHash;                                // [network] ftp_pass_hash (M32, never plaintext)
     std::string driveClientId, driveClientSecret;  // [cloud] drive_client_id/_secret: nur lesen, nie schreiben oder loggen
     std::string dropboxAppKey;  // [cloud] dropbox_app_key (öffentlicher Client, M29): nur lesen
     std::string onedriveClientId;  // [cloud] onedrive_client_id (öffentlicher Client, M28): nur lesen
@@ -99,6 +102,8 @@ struct Config {
     bool debugCloudSyncAll = false;  // [debug] cloud_sync_all = 1: nach NL_READY "Alle abgleichen" (M28)
     std::string debugCloudSwitch;   // [debug] cloud_switch = wii|cloud|ask: Wechsel-Dialog beantworten (M28)
     bool debugCloudUnlink = false;  // [debug] cloud_unlink = 1: zum Schluss abmelden (M28)
+    u16 debugFtpPort = 0;           // [debug] ftp_port = 1..65535 (Smoke, M32)
+    std::string debugFtpPass;       // [debug] ftp_pass (Smoke, M32, never logged)
 };
 
 // tls: Build mit HTTPS (NL_TLS). Bestimmt die Standardquellen; die offiziellen Quellen in http- oder https-Form

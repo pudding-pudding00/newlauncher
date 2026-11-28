@@ -32,6 +32,8 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::CloudEnterCode: return "cloud_enter_code";
         case AppCommand::CloudSkip: return "cloud_skip";
         case AppCommand::CloudConflict: return "cloud_conflict";
+        case AppCommand::OpenTransfer: return "open_transfer";
+        case AppCommand::CloseTransfer: return "close_transfer";
         case AppCommand::SettingsChanged: return "settings_changed";
         case AppCommand::SaveSettings: return "save_settings";
         case AppCommand::Rescan: return "rescan";

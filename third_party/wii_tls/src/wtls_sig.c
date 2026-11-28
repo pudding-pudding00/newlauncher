@@ -27,7 +27,7 @@ static const uint8_t *point_of(const uint8_t *pub, size_t len) {
     if (len == P256_POINT_LEN && pub[0] == 0x04) return pub;
     if (len == sizeof k_spki_prefix + P256_POINT_LEN && memcmp(pub, k_spki_prefix, sizeof k_spki_prefix) == 0 &&
         pub[sizeof k_spki_prefix] == 0x04)
-        return pub + sizeof k_spki_prefix;
+        return &pub[sizeof k_spki_prefix];
     return NULL;
 }
 

@@ -345,7 +345,7 @@ def _validate_header(name: str, value: str) -> tuple[str, str]:
         code = ord(ch)
         if (code < 0x20 and ch != "\t") or code == 0x7F:
             raise ValueError(f"invalid control character in HTTP header {name!r}")
-    return name, sval
+    return name, sval.replace("\r", "").replace("\n", "")
 
 
 class Handler(http.server.BaseHTTPRequestHandler):

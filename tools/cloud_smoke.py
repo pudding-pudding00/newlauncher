@@ -325,7 +325,7 @@ class Pairer(threading.Thread):
                 if time.monotonic() >= self.deadline:
                     break
                 time.sleep(0.5)
-        raise ConnectionError(f"{url.split('?')[0]}: {last}")
+        raise ConnectionError(f"pairing request failed: {type(last).__name__}")
 
     def _post(self, code: str) -> int:
         return self._request(self.base, ("code=" + code).encode())[0]

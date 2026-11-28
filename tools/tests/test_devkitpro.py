@@ -26,8 +26,13 @@ class DevkitProTest(unittest.TestCase):
 
     def test_linux_invocation_runs_cmake_directly(self):
         cmd, env = wii_build_invocation(Path("/src/repo"), "linux")
-        self.assertEqual(cmd, ["sh", "-c", "cmake --preset wii -DNL_TLS=ON -DNL_FS_NTFS=ON && cmake --build --preset wii --parallel $(nproc)"])
+        self.assertEqual(cmd, ["sh", "-c", "cmake --preset wii -DNL_TLS=ON -DNL_FS_NTFS=ON -DNL_DOLPHIN_DEV_TLS=OFF && cmake --build --preset wii --parallel $(nproc)"])
         self.assertEqual(env, {})
+
+    def test_dolphin_dev_tls_builds_in_own_directory(self):
+        cmd, _ = wii_build_invocation(Path("/src/repo"), "linux", dolphin_dev_tls=True)
+        self.assertIn("-B build/wii-dolphin", cmd[2])
+        self.assertIn("-DNL_DOLPHIN_DEV_TLS=ON", cmd[2])
 
     def test_no_tls_switches_option_off(self):
         # Der Wert steht immer explizit im Befehl: CMake merkt sich Optionen im Cache, ein Build
@@ -39,7 +44,7 @@ class DevkitProTest(unittest.TestCase):
     def test_no_tls_builds_in_own_directory(self):
         # Eigener Ordner je Variante: ein Wechsel ON/OFF im selben Ordner baut sonst fast alles neu (~1 min).
         cmd, _ = wii_build_invocation(Path("/src/repo"), "linux", tls=False)
-        self.assertEqual(cmd[2], "cmake --preset wii -B build/wii-notls -DNL_TLS=OFF -DNL_FS_NTFS=OFF && "
+        self.assertEqual(cmd[2], "cmake --preset wii -B build/wii-notls -DNL_TLS=OFF -DNL_FS_NTFS=OFF -DNL_DOLPHIN_DEV_TLS=OFF && "
                                  "cmake --build build/wii-notls --parallel $(nproc)")
 
     def test_ntfs_follows_tls_variant(self):

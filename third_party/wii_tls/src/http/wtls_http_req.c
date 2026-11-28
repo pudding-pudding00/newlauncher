@@ -1,4 +1,5 @@
 /* HTTP/1.1 request heads (RFC 9110 / 9112). */
+#include "wtls_mem.h"
 #include "http/wtls_http_req.h"
 
 #include <ctype.h>
@@ -61,7 +62,7 @@ static void add(sbuf *b, const char *s, size_t n) {
     }
     while (b->len + n > b->cap) {
         size_t ncap = b->cap <= WTLS_HTTP_MAX_HEAD / 2 ? b->cap * 2 : WTLS_HTTP_MAX_HEAD;
-        char *np = realloc(b->p, ncap + 1);
+        char *np = wtls_realloc(b->p, ncap + 1);
         if (!np) {
             b->err = WTLS_ERR_NOMEM;
             return;
@@ -104,7 +105,7 @@ int wtls_http_build_head(const char *method, const wtls_url *u, const wtls_http_
             if (wtls_http_ieq(h[i].name, reserved[k])) return WTLS_ERR_ARG;
     }
 
-    sbuf b = {malloc(HEAD_REQ_START + 1), 0, HEAD_REQ_START, WTLS_OK};
+    sbuf b = {wtls_malloc(HEAD_REQ_START + 1), 0, HEAD_REQ_START, WTLS_OK};
     if (!b.p) return WTLS_ERR_NOMEM;
     char num[32];
 
@@ -130,7 +131,7 @@ int wtls_http_build_head(const char *method, const wtls_url *u, const wtls_http_
     if (!wtls_http_headers_have(h, n, "User-Agent")) add_field(&b, "User-Agent", "libwiitls/" WTLS_VERSION);
     if (!wtls_http_headers_have(h, n, "Accept")) add_field(&b, "Accept", "*/*");
     if (want_gzip && !wtls_http_headers_have(h, n, "Accept-Encoding"))
-        add_field(&b, "Accept-Encoding", "gzip, deflate");
+        add_field(&b, "Accept-Encoding", WTLS_ACCEPT_ENCODING);
     if (allow_upgrade) {
         if (wtls_http_headers_have(h, n, "Upgrade") && !wtls_http_headers_have(h, n, "Connection"))
             add_field(&b, "Connection", "Upgrade");
@@ -150,7 +151,7 @@ int wtls_http_build_head(const char *method, const wtls_url *u, const wtls_http_
     add(&b, "\r\n", 2);
 
     if (b.err != WTLS_OK) {
-        free(b.p);
+        wtls_free(b.p);
         return b.err;
     }
     b.p[b.len] = 0;

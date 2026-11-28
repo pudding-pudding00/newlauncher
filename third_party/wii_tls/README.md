@@ -169,7 +169,11 @@ wiiload https_get.dol url=https://example.com/
 - **The clock matters.** Certificates need a correct date and the Wii's clock
   is often wrong. Sync with `wtls_time_sync_sntp()` at start-up, or on
   `WTLS_ERR_CLOCK` / an expired-certificate error.
-- **`wtls_init()` takes about 400 ms** to seed the random generator.
+- **`wtls_init()` takes about 400 ms** to seed the random generator
+  (`wtls_init_start()`/`wtls_init_step()` spread it over frames).
+- **No TLS in Dolphin.** The emulator's timing has no entropy, so
+  `wtls_init()` fails with `WTLS_ERR_ENTROPY` there; see
+  [docs/dolphin.md](docs/dolphin.md) for the debugging-only way to test in it.
 - **Client only.** No server mode, no DTLS, no HTTP/3, no certificate
   revocation checks (OCSP/CRL).
 

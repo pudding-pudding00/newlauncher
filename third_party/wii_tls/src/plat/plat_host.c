@@ -1,15 +1,16 @@
 /* Host platform layer (tests only): Winsock on Windows, POSIX elsewhere. */
 #include "plat.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include <wiitls/wiitls.h>
 
 #if defined(WTLS_THREAD_CHECK) && WTLS_THREAD_CHECK
 #include <stdio.h>
+#endif
 #if !defined(_WIN32)
 #include <pthread.h>
-#endif
 #endif
 
 #if defined(_WIN32)
@@ -34,8 +35,14 @@ int wtls_plat_os_entropy(uint8_t *out, size_t len) {
     return BCRYPT_SUCCESS(st) ? WTLS_OK : WTLS_ERR_ENTROPY;
 }
 
+bool wtls_plat_test_net_down;
+bool wtls_plat_test_emulated;
+
+bool wtls_plat_entropy_emulated(void) { return wtls_plat_test_emulated; }
+
 int wtls_plat_init(void) {
     static bool done;
+    if (wtls_plat_test_net_down) return WTLS_ERR_NET;
     if (done) return WTLS_OK;
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return WTLS_ERR_NET;
@@ -49,6 +56,39 @@ static int set_nonblocking(sock_t s) {
 }
 
 /* QueryPerformanceCounter: GetTickCount64 only advances every ~16 ms. */
+void wtls_plat_sleep_ms(uint32_t ms) { Sleep(ms); }
+
+static SRWLOCK s_async_lock = SRWLOCK_INIT;
+
+void wtls_plat_async_lock(void) { AcquireSRWLockExclusive(&s_async_lock); }
+void wtls_plat_async_unlock(void) { ReleaseSRWLockExclusive(&s_async_lock); }
+
+typedef struct {
+    void (*fn)(void *);
+    void *arg;
+} async_call;
+
+static DWORD WINAPI async_main(LPVOID p) {
+    async_call c = *(async_call *)p;
+    free(p);
+    c.fn(c.arg);
+    return 0;
+}
+
+int wtls_plat_async_run(void (*fn)(void *), void *arg) {
+    async_call *c = malloc(sizeof *c);
+    if (!c) return WTLS_ERR_NOMEM;
+    c->fn = fn;
+    c->arg = arg;
+    HANDLE h = CreateThread(NULL, 256u * 1024u, async_main, c, STACK_SIZE_PARAM_IS_A_RESERVATION, NULL);
+    if (!h) {
+        free(c);
+        return WTLS_ERR_UNSUPPORTED; /* the lookup then runs inline */
+    }
+    CloseHandle(h); /* detached */
+    return WTLS_OK;
+}
+
 uint64_t wtls_plat_now_ms(void) {
     static LARGE_INTEGER freq;
     LARGE_INTEGER now;
@@ -118,11 +158,57 @@ int wtls_plat_os_entropy(uint8_t *out, size_t len) {
 #endif
 }
 
-int wtls_plat_init(void) { return WTLS_OK; }
+bool wtls_plat_test_net_down;
+bool wtls_plat_test_emulated;
+
+bool wtls_plat_entropy_emulated(void) { return wtls_plat_test_emulated; }
+
+int wtls_plat_init(void) { return wtls_plat_test_net_down ? WTLS_ERR_NET : WTLS_OK; }
 
 static int set_nonblocking(sock_t s) {
     int fl = fcntl(s, F_GETFL, 0);
     return (fl < 0 || fcntl(s, F_SETFL, fl | O_NONBLOCK) < 0) ? -1 : 0;
+}
+
+void wtls_plat_sleep_ms(uint32_t ms) {
+    struct timespec ts = {(time_t)(ms / 1000u), (long)(ms % 1000u) * 1000000L};
+    nanosleep(&ts, NULL);
+}
+
+static pthread_mutex_t s_async_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void wtls_plat_async_lock(void) { pthread_mutex_lock(&s_async_mutex); }
+void wtls_plat_async_unlock(void) { pthread_mutex_unlock(&s_async_mutex); }
+
+typedef struct {
+    void (*fn)(void *);
+    void *arg;
+} async_call;
+
+static void *async_main(void *p) {
+    async_call c = *(async_call *)p;
+    free(p);
+    c.fn(c.arg);
+    return NULL;
+}
+
+int wtls_plat_async_run(void (*fn)(void *), void *arg) {
+    async_call *c = malloc(sizeof *c);
+    if (!c) return WTLS_ERR_NOMEM;
+    c->fn = fn;
+    c->arg = arg;
+    pthread_t t;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    pthread_attr_setstacksize(&attr, 256u * 1024u);
+    int rc = pthread_create(&t, &attr, async_main, c);
+    pthread_attr_destroy(&attr);
+    if (rc != 0) {
+        free(c);
+        return WTLS_ERR_UNSUPPORTED;
+    }
+    return WTLS_OK;
 }
 
 uint64_t wtls_plat_now_ms(void) {
@@ -354,11 +440,20 @@ int wtls_plat_connect_check(int fd, uint32_t ipv4_be, uint16_t port) {
     return WTLS_OK;
 }
 
+long wtls_plat_test_send_block_after = -1;
+
 int wtls_plat_send(int fd, const uint8_t *buf, size_t len) {
     if (len == 0) return WTLS_ERR_ARG;
     if (len > WTLS_PLAT_MAX_CHUNK) len = WTLS_PLAT_MAX_CHUNK;
+    if (wtls_plat_test_send_block_after == 0) {
+        wtls_plat_test_send_block_after = -1;
+        return WTLS_WANT_WRITE; /* a full send buffer, once */
+    }
+    if (wtls_plat_test_send_block_after > 0 && (long)len > wtls_plat_test_send_block_after)
+        len = (size_t)wtls_plat_test_send_block_after;
     for (;;) {
         int r = (int)send((sock_t)fd, (const char *)buf, (int)len, SEND_FLAGS);
+        if (r > 0 && wtls_plat_test_send_block_after > 0) wtls_plat_test_send_block_after -= r;
         if (r > 0) return r;
         int e = sock_err();
         if (r < 0 && e == ERR_INTR) continue;

@@ -1,30 +1,51 @@
 name: release
 
-# Builds the prebuilt Wii package for a version tag and attaches it to a
-# draft GitHub release. Review the draft and publish it by hand.
+# Runs CI for a version tag, builds the prebuilt Wii package and publishes it
+# as a GitHub release. Nothing is published unless every job succeeds, and the
+# gate job allows releases only of commits on main whose own checks all passed.
 
 on:
   push:
     tags: ['v*']
+  # To rebuild a release, run this workflow on its tag:
+  # gh workflow run release.yml --ref vX.Y.Z
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Existing tag to (re)build, e.g. v1.0.0'
-        required: true
 
 permissions:
   contents: write
 
 jobs:
+  # The tagged commit must be on main, and every run its push to main started (CI, CodeQL) must have passed
+  # (waits for it when the tag follows a merge right away).
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Commit is on main and its checks passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/release_gate.sh "$GITHUB_SHA" 90
+
+  ci:
+    needs: gate
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   package:
+    needs: gate
     runs-on: ubuntu-latest
     container: devkitpro/devkitppc:latest
     outputs:
       version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.tag || github.ref }}
       - name: Install tools
         run: command -v cmake || (apt-get update && apt-get install -y cmake)
       - name: Check tag matches the project version
@@ -32,7 +53,7 @@ jobs:
         shell: bash
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          TAG="${{ inputs.tag || github.ref_name }}"
+          TAG="$GITHUB_REF_NAME"
           VER=$(sed -n 's/^project(libwiitls VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
           echo "tag=$TAG version=$VER"
           [ "$TAG" = "v$VER" ] || { echo "::error::tag $TAG does not match CMakeLists.txt version $VER"; exit 1; }
@@ -44,27 +65,36 @@ jobs:
         shell: bash
         run: |
           cd dist
-          sha256sum "libwiitls-${{ steps.ver.outputs.version }}-wii.zip" > SHA256SUMS
+          sha256sum "libwiitls-${{ steps.ver.outputs.version }}-wii.zip" "libwiitls-${{ steps.ver.outputs.version }}-wii.sbom.spdx.json" > SHA256SUMS
           cat SHA256SUMS
       - uses: actions/upload-artifact@v7
         with:
           name: libwiitls-${{ steps.ver.outputs.version }}-wii
           path: |
             dist/libwiitls-${{ steps.ver.outputs.version }}-wii.zip
+            dist/libwiitls-${{ steps.ver.outputs.version }}-wii.sbom.spdx.json
             dist/SHA256SUMS
           if-no-files-found: error
 
   release:
-    needs: package
+    needs: [gate, ci, package]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write      # build provenance attestation
+      attestations: write
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.tag || github.ref }}
       - uses: actions/download-artifact@v8
         with:
           name: libwiitls-${{ needs.package.outputs.version }}-wii
           path: dist
+      - name: Attest build provenance of the package
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/libwiitls-${{ needs.package.outputs.version }}-wii.zip
+            dist/libwiitls-${{ needs.package.outputs.version }}-wii.sbom.spdx.json
       - name: Release notes from CHANGELOG.md
         run: |
           VER="${{ needs.package.outputs.version }}"
@@ -76,7 +106,7 @@ jobs:
           [ -s notes.md ] || { echo "::error::no CHANGELOG.md section for $VER"; exit 1; }
           printf '\n---\n\n**Package:** `libwiitls-%s-wii.zip` — see [docs/usage.md](https://github.com/%s/blob/v%s/docs/usage.md#1-add-it-to-your-project) to integrate it. SHA-256 in `SHA256SUMS`.\n' \
             "$VER" "$GITHUB_REPOSITORY" "$VER" >> notes.md
-      - name: Create or update draft release
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -84,7 +114,8 @@ jobs:
           TAG="v$VER"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --draft=false
           else
-            gh release create "$TAG" dist/* --draft --verify-tag \
+            gh release create "$TAG" dist/* --verify-tag \
               --title "libwiitls $VER" --notes-file notes.md
           fi

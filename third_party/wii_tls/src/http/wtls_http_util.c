@@ -292,3 +292,63 @@ wtls_status wtls_http_check_resume(const wtls_http_response *r, uint64_t resume_
     }
     return WTLS_ERR_HTTP;
 }
+
+/* ---- Authorization header values (RFC 7617 Basic, RFC 6750 Bearer) ---------- */
+
+#include <mbedtls/base64.h>
+
+#define AUTH_CRED_MAX 1024u
+
+static bool has_control(const char *s) {
+    for (; *s; s++)
+        if ((unsigned char)*s < 0x20 || (unsigned char)*s == 0x7f) return true;
+    return false;
+}
+
+/* Writes prefix + payload to out (NUL-terminated), or just reports the length for out == NULL. */
+static wtls_status emit_value(const char *prefix, const char *payload, size_t payload_len, char *out,
+                              size_t out_size, size_t *out_len) {
+    size_t pl = strlen(prefix);
+    size_t total = pl + payload_len;
+    if (out_len) *out_len = total;
+    if (!out) return out_len ? WTLS_OK : WTLS_ERR_ARG;
+    if (out_size < total + 1) return WTLS_ERR_HTTP_LIMIT;
+    memcpy(out, prefix, pl);
+    memcpy(out + pl, payload, payload_len);
+    out[total] = '\0';
+    return WTLS_OK;
+}
+
+wtls_status wtls_http_basic_auth(const char *user, const char *pass, char *out, size_t out_size,
+                                 size_t *out_len) {
+    if (!user || !pass) return WTLS_ERR_ARG;
+    size_t ul = strlen(user), pl = strlen(pass);
+    if (strchr(user, ':') || has_control(user) || has_control(pass)) return WTLS_ERR_ARG;
+    if (ul > AUTH_CRED_MAX || pl > AUTH_CRED_MAX) return WTLS_ERR_HTTP_LIMIT;
+    unsigned char raw[2 * AUTH_CRED_MAX + 1];
+    memcpy(raw, user, ul);
+    raw[ul] = ':';
+    memcpy(raw + ul + 1, pass, pl);
+    size_t rl = ul + 1 + pl;
+    char b64[((2 * AUTH_CRED_MAX + 1 + 2) / 3) * 4 + 1];
+    size_t bl = 0;
+    if (mbedtls_base64_encode((unsigned char *)b64, sizeof b64, &bl, raw, rl) != 0) return WTLS_ERR_INTERNAL;
+    return emit_value("Basic ", b64, bl, out, out_size, out_len);
+}
+
+wtls_status wtls_http_bearer_auth(const char *token, char *out, size_t out_size, size_t *out_len) {
+    if (!token || !*token) return WTLS_ERR_ARG;
+    size_t n = strlen(token);
+    if (n > 4 * AUTH_CRED_MAX) return WTLS_ERR_HTTP_LIMIT;
+    size_t i = 0;
+    for (; i < n; i++) { /* b64token = 1*( ALPHA / DIGIT / "-" / "." / "_" / "~" / "+" / "/" ) *"=" */
+        char c = token[i];
+        bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
+                  c == '.' || c == '_' || c == '~' || c == '+' || c == '/';
+        if (!ok) break;
+    }
+    if (i == 0) return WTLS_ERR_ARG;
+    for (; i < n; i++)
+        if (token[i] != '=') return WTLS_ERR_ARG;
+    return emit_value("Bearer ", token, n, out, out_size, out_len);
+}

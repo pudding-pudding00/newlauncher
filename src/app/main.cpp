@@ -2714,6 +2714,7 @@ int main(int argc, char** argv) {
         pendingWiiload = std::move(*incoming);
         wiiloadScene.open(std::move(sum));
         scenes.push(&wiiloadScene);
+    };
     auto openTransfer = [&]() {
         ftpMounts.clear();
         for (const nl::platform::Device& d : nl::platform::deviceTable().devices()) {
@@ -3433,6 +3434,7 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 pendingWiiload.reset();
                 nl::log::line("NL_WIILOAD decline");
+                break;
             case nl::ui::AppCommand::OpenTransfer:
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 openTransfer();

@@ -2,6 +2,7 @@
 #ifndef WTLS_TIME_H
 #define WTLS_TIME_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -37,6 +38,18 @@ typedef int (*wtls_udp_exchange_fn)(void *ctx, uint32_t ipv4_be, uint16_t port, 
  * set) or the last attempt's error. */
 int wtls_sntp_query(wtls_udp_exchange_fn fn, void *ctx, uint32_t ipv4_be, uint64_t nonce,
                     uint32_t timeout_ms, int64_t *unix_s);
+
+/* Persisted SNTP offset (wtls_time_save/load): magic "WTLSTM01", offset and raw RTC time
+ * at save (both big-endian int64), CRC-32 of the first 24 bytes. */
+#define WTLS_TIME_STATE_LEN 28u
+void wtls_time_state_encode(uint8_t out[WTLS_TIME_STATE_LEN], int64_t offset, int64_t rtc_now);
+/* WTLS_OK (*offset set); WTLS_ERR_FILE (bad magic or CRC); WTLS_ERR_CLOCK (the RTC went back
+ * since the save, more than max_age_s passed (0 = no limit), or the corrected time is
+ * implausible by wtls_time_check). */
+int wtls_time_state_decode(const uint8_t in[WTLS_TIME_STATE_LEN], int64_t rtc_now, uint32_t max_age_s,
+                           int64_t *offset);
+/* Records whether the offset in use came from a real SNTP exchange (tests set it too). */
+void wtls_time_note_synced(bool synced);
 
 /* mbedtls time callback (registered with mbedtls_platform_set_time in wtls_init). */
 mbedtls_time_t wtls_mbedtls_time(mbedtls_time_t *t);

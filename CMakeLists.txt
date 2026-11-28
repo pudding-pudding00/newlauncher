@@ -212,12 +212,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     # (inflate with Z_PREFIX for gzip/deflate) via FetchContent with a pinned SHA256. Without NL_TLS the launcher
     # builds as before with plain HTTP only.
     option(NL_TLS "HTTPS über wii_tls" ON)
+    option(NL_DOLPHIN_DEV_TLS "DEV ONLY: allow predictable entropy in Dolphin" OFF)
     if(NL_TLS)
         set(WTLS_PLATFORM ogc CACHE STRING "" FORCE)
         set(WTLS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
         set(WTLS_BUILD_HWTEST OFF CACHE BOOL "" FORCE)
         set(WTLS_BUILD_BENCH OFF CACHE BOOL "" FORCE)
         set(WTLS_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+        set(WTLS_DOLPHIN_DEV_ENTROPY ${NL_DOLPHIN_DEV_TLS} CACHE BOOL "" FORCE)
+        set(WTLS_WEBSOCKET OFF CACHE BOOL "" FORCE)
+        set(WTLS_BROTLI OFF CACHE BOOL "" FORCE)
+        set(WTLS_ZSTD OFF CACHE BOOL "" FORCE)
+        set(WTLS_KEYLOG OFF CACHE BOOL "" FORCE)
         # Krypto-Einstellungen wie im getesteten Release 1.0.0 (auf der Wii gemessen); FORCE, damit ein alter
         # Build-Cache mit den Standardwerten älterer Stände (Everest aus, O2) nicht hängen bleibt.
         set(WTLS_EVEREST ON CACHE BOOL "" FORCE)

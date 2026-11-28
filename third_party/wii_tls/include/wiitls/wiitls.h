@@ -33,18 +33,20 @@ extern "C" {
 
 /** Library version components; equal the CMake project version (checked at configure time). */
 #define WTLS_VERSION_MAJOR 1
-#define WTLS_VERSION_MINOR 0
+#define WTLS_VERSION_MINOR 1
 #define WTLS_VERSION_PATCH 1
 /** Library version string; equals the CMake project version (checked at configure time). */
-#define WTLS_VERSION "1.0.1"
+#define WTLS_VERSION "1.1.1"
 
 /** Returns the library version string (equals WTLS_VERSION). */
 const char *wtls_version(void);
 
 /** Raw SHA-256 SubjectPublicKeyInfo (SPKI) pin length in bytes. */
 #define WTLS_SPKI_SHA256_LEN 32u
-/** Maximum number of SPKI pins per connection (primary + backup). */
+/** Maximum number of SPKI pins in wtls_options::spki_pins (primary + backup). */
 #define WTLS_SPKI_MAX_PINS 2u
+/** Maximum number of additional pins in wtls_options::spki_pins_ext. */
+#define WTLS_SPKI_MAX_PINS_EXT 4u
 
 /** Status codes. Every error is negative; WTLS_OK is 0. */
 typedef enum {
@@ -55,6 +57,7 @@ typedef enum {
     WTLS_ERR_STATE     = -11,  /**< wtls_init() has not been called */
     WTLS_ERR_NOMEM     = -12,  /**< out of memory */
     WTLS_ERR_CANCELLED = -13,  /**< operation cancelled by abort_cb */
+    WTLS_ERR_UNSUPPORTED = -14, /**< feature not compiled into this build (CMake option off) */
     WTLS_ERR_ENTROPY   = -20,  /**< the random generator could not be seeded */
     WTLS_ERR_CLOCK     = -21,  /**< system clock implausible; call wtls_time_sync_sntp() */
     WTLS_ERR_NET       = -30,  /**< network not initialised */
@@ -68,6 +71,9 @@ typedef enum {
     WTLS_ERR_HTTP          = -50,  /**< malformed or unsupported HTTP response (<wiitls/http.h>) */
     WTLS_ERR_HTTP_LIMIT    = -51,  /**< response head, field count or fetch body over its limit */
     WTLS_ERR_HTTP_REDIRECT = -52,  /**< too many redirects, bad Location, or redirect https -> http */
+    WTLS_ERR_WS        = -53,  /**< WebSocket protocol error (<wiitls/websocket.h>) */
+    WTLS_ERR_FILE      = -60,  /**< file I/O error (download helper, CA bundle files) */
+    WTLS_ERR_INTEGRITY = -61,  /**< digest or signature mismatch */
     WTLS_ERR_INTERNAL  = -99,  /**< unexpected library error */
 } wtls_status;
 
@@ -113,6 +119,24 @@ typedef struct {
     uint8_t n_spki_pins;            /**< 0 => disabled; 1..WTLS_SPKI_MAX_PINS => at least one cert in
                                          the verified chain must match a pin (ignored when
                                          insecure_skip_verify is set; > WTLS_SPKI_MAX_PINS => WTLS_ERR_ARG) */
+    const uint8_t (*spki_pins_ext)[WTLS_SPKI_SHA256_LEN]; /**< (1.1) more pins for key rotation with several
+                                         backups: an array of n_spki_pins_ext digests, copied at connect. A
+                                         match against any pin of spki_pins and spki_pins_ext suffices;
+                                         pinning is active when the two counts add up to more than 0 */
+    uint8_t n_spki_pins_ext;        /**< (1.1) 0..WTLS_SPKI_MAX_PINS_EXT; larger, or non-zero with a NULL
+                                         spki_pins_ext => WTLS_ERR_ARG */
+    bool async_dns;                 /**< (1.1) wtls_connect_start(): resolve host names without blocking. A name
+                                         that is not cached then makes the call return WTLS_WANT_READ with
+                                         wtls_get_fd() == -1 until the lookup is done: call wtls_connect_step()
+                                         again after a few milliseconds (there is nothing to poll yet). The lookup
+                                         runs on a helper thread (on the Wii one resolver thread, started on
+                                         first use, 16 KiB stack). wtls_connect() always resolves this way, which is what lets it
+                                         honour abort_cb and dns_timeout_ms during the lookup */
+    uint32_t dns_timeout_ms;        /**< (1.1) 0 => wait as long as the resolver takes (as in 1.0); otherwise a
+                                         lookup that is still running after this long fails with
+                                         WTLS_ERR_TIMEOUT (the answer is dropped when it arrives). Such a lookup
+                                         keeps one of 4 lookup slots until the resolver returns; with all of them
+                                         taken, a new lookup fails at once with WTLS_ERR_DNS */
 } wtls_options;
 
 /** Facts about an established connection (see wtls_get_info()). */
@@ -133,6 +157,32 @@ typedef struct {
  * @return WTLS_OK, WTLS_ERR_NET, or WTLS_ERR_ENTROPY.
  */
 wtls_status wtls_init(void);
+
+/**
+ * (1.1) Starts a non-blocking initialisation; continue with wtls_init_step().
+ *
+ * May run before net_init() (e.g. next to libogc's net_init_async()): the
+ * entropy collection needs no network. Credited entropy is the same as with
+ * wtls_init(); only the waiting is split into slices.
+ *
+ * @return WTLS_WANT_READ (call wtls_init_step()), or WTLS_OK if already
+ *         initialised.
+ */
+wtls_status wtls_init_start(void);
+
+/**
+ * (1.1) Collects entropy for about @p budget_ms (checked every 16 samples,
+ * ~1.3 ms on the Wii; 0 still makes progress), then finishes the
+ * initialisation once enough is collected. The finishing call runs
+ * psa_crypto_init() from the collected pool and takes a few ms more.
+ *
+ * @return WTLS_WANT_READ (call again), WTLS_OK (initialised, as after
+ *         wtls_init()), WTLS_ERR_NET (entropy is ready but net_init() has not
+ *         succeeded yet: call again later, nothing is lost),
+ *         WTLS_ERR_ENTROPY (health test failed; start over with
+ *         wtls_init_start()), or WTLS_ERR_STATE (no wtls_init_start()).
+ */
+wtls_status wtls_init_step(uint32_t budget_ms);
 
 /**
  * Frees all global state: runtime-added CAs, the session-ticket cache (which
@@ -176,6 +226,39 @@ wtls_status wtls_add_trusted_ca(const uint8_t *buf, size_t len);
  * Requires wtls_init(). wtls_shutdown() restores the default state.
  */
 void        wtls_reset_trusted_cas(bool keep_builtin);
+
+/**
+ * Loads CA certificates from a PEM file such as cacert.pem (SD card or USB),
+ * so trust anchors can be refreshed without a new build. Every
+ * "BEGIN CERTIFICATE" block that parses is used; other blocks, broken
+ * certificates and text around them are ignored. The file is streamed; the
+ * certificates stay in memory as DER (about 150 KiB for the Mozilla list) and
+ * are parsed lazily like the embedded bundle. A bundle loaded earlier from a
+ * file is replaced.
+ *
+ * @p replace_builtin true: afterwards only the file's CAs are trusted (like
+ * wtls_reset_trusted_cas(false), so CAs added with wtls_add_trusted_ca() are
+ * dropped too). false: the file's CAs are added to the built-in ones. Either
+ * way cached session tickets and idle pooled connections are dropped. On any
+ * error the trust store is unchanged.
+ *
+ * @param n_loaded may be NULL; receives the number of certificates taken.
+ * @return WTLS_OK; WTLS_ERR_FILE (cannot open or read); WTLS_ERR_ARG (no usable
+ *         certificate in the file); WTLS_ERR_NOMEM; WTLS_ERR_STATE.
+ */
+wtls_status wtls_load_ca_bundle_file(const char *path, bool replace_builtin, size_t *n_loaded);
+
+/**
+ * Like wtls_load_ca_bundle_file(), but only if @p sig_path holds a valid ECDSA
+ * P-256 / SHA-256 signature (DER, as written by `tools/sign_payload.py sign`)
+ * over the exact bytes of the file, made with the key matching @p pubkey (65-byte
+ * point or SPKI, see <wiitls/sig.h>). Otherwise WTLS_ERR_INTEGRITY and the trust
+ * store stays as it was. Link against the library as usual: this pulls in the
+ * signature code.
+ */
+wtls_status wtls_load_ca_bundle_file_signed(const char *path, const char *sig_path,
+                                            const uint8_t *pubkey, size_t pubkey_len,
+                                            bool replace_builtin, size_t *n_loaded);
 
 /**
  * Loads a client certificate chain and the matching private key for mutual
@@ -246,9 +329,12 @@ wtls_status wtls_connect(wtls_conn **out, const char *host, uint16_t port,
  * the non-blocking TCP connect, and advances as far as possible without
  * blocking.
  *
+ * With wtls_options::async_dns the lookup does not block either (see there).
+ *
  * @return WTLS_OK (handshake already finished), WTLS_WANT_READ or
  *         WTLS_WANT_WRITE (*out is set; poll wtls_get_fd(*out) and drive with
- *         wtls_connect_step()), or a negative error (*out is NULL).
+ *         wtls_connect_step(); a descriptor of -1 means the DNS lookup is still
+ *         running), or a negative error (*out is NULL).
  */
 wtls_status wtls_connect_start(wtls_conn **out, const char *host, uint16_t port,
                                const wtls_options *opt);
@@ -324,6 +410,95 @@ uint32_t    wtls_last_verify_flags(void);
 
 /** Sends close_notify (best effort) and frees the connection; NULL is allowed. */
 void        wtls_close(wtls_conn *c);
+
+/** Log levels, most important first. */
+typedef enum {
+    WTLS_LOG_ERROR = 1,
+    WTLS_LOG_WARN  = 2,
+    WTLS_LOG_INFO  = 3,
+    WTLS_LOG_DEBUG = 4,
+} wtls_log_level;
+
+/** Log categories (bit mask). */
+#define WTLS_LOG_CAT_PLATFORM  (1u << 0) /**< network reset, DNS, TCP connect, IOS sockets */
+#define WTLS_LOG_CAT_HANDSHAKE (1u << 1) /**< TLS handshake progress and failures */
+#define WTLS_LOG_CAT_CERT      (1u << 2) /**< certificate verification and pinning */
+#define WTLS_LOG_CAT_HTTP      (1u << 3) /**< requests, redirects, connection reuse */
+#define WTLS_LOG_CAT_ALL       0xFFFFFFFFu
+
+/**
+ * Log callback. @p msg is one line without a trailing newline, valid only
+ * during the call. It is invoked from the thread that called the library
+ * function (see "Threading"), so it needs no locking of its own.
+ */
+typedef void (*wtls_log_cb)(void *ctx, wtls_log_level level, uint32_t category, const char *msg);
+
+/**
+ * Installs (or, with @p cb = NULL, removes) the log callback. May be called
+ * before wtls_init(). Messages above @p max_level or outside @p categories are
+ * dropped before they are formatted. The library never logs request or
+ * response bodies, header values, or key material.
+ */
+void wtls_set_log_cb(wtls_log_cb cb, void *ctx, wtls_log_level max_level, uint32_t categories);
+
+/** One line of an NSS key log ("LABEL client_random secret", no newline). */
+typedef void (*wtls_keylog_cb)(void *ctx, const char *line);
+
+/**
+ * Installs (or, with @p cb = NULL, removes) a TLS key log callback in the NSS
+ * SSLKEYLOGFILE format, for decrypting captures in Wireshark. Affects
+ * connections opened afterwards. DEBUGGING ONLY: the lines contain traffic
+ * secrets.
+ *
+ * @return WTLS_OK, or WTLS_ERR_UNSUPPORTED when the library was built without
+ *         WTLS_KEYLOG (the default for release builds).
+ */
+wtls_status wtls_set_keylog_cb(wtls_keylog_cb cb, void *ctx);
+
+/** Replacement allocator for all library memory, including Mbed TLS and zlib. */
+typedef struct {
+    void *(*calloc_fn)(void *ctx, size_t n, size_t size); /**< required; must return zeroed memory or NULL */
+    void *(*realloc_fn)(void *ctx, void *p, size_t size); /**< optional (NULL: emulated with calloc + copy + free) */
+    void  (*free_fn)(void *ctx, void *p);                 /**< required; NULL pointers are never passed */
+    void *ctx;                                            /**< opaque pointer passed to every call */
+} wtls_allocator;
+
+/**
+ * Installs an allocator (copied) so the application can place library memory,
+ * e.g. in MEM2. Pass NULL to return to the C library's malloc/free.
+ *
+ * Only allowed while the library is not initialised: call it before
+ * wtls_init() or after wtls_shutdown(), when no connection, response or
+ * wtls_http_result created with the previous allocator is still alive.
+ * The library keeps a 16-byte header in front of each block it allocates, so
+ * the allocator should return 16-byte aligned memory to keep every block
+ * aligned for any C type.
+ *
+ * @return WTLS_OK, WTLS_ERR_STATE (library initialised), or WTLS_ERR_ARG
+ *         (calloc_fn or free_fn missing).
+ */
+wtls_status wtls_set_allocator(const wtls_allocator *a);
+
+/**
+ * Saves the clock correction found by wtls_time_sync_sntp() to a small file (for
+ * example on the SD card) so the next start can skip the SNTP round trip.
+ *
+ * @return WTLS_OK; WTLS_ERR_STATE (no successful wtls_time_sync_sntp() in this
+ *         run, so there is nothing trustworthy to save); WTLS_ERR_FILE; WTLS_ERR_ARG.
+ */
+wtls_status wtls_time_save(const char *path);
+
+/**
+ * Applies a correction saved by wtls_time_save(), unless wtls_time_sync_sntp()
+ * already succeeded in this run. It is only a hint: the file is rejected when
+ * it is damaged (WTLS_ERR_FILE), when the console clock is earlier than at the
+ * time of saving, when more than @p max_age_s seconds (0 = no limit) have passed
+ * since then, or when the corrected time is implausible (all WTLS_ERR_CLOCK).
+ * Certificate checks still decide: after WTLS_ERR_CERT with an expired or
+ * not-yet-valid certificate, run wtls_time_sync_sntp() once and retry.
+ * Does not need wtls_init().
+ */
+wtls_status wtls_time_load(const char *path, uint32_t max_age_s);
 
 /** Human-readable text for a ::wtls_status value (never NULL). */
 const char *wtls_strerror(int status);

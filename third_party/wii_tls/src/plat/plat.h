@@ -31,6 +31,17 @@ typedef bool (*wtls_plat_abort_fn)(void *ctx);
 int wtls_plat_os_entropy(uint8_t *out, size_t len);
 
 int      wtls_plat_init(void);                                         /* OK | ERR_NET */
+/* Host-only test hook (defined in plat_host.c): true makes wtls_plat_init()
+ * report WTLS_ERR_NET, as on a Wii before net_init(). */
+extern bool wtls_plat_test_net_down;
+/* True when the timing jitter comes from an emulator, where it carries no
+ * entropy (Wii: Dolphin detected; host: the test hook below). */
+bool     wtls_plat_entropy_emulated(void);
+/* Host-only test hook (plat_host.c): makes wtls_plat_entropy_emulated() true. */
+extern bool wtls_plat_test_emulated;
+/* Host-only test hook (plat_host.c): >= 0 lets wtls_plat_send() pass this many more bytes, then answer
+ * WTLS_WANT_WRITE once (a full send buffer) and reset itself to -1. */
+extern long wtls_plat_test_send_block_after;
 int      wtls_plat_resolve(const char *host, uint32_t *ipv4_be);       /* OK | ERR_DNS */
 int      wtls_plat_resolve_all(const char *host, uint32_t *addrs,
                                size_t cap, size_t *count);             /* OK | ERR_DNS */
@@ -51,10 +62,20 @@ int      wtls_plat_connect_check(int fd, uint32_t ipv4_be, uint16_t port); /* OK
 int      wtls_plat_send(int fd, const uint8_t *buf, size_t len);       /* >0 | WANT_WRITE | ERR_IO */
 int      wtls_plat_recv(int fd, uint8_t *buf, size_t len);             /* >0 | 0 (EOF) | WANT_READ | ERR_IO */
 int      wtls_plat_poll(int fd, bool rd, bool wr, uint32_t timeout_ms);/* 1 ready | 0 timeout | ERR_IO */
+/* Waits for any of n descriptors (want[i]: bit 0 read, bit 1 write; fds[i] < 0 is ignored) for at most timeout_ms.
+ * ready[i] = 1 for every one that is ready or failed. Returns how many, 0 on timeout. */
+int      wtls_plat_poll_many(const int *fds, const uint8_t *want, size_t n, uint32_t timeout_ms, uint8_t *ready);
 void     wtls_plat_close(int fd);
 int      wtls_plat_udp_exchange(uint32_t ipv4_be, uint16_t port, const uint8_t *req, size_t req_len,
                                 uint8_t *resp, size_t resp_cap,
                                 uint32_t timeout_ms);                  /* bytes | ERR_TIMEOUT | ERR_IO */
+/* Runs fn(arg) once on a detached helper thread (used for DNS lookups). WTLS_OK, or WTLS_ERR_UNSUPPORTED where
+ * no helper thread can take it: the caller then does the work itself. The lock below guards the
+ * small shared tables such helpers use; without threads it does nothing. */
+int      wtls_plat_async_run(void (*fn)(void *), void *arg);
+void     wtls_plat_async_lock(void);
+void     wtls_plat_async_unlock(void);
+void     wtls_plat_sleep_ms(uint32_t ms);                              /* blocks the calling thread */
 uint64_t wtls_plat_now_ms(void);                                       /* monotonic */
 uint64_t wtls_plat_now_us(void);                                       /* monotonic, microseconds */
 /* Total microseconds spent blocked inside wtls_plat_poll, and in the polls of a
@@ -63,6 +84,7 @@ uint64_t wtls_plat_now_us(void);                                       /* monoto
 extern uint64_t wtls_plat_poll_wait_us;
 int64_t  wtls_plat_unix_time(void);                 /* time(NULL) + offset */
 void     wtls_plat_set_unix_time_offset(int64_t delta_s);
+int64_t  wtls_plat_unix_time_offset(void);          /* the delta set above (0 until SNTP ran) */
 
 /* Strict dotted-quad IPv4 literal ("a.b.c.d", each 0..255, no leading '+'/space).
  * Returns true and stores the address in network byte order. */
@@ -99,6 +121,8 @@ bool wtls_plat_ios_connect_in_progress(int32_t r);
 uint32_t wtls_plat_jitter_sample(void);
 /* Non-credited auxiliary hardware/network state mixed into conditioned entropy. */
 void wtls_plat_entropy_aux(uint32_t aux[4]);
+/* True when running in Dolphin (IOS_Open("/dev/dolphin") succeeds). */
+bool wtls_plat_is_dolphin(void);
 #endif
 
 #endif

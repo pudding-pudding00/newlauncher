@@ -31,6 +31,9 @@ void *wtls_http_pool_take(bool secure, const char *host, uint16_t port, bool ins
 /* Test hook: how entries are closed. NULL => wtls_http_tr_close(). */
 void wtls_http_pool_set_closer(void (*fn)(void *));
 
+/* Retires the asynchronous HTTP/2 sessions (src/http/wtls_http.c); wtls_http_pool_flush() calls it. */
+void wtls_http_h2s_flush(void);
+
 /* Closes a transport handle (src/http/wtls_http.c). */
 void wtls_http_tr_close(void *c);
 

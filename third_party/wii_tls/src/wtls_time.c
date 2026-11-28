@@ -1,6 +1,8 @@
 #include "wtls_time.h"
 
+#include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include <psa/crypto.h>
 
@@ -11,6 +13,8 @@
 #endif
 
 #define YEAR_S (365LL * 86400)
+
+static bool s_synced; /* the offset in use came from SNTP in this run */
 #define NTP_PORT 123
 
 int64_t wtls_time_build(void) { return (int64_t)WTLS_BUILD_UNIX_TIME; }
@@ -98,5 +102,70 @@ wtls_status wtls_time_sync_sntp(const char *server, uint32_t timeout_ms) {
     if (wtls_time_check(unix_s) != WTLS_OK) return WTLS_ERR_CLOCK; /* server is wrong */
     wtls_plat_set_unix_time_offset(0);
     wtls_plat_set_unix_time_offset(unix_s - wtls_plat_unix_time());
+    s_synced = true;
+    return WTLS_OK;
+}
+
+/* ---- persisted offset ----------------------------------------------------- */
+
+static uint32_t crc32_of(const uint8_t *p, size_t n) {
+    uint32_t c = 0xFFFFFFFFu;
+    while (n--) {
+        c ^= *p++;
+        for (int k = 0; k < 8; k++) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1u)));
+    }
+    return ~c;
+}
+
+static void put_be64(uint8_t *p, uint64_t v) {
+    for (int i = 0; i < 8; i++) p[i] = (uint8_t)(v >> (56 - 8 * i));
+}
+
+void wtls_time_note_synced(bool synced) { s_synced = synced; }
+
+void wtls_time_state_encode(uint8_t out[WTLS_TIME_STATE_LEN], int64_t offset, int64_t rtc_now) {
+    memcpy(out, "WTLSTM01", 8);
+    put_be64(out + 8, (uint64_t)offset);
+    put_be64(out + 16, (uint64_t)rtc_now);
+    uint32_t crc = crc32_of(out, 24);
+    for (int i = 0; i < 4; i++) out[24 + i] = (uint8_t)(crc >> (24 - 8 * i));
+}
+
+int wtls_time_state_decode(const uint8_t in[WTLS_TIME_STATE_LEN], int64_t rtc_now, uint32_t max_age_s,
+                           int64_t *offset) {
+    if (!in || !offset || memcmp(in, "WTLSTM01", 8) != 0) return WTLS_ERR_FILE;
+    if (be32(in + 24) != crc32_of(in, 24)) return WTLS_ERR_FILE;
+    int64_t off = (int64_t)be64(in + 8), saved_rtc = (int64_t)be64(in + 16);
+    int64_t age = rtc_now - saved_rtc;
+    if (age < 0 || (max_age_s && age > (int64_t)max_age_s)) return WTLS_ERR_CLOCK;
+    if (wtls_time_check(rtc_now + off) != WTLS_OK) return WTLS_ERR_CLOCK;
+    *offset = off;
+    return WTLS_OK;
+}
+
+wtls_status wtls_time_save(const char *path) {
+    if (!path) return WTLS_ERR_ARG;
+    if (!s_synced) return WTLS_ERR_STATE; /* nothing trustworthy to remember */
+    uint8_t rec[WTLS_TIME_STATE_LEN];
+    wtls_time_state_encode(rec, wtls_plat_unix_time_offset(), (int64_t)time(NULL));
+    FILE *f = fopen(path, "wb");
+    if (!f) return WTLS_ERR_FILE;
+    bool ok = fwrite(rec, 1, sizeof rec, f) == sizeof rec;
+    ok = fclose(f) == 0 && ok;
+    return ok ? WTLS_OK : WTLS_ERR_FILE;
+}
+
+wtls_status wtls_time_load(const char *path, uint32_t max_age_s) {
+    if (!path) return WTLS_ERR_ARG;
+    FILE *f = fopen(path, "rb");
+    if (!f) return WTLS_ERR_FILE;
+    uint8_t rec[WTLS_TIME_STATE_LEN + 1];
+    size_t n = fread(rec, 1, sizeof rec, f);
+    fclose(f);
+    if (n != WTLS_TIME_STATE_LEN) return WTLS_ERR_FILE;
+    int64_t off = 0;
+    int r = wtls_time_state_decode(rec, (int64_t)time(NULL), max_age_s, &off);
+    if (r != WTLS_OK) return (wtls_status)r;
+    if (!s_synced) wtls_plat_set_unix_time_offset(off); /* a fresh SNTP result is better than the file */
     return WTLS_OK;
 }

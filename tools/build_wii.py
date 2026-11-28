@@ -17,10 +17,15 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Wii-Build von newlauncher")
     ap.add_argument("--no-tls", action="store_true", help="ohne HTTPS bauen (NL_TLS=OFF)")
+    ap.add_argument("--dolphin-dev-tls", action="store_true",
+                    help="DEV ONLY: build/wii-dolphin mit WTLS_DOLPHIN_DEV_ENTROPY=ON")
     args = ap.parse_args(argv)
+    if args.dolphin_dev_tls:
+        print("WARNING: DEV-ONLY DOLPHIN TLS BUILD (WTLS_DOLPHIN_DEV_ENTROPY=ON) - DO NOT RELEASE!")
     if sys.platform == "win32" and not args.no_tls:
         ensure_source()
-    cmd, extra_env = wii_build_invocation(REPO_ROOT, sys.platform, tls=not args.no_tls)
+    cmd, extra_env = wii_build_invocation(REPO_ROOT, sys.platform, tls=not args.no_tls,
+                                          dolphin_dev_tls=args.dolphin_dev_tls)
     env = {**os.environ, **extra_env}
     try:
         return subprocess.run(cmd, cwd=REPO_ROOT, env=env).returncode

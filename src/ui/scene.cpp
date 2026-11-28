@@ -32,6 +32,9 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::CloudEnterCode: return "cloud_enter_code";
         case AppCommand::CloudSkip: return "cloud_skip";
         case AppCommand::CloudConflict: return "cloud_conflict";
+        case AppCommand::WiiloadAccept: return "wiiload_accept";
+        case AppCommand::WiiloadTrustSender: return "wiiload_trust_sender";
+        case AppCommand::WiiloadDecline: return "wiiload_decline";
         case AppCommand::SettingsChanged: return "settings_changed";
         case AppCommand::SaveSettings: return "save_settings";
         case AppCommand::Rescan: return "rescan";

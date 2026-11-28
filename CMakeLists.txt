@@ -188,6 +188,7 @@ add_library(nl_core STATIC
     src/ui/launch_text.cpp
     src/ui/pin_scene.cpp
     src/ui/parental_scene.cpp
+    src/ui/wiiload_scene.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # Komponentenliste der Seite „Über“ aus THIRD_PARTY.md (Spec v2 3.4), nicht doppelt gepflegt.

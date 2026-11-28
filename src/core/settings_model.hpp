@@ -33,6 +33,7 @@ enum class SettingRow : u8 {
     GcGames,   // globale Spieloptionen GameCube (M14)
     Cloud,     // Cloud-Spielstände (M27): Untermenü
     Parental,  // Kindersicherung (M17)
+    Wiiload,   // wiiload v0.5 TCP receiver (M31): off|confirm|auto
     Setup,    // Einrichtungs-Assistent (M13)
     SysInfo,  // Systeminfo (M13)
     About,  // Version, Lizenz, Drittanbieter (M11)

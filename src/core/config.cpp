@@ -98,6 +98,9 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     const std::string_view sw = trim(ini.get("debug", "cloud_switch"));
     if (sw == "wii" || sw == "cloud" || sw == "ask") c.debugCloudSwitch = std::string(sw);
     c.debugCloudUnlink = parseIntIn(ini.get("debug", "cloud_unlink"), 0, 1, 0) == 1;
+    const std::string_view dwl = trim(ini.get("debug", "wiiload"));
+    if (dwl == "off" || dwl == "confirm" || dwl == "auto") c.debugWiiload = std::string(dwl);
+    c.debugWiiloadPort = static_cast<u16>(parseIntIn(ini.get("debug", "wiiload_port"), 1, 65535, 0));
 }
 
 Config configFromIni(const IniDoc& ini, bool tls) {
@@ -168,6 +171,10 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     const std::string_view ios = ini.get("wii", "ios");
     c.wiiIos = parseIosValue(ios);
     if (isBadIosValue(ios)) c.badKeys.emplace_back("wii.ios");
+    const std::string_view wl = trim(ini.get("network", "wiiload"));
+    if (wl == "confirm") c.wiiloadMode = WiiloadMode::Confirm;
+    else if (wl == "auto") c.wiiloadMode = WiiloadMode::Auto;
+    else if (!wl.empty() && wl != "off") c.badKeys.emplace_back("network.wiiload");
     applyDebugIni(c, ini);
     return c;
 }
@@ -217,10 +224,20 @@ std::vector<IniValue> configValues(const Config& c) {
     for (auto& [key, value] : parentalIniValues(c.parental)) v.push_back({"parental", std::move(key), std::move(value)});
     if (!c.emuNandPath.empty()) v.push_back({"emunand", "path", c.emuNandPath});
     v.push_back({"cloud", "provider", std::string(providerName(c.cloudProvider))});
+    v.push_back({"network", "wiiload", std::string(wiiloadModeName(c.wiiloadMode))});
     return v;
 }
 
 }  // namespace
+
+std::string_view wiiloadModeName(WiiloadMode m) {
+    switch (m) {
+        case WiiloadMode::Confirm: return "confirm";
+        case WiiloadMode::Auto: return "auto";
+        case WiiloadMode::Off: break;
+    }
+    return "off";
+}
 
 std::string_view providerName(CloudProviderId id) {
     switch (id) {

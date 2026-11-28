@@ -65,7 +65,7 @@ std::vector<u64> installedTitleIds() {
     if (ES_GetTitles(ids, count) < 0) return {};
     std::vector<u64> out;
     for (u32 i = 0; i < count; ++i)
-        if (isChannelTitle(ids[i])) out.push_back(ids[i]);
+        if (isChannelTitle(ids[i]) && !isSelfChannelTitle(ids[i])) out.push_back(ids[i]);
     return out;
 }
 

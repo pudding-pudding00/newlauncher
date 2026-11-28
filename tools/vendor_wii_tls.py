@@ -20,7 +20,7 @@ from urllib.parse import urlsplit, urlunsplit
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DEST = REPO_ROOT / "third_party" / "wii_tls"
 DROP_DIRS = ("tests", "bench", "examples", "docs")
-DROP_TOOL_SUFFIXES = (".py", ".sh")
+DROP_TOOLS = ("hwtest.py", "jitter_assess.py", "make_pkg.sh", "make_release.sh", "update_dep.py")
 
 
 def _git(repo: Path, *args: str, binary: bool = False):
@@ -43,9 +43,10 @@ def _drop(dest: Path) -> None:
             shutil.rmtree(child)
     tools_dir = dest / "tools"
     if tools_dir.is_dir():
-        for child in list(tools_dir.iterdir()):
-            if child.is_file() and child.suffix in DROP_TOOL_SUFFIXES:
-                child.unlink()
+        for name in DROP_TOOLS:
+            p = tools_dir / name
+            if p.is_file():
+                p.unlink()
 
 
 def main(argv=None) -> int:
@@ -82,7 +83,7 @@ def main(argv=None) -> int:
     date = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     (dest / "VENDORED.txt").write_text(
         f"commit={sha}\ndate={date}\nsource={remote}\n"
-        f"removed={','.join(DROP_DIRS)},tools/*.py,tools/*.sh,build-*\n",
+        f"removed={','.join(DROP_DIRS)},tools/hwtest.py,build-*\n",
         encoding="utf-8",
         newline="\n",
     )

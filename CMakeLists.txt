@@ -93,6 +93,7 @@ add_library(nl_core STATIC
     src/core/n64_choice.cpp
     src/core/vc_map.cpp
     src/core/wii_title.cpp
+    src/core/forwarder_plan.cpp
     src/core/emunand.cpp
     src/core/cmpr.cpp
     src/core/tex_file.cpp
@@ -358,6 +359,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
     add_executable(argv_echo tests/wii/argv_echo.c)
     target_compile_options(argv_echo PRIVATE -Wall -Wextra)
     ogc_create_dol(argv_echo)
+
+    add_executable(nl_forwarder forwarder/main.cpp)
+    set_target_properties(nl_forwarder PROPERTIES OUTPUT_NAME forwarder)
+    target_compile_options(nl_forwarder PRIVATE -Wall -Wextra -fno-exceptions -fno-rtti)
+    target_link_libraries(nl_forwarder PRIVATE nl_core nl_booter fat ogc)
+    ogc_create_dol(nl_forwarder)
 
     set(NL_WII_SOURCES
         src/app/main.cpp

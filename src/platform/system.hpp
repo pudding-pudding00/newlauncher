@@ -19,4 +19,8 @@ std::optional<WiiParental> readWiiParental();
 // true, wenn der HBC den Launcher mit Hardwarezugriff gestartet hat (<ahb_access/>): Nintendont braucht das.
 bool ahbprotDisabled();
 
+// Writes Priiloader's "Pune" (0x50756E65) magic to 0x8132FFFB so SYS_RETURNTOMENU boots the real Wii System Menu
+// instead of looping back into an autobooted forwarder DOL (M30).
+void writePriiloaderSystemMenuMagic();
+
 }  // namespace nl::platform

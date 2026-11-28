@@ -486,7 +486,18 @@
     X(WiiloadBtnRun, "Starten", "Run") \
     X(WiiloadBtnTrust, "Immer vertrauen", "Trust sender") \
     X(WiiloadBtnDecline, "Ablehnen", "Decline") \
-    X(WiiloadHelp, "◀▶ Auswählen · A Bestätigen · B Ablehnen", "◀▶ Select · A Confirm · B Decline")
+    X(WiiloadHelp, "◀▶ Auswählen · A Bestätigen · B Ablehnen", "◀▶ Select · A Confirm · B Decline") \
+    X(TransferSetting, "Dateiübertragung (FTP)", "File Transfer (FTP)") \
+    X(TransferTitle, "Dateiübertragung (FTP)", "File Transfer (FTP)") \
+    X(TransferAddress, "Adresse: %s", "Address: %s") \
+    X(TransferUserPin, "Benutzer: %s · PIN: %s", "User: %s · PIN: %s") \
+    X(TransferUserCustom, "Benutzer: %s · eigenes Passwort", "User: %s · custom password") \
+    X(TransferMounts, "Laufwerke: %s", "Drives: %s") \
+    X(TransferIdle, "Warte auf FTP-Verbindung (Passivmodus) …", "Waiting for FTP connection (passive mode) …") \
+    X(TransferConnected, "Verbunden: %s", "Connected: %s") \
+    X(TransferActive, "%s: %s (%u KB)", "%s: %s (%u KB)") \
+    X(TransferNoNet, "Kein Netzwerk verfügbar.", "No network available.") \
+    X(TransferHelp, "B Beenden", "B Stop & Close")
 // clang-format on
 
 namespace nl::ui {

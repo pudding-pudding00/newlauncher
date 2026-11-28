@@ -20,7 +20,7 @@ constexpr int kVisibleRows = 27;  // M27: mehr Zeilen → die Liste scrollt mit 
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo, Str::ThemePack,  Str::Music,       Str::Volume,
     Str::Sounds,   Str::Banners, Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::CoverAuto, Str::CoverStorage, Str::Rescan, Str::FetchCovers, Str::ClearCovers, Str::VcMapTitle,
-    Str::Emulators, Str::WiiGames, Str::GcGames, Str::Cloud, Str::Parental, Str::WiiloadSetting, Str::Setup, Str::SysInfo, Str::About, Str::SelfUpdate, Str::RestartSelf,
+    Str::Emulators, Str::WiiGames, Str::GcGames, Str::Cloud, Str::Parental, Str::WiiloadSetting, Str::TransferSetting, Str::Setup, Str::SysInfo, Str::About, Str::SelfUpdate, Str::RestartSelf,
 };
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
@@ -46,6 +46,7 @@ AppCommand actionCommand(SettingRow r) {
         case SettingRow::GcGames: return AppCommand::OpenOptions;
         case SettingRow::Cloud: return AppCommand::OpenCloud;
         case SettingRow::Parental: return AppCommand::OpenParental;
+        case SettingRow::Transfer: return AppCommand::OpenTransfer;
         case SettingRow::Setup: return AppCommand::OpenSetup;
         case SettingRow::SysInfo: return AppCommand::OpenSysInfo;
         case SettingRow::About: return AppCommand::OpenAbout;

@@ -101,6 +101,8 @@ void applyDebugIni(Config& c, const IniDoc& ini) {
     const std::string_view dwl = trim(ini.get("debug", "wiiload"));
     if (dwl == "off" || dwl == "confirm" || dwl == "auto") c.debugWiiload = std::string(dwl);
     c.debugWiiloadPort = static_cast<u16>(parseIntIn(ini.get("debug", "wiiload_port"), 1, 65535, 0));
+    c.debugFtpPort = static_cast<u16>(parseIntIn(ini.get("debug", "ftp_port"), 1, 65535, 0));
+    c.debugFtpPass = std::string(trim(ini.get("debug", "ftp_pass")));
 }
 
 Config configFromIni(const IniDoc& ini, bool tls) {
@@ -175,6 +177,15 @@ Config configFromIni(const IniDoc& ini, bool tls) {
     if (wl == "confirm") c.wiiloadMode = WiiloadMode::Confirm;
     else if (wl == "auto") c.wiiloadMode = WiiloadMode::Auto;
     else if (!wl.empty() && wl != "off") c.badKeys.emplace_back("network.wiiload");
+    const std::string_view ftpPortStr = trim(ini.get("network", "ftp_port"));
+    if (!ftpPortStr.empty()) {
+        const int p = parseIntIn(ftpPortStr, 1, 65535, -1);
+        if (p < 0) c.badKeys.emplace_back("network.ftp_port");
+        else c.ftpPort = static_cast<u16>(p);
+    }
+    const std::string_view ftpUserStr = trim(ini.get("network", "ftp_user"));
+    if (!ftpUserStr.empty() && ftpUserStr.size() <= 32) c.ftpUser = std::string(ftpUserStr);
+    c.ftpPassHash = std::string(trim(ini.get("network", "ftp_pass_hash")));
     applyDebugIni(c, ini);
     return c;
 }
@@ -225,6 +236,8 @@ std::vector<IniValue> configValues(const Config& c) {
     if (!c.emuNandPath.empty()) v.push_back({"emunand", "path", c.emuNandPath});
     v.push_back({"cloud", "provider", std::string(providerName(c.cloudProvider))});
     v.push_back({"network", "wiiload", std::string(wiiloadModeName(c.wiiloadMode))});
+    v.push_back({"network", "ftp_port", std::to_string(c.ftpPort)});
+    v.push_back({"network", "ftp_user", c.ftpUser});
     return v;
 }
 

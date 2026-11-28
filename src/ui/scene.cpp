@@ -35,6 +35,8 @@ const char* appCommandName(AppCommand c) {
         case AppCommand::WiiloadAccept: return "wiiload_accept";
         case AppCommand::WiiloadTrustSender: return "wiiload_trust_sender";
         case AppCommand::WiiloadDecline: return "wiiload_decline";
+        case AppCommand::OpenTransfer: return "open_transfer";
+        case AppCommand::CloseTransfer: return "close_transfer";
         case AppCommand::SettingsChanged: return "settings_changed";
         case AppCommand::SaveSettings: return "save_settings";
         case AppCommand::Rescan: return "rescan";

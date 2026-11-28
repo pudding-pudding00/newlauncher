@@ -57,6 +57,8 @@
 #include "core/elf.hpp"
 #include "core/launch_args.hpp"
 #include "core/launch_layout.hpp"
+#include "core/ftp_proto.hpp"
+#include "core/ftp_vfs.hpp"
 #include "core/theme.hpp"
 #include "core/theme_file.hpp"
 #include "core/vc_map.hpp"
@@ -74,6 +76,8 @@
 #include "platform/cheat_worker.hpp"
 #include "platform/wiiload_server.hpp"
 #include "ui/wiiload_scene.hpp"
+#include "platform/ftp_server.hpp"
+#include "ui/transfer_scene.hpp"
 #include "platform/ios_patch.hpp"
 #include "platform/isfs_fs.hpp"
 #include "platform/routing_fs.hpp"
@@ -378,6 +382,10 @@ int main(int argc, char** argv) {
         }
     };
     syncWiiloadServer();
+    nl::platform::FtpServer ftpServer;    // M32: Passive FTP server (foreground TransferScene only)
+    nl::ui::TransferScene transferScene;
+    std::string ftpSessionPin;
+    std::vector<nl::FtpMount> ftpMounts;
     if (nl::hasRemoteFlag(argc, argv) || config.debugRemote) {
         nl::log::line("NL_REMOTE %s", remote.start() ? "start" : "fail");
     }
@@ -2529,6 +2537,7 @@ int main(int argc, char** argv) {
         for (const std::string& line : remote.takeLogLines()) nl::log::line("%s", line.c_str());
         for (const std::string& line : pairing.takeLogLines()) nl::log::line("%s", line.c_str());
         for (const std::string& line : wiiloadServer.takeLogLines()) nl::log::line("%s", line.c_str());
+        for (const std::string& line : ftpServer.takeLogLines()) nl::log::line("%s", line.c_str());
     };
     // fromRemote: Antwort an den Client; die Fernsteuerung bleibt nach dem Neustart an, wenn sie jetzt läuft.
     auto restartSelf = [&](bool fromRemote) {
@@ -2558,6 +2567,7 @@ int main(int argc, char** argv) {
         remote.stop();
         pairing.stop();
         wiiloadServer.stop();
+        ftpServer.stop();
         pumpRemoteLog();
         netService.shutdown();
         covers.shutdown();
@@ -2704,6 +2714,47 @@ int main(int argc, char** argv) {
         pendingWiiload = std::move(*incoming);
         wiiloadScene.open(std::move(sum));
         scenes.push(&wiiloadScene);
+    auto openTransfer = [&]() {
+        ftpMounts.clear();
+        for (const nl::platform::Device& d : nl::platform::deviceTable().devices()) {
+            if (!d.mounted) continue;
+            if (d.slot.name == "nand") continue;
+            if (d.slot.kind == nl::FsKind::Wbfs) continue;
+            ftpMounts.push_back(nl::FtpMount{d.slot.name, d.slot.kind == nl::FsKind::Fat});
+        }
+        const u16 port = config.debugFtpPort != 0 ? config.debugFtpPort : config.ftpPort;
+        if (!config.debugFtpPass.empty()) {
+            ftpSessionPin = config.debugFtpPass;
+        } else {
+            const u32 r = static_cast<u32>(nl::platform::NetService::clockMs() ^ 0x5A3C91u) % 1000000u;
+            char pinBuf[16];
+            std::snprintf(pinBuf, sizeof pinBuf, "%06u", static_cast<unsigned>(r));
+            ftpSessionPin = pinBuf;
+        }
+        ftpServer.start(port, config.ftpUser, ftpSessionPin, ftpMounts);
+        nl::ui::TransferView tv;
+        tv.user = config.ftpUser;
+        tv.pin = ftpSessionPin;
+        tv.mounts = ftpMounts;
+        transferScene.open(std::move(tv));
+        scenes.push(&transferScene);
+    };
+    auto handleFtpUi = [&]() {
+        if (!ftpServer.running()) return;
+        const auto st = ftpServer.status();
+        nl::ui::TransferView tv;
+        tv.listening = st.listening;
+        tv.clientConnected = st.clientConnected;
+        tv.transferring = st.transferring;
+        tv.user = config.ftpUser;
+        tv.pin = ftpSessionPin;
+        tv.uri = st.listening ? nl::formatFtpUri(config.ftpUser, ftpSessionPin, st.hostIp, st.port) : std::string();
+        tv.peerIp = st.peerIp;
+        tv.activeOp = st.activeOp;
+        tv.activePath = st.activePath;
+        tv.activeBytes = st.activeBytes;
+        tv.mounts = ftpMounts;
+        transferScene.setView(std::move(tv));
     };
     auto handleRemote = [&]() {
         if (!remote.running() || remoteKeyFrames > 0 || remoteKeyRelease > 0) return;
@@ -2833,7 +2884,11 @@ int main(int argc, char** argv) {
         pumpRemoteLog();
         if (readyReported) {
             handleRemote();
+        if (readyReported) {
+            handleRemote();
             handleWiiload();
+            handleFtpUi();
+        }
         }
         if (restartPending && !scenes.contains(&dialog) && remoteKeyFrames == 0 && remoteKeyRelease == 0) {
             restartPending = false;  // M20: nach „Neu starten“ oder dem Update-Dialog
@@ -3378,6 +3433,14 @@ int main(int argc, char** argv) {
                 nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
                 pendingWiiload.reset();
                 nl::log::line("NL_WIILOAD decline");
+            case nl::ui::AppCommand::OpenTransfer:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                openTransfer();
+                break;
+            case nl::ui::AppCommand::CloseTransfer:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                ftpServer.stop();
+                pumpRemoteLog();
                 break;
             case nl::ui::AppCommand::CloudConflict:
                 nl::log::line("NL_CMD %s %d", nl::ui::appCommandName(cmd), choiceDialog.picked());
@@ -3650,6 +3713,7 @@ int main(int argc, char** argv) {
     remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
     pairing.stop();
     wiiloadServer.stop();
+    ftpServer.stop();
     pumpRemoteLog();
     netService.shutdown();
     covers.shutdown();

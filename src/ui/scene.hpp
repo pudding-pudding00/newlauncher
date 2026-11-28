@@ -85,6 +85,8 @@ enum class AppCommand : u8 {
     WiiloadAccept,    // M31: WiiloadScene accepted incoming payload
     WiiloadTrustSender,  // M31: WiiloadScene accepted and trusted sender IP for session
     WiiloadDecline,   // M31: WiiloadScene declined incoming payload
+    OpenTransfer,     // M32: open foreground File Transfer (FTP) scene
+    CloseTransfer,    // M32: close TransferScene and stop FTP server
 };
 const char* appCommandName(AppCommand c);
 

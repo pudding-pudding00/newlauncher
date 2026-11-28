@@ -101,6 +101,8 @@ add_library(nl_core STATIC
     src/core/cover_paths.cpp
     src/core/cover_cache.cpp
     src/core/http.cpp
+    src/core/ftp_vfs.cpp
+    src/core/ftp_proto.cpp
     src/core/crc32.cpp
     src/core/inflate.cpp
     src/core/deflate.cpp
@@ -190,6 +192,7 @@ add_library(nl_core STATIC
     src/ui/pin_scene.cpp
     src/ui/parental_scene.cpp
     src/ui/wiiload_scene.cpp
+    src/ui/transfer_scene.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 # Komponentenliste der Seite „Über“ aus THIRD_PARTY.md (Spec v2 3.4), nicht doppelt gepflegt.
@@ -391,6 +394,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/remote_server.cpp
         src/platform/pairing_server.cpp
         src/platform/wiiload_server.cpp
+        src/platform/ftp_server.cpp
         src/platform/net_worker.cpp
         src/platform/cover_clear_worker.cpp
         src/platform/emu_worker.cpp

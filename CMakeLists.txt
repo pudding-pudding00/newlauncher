@@ -97,6 +97,8 @@ add_library(nl_core STATIC
     src/core/cover_paths.cpp
     src/core/cover_cache.cpp
     src/core/http.cpp
+    src/core/ftp_vfs.cpp
+    src/core/ftp_proto.cpp
     src/core/crc32.cpp
     src/core/inflate.cpp
     src/core/deflate.cpp

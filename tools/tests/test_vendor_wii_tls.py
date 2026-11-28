@@ -21,7 +21,9 @@ class VendorTest(unittest.TestCase):
         self.tmp = Path(self._tmp.name)
         self.repo = self.tmp / "wii_tls"
         for rel, text in (("include/x.h", "int x;\n"), ("tests/t.c", "t\n"), ("bench/b.c", "b\n"),
-                          ("examples/e.c", "e\n"), ("docs/d.md", "d\n"), ("CMakeLists.txt", "project(x)\n")):
+                          ("examples/e.c", "e\n"), ("docs/d.md", "d\n"), ("tools/hwtest.py", "p\n"),
+                          ("tools/gen_ca_bundle.py", "g\n"), ("tools/check_ct.cmake", "# cmake\n"),
+                          ("CMakeLists.txt", "project(x)\n")):
             path = self.repo / rel
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text, encoding="utf-8")
@@ -42,8 +44,10 @@ class VendorTest(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertTrue((self.dest / "include/x.h").is_file())
         self.assertTrue((self.dest / "CMakeLists.txt").is_file())
-        for gone in ("tests", "bench", "examples", "docs", "stale.txt"):
+        for gone in ("tests", "bench", "examples", "docs", "tools/hwtest.py", "stale.txt"):
             self.assertFalse((self.dest / gone).exists(), gone)
+        self.assertTrue((self.dest / "tools/gen_ca_bundle.py").is_file())
+        self.assertTrue((self.dest / "tools/check_ct.cmake").is_file())
         info = (self.dest / "VENDORED.txt").read_text(encoding="utf-8")
         self.assertIn(f"commit={self.sha}", info)
         self.assertIn("date=", info)

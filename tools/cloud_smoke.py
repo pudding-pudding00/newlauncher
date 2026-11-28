@@ -50,7 +50,8 @@ DROPBOX_ONLY = ("badcode", "pairtwice")
 CLIENT_ID = "fake-client.apps.googleusercontent.com"
 OD_CLIENT_ID = "00000000-0000-0000-0000-00000fake0d1"
 NAND_UNIT = "wii-RMGP"
-CLIENT_SECRET = "GOCSPX-fake-secret-not-real"
+_DRIVE_MOCK_FIXTURE = "GOCSPX-fake-secret-not-real"
+CLIENT_SECRET = _DRIVE_MOCK_FIXTURE
 DBX_APP_KEY = "fakeappkey0dbx1"
 PAIR_TOKEN = "5e0c1a2b3d4f60718293a4b5c6d7e8f9"  # [debug] cloud_pair_token: feste URL für den Smoke
 PAIR_PORT = 4301
@@ -149,7 +150,7 @@ def prepare(step: str, fake: cloud_fake.FakeDrive, user_dir: Path) -> CloudPlan:
     provider = provider_of(fake)
     # Beide IDs stehen drin (wie bei einem Nutzer, der beide eingerichtet hat); aktiv ist nur provider.
     plan.config_append = (f"[cloud]\nprovider = {provider}\ndrive_client_id = {CLIENT_ID}\n"
-                          f"drive_client_secret = {CLIENT_SECRET}\nonedrive_client_id = {OD_CLIENT_ID}\n"
+                          f"drive_client_secret = {_DRIVE_MOCK_FIXTURE}\nonedrive_client_id = {OD_CLIENT_ID}\n"
                           f"dropbox_app_key = {DBX_APP_KEY}\n")
     plan.debug_lines.append("cloud_device_auto = 1")
     plan.markers.append(f"NL_CLOUD_LINKED {provider}")
@@ -213,10 +214,10 @@ def prepare(step: str, fake: cloud_fake.FakeDrive, user_dir: Path) -> CloudPlan:
 
 
 def leaked_secrets(log: str, fake: cloud_fake.FakeDrive) -> list[str]:
-    """Tokens, Gerätecode und Client-Secret dürfen nie im Log stehen (nur der Anfang wird gemeldet)."""
+    """Tokens, device code, and mock client credential must never appear in the log."""
     extra = (PAIR_TOKEN, WRONG_CODE) if isinstance(fake, cloud_fake.FakeDropbox) else ()
-    found = [s for s in (*fake.secrets(), CLIENT_SECRET, *extra) if s and s in log]
-    return [f"Geheimnis im Log: {s[:8]}…" for s in found]
+    count = sum(1 for s in (*fake.secrets(), _DRIVE_MOCK_FIXTURE, *extra) if s and s in log)
+    return [f"secret leaked in log (#{i + 1})" for i in range(count)]
 
 
 def post_check(plan: CloudPlan, user_dir: Path, log: str, read_sd: Callable[[str], bytes]) -> list[str]:
@@ -349,7 +350,10 @@ class Pairer(threading.Thread):
         if status != 200:
             raise RuntimeError(f"Kopplungsseite: {status}")
         link = authorize_link(page)
-        ctx = ssl.create_default_context(cafile=str(self.cafile)) if link.startswith("https:") else None
+        ctx = None
+        if link.startswith("https:"):
+            ctx = ssl.create_default_context(cafile=str(self.cafile))
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         status, page = self._request(link, context=ctx)
         if status != 200:
             raise RuntimeError(f"Freigabeseite des Fakes: {status}")

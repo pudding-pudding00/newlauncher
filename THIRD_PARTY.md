@@ -30,7 +30,7 @@ name, version and license from this table (generated at build time).
 
 ## Not distributed
 
-- **doctest** (MIT, `third_party/doctest`): only for host tests, not part of the release.
+- **doctest** (MIT, `third_party/doctest`): only for host tests, not part of the release (local patch in `String::operator+=` to copy before `delete[]` on self-append).
 - Users download covers, metadata, cheats, emulators and Nintendont themselves; they are not part of the release.
 
 ## New dependencies

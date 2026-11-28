@@ -75,6 +75,9 @@ add_library(nl_core STATIC
     src/core/scanner.cpp
     src/core/library_store.cpp
     src/core/dol.cpp
+    src/core/elf.cpp
+    src/core/wiiload_proto.cpp
+    src/core/wiiload_zip.cpp
     src/core/emulators.cpp
     src/core/launch_args.cpp
     src/core/launch_plan.cpp
@@ -187,6 +190,7 @@ add_library(nl_core STATIC
     src/ui/launch_text.cpp
     src/ui/pin_scene.cpp
     src/ui/parental_scene.cpp
+    src/ui/wiiload_scene.cpp
     src/ui/transfer_scene.cpp
 )
 target_include_directories(nl_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -382,6 +386,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "NintendoWii")
         src/platform/net_service.cpp
         src/platform/remote_server.cpp
         src/platform/pairing_server.cpp
+        src/platform/wiiload_server.cpp
         src/platform/ftp_server.cpp
         src/platform/net_worker.cpp
         src/platform/cover_clear_worker.cpp

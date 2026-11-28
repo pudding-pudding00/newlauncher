@@ -474,6 +474,19 @@
     X(OptNotOnVWii, "Auf vWii nicht verfügbar", "Not available on vWii") \
     X(OptionsHelpVWii, "◀▶ Ändern · B Speichern · vWii: Wiimote + Classic / HID-Controller", \
       "◀▶ Change · B Save · vWii: Wiimote + Classic / HID controller") \
+    X(WiiloadSetting, "Fernstart (wiiload)", "Remote load (wiiload)") \
+    X(WiiloadOff, "Aus", "Off") \
+    X(WiiloadConfirm, "Bestätigen", "Confirm") \
+    X(WiiloadAuto, "Automatisch", "Auto") \
+    X(WiiloadTitle, "Eingehende App (wiiload)", "Incoming App (wiiload)") \
+    X(WiiloadFrom, "Absender: %s", "From: %s") \
+    X(WiiloadFile, "Datei: %s (%s, %u KB)", "File: %s (%s, %u KB)") \
+    X(WiiloadTarget, "Ziel: sd:/apps/%s/", "Target: sd:/apps/%s/") \
+    X(WiiloadArgs, "Argumente: %s", "Args: %s") \
+    X(WiiloadBtnRun, "Starten", "Run") \
+    X(WiiloadBtnTrust, "Immer vertrauen", "Trust sender") \
+    X(WiiloadBtnDecline, "Ablehnen", "Decline") \
+    X(WiiloadHelp, "◀▶ Auswählen · A Bestätigen · B Ablehnen", "◀▶ Select · A Confirm · B Decline") \
     X(TransferSetting, "Dateiübertragung (FTP)", "File Transfer (FTP)") \
     X(TransferTitle, "Dateiübertragung (FTP)", "File Transfer (FTP)") \
     X(TransferAddress, "Adresse: %s", "Address: %s") \

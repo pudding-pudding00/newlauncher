@@ -53,6 +53,7 @@ void stepSetting(Config& c, SettingRow r, int dir) {
             c.coverStorage = c.coverStorage == CoverStorage::Sd ? CoverStorage::Device : CoverStorage::Sd;
             break;
         case SettingRow::Sort: c.sortOrder = cycle(c.sortOrder, 4, dir); break;
+        case SettingRow::Wiiload: c.wiiloadMode = cycle(c.wiiloadMode, 3, dir); break;
         case SettingRow::Library:
         {
             // Umlauf Auto → USB → SD; eine eigene Liste aus config.ini steht vor Auto.

@@ -86,7 +86,7 @@ NTFS_CACHE* _NTFS_cache_constructor (unsigned int numberOfPages, unsigned int se
 		cacheEntries[i].count = 0;
 		cacheEntries[i].last_access = 0;
 		cacheEntries[i].dirty = 0;
-		cacheEntries[i].cache = (uint8_t*) ntfs_align ( sectorsPerPage * bytesPerSector );
+		cacheEntries[i].cache = (uint8_t*) ntfs_align ( (size_t)sectorsPerPage * (size_t)bytesPerSector );
 	}
 
 	cache->cacheEntries = cacheEntries;

@@ -181,10 +181,10 @@ int ntfs_mft_records_write(const ntfs_volume *vol, const MFT_REF mref,
 				vol->mft_record_size_bits);
 			return -1;
 		}
-		bmirr = ntfs_malloc(cnt * vol->mft_record_size);
+		bmirr = ntfs_malloc((size_t)cnt * (size_t)vol->mft_record_size);
 		if (!bmirr)
 			return -1;
-		memcpy(bmirr, b, cnt * vol->mft_record_size);
+		memcpy(bmirr, b, (size_t)cnt * (size_t)vol->mft_record_size);
 	}
 	bw = ntfs_attr_mst_pwrite(vol->mft_na, m << vol->mft_record_size_bits,
 			count, vol->mft_record_size, b);
@@ -1585,12 +1585,16 @@ found_free_rec:
 			free(ni);
 			goto undo_mftbmp_alloc;
 		}
-		if (base_ni->nr_extents) {
-			memcpy(extent_nis, base_ni->extent_nis,
-					i - 4 * sizeof(ntfs_inode *));
-			free(base_ni->extent_nis);
+		{
+			ntfs_inode **old_extents = base_ni->extent_nis;
+			if (base_ni->nr_extents) {
+				memcpy(extent_nis, old_extents,
+						i - 4 * sizeof(ntfs_inode *));
+			}
+			base_ni->extent_nis = extent_nis;
+			if (base_ni->nr_extents)
+				free(old_extents);
 		}
-		base_ni->extent_nis = extent_nis;
 	}
 	base_ni->extent_nis[base_ni->nr_extents++] = ni;
 	
@@ -1911,12 +1915,16 @@ found_free_rec:
 				free(ni);
 				goto undo_mftbmp_alloc;
 			}
-			if (base_ni->nr_extents) {
-				memcpy(extent_nis, base_ni->extent_nis,
-						i - 4 * sizeof(ntfs_inode *));
-				free(base_ni->extent_nis);
+			{
+				ntfs_inode **old_extents = base_ni->extent_nis;
+				if (base_ni->nr_extents) {
+					memcpy(extent_nis, old_extents,
+							i - 4 * sizeof(ntfs_inode *));
+				}
+				base_ni->extent_nis = extent_nis;
+				if (base_ni->nr_extents)
+					free(old_extents);
 			}
-			base_ni->extent_nis = extent_nis;
 		}
 		base_ni->extent_nis[base_ni->nr_extents++] = ni;
 	}

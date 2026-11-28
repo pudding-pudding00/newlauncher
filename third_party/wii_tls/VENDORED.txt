@@ -1,4 +1,4 @@
 commit=d64f3dde9dc78291604d9699218acc017eb0745b
 date=2026-11-27T01:16:28+00:00
 source=https://github.com/pudding-pudding00/libwiitls
-removed=tests,bench,examples,docs,build-*
+removed=tests,bench,examples,docs,tools/hwtest.py,build-*

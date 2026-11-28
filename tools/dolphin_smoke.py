@@ -206,6 +206,7 @@ SD_TEST_CA = "newlauncher/test_ca.pem"
 
 def ssl_server_context(cert: Path, key: Path) -> ssl.SSLContext:
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.load_cert_chain(str(cert), str(key))
     return ctx
 

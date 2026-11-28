@@ -23,6 +23,10 @@ enum class CoverStorage : u8 { Sd, Device };
 // M27/M28: aktiver Cloud-Anbieter ([cloud] provider = none|drive|onedrive|dropbox; altes "off" = none); genau einer.
 enum class CloudProviderId : u8 { None, Drive, OneDrive, Dropbox };
 
+// M31: wiiload v0.5 TCP receiver mode ([network] wiiload = off|confirm|auto).
+enum class WiiloadMode : u8 { Off, Confirm, Auto };
+std::string_view wiiloadModeName(WiiloadMode m);
+
 // "none" | "drive" | "onedrive" (config.ini, Log, Konto-Präfix)
 std::string_view providerName(CloudProviderId id);
 
@@ -58,6 +62,7 @@ struct Config {
     std::string deviceName;  // [general] device_name (M26): Gerätename in Spielstand-Paketen, leer = "Wii"
     std::string emuNandPath;                 // [emunand] path (M19): z. B. "usb:/nands/emu1", leer = aus
     CloudProviderId cloudProvider = CloudProviderId::None;  // [cloud] provider (M27)
+    WiiloadMode wiiloadMode = WiiloadMode::Off;             // [network] wiiload = off|confirm|auto (M31)
     u16 ftpPort = 21;                                       // [network] ftp_port = 1..65535 (M32)
     std::string ftpUser = "wii";                            // [network] ftp_user (M32)
     std::string ftpPassHash;                                // [network] ftp_pass_hash (M32, never plaintext)
@@ -102,6 +107,8 @@ struct Config {
     bool debugCloudSyncAll = false;  // [debug] cloud_sync_all = 1: nach NL_READY "Alle abgleichen" (M28)
     std::string debugCloudSwitch;   // [debug] cloud_switch = wii|cloud|ask: Wechsel-Dialog beantworten (M28)
     bool debugCloudUnlink = false;  // [debug] cloud_unlink = 1: zum Schluss abmelden (M28)
+    std::string debugWiiload;       // [debug] wiiload = off|confirm|auto (Smoke, M31)
+    u16 debugWiiloadPort = 0;       // [debug] wiiload_port = 1..65535 (Smoke, M31)
     u16 debugFtpPort = 0;           // [debug] ftp_port = 1..65535 (Smoke, M32)
     std::string debugFtpPass;       // [debug] ftp_pass (Smoke, M32, never logged)
 };

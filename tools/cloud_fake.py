@@ -333,6 +333,21 @@ def parse_multipart(content_type: str, body: bytes) -> tuple[dict, bytes] | None
         return None
 
 
+_HEADER_NAME_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+
+
+def _validate_header(name: str, value: str) -> tuple[str, str]:
+    """Validate HTTP response header name and value to prevent CRLF/response splitting."""
+    if not isinstance(name, str) or not _HEADER_NAME_RE.match(name):
+        raise ValueError(f"invalid HTTP header name: {name!r}")
+    sval = str(value)
+    for ch in sval:
+        code = ord(ch)
+        if (code < 0x20 and ch != "\t") or code == 0x7F:
+            raise ValueError(f"invalid control character in HTTP header {name!r}")
+    return name, sval
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     fake: FakeDrive  # wird von start() gesetzt
     protocol_version = "HTTP/1.1"
@@ -341,10 +356,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
     def _send(self, status: int, body: bytes, ctype: str = "application/json", headers: dict | None = None) -> None:
+        _, safe_ctype = _validate_header("Content-Type", ctype)
+        validated = [_validate_header(k, v) for k, v in (headers or {}).items()]
         self.send_response(status)
-        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Type", safe_ctype)
         self.send_header("Content-Length", str(len(body)))
-        for k, v in (headers or {}).items():
+        for k, v in validated:
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
@@ -964,6 +981,8 @@ def start(fake: FakeDrive, ssl_context: ssl.SSLContext | None = None, port: int 
     server = http.server.ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
     if ssl_context is not None:
+        if ssl_context.minimum_version < ssl.TLSVersion.TLSv1_2:
+            ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
         server.socket = ssl_context.wrap_socket(server.socket, server_side=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
@@ -1003,6 +1022,7 @@ def main(argv: list[str] | None = None) -> int:
     ctx = None
     if args.cert is not None:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         ctx.load_cert_chain(str(args.cert), str(args.key))
     server, port = start(fake, ctx, args.port)
     print(f"cloud_fake: {'https' if ctx else 'http'}://localhost:{port}", flush=True)

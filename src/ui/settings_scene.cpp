@@ -20,7 +20,7 @@ constexpr int kVisibleRows = 27;  // M27: mehr Zeilen → die Liste scrollt mit 
 const Str kLabels[SettingsScene::kCount] = {
     Str::Language, Str::Appearance, Str::DarkFrom,      Str::DarkTo, Str::ThemePack,  Str::Music,       Str::Volume,
     Str::Sounds,   Str::Banners, Str::LibraryDevice, Str::SortOrder, Str::CoverRegion, Str::CoverAuto, Str::CoverStorage, Str::Rescan, Str::FetchCovers, Str::ClearCovers, Str::VcMapTitle,
-    Str::Emulators, Str::WiiGames, Str::GcGames, Str::Cloud, Str::Parental, Str::TransferSetting, Str::Setup, Str::SysInfo, Str::About, Str::SelfUpdate, Str::RestartSelf,
+    Str::Emulators, Str::WiiGames, Str::GcGames, Str::Cloud, Str::Parental, Str::WiiloadSetting, Str::TransferSetting, Str::Setup, Str::SysInfo, Str::About, Str::SelfUpdate, Str::RestartSelf,
 };
 
 bool contains(Rect r, float x, float y) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
@@ -31,7 +31,8 @@ bool sameSettings(const Config& a, const Config& b) {
            a.themeMode == b.themeMode && a.themePack == b.themePack && a.darkFromMin == b.darkFromMin && a.darkToMin == b.darkToMin &&
            a.music == b.music && a.musicVolume == b.musicVolume && a.sounds == b.sounds &&
            a.banners == b.banners &&
-           a.coverRegion == b.coverRegion && a.coverAuto == b.coverAuto && a.sortOrder == b.sortOrder;
+           a.coverRegion == b.coverRegion && a.coverAuto == b.coverAuto && a.sortOrder == b.sortOrder &&
+           a.wiiloadMode == b.wiiloadMode;
 }
 
 AppCommand actionCommand(SettingRow r) {
@@ -91,6 +92,10 @@ std::string valueText(const Config& c, SettingRow r) {
             return tr(kNames[static_cast<int>(c.sortOrder) & 3]);
         }
         case SettingRow::CoverRegion: return c.coverRegion == "auto" ? std::string(tr(Str::LangAuto)) : c.coverRegion;
+        case SettingRow::Wiiload:
+            return tr(c.wiiloadMode == WiiloadMode::Confirm ? Str::WiiloadConfirm
+                      : c.wiiloadMode == WiiloadMode::Auto  ? Str::WiiloadAuto
+                                                            : Str::WiiloadOff);
         default: return {};
     }
 }

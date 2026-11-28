@@ -75,6 +75,9 @@ add_library(nl_core STATIC
     src/core/scanner.cpp
     src/core/library_store.cpp
     src/core/dol.cpp
+    src/core/elf.cpp
+    src/core/wiiload_proto.cpp
+    src/core/wiiload_zip.cpp
     src/core/emulators.cpp
     src/core/launch_args.cpp
     src/core/launch_plan.cpp

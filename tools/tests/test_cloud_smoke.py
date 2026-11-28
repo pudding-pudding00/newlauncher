@@ -71,9 +71,13 @@ class CloudSmokeTest(unittest.TestCase):
         _, tok = fake.token({"client_id": "x", "device_code": dc["device_code"],
                              "grant_type": cloud_fake.DEVICE_GRANT})
         self.assertEqual(cloud_smoke.leaked_secrets("NL_CLOUD_LINKED drive\n", fake), [])
-        self.assertEqual(len(cloud_smoke.leaked_secrets("x " + tok["access_token"], fake)), 1)
+        leaked_tok = cloud_smoke.leaked_secrets("x " + tok["access_token"], fake)
+        self.assertEqual(len(leaked_tok), 1)
+        self.assertNotIn(tok["access_token"][:6], leaked_tok[0])
         self.assertEqual(len(cloud_smoke.leaked_secrets("y " + dc["device_code"], fake)), 1)
-        self.assertEqual(len(cloud_smoke.leaked_secrets(cloud_smoke.CLIENT_SECRET, fake)), 1)
+        leaked_cs = cloud_smoke.leaked_secrets(cloud_smoke.CLIENT_SECRET, fake)
+        self.assertEqual(len(leaked_cs), 1)
+        self.assertNotIn(cloud_smoke.CLIENT_SECRET[:6], leaked_cs[0])
 
     def test_post_check_push_compares_hash(self):
         fake = cloud_smoke.make_fake("push")

@@ -18,6 +18,7 @@
  *  along with this program; if not, write to the Free Software
  *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -852,7 +853,8 @@ void PatchFix480p()
    
     *(u32 *)offset = 0x48000000 + (((u32)patch - (u32)offset) & 0x3ffffff);
     *(u32 *)(patch + 8) = 0x48000000 + ((((u32)offset + 4) - ((u32)patch + 8)) & 0x3ffffff);
-    gprintf("Applied 480p patch. Branched from 0x%x to 0x%x\n", offset, patch);
+    gprintf("Applied 480p patch. Branched from 0x%x to 0x%x\n",
+            (unsigned int)(uintptr_t)offset, (unsigned int)(uintptr_t)patch);
     //hexdump((void *)patch - 32, 92);
     return;
 }
@@ -1501,7 +1503,8 @@ void patch_width(void *addr, u32 len)
                     *(u32 *)offset = 0x48000000 + (((u32)patch - (u32)offset) & 0x3ffffff);
                     *(u32 *)(patch + 0x10) = 0x48000000 + ((((u32)offset + 0x04) - ((u32)patch + 16)) & 0x3ffffff);
 
-                    gprintf("Patched resolution. Branched from 0x%x to 0x%x\n", offset, patch);
+                    gprintf("Patched resolution. Branched from 0x%x to 0x%x\n",
+                            (unsigned int)(uintptr_t)offset, (unsigned int)(uintptr_t)patch);
                     return;
                 }
             }

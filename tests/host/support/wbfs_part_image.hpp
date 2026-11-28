@@ -63,7 +63,8 @@ inline void writeWbfsPartition(SparseDisk& d, u32 partLba, const std::vector<Wbf
 // Die ersten `bytes` Byte der Partition als Puffer (für parseWbfsHead(head, slot)).
 inline std::vector<u8> readPrefix(SparseDisk& d, u32 partLba, u32 bytes) {
     const u32 ss = d.sectorSize();
-    std::vector<u8> out((bytes + ss - 1) / ss * ss);
+    const std::size_t rounded = (std::size_t{bytes} + ss - 1) / ss * ss;
+    std::vector<u8> out(rounded);
     d.read(partLba, static_cast<u32>(out.size() / ss), out);
     out.resize(bytes);
     return out;

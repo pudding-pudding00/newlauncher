@@ -610,6 +610,15 @@ class CliTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             cloud_fake.parse_seed("bad/unit=x.zip")
 
+    def test_validate_header_rejects_crlf_and_control_chars(self):
+        self.assertEqual(cloud_fake._validate_header("X-Test", "ok\tvalue"), ("X-Test", "ok\tvalue"))
+        for bad_name in ("", "Bad Name", "X-Bad\r\n", "X-Bad:1"):
+            with self.assertRaises(ValueError):
+                cloud_fake._validate_header(bad_name, "ok")
+        for bad_val in ("ok\r\nX-Injected: 1", "ok\nInjected", "ok\rInjected", "ok\x00nul", "ok\x7fdel"):
+            with self.assertRaises(ValueError):
+                cloud_fake._validate_header("X-Test", bad_val)
+
 
 if __name__ == "__main__":
     unittest.main()

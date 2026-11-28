@@ -52,9 +52,16 @@
 #include "core/cios_scan.hpp"
 #include "core/n64_choice.hpp"
 #include "core/perf_stats.hpp"
+#include <set>
+#include "core/dol.hpp"
+#include "core/elf.hpp"
+#include "core/launch_args.hpp"
+#include "core/launch_layout.hpp"
 #include "core/theme.hpp"
 #include "core/theme_file.hpp"
 #include "core/vc_map.hpp"
+#include "core/wiiload_proto.hpp"
+#include "core/wiiload_zip.hpp"
 #include "core/wip_patch.hpp"
 #include "gfx/draw_list.hpp"
 #include "gfx/font_loader.hpp"
@@ -65,6 +72,8 @@
 #include "launch/wii_boot.hpp"
 #include "platform/crash.hpp"
 #include "platform/cheat_worker.hpp"
+#include "platform/wiiload_server.hpp"
+#include "ui/wiiload_scene.hpp"
 #include "platform/ios_patch.hpp"
 #include "platform/isfs_fs.hpp"
 #include "platform/routing_fs.hpp"
@@ -350,6 +359,25 @@ int main(int argc, char** argv) {
     // M20: Fernsteuerung nur auf ausdrücklichen Wunsch (wiiload … --remote oder [debug] remote = 1).
     nl::platform::RemoteServer remote;
     nl::platform::PairingServer pairing;  // M29: Kopplungsseite, nur solange die Kopplungsszene offen ist
+    nl::platform::WiiloadServer wiiloadServer;  // M31: wiiload v0.5 TCP receiver
+    nl::ui::WiiloadScene wiiloadScene;
+    std::optional<nl::platform::WiiloadPayload> pendingWiiload;
+    std::set<std::string> wiiloadTrustedIps;
+    auto effectiveWiiloadMode = [&]() -> nl::WiiloadMode {
+        if (config.debugWiiload == "auto") return nl::WiiloadMode::Auto;
+        if (config.debugWiiload == "confirm") return nl::WiiloadMode::Confirm;
+        if (config.debugWiiload == "off") return nl::WiiloadMode::Off;
+        return config.wiiloadMode;
+    };
+    auto syncWiiloadServer = [&]() {
+        if (effectiveWiiloadMode() != nl::WiiloadMode::Off) {
+            const u16 port = config.debugWiiloadPort != 0 ? config.debugWiiloadPort : nl::kWiiloadDefaultPort;
+            wiiloadServer.start(port);
+        } else {
+            wiiloadServer.stop();
+        }
+    };
+    syncWiiloadServer();
     if (nl::hasRemoteFlag(argc, argv) || config.debugRemote) {
         nl::log::line("NL_REMOTE %s", remote.start() ? "start" : "fail");
     }
@@ -2500,6 +2528,7 @@ int main(int argc, char** argv) {
     auto pumpRemoteLog = [&]() {
         for (const std::string& line : remote.takeLogLines()) nl::log::line("%s", line.c_str());
         for (const std::string& line : pairing.takeLogLines()) nl::log::line("%s", line.c_str());
+        for (const std::string& line : wiiloadServer.takeLogLines()) nl::log::line("%s", line.c_str());
     };
     // fromRemote: Antwort an den Client; die Fernsteuerung bleibt nach dem Neustart an, wenn sie jetzt läuft.
     auto restartSelf = [&](bool fromRemote) {
@@ -2528,6 +2557,7 @@ int main(int argc, char** argv) {
         cloud.join();
         remote.stop();
         pairing.stop();
+        wiiloadServer.stop();
         pumpRemoteLog();
         netService.shutdown();
         covers.shutdown();
@@ -2544,6 +2574,136 @@ int main(int argc, char** argv) {
         nl::platform::unmountAll();
         nl::platform::shutdownVideo();
         nl::launch::chainload(plan.value());
+    };
+    auto executeWiiloadPayload = [&](nl::platform::WiiloadPayload p) {
+        std::vector<u8> dolBytes;
+        std::vector<std::string> args = std::move(p.args);
+        if (p.kind == nl::WiiloadKind::Dol) {
+            auto chk = nl::checkDolImage(p.bytes, nl::kMaxDolBytes);
+            if (!chk.isOk()) {
+                nl::log::line("NL_WIILOAD reject %s", chk.error().context.c_str());
+                return;
+            }
+            dolBytes = std::move(p.bytes);
+        } else if (p.kind == nl::WiiloadKind::Elf) {
+            auto conv = nl::elfToDol(p.bytes, nl::kMaxDolBytes);
+            if (!conv.isOk()) {
+                nl::log::line("NL_WIILOAD reject %s", conv.error().context.c_str());
+                return;
+            }
+            dolBytes = std::move(conv.value());
+        } else {
+            auto plan = nl::inspectWiiloadZip(p.bytes);
+            if (!plan.isOk()) {
+                nl::log::line("NL_WIILOAD reject %s", plan.error().context.c_str());
+                return;
+            }
+            std::vector<u8> entryBytes;
+            if (plan.value().isBundle) {
+                auto inst = nl::installWiiloadZip(fs, p.bytes, plan.value(), "sd:");
+                if (!inst.isOk()) {
+                    nl::log::line("NL_WIILOAD reject %s", inst.error().context.c_str());
+                    return;
+                }
+                if (args.empty()) args.push_back(inst.value());
+                else args[0] = inst.value();
+                auto rd = fs.readAll(inst.value(), nl::kMaxDolBytes);
+                if (!rd.isOk()) {
+                    nl::log::line("NL_WIILOAD reject %s", rd.error().context.c_str());
+                    return;
+                }
+                entryBytes = std::move(rd.value());
+            } else {
+                auto ex = nl::extractWiiloadZipEntry(p.bytes, plan.value().entryPath);
+                if (!ex.isOk()) {
+                    nl::log::line("NL_WIILOAD reject %s", ex.error().context.c_str());
+                    return;
+                }
+                entryBytes = std::move(ex.value());
+            }
+            if (plan.value().entryKind == nl::WiiloadKind::Elf) {
+                auto conv = nl::elfToDol(entryBytes, nl::kMaxDolBytes);
+                if (!conv.isOk()) {
+                    nl::log::line("NL_WIILOAD reject %s", conv.error().context.c_str());
+                    return;
+                }
+                dolBytes = std::move(conv.value());
+            } else {
+                auto chk = nl::checkDolImage(entryBytes, nl::kMaxDolBytes);
+                if (!chk.isOk()) {
+                    nl::log::line("NL_WIILOAD reject %s", chk.error().context.c_str());
+                    return;
+                }
+                dolBytes = std::move(entryBytes);
+            }
+        }
+        if (args.empty()) args.emplace_back("wiiload.dol");
+        auto argvBlk = nl::packArgvBlock(args, nl::kArgsAddr);
+        if (!argvBlk.isOk()) {
+            nl::log::line("NL_WIILOAD reject %s", argvBlk.error().context.c_str());
+            return;
+        }
+        nl::LaunchPlan lp;
+        lp.dolSize = static_cast<u32>(dolBytes.size());
+        lp.argvBlock = std::move(argvBlk.value());
+
+        worker.cancelAndJoin();
+        discDrive.shutdown();
+        net.join();
+        coverClearWorker.cancel();
+        coverClearWorker.join();
+        emu.join();
+        cheatWorker.join();
+        saveWorker.join();
+        cloud.join();
+        const bool keepRemote = remote.running();
+        remote.stop();
+        pairing.stop();
+        wiiloadServer.stop();
+        pumpRemoteLog();
+        netService.shutdown();
+        covers.shutdown();
+        banners.shutdown();
+        if (auto loaded = nl::launch::loadDolBytesToBuffer(dolBytes); !loaded.isOk()) {
+            nl::log::line("NL_WIILOAD reject %s", loaded.error().context.c_str());
+            running = false;
+            return;
+        }
+        std::vector<std::string> stubArgs;
+        if (keepRemote) stubArgs.push_back("--remote");
+        nl::launch::installReturnStub(returnStubDol, stubArgs);
+        nl::log::line("NL_WIILOAD exec size=%u", static_cast<unsigned>(dolBytes.size()));
+        stopAudio();
+        logPerfSummary();
+        if (data.writable) nl::log::flushLogFile(fs, logPath);
+        input.shutdown();
+        nl::platform::unmountAll();
+        nl::platform::shutdownVideo();
+        nl::launch::chainload(lp);
+    };
+    auto handleWiiload = [&]() {
+        if (!wiiloadServer.running() || pendingWiiload) return;
+        auto incoming = wiiloadServer.take();
+        if (!incoming) return;
+        const bool autoRun = (effectiveWiiloadMode() == nl::WiiloadMode::Auto && !config.parental.enabled) ||
+                             wiiloadTrustedIps.count(incoming->senderIp) > 0;
+        if (autoRun) {
+            executeWiiloadPayload(std::move(*incoming));
+            return;
+        }
+        nl::ui::WiiloadSummary sum;
+        sum.senderIp = incoming->senderIp;
+        sum.kind = incoming->kind;
+        sum.sizeBytes = static_cast<u32>(incoming->bytes.size());
+        sum.args = incoming->args;
+        sum.fileName = incoming->args.empty() ? "boot.dol" : incoming->args[0];
+        if (incoming->kind == nl::WiiloadKind::Zip) {
+            auto zp = nl::inspectWiiloadZip(incoming->bytes);
+            if (zp.isOk() && zp.value().isBundle) sum.targetApp = zp.value().appName;
+        }
+        pendingWiiload = std::move(*incoming);
+        wiiloadScene.open(std::move(sum));
+        scenes.push(&wiiloadScene);
     };
     auto handleRemote = [&]() {
         if (!remote.running() || remoteKeyFrames > 0 || remoteKeyRelease > 0) return;
@@ -2671,7 +2831,10 @@ int main(int argc, char** argv) {
         nl::ui::InputFrame in = frame.begin(raw);
 #endif
         pumpRemoteLog();
-        if (readyReported) handleRemote();
+        if (readyReported) {
+            handleRemote();
+            handleWiiload();
+        }
         if (restartPending && !scenes.contains(&dialog) && remoteKeyFrames == 0 && remoteKeyRelease == 0) {
             restartPending = false;  // M20: nach „Neu starten“ oder dem Update-Dialog
             restartSelf(false);
@@ -2849,6 +3012,7 @@ int main(int argc, char** argv) {
                 saveConfig();
                 break;
             case nl::ui::AppCommand::SettingsChanged: {
+                syncWiiloadServer();
                 const nl::ui::Lang lang = nl::ui::resolveLanguage(config.language, systemGerman);
                 if (lang != nl::ui::language()) {
                     nl::ui::setLanguage(lang);
@@ -3188,6 +3352,28 @@ int main(int argc, char** argv) {
                     finishCloudGate(true);
                 }
                 break;
+            case nl::ui::AppCommand::WiiloadAccept:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (pendingWiiload) {
+                    auto p = std::move(*pendingWiiload);
+                    pendingWiiload.reset();
+                    executeWiiloadPayload(std::move(p));
+                }
+                break;
+            case nl::ui::AppCommand::WiiloadTrustSender:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                if (pendingWiiload) {
+                    wiiloadTrustedIps.insert(pendingWiiload->senderIp);
+                    auto p = std::move(*pendingWiiload);
+                    pendingWiiload.reset();
+                    executeWiiloadPayload(std::move(p));
+                }
+                break;
+            case nl::ui::AppCommand::WiiloadDecline:
+                nl::log::line("NL_CMD %s", nl::ui::appCommandName(cmd));
+                pendingWiiload.reset();
+                nl::log::line("NL_WIILOAD decline");
+                break;
             case nl::ui::AppCommand::CloudConflict:
                 nl::log::line("NL_CMD %s %d", nl::ui::appCommandName(cmd), choiceDialog.picked());
                 answerCloudConflict(choiceDialog.picked());
@@ -3458,6 +3644,7 @@ int main(int argc, char** argv) {
     cloud.join();
     remote.stop();  // vor dem Netz: der Fernsteuerungs-Thread nutzt dessen Sockets
     pairing.stop();
+    wiiloadServer.stop();
     pumpRemoteLog();
     netService.shutdown();
     covers.shutdown();

@@ -663,12 +663,16 @@ ntfs_inode *ntfs_extent_inode_open(ntfs_inode *base_ni, const leMFT_REF mref)
 		extent_nis = ntfs_malloc(i);
 		if (!extent_nis)
 			goto err_out;
-		if (base_ni->nr_extents) {
-			memcpy(extent_nis, base_ni->extent_nis,
-					i - 4 * sizeof(ntfs_inode *));
-			free(base_ni->extent_nis);
+		{
+			ntfs_inode **old_extents = base_ni->extent_nis;
+			if (base_ni->nr_extents) {
+				memcpy(extent_nis, old_extents,
+						i - 4 * sizeof(ntfs_inode *));
+			}
+			base_ni->extent_nis = extent_nis;
+			if (base_ni->nr_extents)
+				free(old_extents);
 		}
-		base_ni->extent_nis = extent_nis;
 	}
 	base_ni->extent_nis[base_ni->nr_extents++] = ni;
 out:

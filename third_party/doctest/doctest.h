@@ -3696,13 +3696,13 @@ String& String::operator+=(const String& other) {
             char* temp = new char[data.capacity];
             // copy current data to new location before releasing it
             memcpy(temp, data.ptr, my_old_size); // skip the +1 ('\0') for speed
+            // transfer the rest of the data before releasing old chunk (handles self-append)
+            memcpy(temp + my_old_size, other.c_str(), other_size + 1);
             // release old chunk
             delete[] data.ptr;
             // update the rest of the union members
             data.size = total_size;
             data.ptr  = temp;
-            // transfer the rest of the data
-            memcpy(data.ptr + my_old_size, other.c_str(), other_size + 1);
         }
     }
 

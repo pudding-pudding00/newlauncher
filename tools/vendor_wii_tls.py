@@ -20,6 +20,7 @@ from urllib.parse import urlsplit, urlunsplit
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DEST = REPO_ROOT / "third_party" / "wii_tls"
 DROP_DIRS = ("tests", "bench", "examples", "docs")
+DROP_TOOL_SUFFIXES = (".py", ".sh")
 
 
 def _git(repo: Path, *args: str, binary: bool = False):
@@ -40,6 +41,11 @@ def _drop(dest: Path) -> None:
     for child in list(dest.iterdir()):
         if child.is_dir() and (child.name in DROP_DIRS or child.name.startswith("build-")):
             shutil.rmtree(child)
+    tools_dir = dest / "tools"
+    if tools_dir.is_dir():
+        for child in list(tools_dir.iterdir()):
+            if child.is_file() and child.suffix in DROP_TOOL_SUFFIXES:
+                child.unlink()
 
 
 def main(argv=None) -> int:
@@ -76,7 +82,7 @@ def main(argv=None) -> int:
     date = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     (dest / "VENDORED.txt").write_text(
         f"commit={sha}\ndate={date}\nsource={remote}\n"
-        f"removed={','.join(DROP_DIRS)},build-*\n",
+        f"removed={','.join(DROP_DIRS)},tools/*.py,tools/*.sh,build-*\n",
         encoding="utf-8",
         newline="\n",
     )
